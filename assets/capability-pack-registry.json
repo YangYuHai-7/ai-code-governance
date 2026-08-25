@@ -1,0 +1,252 @@
+{
+  "schema_version": 1,
+  "product_line": "ai-code-governance",
+  "evidence_levels": [
+    "certified",
+    "supported",
+    "unverified",
+    "unsupported"
+  ],
+  "lifecycle_states": [
+    "active",
+    "planned",
+    "roadmap",
+    "deprecated"
+  ],
+  "os_targets": [
+    "macos",
+    "windows",
+    "linux"
+  ],
+  "current_os_evidence": {
+    "macos": "skill-structure-verified",
+    "windows": "designed-not-run",
+    "linux": "designed-not-run"
+  },
+  "packs": [
+    {
+      "id": "frontend-react",
+      "family": "web-frontend",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "supported",
+      "detect": {
+        "manifest_any": ["package.json"],
+        "dependency_any": ["react", "react-dom", "next", "gatsby"]
+      },
+      "specialists": ["react", "web-build", "accessibility"],
+      "validation_sources": ["package.json scripts", "workspace task runner", "existing CI documentation"],
+      "ui_catalog": "react"
+    },
+    {
+      "id": "frontend-vue",
+      "family": "web-frontend",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "supported",
+      "detect": {
+        "manifest_any": ["package.json"],
+        "dependency_any": ["vue", "nuxt", "@vue/cli-service"]
+      },
+      "specialists": ["vue", "web-build", "accessibility"],
+      "validation_sources": ["package.json scripts", "workspace task runner", "existing CI documentation"],
+      "ui_catalog": "vue"
+    },
+    {
+      "id": "frontend-angular",
+      "family": "web-frontend",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "supported",
+      "detect": {
+        "manifest_any": ["angular.json", "package.json"],
+        "dependency_any": ["@angular/core", "@angular/cli"]
+      },
+      "specialists": ["angular", "web-build", "accessibility"],
+      "validation_sources": ["angular.json", "package.json scripts", "workspace task runner"],
+      "ui_catalog": "angular"
+    },
+    {
+      "id": "backend-node",
+      "family": "web-backend",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "supported",
+      "detect": {
+        "manifest_any": ["package.json"],
+        "dependency_any": ["express", "@nestjs/core", "fastify", "koa", "hapi"]
+      },
+      "specialists": ["nodejs", "api-contract", "application-security"],
+      "validation_sources": ["package.json scripts", "workspace task runner", "test configuration"],
+      "ui_catalog": null
+    },
+    {
+      "id": "backend-java",
+      "family": "web-backend",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "supported",
+      "detect": {
+        "manifest_any": ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
+        "dependency_any": ["spring-boot", "quarkus", "micronaut"]
+      },
+      "specialists": ["java", "jvm-build", "api-contract", "application-security"],
+      "validation_sources": ["Maven lifecycle", "Gradle tasks", "test source sets"],
+      "ui_catalog": null
+    },
+    {
+      "id": "frontend-svelte",
+      "family": "web-frontend",
+      "release": "v3.1",
+      "lifecycle": "planned",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["package.json", "svelte.config.js", "svelte.config.ts"],
+        "dependency_any": ["svelte", "@sveltejs/kit"]
+      },
+      "specialists": ["svelte", "web-build", "accessibility"],
+      "validation_sources": ["package.json scripts", "Svelte configuration"],
+      "ui_catalog": "svelte"
+    },
+    {
+      "id": "backend-python",
+      "family": "web-backend",
+      "release": "v3.1",
+      "lifecycle": "planned",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["pyproject.toml", "requirements.txt", "Pipfile", "manage.py"],
+        "dependency_any": ["fastapi", "django", "flask"]
+      },
+      "specialists": ["python", "api-contract", "application-security"],
+      "validation_sources": ["pyproject tasks", "tox.ini", "noxfile.py", "test configuration"],
+      "ui_catalog": null
+    },
+    {
+      "id": "backend-go",
+      "family": "web-backend",
+      "release": "v3.1",
+      "lifecycle": "planned",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["go.mod", "go.work"],
+        "dependency_any": ["gin-gonic/gin", "labstack/echo", "gofiber/fiber"]
+      },
+      "specialists": ["go", "api-contract", "application-security"],
+      "validation_sources": ["go test packages", "Makefile", "task runner"],
+      "ui_catalog": null
+    },
+    {
+      "id": "backend-php",
+      "family": "web-backend",
+      "release": "v3.1",
+      "lifecycle": "planned",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["composer.json", "artisan", "symfony.lock"],
+        "dependency_any": ["laravel/framework", "symfony/framework-bundle"]
+      },
+      "specialists": ["php", "api-contract", "application-security"],
+      "validation_sources": ["composer scripts", "PHPUnit configuration", "framework console"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-dotnet",
+      "family": "dotnet",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["*.sln", "*.slnx", "*.csproj", "global.json"],
+        "dependency_any": ["Microsoft.NET.Sdk", "Microsoft.AspNetCore.App", "Microsoft.Maui"]
+      },
+      "specialists": ["dotnet", "csharp", "platform-security"],
+      "validation_sources": ["dotnet CLI", "MSBuild targets", "test projects"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-android",
+      "family": "native-mobile",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["settings.gradle", "settings.gradle.kts", "AndroidManifest.xml"],
+        "dependency_any": ["com.android.application", "com.android.library"]
+      },
+      "specialists": ["android", "kotlin-java", "mobile-security", "device-testing"],
+      "validation_sources": ["Gradle Android tasks", "unit tests", "instrumented tests"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-ios",
+      "family": "native-mobile",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["*.xcodeproj", "*.xcworkspace", "Package.swift", "Podfile"],
+        "dependency_any": ["SwiftUI", "UIKit"]
+      },
+      "specialists": ["ios", "swift-objective-c", "mobile-security", "device-testing"],
+      "validation_sources": ["Xcode schemes", "xcodebuild", "Swift package tests"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-hybrid-mobile",
+      "family": "hybrid-mobile",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["capacitor.config.ts", "capacitor.config.json", "config.xml", "pubspec.yaml", "package.json"],
+        "dependency_any": ["@capacitor/core", "cordova", "react-native", "flutter"]
+      },
+      "specialists": ["hybrid-mobile", "native-bridge", "mobile-security", "device-testing"],
+      "validation_sources": ["framework task runner", "native project builds", "device tests"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-desktop",
+      "family": "desktop",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["package.json", "src-tauri/tauri.conf.json", "*.csproj", "CMakeLists.txt"],
+        "dependency_any": ["electron", "@tauri-apps/api", "Avalonia", "Qt"]
+      },
+      "specialists": ["desktop", "os-integration", "application-security"],
+      "validation_sources": ["platform build tasks", "packaging tasks", "integration tests"],
+      "ui_catalog": null
+    },
+    {
+      "id": "platform-c-cpp",
+      "family": "systems-embedded",
+      "release": "v4",
+      "lifecycle": "roadmap",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": ["CMakeLists.txt", "meson.build", "Makefile", "platformio.ini", "conanfile.py", "vcpkg.json"],
+        "dependency_any": []
+      },
+      "specialists": ["c-cpp", "build-toolchain", "memory-safety", "hardware-testing"],
+      "validation_sources": ["build system targets", "compiler diagnostics", "unit tests", "hardware-in-loop tests"],
+      "ui_catalog": null
+    },
+    {
+      "id": "generic-unknown",
+      "family": "generic",
+      "release": "v3.0",
+      "lifecycle": "active",
+      "evidence": "unverified",
+      "detect": {
+        "manifest_any": [],
+        "dependency_any": []
+      },
+      "specialists": ["governance-architect", "repository-explorer", "user-nominated-domain-expert"],
+      "validation_sources": ["repository-defined commands only"],
+      "ui_catalog": null
+    }
+  ]
+}
