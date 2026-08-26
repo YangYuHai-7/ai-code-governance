@@ -207,6 +207,7 @@ const requiredProbeIds = [
   'broken-exact-path',
   'empty-glob',
   'required-profile-set',
+  'client-selection-adapter-parity',
   'routing-disambiguation',
   'capability-unreachable',
   'endpoint-wrong-method',
