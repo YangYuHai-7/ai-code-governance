@@ -203,7 +203,118 @@ function validateRegistry(registry) {
   validateReleaseEvidence(registry, expected);
 }
 
-function runNegativeProbe(registry) {
+const requiredProbeIds = [
+  'broken-exact-path',
+  'empty-glob',
+  'required-profile-set',
+  'routing-disambiguation',
+  'capability-unreachable',
+  'endpoint-wrong-method',
+  'source-frontmatter-bad-path',
+  'memory-owner-mismatch',
+  'checker-internal-error',
+  'strict-runtime-invalid-task',
+  'runtime-completion-freshness',
+  'runtime-complete-single-entry',
+  'hook-tool-payload-classification',
+  'opaque-write-git-cross-check',
+  'stop-verification-closure',
+  'ack-atomic-single-consume',
+  'precommit-entrypoint-replay',
+  'lifecycle-maintenance-metadata',
+];
+
+function validateAcceptanceContract(contract) {
+  check(contract.schema_version === 2, 'Acceptance contract schema_version must be 2.');
+  const states = contract.claim_states ?? {};
+  for (const state of ['present', 'reachable', 'enforced', 'real_client_verified']) {
+    check(
+      typeof states[state] === 'string' && states[state].length > 0,
+      `Acceptance contract lacks claim state: ${state}`,
+    );
+  }
+
+  const failurePolicy = contract.failure_policy ?? {};
+  for (const policy of [
+    'delivery_checker_exception',
+    'ambient_hook_exception',
+    'optional_environment_dependency',
+  ]) {
+    check(
+      typeof failurePolicy[policy] === 'string' && failurePolicy[policy].length > 0,
+      `Acceptance contract lacks failure policy: ${policy}`,
+    );
+  }
+
+  const evidence = contract.evidence_required ?? [];
+  for (const item of [
+    'real_entrypoint',
+    'negative_exit_and_diagnostic',
+    'recovery_exit_and_diagnostic',
+    'remaining_boundary',
+  ]) {
+    check(evidence.includes(item), `Acceptance contract lacks evidence requirement: ${item}`);
+  }
+
+  const manifest = contract.project_result_manifest ?? {};
+  check(
+    typeof manifest.contract_path === 'string' && manifest.contract_path.length > 0,
+    'Acceptance contract lacks project contract snapshot path.',
+  );
+  check(
+    typeof manifest.recommended_path === 'string' && manifest.recommended_path.length > 0,
+    'Acceptance contract lacks project result manifest path.',
+  );
+  for (const status of ['pass', 'fail', 'not-applicable', 'unverified']) {
+    check(
+      Array.isArray(manifest.allowed_statuses) && manifest.allowed_statuses.includes(status),
+      `Acceptance result manifest lacks allowed status: ${status}`,
+    );
+  }
+  for (const field of [
+    'id',
+    'status',
+    'applies',
+    'applicability_reason',
+    'entrypoint',
+    'negative_evidence',
+    'recovery_evidence',
+    'remaining_boundary',
+  ]) {
+    check(
+      Array.isArray(manifest.required_fields) && manifest.required_fields.includes(field),
+      `Acceptance result manifest lacks required field: ${field}`,
+    );
+  }
+  check(
+    typeof manifest.coverage === 'string' && manifest.coverage.length > 0,
+    'Acceptance contract lacks project result coverage rules.',
+  );
+
+  const probes = contract.required_probe_families ?? [];
+  const ids = new Set();
+  for (const probe of probes) {
+    check(typeof probe.id === 'string' && probe.id.length > 0, 'Acceptance probe lacks id.');
+    check(!ids.has(probe.id), `Duplicate acceptance probe id: ${probe.id}`);
+    ids.add(probe.id);
+    for (const field of [
+      'applies_when',
+      'negative_case',
+      'expected_failure',
+      'recovery_case',
+      'expected_recovery',
+      'proves',
+    ]) {
+      check(
+        typeof probe[field] === 'string' && probe[field].length > 0,
+        `${probe.id} lacks ${field}.`,
+      );
+    }
+  }
+  for (const id of requiredProbeIds) check(ids.has(id), `Missing acceptance probe family: ${id}`);
+}
+
+function runNegativeProbe(registry, acceptanceContract) {
   const before = failures.length;
   const broken = structuredClone(registry);
   broken.packs.push(structuredClone(broken.packs[0]));
@@ -220,8 +331,44 @@ function runNegativeProbe(registry) {
 
   if (!duplicateCaught) fail('Negative probe did not catch a duplicate capability pack.');
   if (!brokenLinkCaught) fail('Negative probe did not catch a broken local link.');
-  if (duplicateCaught && brokenLinkCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught');
+
+  const acceptanceBefore = failures.length;
+  const brokenAcceptance = structuredClone(acceptanceContract);
+  brokenAcceptance.required_probe_families = brokenAcceptance.required_probe_families.filter(
+    (probe) => probe.id !== 'runtime-completion-freshness',
+  );
+  validateAcceptanceContract(brokenAcceptance);
+  const acceptanceCaught = failures
+    .slice(acceptanceBefore)
+    .some((message) => message.includes('Missing acceptance probe family: runtime-completion-freshness'));
+  failures.splice(acceptanceBefore);
+
+  const failurePolicyBefore = failures.length;
+  const brokenPolicy = structuredClone(acceptanceContract);
+  delete brokenPolicy.failure_policy.delivery_checker_exception;
+  validateAcceptanceContract(brokenPolicy);
+  const failurePolicyCaught = failures
+    .slice(failurePolicyBefore)
+    .some((message) => message.includes('Acceptance contract lacks failure policy: delivery_checker_exception'));
+  failures.splice(failurePolicyBefore);
+
+  const resultManifestBefore = failures.length;
+  const brokenResultManifest = structuredClone(acceptanceContract);
+  brokenResultManifest.project_result_manifest.required_fields =
+    brokenResultManifest.project_result_manifest.required_fields.filter(
+      (field) => field !== 'negative_evidence',
+    );
+  validateAcceptanceContract(brokenResultManifest);
+  const resultManifestCaught = failures
+    .slice(resultManifestBefore)
+    .some((message) => message.includes('Acceptance result manifest lacks required field: negative_evidence'));
+  failures.splice(resultManifestBefore);
+
+  if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
+  if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
+  if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
+  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught');
   }
 }
 
@@ -236,7 +383,17 @@ try {
   fail(`Capability registry is not valid JSON: ${error.message}`);
 }
 
-if (process.argv.includes('--negative-probe') && registry) runNegativeProbe(registry);
+let acceptanceContract;
+try {
+  acceptanceContract = JSON.parse(read('assets/acceptance-contract.json'));
+  validateAcceptanceContract(acceptanceContract);
+} catch (error) {
+  fail(`Acceptance contract is not valid JSON: ${error.message}`);
+}
+
+if (process.argv.includes('--negative-probe') && registry && acceptanceContract) {
+  runNegativeProbe(registry, acceptanceContract);
+}
 
 if (failures.length > 0) {
   for (const message of failures) console.error(`FAIL: ${message}`);

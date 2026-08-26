@@ -58,13 +58,14 @@
 6. 不要为了通过门禁而修改门禁定义。
 7. 不确定就问，不要猜一个解读默默做完。
 
-## 完成的定义
+## 验证与完成
 
-| 改动 | 要求 |
-| --- | --- |
-| 只读回答 / 错别字 | 无 |
-| 非核心代码 | `<pkg> gate` |
-| 核心层代码 | `<pkg> gate` + `<MEM>/` 同步 + 留痕 |
+改动路径到精确命令、对应 memory 与 fallback 的唯一映射在
+`<CANON>/verification-profiles.yaml`。选择所有命中 profile 的最强要求；本入口不复制命令组合。
+
+- 只读回答或无行为变化的文字修正：按档案定向核对。
+- 行为变化：按验证档案执行，并同步该代码 owner 对应的 `<MEM>/` 页面。
+- 未实际运行或只有 warning 的能力必须标 `unverified`，不能写成完成证据。
 
 ## 逃生舱
 
@@ -129,19 +130,43 @@ mkdir -p .claude && ln -s ../<CANON>/skills   .claude/skills \
 | `rules/` | 常驻规则与档案触发规则 |
 | `anti-patterns.md` | 本仓库真实犯过的错：Wrong / Right / Why wrong |
 | `verification-profiles.yaml` | 改动路径 → 该跑哪些命令 |
+| `acceptance-contract.json` | 当前治理版本固定下来的验收探针契约 |
+| `acceptance-results.json` | 每个验收探针的机器可读状态与正反证据 |
 | `skills/`、`commands/`、`agents/` | 能力层 |
 | `tools/` | 检查器与钩子（唯一的强制力） |
 | `long-running/` | 任务运行时状态（可选层） |
 
-## 强制力台账（诚实优先于好看）
+## 声明—证据矩阵（诚实优先于好看）
 
-| 项 | 状态 |
-| --- | --- |
-| 结构与引用完整性 | **enforced** —— `<pkg> framework:check` |
-| 知识层与代码一致 | **enforced** —— `<pkg> drift:check` |
-| 改动范围是否恰当 | **stated** —— 助手责任，机器判定不了 |
-| <某层> | **unverified** —— 探针未跑通，见 `<issue>` |
+| 声明 | present | reachable | enforced | real-client-verified | 入口与失败条件 | 正向/负向证据 | 边界 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 结构与引用完整性 | pass | pass | pass | n-a | `<pkg> framework:check`；缺引用非零退出 | `<摘要>` / `<故障注入摘要>` | `<边界>` |
+| 知识层与代码一致 | pass | pass | pass | n-a | `<pkg> drift:check`；方法/路径/owner 漂移非零退出 | `<摘要>` / `<故障注入摘要>` | `<边界>` |
+| 改动范围是否恰当 | pass | pass | n-a (`stated`) | n-a | 助手责任，机器判定不了 | `<评审证据>` | `<边界>` |
+| <客户端钩子> | pass | pass/fail | pass/fail | pass/fail | `<真实接线>` | `<合成探针>` / `<真实客户端探针>` | `<issue>` |
 ```
+
+`acceptance-results.json` 必须覆盖契约中的每个 probe ID，且由 delivery checker 校验，不是手工报告附件：
+
+```json
+{
+  "contract_schema_version": 2,
+  "results": [
+    {
+      "id": "broken-exact-path",
+      "status": "pass",
+      "applies": true,
+      "applicability_reason": "Required exact paths are declared by the bootstrap.",
+      "entrypoint": "npm run framework:check",
+      "negative_evidence": "<date + exit code + diagnostic artifact>",
+      "recovery_evidence": "<date + exit code + diagnostic artifact>",
+      "remaining_boundary": "<what this probe still does not prove>"
+    }
+  ]
+}
+```
+
+`not-applicable` 需要理由；`pass` 需要真实入口、负向与恢复证据；缺真实客户端回放时用 `unverified`。
 
 ---
 
@@ -413,9 +438,9 @@ tools: <只读角色只给读/搜索工具>
  * - 收集所有失败后统一打印；不要第一条就退出（助手要一次修完）。
  * - 每条失败都带修复动作，不只是诊断。
  * - 目标 < 5 秒；慢到会被跳过的门禁等于没有门禁。
- * - warn vs fail：依赖未跟踪的本地产物（本机符号链接、gitignored 目录、
- *   兄弟仓库、只在部分开发机存在的工具）只能 warn。hard fail 会让每次
- *   新 clone 都失败，那会让人对整套框架失去信任。不要"顺手改严一点"。
+ * - delivery checker 内部异常、受管 schema 错误、required 输入不可读必须 fail。
+ * - 只有未跟踪本地产物、gitignored 目录、兄弟仓库或明确可选工具缺失
+ *   才能 warn；warning 要命名跳过的断言，且该能力保持 unverified。
  */
 const fs = require('fs');
 const path = require('path');
@@ -437,6 +462,7 @@ function checkRequiredFiles() {
 
 function checkContextMapReferences() {
   // required / optional / verify / paths 里的每个路径都必须存在
+  // profiles 必须是非空 object；用真实 routing examples 检查碰撞与漏选
 }
 
 function checkAdapterSymlinks() {
@@ -458,13 +484,27 @@ function checkLinksAndPaths() {
   // 本地 markdown 链接可解析；反引号里的仓库路径存在
 }
 
+function checkGovernedSchemas() {
+  // 先验证 context/verification/memory/task 的 shape，再迭代语义。
+  // 合法 JSON 但 array 写成 object、必需文件变目录等必须 fail。
+}
+
+function checkAcceptanceResults() {
+  // 对照 acceptance-contract.json：每个 probe ID 恰好一条；校验状态、适用性与条件证据。
+  // applicable + pass 缺 real entrypoint / negative / recovery evidence 必须 fail。
+}
+
 function checkStaleWording() {
   // 已废弃的目录名/命令名不再出现在文档里
 }
 
 [checkRequiredFiles, checkContextMapReferences, checkAdapterSymlinks,
- checkBootstrapParity, checkFrontMatter, checkLinksAndPaths, checkStaleWording]
-  .forEach((fn) => { try { fn(); } catch (e) { warn(`检查 ${fn.name} 自身报错: ${e.message}`, '修复检查器'); } });
+ checkBootstrapParity, checkFrontMatter, checkLinksAndPaths, checkGovernedSchemas,
+ checkAcceptanceResults, checkStaleWording]
+  .forEach((fn) => {
+    try { fn(); }
+    catch (e) { fail(`检查器 ${fn.name} 自身报错: ${e.message}`, '修复检查器或受管输入；delivery gate 不得跳过'); }
+  });
 
 report();   // 单一共享的裁决函数：CLI 与钩子都用它，避免两处逻辑分叉
 
@@ -472,7 +512,7 @@ function report() {
   for (const w of warnings) console.warn(`WARN  ${w.what}\n      → ${w.fix}`);
   for (const f of failures) console.error(`FAIL  ${f.what}\n      → ${f.fix}`);
   if (failures.length) {
-    console.error(`\n${failures.length} 项失败。逃生舱：<pkg> gate:ack -- "<理由>"`);
+    console.error(`\n${failures.length} 项失败。仅支持 ack 的具体门禁会打印自己的 scoped ack 命令。`);
     process.exit(1);
   }
   console.log(`OK  ${warnings.length} 警告，0 失败`);
@@ -497,7 +537,10 @@ const OFF = process.env['<PREFIX>_AI_HOOKS'] === 'off';
   try {
     // 根路径无关：同时探测 <CANON>/... 与 <subdir>/<CANON>/...
     const handler = require(`./handlers/${EVENT}.js`);
-    await handler(payload);
+    const result = await handler(payload);
+    if (result?.output) console.log(result.output);
+    if (Number.isInteger(result?.exitCode)) process.exitCode = result.exitCode;
+    // Stop 的预期阻断用结构化 exitCode 返回；不要 throw 后被 ambient catch 改写成 0。
   } catch (e) {
     console.warn(`[hooks] ${EVENT} 失败（fail open）: ${e.message}`);
     process.exit(0);                                  // 坏掉的守卫绝不能让仓库不可用
@@ -508,46 +551,86 @@ const OFF = process.env['<PREFIX>_AI_HOOKS'] === 'off';
 ```javascript
 // handlers/post-tool-use.js —— 只记录，绝不逐文件校验（批量原则）
 module.exports = (p) => {
-  const file = p?.tool_input?.file_path;
-  if (file) return appendLedger(relativeToRoot(file));
+  const kind = classifyTool(p.tool_name, p.event_type); // client-specific adapter
+  if (kind === 'read') return;                          // Read 也可能有 file_path
+  if (kind === 'file-write') {
+    const files = extractWrittenPaths(p.tool_name, p.tool_input); // 含 freeform patch header
+    return files.length ? appendLedger(files) : appendLedger('<opaque-write>');
+  }
   const cmd = p?.tool_input?.command;
   // shell 载荷里没有路径。匹配已知写入形态（原地 sed、打补丁、输出重定向、
   // 生成脚本）时记一个**不透明写入标记**，让完成门禁把账本当作下界并去交叉
   // 核对版本控制。只读命令（列目录/搜索/查状态/跑测试）不匹配。
-  if (looksLikeWrite(cmd)) return appendLedger('<opaque-write>');
+  if (kind === 'shell' && looksLikeWrite(cmd)) return appendLedger('<opaque-write>');
 };
 ```
 
 ```javascript
 // handlers/stop.js —— 比例化完成门禁；唯一会以非零退出阻塞的 handler
 module.exports = async () => {
-  if (process.env['<PREFIX>_AI_GATE'] === 'off') return;
+  if (process.env['<PREFIX>_AI_GATE'] === 'off') {
+    return { exitCode: 0, output: '[gate] disabled; enforcement unverified for this completion' };
+  }
 
   const changed = await resolveChangeSet();   // 1) 账本为下界 2) 见到不透明标记则交叉核对
                                               //    版本控制 3) 收窄到本次会话的 mtime
   if (changed.unresolvable) {
-    console.warn('[gate] 无法解析改动集合；请自行确认对应门禁');   // 警告不阻塞
-    return;
+    return { exitCode: 0, output: '[gate] 无法解析改动集合；请自行确认对应门禁；本次 unverified' };
   }
   const need = requirementsFor(changed);      // 与 CLI 共用同一个函数
-  if (!need.length) return;
+  if (!need.length) return { exitCode: 0 };
 
-  const ack = consumeAck();                   // 限时 + 单次消费；生命周期由钩子拥有
-  if (ack) { console.log(`[gate] 已 ack：${ack.reason}`); return; }
+  const receipt = readVerificationReceipt();  // 绑定 write generation/change fingerprint
+  if (receiptCovers(receipt, changed, need)) return { exitCode: 0 };
 
-  console.error(formatNumberedFixList(need)); // 编号清单，每条带命令
-  process.exit(2);
+  const ack = consumeAckAtomically({          // scope + fingerprint + 限时 + 单次
+    owner: 'stop', fingerprint: changed.fingerprint,
+  });
+  if (ack) return { exitCode: 0, output: `[gate] 已 ack：${ack.reason}` };
+
+  return { exitCode: 2, output: formatNumberedFixList(need) }; // 编号清单，每条带命令
 };
 ```
+
+```javascript
+// verify-and-receipt.js —— 唯一能生成 verification receipt 的入口
+const before = await currentChangeIdentity(); // { generation, fingerprint }
+const changed = await resolveChangeSet();
+const obligations = requirementsFor(changed);
+const result = await runRealGateEntrypoints(obligations); // 保存命令、exit code 与摘要
+const after = await currentChangeIdentity();
+
+if (!result.ok || before.generation !== after.generation || before.fingerprint !== after.fingerprint) {
+  console.error(result.ok
+    ? '验证期间改动集合发生变化；不得生成 receipt，请重跑门禁'
+    : formatGateFailures(result));
+  process.exit(1);
+}
+
+writeReceiptAtomically({
+  generation: after.generation,
+  fingerprint: after.fingerprint,
+  obligations,
+  entrypoints: result.entrypoints,
+  checkedAt: new Date().toISOString(),
+  evidence: result.summary,
+});
+```
+
+Stop 只能读取该入口生成的 receipt。任何写入都会提升 generation 或改变 fingerprint；手工新建同形 JSON
+不能算验证证据，delivery checker 与 Stop 应校验 receipt 的来源字段、当前身份和全部义务覆盖。
 
 ```javascript
 // ack.js —— 被审计的逃生舱
 const reason = process.argv.slice(2).join(' ').replace(/^--\s*/, '');
 if (!reason) { console.error('用法：<pkg> gate:ack -- "<理由>"'); process.exit(1); }
 writeAck({ reason, at: nowIso(), ttlMinutes: 15, singleUse: true });
-console.log(`已记录 ack（15 分钟内有效，单次消费）：${reason}`);
-// CLI 侧的同名门禁只读不清 —— 单次生命周期由钩子拥有。
+// 实际实现还必须写 owner entrypoint + change fingerprint，并用原子 rename/open 消费。
+console.log(`已记录 scoped ack（15 分钟内有效，单次消费）：${reason}`);
 ```
+
+配套探针必须证明：Read 不记写、真实 patch 不漏记；写入后第一次 Stop 阻断，运行门禁并写当前
+generation receipt 后第二次 Stop 正常放行；一个 ack 连续调用两次只有第一次能通过。
 
 ---
 
@@ -566,15 +649,17 @@ console.log(`已记录 ack（15 分钟内有效，单次消费）：${reason}`);
 
 ```markdown
 ## 已落地
-| 层 | 文件 | 状态 |
-| --- | --- | --- |
-| L0 入口 | `AGENTS.md` | enforced（存在性受检） |
+| 层 | 文件 | present | reachable | enforced | real-client-verified |
+| --- | --- | --- | --- | --- | --- |
+| L0 入口 | `AGENTS.md` | pass | pass | pass（存在性受检） | n-a |
 | … | | |
 
-## 强制力台账
-- **enforced**：<列出被检查器真正挡住的项>
+## 声明—证据矩阵
+<按 present / reachable / enforced / real-client-verified，列检查器入口、失败条件、正负证据与边界>
+
+## 仅陈述与未验证
 - **stated**：<只写在散文里、靠助手自觉的项>
-- **unverified**：<建了但没验证过的项 + 为什么>
+- **unverified**：<缺少哪一种证据 + 为什么>
 
 ## 检查器已被证明会失败
 <粘上故意破坏后的失败输出摘要>

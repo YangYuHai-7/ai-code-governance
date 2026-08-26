@@ -89,6 +89,8 @@ gates_by_task_type:
 2. **`command:` 与 `manual: true` 必须区分。** 有命令的门禁是机器事实；`manual: true` 的门禁是助手声明——它在报告里必须**附证据**，否则它就是一句"我觉得可以了"（P5）。把两者混成一个列表，就等于把声明伪装成验证。
 3. **按任务类型裁剪**（P6）。文档任务要求跑迁移测试，只会训练出跳过门禁的习惯。
 
+`doctor` 可以保留一个 warn-only 的采用/诊断入口，但**被完整门禁调用的入口必须显式 strict**（例如 `harness doctor --strict`），不得依赖开发者碰巧设置环境变量。README 里的强制力声明必须指向 strict 入口；warn-only 入口只能描述为诊断工具。
+
 ---
 
 ## `task.yaml`：单个任务的契约
@@ -100,6 +102,7 @@ task:
   created_at: YYYY-MM-DDTHH:MM
   updated_at: YYYY-MM-DDTHH:MM
   owner: <人或团队>
+  implementation_generation: 0   # 每次进入 implementing 递增；旧 gate receipt 立即失效
 
 classification:
   type: feature | bugfix | migration | investigation | docs | review
@@ -124,6 +127,7 @@ gates:                            # 从 gates_by_task_type 实例化，逐条带
     status: pending | passed | failed | blocked | acked
     evidence: <命令 + 输出摘要 / 声明 + 证据>
     checked_at: YYYY-MM-DDTHH:MM
+    generation: 0                 # 必须等于当前 implementation_generation
 
 state:
   current: <见状态机>
@@ -147,6 +151,20 @@ audit:
 **`permissions` 是这份文件里最重要的块**，别省。它把"谁在什么时候授权了对什么的写权限"写成可审计事实，而不是留在某条被压缩掉的对话里。`data_access: read-write` 而 `granted_by` 为空 = 门禁失败。
 
 **`profiles` 字段把 L9 接回 L2**：恢复一个任务时，助手不用重新猜要加载什么。
+
+### Gate receipt 的新鲜度是不变量
+
+`passed` 不是永恒属性，而是“某个 gate 对某一代实现的证据”。运行时必须：
+
+1. 每次从任何状态进入 `implementing` 时递增 `implementation_generation`；
+2. 原子地把全部 gate 重置为 pending，并清除旧 evidence/checked_at/generation；
+3. machine gate 与 manual attestation 只允许在 `verifying` 写入，并记录当前 generation；
+4. completion 要求 required gate 集合与 `gates_by_task_type` 完全一致，每项 passed/acked 都有非空证据、
+   合法时间且 generation 等于当前代；
+5. 完成时记录 `completed_generation`，供 doctor 与接手者核对。
+
+只比较 status 会产生“旧证据证明新实现”的假完成。时间戳本身也不够；generation 或稳定 change
+fingerprint 才是证据归属。
 
 ---
 
@@ -180,8 +198,11 @@ audit:
 
 - **每次转移都追加到 `state.history`**，带时间与原因。历史比当前状态更有用——它回答"上次为什么停在这"。
 - **不允许跳到 `complete`**：必须经过 `verifying`。
+- **`complete` 只有专用命令能进入**：通用 `transition` 必须显式拒绝终态 `complete`，即使状态表里
+  存在 `verifying → complete`。专用命令先运行完整 task validation，再原子执行终态转移。
 - **`implementing` 之前必须有 `awaiting_approval` → 已确认**（大任务与敏感任务强制；小任务可跳过 `planning`/`awaiting_approval`，但要在 history 里写明"按小任务跳过"）。
 - **`gate_failed` 与 `gate_blocked` 是两回事**：前者是"我做错了"，后者是"这里本来就坏了"。混成一个状态，会让先存在的问题被当作本次改动的锅，然后被顺手"修一修"——那就是搭车改动。
+- 文档列出的每个非终态都必须在同一个机器可读转移表中有可达的入口与出口，并带负向测试。`paused` 要保存并只恢复到 `resume_state`；`gate_blocked` 要保存 gate 名与证据；`superseded` 要保存新的 task slug。只写在表格里的状态不是运行时能力。
 
 `gate_blocked` 的上报格式（与 [principles.md](principles.md) P4 同一份）：
 
@@ -209,7 +230,8 @@ Next action: <具体清理动作或需要谁决策>
 | 计划执行中发现方案不成立 | 回 `planning`，说明为什么，不要在 `implementing` 里悄悄换方案 |
 | 发现范围外的真实问题 | 记录下来单独报，**不在本次改动里顺手修**（搭车改动会让评审失效） |
 | 状态文件与实际工作树不一致 | 以工作树为准（P3），修状态文件，并在 history 里记这次纠偏 |
-| 运行时自身坏了（脚本报错） | 警告 + 继续（P9），并把这层标为「未验证」直到修好 |
+| ambient `status` / `resume` / `session-start` 自身坏了 | 警告 + 继续（P9），并把这层标为 `unverified` 直到修好 |
+| delivery gate / `complete` / strict doctor 自身坏了 | 非零退出，记 `gate_failed` 或 `gate_blocked`；不得把跳过的断言算成通过 |
 
 ---
 
@@ -241,17 +263,32 @@ Next action: <具体清理动作或需要谁决策>
 
 `doctor` 由 L8 检查器调用（或反过来），这样**运行时自身的完整性也被门禁覆盖**。
 
+`resume` 的恢复包必须包含 `permissions`、`context`、`fallback`、`audit`、当前 generation 与 gate receipt
+摘要；对敏感/读写任务省略这些字段会让接手者看不到授权、脱敏或已使用的例外。
+
+### L9 必需负向矩阵
+
+只测非法 enum 不足以证明完成语义。至少回放：
+
+- passed/attested → 重新 implementing → 未重验 complete 必须失败；
+- 通用 transition 到 complete 必须失败；
+- 删除 required gate、重复 gate、空 evidence/checked_at、旧 generation 必须失败；
+- strict doctor 必须让非法终态继续可见，不能因为 status 隐藏 complete 而漏掉；
+- 修复并对当前 generation 重验后，专用 complete 必须成功。
+
 ---
 
 ## 严格度与迁移友好
 
 引入这层时仓库里已经有一堆在做的事。所以：
 
-- **默认宽松**：`task.yaml` 缺字段 → 警告并说明缺什么。
-- **可选严格**：`<PREFIX>_HARNESS_STRICT_STATE=1` 把警告升为失败。CI 或成熟之后再打开。
+- **默认宽松的 status/resume**：采用期读取旧 task 时，缺字段可以警告并说明缺什么。
+- **显式 strict 的 delivery doctor**：`gate` / pre-commit / CI 必须调用显式 strict 入口；缺字段、schema
+  错误或 checker exception 非零，不得依赖开发者碰巧设置环境变量。
 - **允许无任务工作**：不是所有工作都要先 `intake`。没有匹配任务时钩子只提示，不阻塞（P9）。
 
-宽松默认不是妥协，是让这层能被真正采用的前提——上线第一天就 hard fail 的运行时，会在第三天被 `_HOOKS=off` 永久关掉。
+宽松的交互读取不是妥协，是让这层能被真正采用；但它不能被当成交付证据。交付入口必须 strict，
+否则“0 issues”可能只是整段校验被跳过。
 
 ---
 
@@ -276,4 +313,6 @@ Next action: <具体清理动作或需要谁决策>
 | `task.yaml` 与实际工作树长期不一致 | 状态文件变成第二个需要维持为真的事实（P1、P3） |
 | 用状态文件代替和用户确认 | `awaiting_approval` 是个状态，不是一次确认。写进文件不等于对方同意了 |
 | 门禁失败就改门禁定义 | 门禁的价值全部来自"它挡得住"（P4） |
+| 重新实现后沿用旧的 passed/acked | 旧证据没有验证新实现；这是最隐蔽的假完成 |
+| 通用 transition 能进入 complete | 绕过专用 completion validation，状态机形同虚设 |
 | 状态机加到二十个状态 | 状态机的用途是让下一个人知道现在能做什么；状态越多越没人维护 |

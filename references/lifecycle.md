@@ -50,9 +50,32 @@
 
 ```markdown
 ## Candidates
-- [ ] 2026-08-14 AI 第二次在没有权限门的接口上加了写操作 → 候选：L3 权限规则 / L8 检查
-- [ ] 2026-08-19 `drift_check` 被 ack 三次，理由都是"只改了注释" → 候选：收窄核心层目录判据
+- [ ] 2026-08-14 | owner: platform | review-by: 2026-09-14 | AI 第二次在没有权限门的接口上加了写操作 → L3 权限规则 / L8 检查
+- [ ] 2026-08-19 | owner: devex | review-by: 2026-09-01 | `drift_check` 被 ack 三次，理由都是"只改了注释" → 收窄核心层目录判据
 ```
+
+候选必须有 owner 与 `review-by`；没有负责人/复查日期的 checkbox 不是队列，只是愿望。文件头再记录
+`last_health_check`、`next_health_check` 与证据位置（命令输出摘要、ack 统计或评审链接）。日期逾期本身可以
+warning，但不得继续把这层描述成“周期运行中”。
+
+这些不是只给人看的格式建议。完整档必须提供可机读状态（可用 `lifecycle-state.yaml`，或由检查器严格解析
+上述 Markdown 行），至少包含：
+
+```yaml
+last_health_check: 2026-08-26
+next_health_check: 2026-11-26
+health_status: current # current | due | unverified
+evidence: docs/ai/evidence/health-2026-08-26.txt
+candidates:
+  - id: GOV-001
+    owner: platform
+    review_by: 2026-09-14
+    status: proposed # proposed | accepted | rejected | implemented | retired
+    source: review-2026-08-14
+```
+
+L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零退出。无法机器重验的事实要标 `unverified`，
+不能因为正文仍存在就沿用上个周期的 `current`。
 
 ---
 
@@ -62,7 +85,7 @@
 
 | 问 | 是 → 放进 |
 | --- | --- |
-| 这是一条**必须永远成立**的禁令/要求，且能被判定？ | **L3 常驻规则**（`00_always.mdc`，谨慎——这层要小） |
+| 这是一条**必须永远成立**的禁令/要求，且能被判定？ | **L1 常驻规则**（`00_always.mdc`，谨慎——这层要小） |
 | 这条只在**某类工作**里成立？ | **L3 档案规则** + 在 L2 的对应档案里引用 |
 | 这是一个**已经犯过的具体错误**，需要展示对错？ | **L4 反模式**（Wrong / Right / Why wrong） |
 | 这是一段**会重复执行的流程**？ | **L5 命令**（可带用户参数） |
@@ -115,13 +138,15 @@
 - [ ] 钩子探针跑通；跑不通的层在 README 里被标为「未验证」。
 
 **内容**
-- [ ] L3 常驻规则仍然全部是**必须永远成立**的（这层最容易膨胀）。
+- [ ] L1 常驻规则仍然全部是**必须永远成立**的（这层最容易膨胀）。
 - [ ] 每个档案的 `required` 清单仍然是"读完这些就能开工"的最小集，不是"相关的都塞进来"。
 - [ ] L4 每条反模式都还是真实发生过的，不是想象的。
 - [ ] 知识层每个模块页的 `Verification Notes` 指向的文件还存在。
 
 **强制力**
 - [ ] 过去一个周期里检查器**真的失败过**（一直全绿：要么很好，要么它没在检查东西——去故意破坏一个文件验一次）。
+- [ ] `acceptance-contract.json` 中所有适用 probe 有当前周期的 negative + recovery 证据；L9/L10 的
+  completion freshness 与 Stop closure 仍能跑通。
 - [ ] ack 频率与理由分布：某个门禁被高频 ack → 判据错了，修判据。
 - [ ] `<PREFIX>_AI_GATE=off` / `_HOOKS=off` 是否已成为某些人的默认（问一句就知道）。
 - [ ] warn 数量没有在长期上涨（warn 是"以后再说"的堆积处）。

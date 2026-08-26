@@ -1,0 +1,205 @@
+{
+  "schema_version": 2,
+  "claim_states": {
+    "present": "The artifact exists and its declared references resolve.",
+    "reachable": "The default bootstrap, context router, capability catalog, or native adapter provides a concrete path to the artifact.",
+    "enforced": "The real delivery entrypoint exits non-zero for the claimed violation, and a targeted negative probe has demonstrated that failure and subsequent recovery.",
+    "real_client_verified": "The declared client or platform executed its real configured entrypoint successfully; synthetic invocation alone is insufficient."
+  },
+  "failure_policy": {
+    "delivery_checker_exception": "A checker invoked as completion, pre-commit, or CI evidence must exit non-zero on internal errors or malformed governed input.",
+    "ambient_hook_exception": "An ambient client hook may warn and exit zero to preserve repository usability, but the affected claim becomes unverified until repaired.",
+    "optional_environment_dependency": "A missing local-only or explicitly optional dependency may warn only when the checker names the skipped assertion and the claim is not reported as enforced."
+  },
+  "evidence_required": [
+    "real_entrypoint",
+    "negative_exit_and_diagnostic",
+    "recovery_exit_and_diagnostic",
+    "remaining_boundary"
+  ],
+  "project_result_manifest": {
+    "contract_path": "docs/ai/acceptance-contract.json",
+    "recommended_path": "docs/ai/acceptance-results.json",
+    "allowed_statuses": [
+      "pass",
+      "fail",
+      "not-applicable",
+      "unverified"
+    ],
+    "required_fields": [
+      "id",
+      "status",
+      "applies",
+      "applicability_reason",
+      "entrypoint",
+      "negative_evidence",
+      "recovery_evidence",
+      "remaining_boundary"
+    ],
+    "coverage": "Every required_probe_families id appears exactly once. Applicable probes cannot be not-applicable; pass requires a real entrypoint plus negative and recovery evidence; when a probe requires real-client evidence, missing that evidence is unverified rather than pass."
+  },
+  "required_probe_families": [
+    {
+      "id": "broken-exact-path",
+      "applies_when": "The framework declares required files or exact local references.",
+      "negative_case": "Remove one required exact target while preserving the reference.",
+      "expected_failure": "The real structure gate exits non-zero and names the missing target plus a repair action.",
+      "recovery_case": "Restore the target without changing the checker.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "Missing exact references are rejected."
+    },
+    {
+      "id": "empty-glob",
+      "applies_when": "Any context, verification, or ownership declaration uses a required glob.",
+      "negative_case": "Replace one required glob with a syntactically valid zero-match pattern.",
+      "expected_failure": "The real structure gate exits non-zero and distinguishes zero matches from an invalid pattern.",
+      "recovery_case": "Restore a pattern with at least one intended match.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "Required globs cannot silently resolve to an empty set."
+    },
+    {
+      "id": "required-profile-set",
+      "applies_when": "A context map or verification profile registry is delivered.",
+      "negative_case": "Set the profile registry to null or an empty object, or remove a required profile.",
+      "expected_failure": "The real structure gate exits non-zero and names the missing minimum profile contract.",
+      "recovery_case": "Restore the project-evidenced profile set and required fields.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "The routing and verification registries cannot be syntactically valid but semantically empty."
+    },
+    {
+      "id": "routing-disambiguation",
+      "applies_when": "Two or more profiles can be selected by natural-language triggers or overlapping paths.",
+      "negative_case": "Run representative repository phrases and paths that should select exactly one profile or an explicitly declared multi-profile set.",
+      "expected_failure": "The routing probe exits non-zero for an unexpected collision, omission, or ambiguous product-versus-coding-governance match.",
+      "recovery_case": "Narrow triggers or declare the intended multi-profile result, then replay the same examples.",
+      "expected_recovery": "Every example resolves to its expected ordered profile set.",
+      "proves": "Routing semantics, not just referenced files, are testable and unambiguous for real project requests."
+    },
+    {
+      "id": "capability-unreachable",
+      "applies_when": "The framework contains skills, commands, or agents.",
+      "negative_case": "Leave a capability file present but remove every bootstrap, router, catalog, and native-adapter path to it.",
+      "expected_failure": "The real structure gate exits non-zero and names the unreachable capability.",
+      "recovery_case": "Restore one concrete and valid discovery path.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "A capability cannot be counted as reachable merely because its file exists."
+    },
+    {
+      "id": "endpoint-wrong-method",
+      "applies_when": "A memory assertion declares an HTTP method and path.",
+      "negative_case": "Use the right path under the wrong method and, for compound router conditions, cross-pair methods and paths from different branches.",
+      "expected_failure": "The real drift gate exits non-zero for both the simple mismatch and any cross-branch false pairing.",
+      "recovery_case": "Restore the exact supported method-path pair or explicitly declare the project ANY-method convention.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "Method and path are paired rather than independently found in nearby source text."
+    },
+    {
+      "id": "source-frontmatter-bad-path",
+      "applies_when": "Memory source front matter declares related_memory or verified_from paths.",
+      "negative_case": "Use an empty list, a missing path, or a related memory page absent from the ownership index.",
+      "expected_failure": "The real drift gate exits non-zero and names the invalid field and target.",
+      "recovery_case": "Restore non-empty, existing, owned paths.",
+      "expected_recovery": "The same gate exits zero.",
+      "proves": "Source evidence paths and memory ownership are parsed and validated, not detected by field-name text alone."
+    },
+    {
+      "id": "memory-owner-mismatch",
+      "applies_when": "Core code changes require synchronization with module memory pages.",
+      "negative_case": "Change one core owner and update only an unrelated memory page.",
+      "expected_failure": "The real drift or pre-commit entrypoint exits non-zero and names the missing owning memory page.",
+      "recovery_case": "Update the memory page mapped to every changed core owner.",
+      "expected_recovery": "The same entrypoint exits zero.",
+      "proves": "Any memory edit is not accepted as a substitute for the corresponding owner update."
+    },
+    {
+      "id": "checker-internal-error",
+      "applies_when": "A checker is used as delivery, pre-commit, or CI evidence.",
+      "negative_case": "Provide malformed governed shape or force a checker read/parse exception without removing an independently required sentinel file.",
+      "expected_failure": "The delivery entrypoint exits non-zero and identifies the checker error; it must not downgrade the skipped assertion to a successful warning.",
+      "recovery_case": "Restore valid governed input or repair the checker.",
+      "expected_recovery": "The same delivery entrypoint exits zero.",
+      "proves": "Explicit delivery evidence fails closed even though ambient hooks may fail open."
+    },
+    {
+      "id": "strict-runtime-invalid-task",
+      "applies_when": "A long-running task runtime is delivered.",
+      "negative_case": "Inject an invalid task type, illegal history transition, missing conditional metadata, or incomplete required gate set.",
+      "expected_failure": "The real delivery gate invokes strict doctor behavior and exits non-zero.",
+      "recovery_case": "Restore a schema-valid task and legal transition history.",
+      "expected_recovery": "The same delivery gate exits zero.",
+      "proves": "Runtime integrity is enforced by the delivery entrypoint rather than an optional environment setting."
+    },
+    {
+      "id": "runtime-completion-freshness",
+      "applies_when": "The runtime can return from verifying to implementing and later complete.",
+      "negative_case": "Pass or attest all gates, re-enter implementing, return to verifying, and attempt completion without rerunning or reattesting them.",
+      "expected_failure": "Completion exits non-zero because receipts belong to an older implementation generation.",
+      "recovery_case": "Rerun every machine gate and reattest every manual gate for the current generation.",
+      "expected_recovery": "Completion succeeds and records the completed generation.",
+      "proves": "Old evidence cannot prove a newer implementation."
+    },
+    {
+      "id": "runtime-complete-single-entry",
+      "applies_when": "The runtime exposes both generic transitions and a completion command.",
+      "negative_case": "Attempt a generic transition to complete, remove a required gate, or mark a gate passed without evidence, checked time, or current generation.",
+      "expected_failure": "Every bypass attempt exits non-zero; terminal tasks with invalid completion evidence remain visible to strict status or doctor.",
+      "recovery_case": "Use the dedicated completion command with the exact required gate set and complete current evidence.",
+      "expected_recovery": "The dedicated completion command succeeds.",
+      "proves": "Completion has one guarded entrypoint and validates structure, evidence, and freshness atomically."
+    },
+    {
+      "id": "hook-tool-payload-classification",
+      "applies_when": "Post-tool-use events feed a write ledger.",
+      "negative_case": "Replay the real client schema for a read carrying file_path and for each write tool shape, including freeform patch and shell writes.",
+      "expected_failure": "The probe exits non-zero if a read is recorded as a write or a real write is absent from the exact-or-opaque ledger lower bound.",
+      "recovery_case": "Use client-specific adapters keyed by tool identity and replay the same fixture matrix.",
+      "expected_recovery": "Reads produce no write record; every write produces an exact path or opaque marker.",
+      "proves": "The ledger classifies actual client operations rather than assuming every path-bearing payload is a write."
+    },
+    {
+      "id": "opaque-write-git-cross-check",
+      "applies_when": "A stop hook accepts opaque shell-write markers.",
+      "negative_case": "Record only an opaque marker while changing a governed file in a temporary Git checkout.",
+      "expected_failure": "The real Stop entrypoint resolves the changed path and blocks with the proportional obligations.",
+      "recovery_case": "Satisfy the current obligations or restore the worktree.",
+      "expected_recovery": "The same Stop entrypoint allows completion when no current obligations remain.",
+      "proves": "Version-control changes are merged with the ledger, or the hook reports enforcement unverified when version control is unavailable."
+    },
+    {
+      "id": "stop-verification-closure",
+      "applies_when": "A Stop hook blocks completion until gates or knowledge synchronization are satisfied.",
+      "negative_case": "Write governed code and invoke the real Stop entrypoint before verification.",
+      "expected_failure": "Stop exits non-zero and prints exact obligations.",
+      "recovery_case": "Run the required gates, synchronize the owning memory, persist a receipt bound to the current write generation or change fingerprint, and invoke Stop again.",
+      "expected_recovery": "The second Stop exits zero without using ack or a kill switch.",
+      "proves": "The hook has a normal write-block-verify-allow success path rather than an endless block loop."
+    },
+    {
+      "id": "ack-atomic-single-consume",
+      "applies_when": "Any hard enforcement entrypoint supports an audited ack.",
+      "negative_case": "Create one ack and invoke the owning enforcement entrypoint twice against the same or a changed change set.",
+      "expected_failure": "Exactly one invocation may consume the ack; the second blocks. A changed fingerprint never reuses the first ack.",
+      "recovery_case": "Create a new reasoned ack explicitly scoped to the new enforcement entrypoint and change fingerprint.",
+      "expected_recovery": "That entrypoint consumes it once and records the reason.",
+      "proves": "single_use is behavior enforced atomically, not a descriptive JSON field."
+    },
+    {
+      "id": "precommit-entrypoint-replay",
+      "applies_when": "A repository pre-commit hook is claimed installed or enforced.",
+      "negative_case": "Invoke the tracked pre-commit entrypoint in a temporary Git checkout with a deterministic failing governance condition.",
+      "expected_failure": "The hook entrypoint exits non-zero; calling only an underlying checker does not satisfy this probe.",
+      "recovery_case": "Repair the condition and invoke the same tracked hook entrypoint again.",
+      "expected_recovery": "The hook exits zero and any scoped ack or receipt has the documented lifecycle.",
+      "proves": "Installed, entrypoint-replayed, and change-sync-enforced are reported as separate evidence states."
+    },
+    {
+      "id": "lifecycle-maintenance-metadata",
+      "applies_when": "A complete framework delivers L11 improvement candidates or periodic health checks.",
+      "negative_case": "Remove an improvement candidate owner or review date, omit last or next health-check metadata, or use an unknown lifecycle status.",
+      "expected_failure": "The real framework gate exits non-zero and names the missing or invalid machine-readable lifecycle field; facts that cannot be rechecked remain unverified rather than silently current.",
+      "recovery_case": "Restore an accountable owner, review date, allowed status, and last and next health-check metadata, then replay the same gate.",
+      "expected_recovery": "The framework gate exits zero and the candidate remains queryable as an owned queue item rather than a prose checkbox.",
+      "proves": "L11 has accountable maintenance state and a scheduled revalidation loop."
+    }
+  ]
+}

@@ -95,7 +95,12 @@ services:
 ```
 ````
 
-检查器对每条断言验证：文件存在 → 路由在该文件里看起来确实注册了（匹配 HTTP 方法 + 路径静态段）→ 方法名在该文件里存在。
+检查器对每条断言验证：先按 schema 确认集合/字段 shape → 文件存在 → 路由在该文件里看起来确实
+注册了（**同一个注册分支里**同时匹配 HTTP 方法 + 路径静态段）→ 方法名在该文件里存在。声明
+`method: GET` 时，只有 `POST` 或完全不限制方法的同路径实现不能算通过；若实现确实接受任意方法，
+断言应明确使用项目约定的 `ANY`，不能虚构 GET 约束。复合布尔条件要测试交叉配对：
+`(GET && /a) || (POST && /b)` 不能让 `GET /b` 通过。窄语法 parser 无法证明的路由必须标注边界或改用
+项目 AST/路由注册表，不得靠整段文本同时出现 token。
 
 这不是类型级证明，是**廉价的存在性证明**——而存在性正好覆盖了最高频的漂移（接口被删、方法被改名、文件被移动）。
 
@@ -103,8 +108,14 @@ services:
 - 本地 markdown 链接可解析。
 - 反引号里的仓库路径存在。
 - `sources/` 的 front matter 完整且取值在枚举内。
+- `related_memory` 与 `verified_from` 列表能被真正解析，列表非空、每个路径存在；`related_memory` 页面在 `INDEX.md` 中有 owner。只检查字段名出现过不算验证。
 - 生成文档在 `INDEX.md` 里有 owner，且能被解析。
+- 模块集合从 `INDEX.md` 或 `docs/memory/*/README.md` 派生，不能在检查器里硬编码建立时已有的三个模块；
+  新增但缺必需章节的模块必须失败。
 - 目录名没有不可见字符 / 近似重复（`user-resource` 与 `user_resource` 并存是真实事故）。
+
+受管 JSON/YAML 合法但 shape 错误（例如 `endpoints` 是 object 而不是 array）属于 delivery failure；顶层 catch
+不得把整个断言族降级为 warning。只有明确依赖本地可选环境的检查能 warning，且相应声明保持 unverified。
 
 ### 来源记录的 front matter
 
@@ -124,6 +135,8 @@ sensitivity: public | internal | sensitive
 
 三个字段是关键：`source_type`（这条知识的证据强度）、`verified_from`（它是对着哪些代码验证的）、`sensitivity`（决定能不能被复制到别处）。
 
+负向探针必须至少把一个 endpoint 的 method 改错，以及把一条 `verified_from` / `related_memory` 改成不存在路径，证明漂移门禁分别失败。
+
 ### 生成式文档：唯一生成器，永不手改产物
 
 契约类文档（OpenAPI 之类）如果同时能手改和生成，就会有两个源。规则：**代码注解是源，产物由命令生成，任何人不得手改产物。** 并且：
@@ -136,17 +149,23 @@ sensitivity: public | internal | sensitive
 最有效的一条机器检查：
 
 ```text
-若 本次改动集合 ∩ 核心层目录 ≠ ∅
-  且 本次改动集合 ∩ docs/memory/ = ∅
+若 某个 owning code path 在本次改动集合中
+  且 该 path 映射的 owning memory page 不在本次改动集合中
   且 没有有效 ack
-则 失败，并列出最多 8 个核心文件 + 修复动作 + ack 命令
+则 失败，并列出核心文件、缺失 owner page、修复动作与 ack 命令
 ```
 
 要点：
-- 「核心层」是一个**具体目录列表**，不是"重要的代码"。
+- `INDEX.md` 或单独的机器 ownership map 是代码路径 → memory page 的唯一映射源。任意
+  `docs/memory/` 文件发生变化不能满足另一个 owner；每个受影响 owner 都必须同步。
+- 「核心层」是一个**具体目录列表**，不是"重要的代码"；没有 owner 的核心路径必须作为 gap 或失败，
+  不能静默落入“任意 memory”兜底。
 - 无法解析改动集合时（不在 checkout 里、git 报错）→ 警告并跳过（P9）。
 - 逃生舱：`<pkg> run gate:ack -- "<理由>"`，被审计（P8）。
 - 这条判定与 `stop` 钩子**共用同一个函数**，否则 CLI 与钩子会静默地不一致。二者只在提问范围上不同：钩子问"**本次会话**是否留下了没有知识同步的核心改动"，CLI 问"**这个工作树**是否可交付"。
+
+负向 fixture 至少修改 owner A 的代码、只更新 owner B 的 memory，并证明真实 drift/pre-commit 入口失败；
+恢复为更新 owner A 后，同一入口通过。
 
 ---
 
