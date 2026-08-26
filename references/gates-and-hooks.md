@@ -47,13 +47,17 @@
 | 12 | **改动集合与文档同步的比例关系** | 见下面「比例化门禁」 |
 | 13 | 垃圾文件（`.DS_Store` 之类）未被提交 | 廉价，且脏目录会让符号链接检查产生噪音 |
 
-### fail 还是 warn：一条明确的判据
+### fail 还是 warn：先区分入口，再判断依赖
 
-**warn（不失败）**：依赖未跟踪的本地产物（本机符号链接、gitignored 目录）、依赖兄弟仓库、或依赖只在某些开发机存在的工具的条件。
+| 场景 | 结果 | 原因 |
+| --- | --- | --- |
+| 显式 delivery gate / pre-commit / CI 的 checker 内部异常、必需输入不可读、受管 schema 错误 | **fail** | 跳过检查后仍 exit 0 会制造虚假完成证据 |
+| ambient 客户端 hook 自身异常 | warn + exit 0 + 对应声明降为 `unverified` | 后台守卫不能让客户端或仓库不可工作 |
+| 未跟踪本地产物、gitignored 目录、兄弟仓库、明确可选且只在部分机器存在的工具缺失 | warn | 每个新 clone 都 hard fail 会摧毁采用 |
+| 被声明为 required / enforced 的工具或输入缺失 | **fail** | 既然是完成条件，就不能同时被当作可选环境差异 |
 
-**理由**：hard fail 会让**每一次新 clone 都失败**。第一条命令就红的仓库，会让新同事对整套框架失去信任（P9）。
-
-这条判断**必须作为注释写在检查器代码里**，附上"为什么这里不能 fail"，否则后人会顺手"改严一点"。
+每个 warning 都必须命名**跳过了哪一项断言**、为什么只能 warn，以及该声明当前只能是
+`stated` / `unverified`。这个判断要作为注释写进实现，不能只在 README 里解释。
 
 ### 不能被机器检查的部分，要说出来
 
@@ -65,6 +69,34 @@
 - **一次跑完报告所有失败**，不要第一条就退出。收集到数组里最后统一打印——助手会一次修完全部。
 - **失败信息里的路径可点击**（仓库相对路径）。
 - 单一实现：同一条判定被 CLI 与钩子两处消费时，逻辑写在共享库里的一个函数（P8）。
+- **先验证 schema，再迭代语义**。合法 JSON/YAML 但数组写成 object、profile registry 为 null/空、
+  必需文件被同名目录替代都必须产生普通 failure，不能靠顶层 catch 变成 warning。
+- delivery 入口顶层 catch 必须把异常加入 failures 并非零退出；只有 ambient hook dispatch 可以
+  catch 后 warning + exit 0。
+
+### 声明—证据矩阵（交付必需）
+
+不要把“有文件”压扁成“已治理”。每个重要声明按下列维度分别记录：
+
+| 声明 | present | reachable | enforced | real-client-verified | 检查器入口 | 精确失败条件 | 正向证据 | 负向证据 | 剩余边界 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `<声明>` | pass/fail | pass/fail/n-a | pass/fail/n-a | pass/fail/n-a | `<命令>` | `<什么输入必须非零退出>` | `<日期 + 输出摘要>` | `<注入了什么 + 失败摘要>` | `<warn-only / OS / 客户端缺口>` |
+
+判定规则：
+
+- `present` 只证明产物存在且引用能解析。
+- `reachable` 要证明默认入口、context map、能力目录或客户端原生加载机制给出了**具体加载路径**；单纯列在 inventory 里不算。
+- `enforced` 要同时有非零退出的检查器路径与本次跑过的定向负向探针。默认 warn-only、只打印错误、或只有可选严格环境变量才失败的命令只能标 `stated` / `unverified`。
+- `real-client-verified` 必须回放客户端配置中的真实命令或由真实客户端事件触发；直接调用 handler 的合成载荷只证明 handler 存在。
+
+条件探针以 [`assets/acceptance-contract.json`](../assets/acceptance-contract.json) 为最小契约。凡目标仓库使用相应特性，都必须覆盖，而不是只跑“断链 + 缺文件”两个结构探针。契约同时要求负向退出与恢复后通过；只证明“会挡住”却没有正常成功路径，也不能算闭环。
+
+目标仓库先把契约作为版本化快照放在 `docs/ai/acceptance-contract.json`，再保存机器可读的
+`docs/ai/acceptance-results.json`（正典目录不同则等价放置），并让 delivery checker 对照项目内快照校验：
+契约 schema 合法、每个 probe ID 恰好一条、状态只允许 `pass` / `fail` /
+`not-applicable` / `unverified`、适用项不能伪装成 `not-applicable`，且 `pass` 必须同时给出真实入口、
+负向证据和恢复证据。`not-applicable` 要给适用性理由；缺真实客户端证据时用 `unverified`。这样报告中
+“已跑 pre-commit/Stop 探针”不再是无法核对的散文声明。
 
 ---
 
@@ -76,7 +108,9 @@
 2. **每个客户端一处接线。** 客户端只调用一个命令：`node docs/ai/tools/hooks/dispatch.js <event>`。加一个客户端 = 加一个适配器文件，永不重写逻辑。
 3. **根路径无关。** dispatch 同时探测 `docs/ai/...` 与 `<subdir>/docs/ai/...`，这样同一份配置在打开仓库根或打开子目录时都工作（monorepo / 仓库族必需）。
 4. **批量，绝不逐文件。** 写入事件只**记录路径**；lint、语法、文档检查在结束事件里跑一次（P6）。
-5. **fail open。** handler 出错 → 打印警告 → `exit 0`。坏掉的守卫绝不能让仓库不可用（P9）。
+5. **ambient fail open，delivery fail closed。** dispatch/handler 自身异常可打印警告并 `exit 0`，同时把
+   对应能力降为 `unverified`；handler 调用的显式 gate 仍按 delivery checker 规则非零。不要让一个
+   宽泛 catch 把 checker 的失败重写成成功。
 
 ### 四个事件
 
@@ -87,13 +121,19 @@
 | `pre-compact` | 上下文压缩时留痕丢失 | 标记压缩点，要求在细节还在时把留痕落盘 |
 | `stop` | 未做文档同步/知识同步/留痕就宣布完成 | 完成门禁：以非零退出阻塞，给编号修复清单 |
 
-### `post-tool-use`：账本是门禁的输入，所以漏报是绕过
+### `post-tool-use`：先识别工具语义，再解析载荷
 
-匹配器覆盖文件写入类工具**和 shell**。前者的载荷直接带文件路径，记录精确。**shell 不带**——它只带命令字符串——所以匹配到已知的写入形态（原地 `sed`、打补丁、输出重定向、生成脚本）时，记录一个**不透明写入标记**而不是路径。
+账本是门禁的输入，所以**漏报是绕过，误报会让正常使用者关闭门禁**。不能因为 payload 里有
+`file_path` 就认定发生了写入：Read、View、Search 也可能带路径。先按真实客户端的 tool name / event
+type 区分 read 与 write，再用该工具的 schema 提取路径；freeform patch 需要解析 patch header，无法可靠
+解析时记录**不透明写入标记**。shell 只有命令字符串，同样匹配已知写入形态（原地 `sed`、打补丁、
+输出重定向、生成脚本）后记录 opaque marker。
 
 这个边界之所以重要：账本是完成门禁读取的东西。一个**只通过 shell 编辑**的会话会呈现空账本、被归类为"什么都没改"、于是**整个门禁被跳过**。标记的作用是让门禁把账本当作**下界**并去交叉核对版本控制（见下）——这同时覆盖了所有还没人想到的写入路径。
 
-**误报是刻意廉价的**（代价 = 一次 `git diff`），所以模式列表宁可多匹配。但只读命令（列目录、搜索、查状态、跑测试）不匹配——一个什么都匹配的匹配器会让门禁在每条命令后都去查 git，并在已经脏的工作树上过度触发。
+每个已支持客户端都要有载荷 fixture matrix，至少覆盖：path-bearing Read 不记写；精确文件写记录路径；
+freeform ApplyPatch/patch 工具记录所有目标或 opaque；shell 写记录 opaque；只读 shell 不记录。未知客户端
+schema 只能记为 `unverified`，不能从另一个客户端的字段名外推。
 
 ### `stop`：比例化门禁
 
@@ -107,6 +147,25 @@
 
 核心层之所以是知识同步与留痕的触发条件：**那正是行为与接口语义所在**，也正是知识层所记录的东西。框架自身的工具在正典目录里自我文档化，且门禁链已经在校验它。
 
+### Stop 必须有正常成功闭环
+
+账本只说明“发生过写入”，不能说明义务已经履行。Stop 第一次阻断后，运行门禁与同步知识页必须能让
+第二次 Stop **不依赖 ack/kill switch** 正常放行。为此需要一个 verification receipt：
+
+- 绑定当前会话的 write/implementation generation 或稳定 change fingerprint；
+- 记录实际 gate entrypoint、exit code、时间与证据摘要；
+- 核心 owner 的 memory 同步也绑定同一 generation/fingerprint；
+- 任何新的写入都会使旧 receipt 失效；
+- Stop 只接受覆盖当前全部义务的 receipt。
+
+receipt 只能由**成功的真实 gate 入口**生成，不能由用户或 Stop handler 自行补写。生成入口必须：先取
+当前 generation/fingerprint，运行精确义务对应的门禁，再取一次 fingerprint；任一门禁非零或前后指纹
+不同都不得落 receipt。成功时用原子写入记录入口、义务、时间、证据摘要和当前 fingerprint。新的写入
+提升 generation 或改变 fingerprint，自然使旧 receipt 失效。
+
+强制探针必须完整回放：`write → Stop exit non-zero → gate/memory → receipt → Stop exit 0`。如果第二次仍阻断，
+或只能用 ack/off 结束，L10 不能标 `enforced`。
+
 **改动集合怎么解析**（顺序重要）：
 
 1. 以账本为**下界**。
@@ -116,6 +175,8 @@
 这个拆分是刻意的：**版本控制回答"内容是否真的变了"**（`touch` 或 checkout 伪造不了），**修改时间回答"是否发生在本次会话"**。留痕文件是例外，只用修改时间——因为留痕目录是 gitignored，版本控制结构性地看不见它。
 
 **版本控制自身无法回答时**（不在 checkout 里、git 报错）：警告而不是阻塞（P9），但**要说出来**，并要求助手自己确认它改的东西对应的门禁——不要静默退出。
+
+因此，当版本控制不可用时，可以保持 fail-open，但该 Stop hook 对“不透明写入后的范围判定”必须标成 `unverified`，不能继续声称 `enforced`。探针至少要在一个临时 Git fixture 里证明：账本只有不透明标记时，真实改动路径仍会进入比例化门禁。
 
 ### `stop` 只是机械门禁的后备
 
@@ -133,22 +194,31 @@
 
 要点：
 - ack 是**带理由**的，理由会被打印出来（不是静默通过）。
-- ack **限时**（例如 15 分钟）且**单次消费**：钩子读取后清除。
-- CLI 侧的同名门禁**只读不清**——单次生命周期由钩子拥有。这条归属要写下来，否则两处会互相消耗对方的 ack。
-- 两个逃生舱同时作用于钩子与 CLI，因为同一条判定在两处被消费（P8）。
+- ack **限时**（例如 15 分钟）、绑定 enforcement entrypoint + change fingerprint，并由拥有它的入口
+  **原子单次消费**。第一次读取即清除；第二次调用必须阻断。
+- Stop、pre-commit、CI/CLI 若都支持 ack，使用独立 scope 或单一明确 consumer。不得共享一个
+  “CLI 只读不清、期待未来 Stop 清理”的文件——没有真实 Stop 接线时它会在 TTL 内被重复使用。
+- kill switch 是运维退路，不是验收成功路径；启用时必须打印并让该次 enforcement 状态变成 unverified。
 
 ### 验证钩子真的工作
 
-写一个探针命令：`<pkg> run hooks:probe`。它用合成载荷驱动每个事件，并**回放客户端配置里的真实命令**——这才是"一份配置服务多个根路径"的证据。
+写一个探针命令：`<pkg> run hooks:probe`。它用**已声明客户端的真实 payload schema**驱动每个事件，
+并回放客户端配置里的真实命令。它至少覆盖工具分类矩阵、Stop 完整成功闭环和 ack 双次消费；只用一个
+无 `tool_name` 的 `file_path` 合成对象不足以证明 post-tool-use。
 
 每个事件也要能单独驱动以便调试：
 
 ```bash
 echo '{"session_id":"probe","source":"startup"}' | node docs/ai/tools/hooks/dispatch.js session-start
-echo '{"session_id":"probe","tool_input":{"file_path":"src/example.ts"}}' | node docs/ai/tools/hooks/dispatch.js post-tool-use
+echo '{"session_id":"probe-read","tool_name":"Read","tool_input":{"file_path":"src/example.ts"}}' | node docs/ai/tools/hooks/dispatch.js post-tool-use
+echo '{"session_id":"probe-write","tool_name":"Write","tool_input":{"file_path":"src/example.ts"}}' | node docs/ai/tools/hooks/dispatch.js post-tool-use
+echo '{"session_id":"probe-patch","tool_name":"ApplyPatch","tool_input":{"patch":"*** Update File: src/example.ts"}}' | node docs/ai/tools/hooks/dispatch.js post-tool-use
 echo '{"session_id":"probe","trigger":"auto"}' | node docs/ai/tools/hooks/dispatch.js pre-compact
 echo '{"session_id":"probe"}' | node docs/ai/tools/hooks/dispatch.js stop; echo "exit=$?"
 ```
+
+上面的 tool name/字段只是示例；交付时必须替换成目标客户端官方或真实事件观测到的 schema，并保留
+一条 path-bearing Read 反例。
 
 会话临时状态放一个 gitignored 目录（例如 `.ai-runtime/`）。
 
@@ -181,3 +251,7 @@ echo '{"session_id":"probe"}' | node docs/ai/tools/hooks/dispatch.js stop; echo 
 - `pre-commit` 跑同一条门禁链，**不要另写一份逻辑**。
 - 提供 `--no-verify` 之外的可审计路径（同一个 ack 机制），否则人会用 `--no-verify` 并且不留理由。
 - **只在 B4 允许时安装**；否则只打印安装说明。
+- `installed`、`entrypoint replayed`、`change-sync enforced` 分开报告。临时 Git fixture 必须实际执行
+  tracked pre-commit shim：故障条件下非零，恢复后为零；只调用它下面的 gate 不算 hook 入口证据。
+- pre-commit 自己原子消费其 scope 的 ack，或使用绑定本次 index/change fingerprint 的独立 receipt；
+  不得依赖一个尚未接线的客户端 Stop 在未来清理。
