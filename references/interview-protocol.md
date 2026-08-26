@@ -67,6 +67,12 @@ decisions:
     source: user
     status: confirmed
 
+client_support:
+  mode: all_built_in # all_built_in | selected
+  selected_clients: [codex, claude-code, cursor]
+  source: user
+  status: confirmed
+
 selected_packs:
   - id: backend-node
     version: v3.0
@@ -114,6 +120,13 @@ rejected_options: []
 ### Round 5：治理范围
 
 沿用主 skill 的 A–C 组：深度、客户端、受众、正典位置、门禁、逃生舱、知识层。推荐项必须来自侦察，不是全局偏好。
+
+客户端范围是本轮唯一不能被“自动完整模式”或客户端检测替代的选择。用户必须二选一：
+
+- **全部内建客户端**：为 Codex、Claude Code、Cursor 与通用正典建立各自可达入口。
+- **仅指定客户端**：让用户列出客户端，只为这些客户端生成适配器；其余明确记为 `not selected`。
+
+检测到的配置、二进制或当前会话只用于说明“当前可验证什么”，不用于推断“团队未来要支持什么”。
 
 ### Round 6：领域种子
 

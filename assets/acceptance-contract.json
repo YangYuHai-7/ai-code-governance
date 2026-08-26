@@ -67,6 +67,15 @@
       "proves": "The routing and verification registries cannot be syntactically valid but semantically empty."
     },
     {
+      "id": "client-selection-adapter-parity",
+      "applies_when": "The framework generates any client bootstrap or adapter.",
+      "negative_case": "Omit the user-confirmed all-versus-selected decision, remove one selected client's native bootstrap, or claim support for an unselected client.",
+      "expected_failure": "The real structure gate exits non-zero and names the missing decision, selected client without a reachable bootstrap, or unsupported claim.",
+      "recovery_case": "Record the user's explicit support mode and selected client set, restore every selected native bootstrap, and mark all unselected clients not selected rather than supported.",
+      "expected_recovery": "The same gate exits zero while real-client verification remains separately evidenced.",
+      "proves": "Repository detection cannot silently narrow client scope, and adapter coverage matches the user's explicit choice."
+    },
+    {
       "id": "routing-disambiguation",
       "applies_when": "Two or more profiles can be selected by natural-language triggers or overlapping paths.",
       "negative_case": "Run representative repository phrases and paths that should select exactly one profile or an explicitly declared multi-profile set.",
