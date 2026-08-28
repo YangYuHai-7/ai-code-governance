@@ -115,9 +115,33 @@ function validateEntryPoint() {
     'Android',
     'iOS',
     'capability-pack-registry.json',
+    'stack-skill-generation.md',
+    'stack-standard-source-coverage',
+    'stack-skill-coverage',
+    'business-pattern-routing',
   ];
   for (const term of requiredTerms) {
     if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
+  }
+}
+
+function validateGenerationProtocol(protocol) {
+  for (const term of [
+    'stack-sources.json',
+    'stack-skill-map.json',
+    'industry-standard',
+    'business-invariant',
+    'forward-test',
+    'stack-standard-source-coverage',
+    'stack-skill-coverage',
+    'business-pattern-routing',
+    'secure-high-risk-interface',
+    'evaluate-infrastructure-need',
+    'source_ids',
+    'activation_threshold',
+    'evidence_ids',
+  ]) {
+    check(protocol.includes(term), `Stack skill generation protocol lacks required term: ${term}`);
   }
 }
 
@@ -210,6 +234,9 @@ const requiredProbeIds = [
   'client-selection-adapter-parity',
   'routing-disambiguation',
   'capability-unreachable',
+  'stack-standard-source-coverage',
+  'stack-skill-coverage',
+  'business-pattern-routing',
   'endpoint-wrong-method',
   'source-frontmatter-bad-path',
   'memory-owner-mismatch',
@@ -315,7 +342,7 @@ function validateAcceptanceContract(contract) {
   for (const id of requiredProbeIds) check(ids.has(id), `Missing acceptance probe family: ${id}`);
 }
 
-function runNegativeProbe(registry, acceptanceContract) {
+function runNegativeProbe(registry, acceptanceContract, generationProtocol) {
   const before = failures.length;
   const broken = structuredClone(registry);
   broken.packs.push(structuredClone(broken.packs[0]));
@@ -365,16 +392,27 @@ function runNegativeProbe(registry, acceptanceContract) {
     .some((message) => message.includes('Acceptance result manifest lacks required field: negative_evidence'));
   failures.splice(resultManifestBefore);
 
+  const generationProtocolBefore = failures.length;
+  const brokenGenerationProtocol = generationProtocol.replace('business-pattern-routing', 'removed-business-probe');
+  validateGenerationProtocol(brokenGenerationProtocol);
+  const generationProtocolCaught = failures
+    .slice(generationProtocolBefore)
+    .some((message) => message.includes('Stack skill generation protocol lacks required term: business-pattern-routing'));
+  failures.splice(generationProtocolBefore);
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
-  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught');
+  if (!generationProtocolCaught) fail('Negative probe did not catch an incomplete stack skill generation protocol.');
+  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught');
   }
 }
 
 validateEntryPoint();
 const markdownCount = validateMarkdownLinks();
+const generationProtocol = read('references/stack-skill-generation.md');
+validateGenerationProtocol(generationProtocol);
 
 let registry;
 try {
@@ -393,7 +431,7 @@ try {
 }
 
 if (process.argv.includes('--negative-probe') && registry && acceptanceContract) {
-  runNegativeProbe(registry, acceptanceContract);
+  runNegativeProbe(registry, acceptanceContract, generationProtocol);
 }
 
 if (failures.length > 0) {
