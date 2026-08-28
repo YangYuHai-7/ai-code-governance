@@ -220,6 +220,7 @@ actor → workspace/resource authorization → state/revision
 ## 8. 刷新与退休
 
 - 框架大版本、核心库大版本、安全公告或项目架构决定变化时触发刷新。
+- 项目完成权限、统一 Client、adapter 或其他可复用实现时，不等待周期刷新；立即按 [项目能力自动提取与 Skill 升级协议](continuous-skill-evolution.md) harvest 并优先升级已有 Skill。
 - 周期健康检查复核来源 URL、目标版本、被弃用 API 和 routing coverage。
 - Skill 被更强工具/框架约束取代、长期不再路由或对应业务能力删除时退休。
 - 更新来源不自动改写产品代码；先报告差异，再按用户批准的迁移范围修改。

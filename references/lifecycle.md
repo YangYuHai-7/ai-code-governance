@@ -11,7 +11,7 @@
 ## 闭环
 
 ```text
-真实事件（AI 犯错 / 评审重复指出 / 事故 / 新人提问 / 门禁误判）
+真实事件（AI 犯错 / 评审 / 事故 / 新人提问 / 门禁误判 / 已验证的可复用实现）
    │
    ├─► 记为候选（一行，进 candidates 清单，不立刻改框架）
    │
@@ -29,6 +29,8 @@
 
 两个关键动作常被跳过：**"记为候选而不立刻改框架"** 和 **"退休"**。跳过前者会让框架被一次性事故塞满；跳过后者会让它只增不减。
 
+失败驱动闭环解决“下次别再犯”；成功驱动闭环解决“下次直接复用”。权限能力、统一 HTTP Client、adapter、repository、领域事务流程等完成并通过产品验证后，按 [项目能力自动提取与 Skill 升级协议](continuous-skill-evolution.md) 自动执行 harvest。优先升级已有 Skill；新能力满足晋升证据才创建；证据不足进入 candidate。两条闭环共享 owner、review date、证据、负向探针和退休机制。
+
 ---
 
 ## 候选来源
@@ -45,6 +47,9 @@
 | **`gate_blocked` 记录** | 中 | 反复被同一个先存在问题挡住 = 有笔技术债该单独立项 |
 | **上游工具能力变化** | 中 | 新客户端出现、旧客户端加了钩子 API → L0/L1/L10 要更新 |
 | **文档里的陈旧措辞** | 弱 | 由 L8 的陈旧措辞检查产出 |
+| **已验证的可复用功能** | 强 | complete 前扫描 change set；权限、租户、幂等等高后果能力一次即可评估晋升 |
+| **项目统一封装或 adapter** | 强 | 发现新 public export/client/provider 或第二个 consumer，自动查重并 create/update Skill |
+| **既有 capability 实现变化** | 最强 | owning path/public entrypoint 指纹变化使旧 receipt 失效，强制升级 Skill 或记录 no-change 理由 |
 
 候选清单本身很轻：
 
@@ -73,6 +78,8 @@ candidates:
     status: proposed # proposed | accepted | rejected | implemented | retired
     source: review-2026-08-14
 ```
+
+成功实现候选还应记录 `capability_id`、`implementation_paths`、`public_entrypoints`、`consumer_paths`、`verification` 和目标 `skill`。这些字段进入 `docs/ai/capability-evolution.json`，不要塞进 Markdown checkbox 后依赖自然语言解析。
 
 L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零退出。无法机器重验的事实要标 `unverified`，
 不能因为正文仍存在就沿用上个周期的 `current`。
@@ -153,6 +160,8 @@ L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零�
 
 **覆盖**
 - [ ] 上个周期真实发生的 AI 错误里，有几条已经进了框架？零 = 闭环断了。
+- [ ] 上个周期完成的可复用能力是否都有当前 fingerprint 的 harvest receipt？有没有统一封装已经存在，但新代码仍在直接依赖底层库？
+- [ ] adopted capability 的 owning paths、public exports、Skill、profiles 和 routing examples 是否同步？
 - [ ] 有没有层是"建了但没人用"的（尤其 L9）？没人用就降级或删掉，不要留着装样子。
 
 ---
@@ -169,6 +178,8 @@ L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零�
 | 常驻规则行数 | 基本不变 | 单向增长 → 正在变成没人读的文档 |
 | 标为「未验证」的层数 | 递减 | 递增 → 框架在长成装饰 |
 | 闭环回写条数 | 每周期 ≥ 1 | 0 → L11 已死 |
+| capability harvest 覆盖 | 每个行为 change set 有当前 receipt | 缺 receipt 或长期全是 no-skill → 成功学习闭环失效 |
+| 正典能力旁路次数 | 0 或迁移 allowlist 内递减 | 新 raw client/重复权限实现持续出现 |
 
 ---
 

@@ -343,6 +343,40 @@ description: <这是唯一的选中机制。写清"什么时候用"，包含用�
 
 > `description` 写不好，技能就是**静默不可发现**——不是报错，是永远不被选中。
 
+由 capability harvest 生成或升级的项目 Skill，再增加正文绑定块；不要向 front matter 塞客户端不认识的字段：
+
+```markdown
+## 项目能力绑定
+
+- capability_id: `<stable-id>`
+- owner: `<module-or-team>`
+- capability_version: `<integer>`
+- implementation_paths: [`<path-or-glob>`]
+- public_entrypoints: [`<package-export-or-symbol>`]
+- implementation_fingerprint: `<fingerprint>`
+- registry: `<CANON>/capability-evolution.json`
+
+## 正典用法
+<最小 import/call 形状，以及认证、错误、事务、重试或生命周期中的项目决定>
+
+## 禁止旁路
+<只列已声明正典入口后，在 governed paths 内会重复实现或破坏一致性的做法>
+```
+
+同一 `capability_id` 已存在时原地升级，不创建第二个 Skill。实现发生变化但调用契约未变时，可更新 fingerprint 和验证证据，不为了“有改动”虚增 `capability_version`。
+
+### 配套 L11 `capability-evolution.json` 与 harvest receipt
+
+完整 schema 和晋升判据见 [项目能力自动提取与 Skill 升级协议](continuous-skill-evolution.md)。目标模板至少生成：
+
+```text
+<CANON>/capability-evolution.json
+<CANON>/tools/harvest-capabilities.<js|py>
+<CANON>/evidence/skill-harvest-<fingerprint>.json
+```
+
+harvest 命令在产品门禁通过后、complete 前运行；标准档把它接进 delivery gate。它必须产生 create/update/candidate/no-skill/not-applicable 之一，并同步 catalog、profile、routing、memory 和 Skill map。任何后续写入都会使 receipt 失效。
+
 ## L5 `commands/<name>.md`
 
 ```markdown

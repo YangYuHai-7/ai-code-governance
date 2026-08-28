@@ -45,7 +45,9 @@
 | 10 | **钩子配置存在**：客户端配置里的钩子命令与 handler 文件都在 | 钩子一消失，所有客户端静默退回建议模式 |
 | 11 | **知识层断言对代码成立**（见 [memory-layer.md](memory-layer.md)） | 直接对抗 P3 的失败模式 |
 | 12 | **改动集合与文档同步的比例关系** | 见下面「比例化门禁」 |
-| 13 | 垃圾文件（`.DS_Store` 之类）未被提交 | 廉价，且脏目录会让符号链接检查产生噪音 |
+| 13 | **capability harvest freshness**：行为 change set 有当前 fingerprint 的评估 receipt | 成功实现否则不会进入 Skill，后续助手继续重新实现 |
+| 14 | **实现—Skill 漂移与正典能力旁路** | 统一 Client、权限 service 或 adapter 已存在时，拦住旧 Skill 和新 raw implementation |
+| 15 | 垃圾文件（`.DS_Store` 之类）未被提交 | 廉价，且脏目录会让符号链接检查产生噪音 |
 
 ### fail 还是 warn：先区分入口，再判断依赖
 
@@ -139,11 +141,11 @@ schema 只能记为 `unverified`，不能从另一个客户端的字段名外推
 
 要求的强度取决于**这次会话改了什么**（P6）：
 
-| 会话改了什么 | 门禁链 | 知识层同步 | 会话留痕 |
-| --- | --- | --- | --- |
-| 什么都没改，或只改文档 | – | – | – |
-| 非核心代码（配置、工具链、测试、框架自身工具） | 必需 | – | – |
-| 核心层（一个**具体的目录列表**：业务逻辑、接口、数据访问、中间件、任务） | 必需 | 必需 | 必需 |
+| 会话改了什么 | 门禁链 | 知识层同步 | capability harvest | 会话留痕 |
+| --- | --- | --- | --- | --- |
+| 什么都没改，或只改文档 | – | – | `not-applicable` | – |
+| 非核心代码（配置、工具链、测试、框架自身工具） | 必需 | – | 行为未变可 `no-skill-with-reason` | – |
+| 核心层（一个**具体的目录列表**：业务逻辑、接口、数据访问、中间件、任务） | 必需 | 必需 | 必需，绑定当前 fingerprint | 必需 |
 
 核心层之所以是知识同步与留痕的触发条件：**那正是行为与接口语义所在**，也正是知识层所记录的东西。框架自身的工具在正典目录里自我文档化，且门禁链已经在校验它。
 
@@ -155,6 +157,7 @@ schema 只能记为 `unverified`，不能从另一个客户端的字段名外推
 - 绑定当前会话的 write/implementation generation 或稳定 change fingerprint；
 - 记录实际 gate entrypoint、exit code、时间与证据摘要；
 - 核心 owner 的 memory 同步也绑定同一 generation/fingerprint；
+- 行为变化对应的 capability harvest 结论与 Skill 同步义务绑定同一 generation/fingerprint；
 - 任何新的写入都会使旧 receipt 失效；
 - Stop 只接受覆盖当前全部义务的 receipt。
 
