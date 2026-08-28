@@ -2,7 +2,7 @@
 
 面向新建与遗留项目的跨技术栈、跨平台 AI 代码治理 Skill。
 
-AI Code Governance inspects a real repository, interviews the user, and builds an evidence-based governance framework instead of copying generic rules into every project.
+AI Code Governance inspects a real repository, confirms the selected stack and versions, researches current authoritative standards, and generates project-specific coding and business skills inside an evidence-based governance framework.
 
 ## 为什么需要它
 
@@ -14,7 +14,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 2. **最小上下文路由**：根据任务类型加载必要规则，而不是把整个知识库塞进每次对话。
 3. **机器门禁**：检查引用、适配器、知识漂移和完成证据；能机器判断的规则不只写成散文。
 
-它来自真实多仓项目的治理实践，但不携带任何项目特有目录、API 或业务规则。目标项目的规则必须从其代码、测试、事故和用户决策中产生。
+它来自真实多仓项目的治理实践，但不携带一份冻结的“万能最佳实践”。框架惯用法来自目标版本的官方文档、正式标准和权威安全基线；业务写法来自目标项目的需求、代码、测试、事故、ADR 和用户决策。两类证据分别记录，再转换为项目可直接加载的细粒度 Skill。
 
 ## 核心能力
 
@@ -24,6 +24,8 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 多轮访谈 | 区分仓库事实与用户决策，通过决策账本支持跨会话恢复 |
 | 分层治理 | 提供 12 条核心原则和 L0–L11 十二层参考架构 |
 | 技术栈能力包 | 识别前后端与平台组合，同时明确 `supported`、`unverified` 等证据等级 |
+| 标准 Skill 工厂 | 按目标版本检索当前官方规范，生成组件、状态、接口、授权、数据访问、事务、事件等细粒度编码 Skill |
+| 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
 | UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
 | 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
@@ -35,15 +37,17 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 flowchart LR
     A[仓库侦察] --> B[多轮访谈]
     B --> C[确认决策账本]
-    C --> D[分阶段生成治理框架]
-    D --> E[正向门禁与负向探针]
-    E --> F[真实任务试运行]
-    F --> G[反馈进入成长闭环]
+    C --> D[检索当前标准与版本边界]
+    D --> E[生成栈 质量 业务 Skills]
+    E --> F[分阶段生成治理框架]
+    F --> G[正向门禁与负向探针]
+    G --> H[真实任务试运行]
+    H --> I[反馈进入成长闭环]
 ```
 
 ### 1. 侦察
 
-读取项目拓扑、技术栈、构建工具、真实命令、现有文档、AI 入口和历史反模式。能从仓库确定的事实不会反问用户。
+读取项目拓扑、技术栈及版本、构建工具、真实命令、现有文档、AI 入口和历史反模式。Greenfield 使用用户确认的技术选型作为事实；brownfield 优先使用 lockfile、配置和实际 import。
 
 ### 2. 访谈
 
@@ -51,13 +55,13 @@ flowchart LR
 
 ### 3. 计划
 
-在写文件前列出产物、规则来源、上下文档案、门禁链、能力包等级、平台状态和明确不做的事项。引导模式等待确认；自动完整模式在不需要新授权时继续。
+在写文件前列出产物、规则来源、标准检索主题、版本边界、Skill 矩阵、上下文档案、门禁链、能力包等级、平台状态和明确不做的事项。引导模式等待确认；自动完整模式在不需要新授权时继续。
 
 ### 4. 分阶段构建
 
 1. 入口、常驻规则和上下文路由。
 2. 结构检查器、门禁与客户端适配器。
-3. 项目规则、反模式、skills、commands、agents 和验证档案。
+3. 当前技术标准来源、栈基础 Skills、横切质量 Skills、有证据的业务写法 Skills、项目规则、反模式、commands、agents 和验证档案。
 4. 知识记忆、任务运行时、hooks 和成长闭环。
 
 ### 5. 验证
@@ -192,6 +196,7 @@ ai-code-governance/
 │   ├── layers.md
 │   ├── templates.md
 │   ├── capability-packs.md
+│   ├── stack-skill-generation.md
 │   ├── interview-protocol.md
 │   ├── ui-selection.md
 │   ├── cross-platform.md
@@ -209,15 +214,16 @@ node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
 ```
 
-第一条检查 front matter、本地链接、能力包注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包、缺失高风险探针、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
+第一条检查 front matter、本地链接、技术栈 Skill 生成协议、能力包注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包、缺失高风险探针、不完整生成协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
 
-当前基线：15 个 Markdown 文件、16 个能力包；macOS 结构检查与负向探针通过。
+当前基线：16 个 Markdown 文件、16 个能力包；macOS 结构检查与负向探针通过。
 
 ## 设计原则
 
-- 代码和测试高于文档。
+- 项目代码和测试决定当前业务事实；当前官方标准决定目标版本的框架惯用写法。
 - 先侦察、再访谈、最后构建。
-- 规则来自目标项目的真实代码与真实失败。
+- 技术标准必须有来源、版本与采用理由；业务 Skill 必须有项目证据和 owner。
+- 高内聚、低耦合、单一职责、幂等、安全和不过度设计要成为可路由、可验证的横切质量能力。
 - 每条机器禁令都要解释为什么，并尽量由检查器执行。
 - 客户端目录只是适配器，不能成为第二正典。
 - 遗留项目默认不换栈，现代化评估单独立项。
@@ -235,11 +241,13 @@ node scripts/validate-skill.mjs --negative-probe
 
 ## 贡献约束
 
-1. 不从“通用最佳实践”直接生成目标项目规则。
-2. 新能力包先进入 `unverified`，取得可复现证据后再晋级。
-3. 修改能力包状态时同步注册表与说明文档。
-4. 新检查必须带负向探针，证明它真的会失败。
-5. 不把客户代码、内部 API、密钥或原始业务数据提交到本仓库。
+1. 不从无版本、无来源的模型记忆生成“最佳实践”；采用的技术标准必须可追溯到当前权威来源。
+2. 不根据技术栈猜业务规则；业务 Skill 必须来自需求、代码、测试、ADR、事故或用户确认的不变量。
+3. 不用一个巨型框架 Skill 代替可直接路由的细粒度编码任务。
+4. 新能力包先进入 `unverified`，取得可复现证据后再晋级。
+5. 修改能力包状态时同步注册表与说明文档。
+6. 新检查必须带负向探针，证明它真的会失败。
+7. 不把客户代码、内部 API、密钥或原始业务数据提交到本仓库。
 
 ## License
 

@@ -94,6 +94,33 @@
       "proves": "A capability cannot be counted as reachable merely because its file exists."
     },
     {
+      "id": "stack-standard-source-coverage",
+      "applies_when": "The framework generates stack coding skills that claim to adopt current external standards or framework guidance.",
+      "negative_case": "Remove an adopted source's stable id, delete a generated skill's source_ids link, or remove the detected version, retrieval date, or applicability decision.",
+      "expected_failure": "The real structure or delivery gate exits non-zero and names the skill plus its missing or unresolved source id or version evidence.",
+      "recovery_case": "Restore a current authoritative source record with a stable id, version compatibility, an explicit adoption decision, and the skill's source_ids link.",
+      "expected_recovery": "The same gate exits zero while any unresolved version conflict remains visibly unverified.",
+      "proves": "Generated technical standards are traceable to current evidence rather than unsourced model memory."
+    },
+    {
+      "id": "stack-skill-coverage",
+      "applies_when": "The user confirms a technology stack or repository reconnaissance detects stack components, at least one component has adoption required, and the framework generates a capability layer.",
+      "negative_case": "Remove the required coding capability for one component whose adoption is required, break every profile path to that capability, or omit adoption and threshold metadata for a conditional or deferred component.",
+      "expected_failure": "The real structure gate exits non-zero and names the selected component without a reachable implementation skill.",
+      "recovery_case": "Restore a fine-grained skill and at least one declared profile or catalog path to it, or restore explicit conditional/deferred status with activation_threshold and decision_source.",
+      "expected_recovery": "The same gate exits zero without forcing conditional infrastructure into every task.",
+      "proves": "A selected technology is covered by usable coding guidance, not merely listed in an inventory."
+    },
+    {
+      "id": "business-pattern-routing",
+      "applies_when": "The framework generates one or more business-pattern skills from requirements, domain documents, code, tests, ADRs, or user-confirmed business invariants.",
+      "negative_case": "Remove a business skill's evidence or owner, or make its representative request resolve to an unrelated or empty profile set.",
+      "expected_failure": "The real structure or routing gate exits non-zero and names the unsupported or unreachable business capability.",
+      "recovery_case": "Restore real business evidence, an accountable owner, and a routing example that resolves to the intended skill profile.",
+      "expected_recovery": "The same gate and routing replay exit zero.",
+      "proves": "Business-standard writing is grounded in project invariants and reachable from real product requests."
+    },
+    {
       "id": "endpoint-wrong-method",
       "applies_when": "A memory assertion declares an HTTP method and path.",
       "negative_case": "Use the right path under the wrong method and, for compound router conditions, cross-pair methods and paths from different branches.",
