@@ -121,6 +121,42 @@
       "proves": "Business-standard writing is grounded in project invariants and reachable from real product requests."
     },
     {
+      "id": "feature-skill-harvest-freshness",
+      "applies_when": "The framework claims automatic skill evolution and the task change set contains product-code behavior changes.",
+      "negative_case": "Attempt delivery or completion without a harvest receipt, reuse a receipt from an older product_change_fingerprint, change product code after harvest, or modify harvested governance output after finalize so governance_output_fingerprint no longer matches.",
+      "expected_failure": "The real delivery or dedicated completion entrypoint exits non-zero and identifies the missing or stale harvest evaluation.",
+      "recovery_case": "Run machine prepare, complete AI semantic extraction against the current product change set, then finalize and record exactly one current result: updated-existing, created-new, candidate-recorded, no-skill-with-reason, or not-applicable.",
+      "expected_recovery": "The same entrypoint exits zero after the receipt is bound to current product and governance-output fingerprints and all resulting obligations are satisfied.",
+      "proves": "Every behavior change is evaluated for reusable project knowledge before completion."
+    },
+    {
+      "id": "capability-promotion-evidence",
+      "applies_when": "A harvested project capability is promoted to adopted and receives a new or upgraded skill.",
+      "negative_case": "Remove its owner, canonical implementation path or public entrypoint, current verification evidence, stable capability id, or consumer or explicit reuse decision.",
+      "expected_failure": "The real structure or delivery gate exits non-zero and names the adopted capability's missing promotion evidence.",
+      "recovery_case": "Restore complete promotion evidence bound to the current implementation fingerprint, or demote the item to an owned candidate with a review date and explicit gap.",
+      "expected_recovery": "The same gate exits zero without representing an unverified candidate as adopted.",
+      "proves": "Automatic evolution promotes verified reusable capabilities rather than speculative abstractions."
+    },
+    {
+      "id": "skill-implementation-drift",
+      "applies_when": "An adopted capability maps owning implementation paths or public entrypoints to a generated project skill.",
+      "negative_case": "Change the owning implementation, public export, calling contract, or error semantics without updating or revalidating the capability fingerprint and skill.",
+      "expected_failure": "The real drift or delivery gate exits non-zero and names the stale capability id and skill.",
+      "recovery_case": "Upgrade the existing skill and capability version when the contract changed, or record a verified no-contract-change receipt for the current fingerprint.",
+      "expected_recovery": "The same gate exits zero and the skill points to the current canonical implementation.",
+      "proves": "Generated skills evolve with their owning code instead of becoming stale parallel documentation."
+    },
+    {
+      "id": "canonical-capability-reuse",
+      "applies_when": "The project declares a canonical client, adapter, permission service, repository, or other reusable capability for specific governed paths.",
+      "negative_case": "Add a new direct dependency, raw client instance, duplicate permission implementation, or other bypass inside a governed path and outside the audited migration allowlist.",
+      "expected_failure": "The real architecture or delivery gate exits non-zero and names the bypass, canonical capability, governed scope, and repair action.",
+      "recovery_case": "Use the declared public entrypoint or add a reasoned, owned, expiring migration allowlist entry.",
+      "expected_recovery": "The same gate exits zero while legacy migration debt remains visible and does not expand silently.",
+      "proves": "New code reuses the project's latest canonical capability instead of rebuilding or bypassing it."
+    },
+    {
       "id": "endpoint-wrong-method",
       "applies_when": "A memory assertion declares an HTTP method and path.",
       "negative_case": "Use the right path under the wrong method and, for compound router conditions, cross-pair methods and paths from different branches.",

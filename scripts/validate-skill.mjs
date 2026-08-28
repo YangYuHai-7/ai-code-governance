@@ -119,6 +119,11 @@ function validateEntryPoint() {
     'stack-standard-source-coverage',
     'stack-skill-coverage',
     'business-pattern-routing',
+    'continuous-skill-evolution.md',
+    'feature-skill-harvest-freshness',
+    'capability-promotion-evidence',
+    'skill-implementation-drift',
+    'canonical-capability-reuse',
   ];
   for (const term of requiredTerms) {
     if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
@@ -142,6 +147,26 @@ function validateGenerationProtocol(protocol) {
     'evidence_ids',
   ]) {
     check(protocol.includes(term), `Stack skill generation protocol lacks required term: ${term}`);
+  }
+}
+
+function validateEvolutionProtocol(protocol) {
+  for (const term of [
+    'capability-evolution.json',
+    'product_change_fingerprint',
+    'governance_output_fingerprint',
+    'update-existing',
+    'create-new',
+    'candidate-recorded',
+    'no-skill-with-reason',
+    'feature-skill-harvest-freshness',
+    'capability-promotion-evidence',
+    'skill-implementation-drift',
+    'canonical-capability-reuse',
+    'use-project-http-client',
+    'authorize-project-operation',
+  ]) {
+    check(protocol.includes(term), `Continuous skill evolution protocol lacks required term: ${term}`);
   }
 }
 
@@ -237,6 +262,10 @@ const requiredProbeIds = [
   'stack-standard-source-coverage',
   'stack-skill-coverage',
   'business-pattern-routing',
+  'feature-skill-harvest-freshness',
+  'capability-promotion-evidence',
+  'skill-implementation-drift',
+  'canonical-capability-reuse',
   'endpoint-wrong-method',
   'source-frontmatter-bad-path',
   'memory-owner-mismatch',
@@ -342,7 +371,7 @@ function validateAcceptanceContract(contract) {
   for (const id of requiredProbeIds) check(ids.has(id), `Missing acceptance probe family: ${id}`);
 }
 
-function runNegativeProbe(registry, acceptanceContract, generationProtocol) {
+function runNegativeProbe(registry, acceptanceContract, generationProtocol, evolutionProtocol) {
   const before = failures.length;
   const broken = structuredClone(registry);
   broken.packs.push(structuredClone(broken.packs[0]));
@@ -400,12 +429,24 @@ function runNegativeProbe(registry, acceptanceContract, generationProtocol) {
     .some((message) => message.includes('Stack skill generation protocol lacks required term: business-pattern-routing'));
   failures.splice(generationProtocolBefore);
 
+  const evolutionProtocolBefore = failures.length;
+  const brokenEvolutionProtocol = evolutionProtocol.replace(
+    'feature-skill-harvest-freshness',
+    'removed-harvest-probe',
+  );
+  validateEvolutionProtocol(brokenEvolutionProtocol);
+  const evolutionProtocolCaught = failures
+    .slice(evolutionProtocolBefore)
+    .some((message) => message.includes('Continuous skill evolution protocol lacks required term: feature-skill-harvest-freshness'));
+  failures.splice(evolutionProtocolBefore);
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
   if (!generationProtocolCaught) fail('Negative probe did not catch an incomplete stack skill generation protocol.');
-  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught');
+  if (!evolutionProtocolCaught) fail('Negative probe did not catch an incomplete continuous skill evolution protocol.');
+  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught');
   }
 }
 
@@ -413,6 +454,8 @@ validateEntryPoint();
 const markdownCount = validateMarkdownLinks();
 const generationProtocol = read('references/stack-skill-generation.md');
 validateGenerationProtocol(generationProtocol);
+const evolutionProtocol = read('references/continuous-skill-evolution.md');
+validateEvolutionProtocol(evolutionProtocol);
 
 let registry;
 try {
@@ -431,7 +474,7 @@ try {
 }
 
 if (process.argv.includes('--negative-probe') && registry && acceptanceContract) {
-  runNegativeProbe(registry, acceptanceContract, generationProtocol);
+  runNegativeProbe(registry, acceptanceContract, generationProtocol, evolutionProtocol);
 }
 
 if (failures.length > 0) {

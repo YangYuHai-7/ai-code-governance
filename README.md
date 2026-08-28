@@ -2,7 +2,7 @@
 
 面向新建与遗留项目的跨技术栈、跨平台 AI 代码治理 Skill。
 
-AI Code Governance inspects a real repository, confirms the selected stack and versions, researches current authoritative standards, and generates project-specific coding and business skills inside an evidence-based governance framework.
+AI Code Governance inspects a real repository, researches current stack standards, generates project-specific coding and business skills, and continuously upgrades those skills when verified reusable capabilities are implemented.
 
 ## 为什么需要它
 
@@ -26,6 +26,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 技术栈能力包 | 识别前后端与平台组合，同时明确 `supported`、`unverified` 等证据等级 |
 | 标准 Skill 工厂 | 按目标版本检索当前官方规范，生成组件、状态、接口、授权、数据访问、事务、事件等细粒度编码 Skill |
 | 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
+| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后自动 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
 | UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
 | 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
@@ -42,7 +43,10 @@ flowchart LR
     E --> F[分阶段生成治理框架]
     F --> G[正向门禁与负向探针]
     G --> H[真实任务试运行]
-    H --> I[反馈进入成长闭环]
+    H --> I[收割已验证的项目能力]
+    I --> J[升级或创建 Skills]
+    J --> G
+    I --> K[反馈进入成长闭环]
 ```
 
 ### 1. 侦察
@@ -62,7 +66,7 @@ flowchart LR
 1. 入口、常驻规则和上下文路由。
 2. 结构检查器、门禁与客户端适配器。
 3. 当前技术标准来源、栈基础 Skills、横切质量 Skills、有证据的业务写法 Skills、项目规则、反模式、commands、agents 和验证档案。
-4. 知识记忆、任务运行时、hooks 和成长闭环。
+4. 知识记忆、任务运行时、capability harvest、实现—Skill 漂移检查、hooks 和成长闭环。
 
 ### 5. 验证
 
@@ -78,7 +82,7 @@ warn-only 诊断、只有可选严格环境变量才失败、或只跑过合成 
 
 验收契约 v2 还要求高风险闭环：路由样例无意外碰撞、delivery checker 异常非零、对应 owner 的
 memory 同步、L9 gate generation/freshness、complete 唯一入口、真实工具载荷分类、Stop 正常
-`write → block → verify → allow` 路径，以及绑定入口/改动指纹的原子单次 ack。
+`write → block → verify → allow` 路径、能力收割 freshness、正典能力复用，以及绑定入口/改动指纹的原子单次 ack。
 
 ## 支持范围
 
@@ -197,6 +201,7 @@ ai-code-governance/
 │   ├── templates.md
 │   ├── capability-packs.md
 │   ├── stack-skill-generation.md
+│   ├── continuous-skill-evolution.md
 │   ├── interview-protocol.md
 │   ├── ui-selection.md
 │   ├── cross-platform.md
@@ -214,9 +219,9 @@ node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
 ```
 
-第一条检查 front matter、本地链接、技术栈 Skill 生成协议、能力包注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包、缺失高风险探针、不完整生成协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
+第一条检查 front matter、本地链接、技术栈生成与持续升级协议、能力包注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包、缺失高风险探针、不完整生成/升级协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
 
-当前基线：16 个 Markdown 文件、16 个能力包；macOS 结构检查与负向探针通过。
+当前基线：17 个 Markdown 文件、16 个能力包；macOS 结构检查与负向探针通过。
 
 ## 设计原则
 
@@ -224,6 +229,8 @@ node scripts/validate-skill.mjs --negative-probe
 - 先侦察、再访谈、最后构建。
 - 技术标准必须有来源、版本与采用理由；业务 Skill 必须有项目证据和 owner。
 - 高内聚、低耦合、单一职责、幂等、安全和不过度设计要成为可路由、可验证的横切质量能力。
+- 每个产品行为 change set 都要评估是否产生可复用能力；优先升级已有 Skill，没有才创建，证据不足则进入候选。
+- adopted capability 的实现入口、Skill、profile、路由和验证指纹必须一起演进。
 - 每条机器禁令都要解释为什么，并尽量由检查器执行。
 - 客户端目录只是适配器，不能成为第二正典。
 - 遗留项目默认不换栈，现代化评估单独立项。
@@ -244,10 +251,12 @@ node scripts/validate-skill.mjs --negative-probe
 1. 不从无版本、无来源的模型记忆生成“最佳实践”；采用的技术标准必须可追溯到当前权威来源。
 2. 不根据技术栈猜业务规则；业务 Skill 必须来自需求、代码、测试、ADR、事故或用户确认的不变量。
 3. 不用一个巨型框架 Skill 代替可直接路由的细粒度编码任务。
-4. 新能力包先进入 `unverified`，取得可复现证据后再晋级。
-5. 修改能力包状态时同步注册表与说明文档。
-6. 新检查必须带负向探针，证明它真的会失败。
-7. 不把客户代码、内部 API、密钥或原始业务数据提交到本仓库。
+4. 不为每个局部实现无脑新增 Skill；自动 harvest 必须查重，并允许 candidate / no-skill-with-reason。
+5. 项目声明正典 Client、adapter 或权限 service 后，新代码不得绕过；迁移例外必须有 owner、理由和到期时间。
+6. 新能力包先进入 `unverified`，取得可复现证据后再晋级。
+7. 修改能力包状态时同步注册表与说明文档。
+8. 新检查必须带负向探针，证明它真的会失败。
+9. 不把客户代码、内部 API、密钥或原始业务数据提交到本仓库。
 
 ## License
 

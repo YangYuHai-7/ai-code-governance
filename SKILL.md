@@ -1,7 +1,7 @@
 ---
 name: ai-code-governance
 description: >-
-  为代码仓库建立或扩展 AI 编码治理框架：识别用户技术栈并检索当前官方/主流开发标准，结合业务不变量生成细粒度编码 skills，同时建立唯一正典源、上下文路由、AGENTS.md/CLAUDE.md 适配器、知识记忆、机器门禁、hooks 与成长闭环。用户说“AI 编码治理框架”“代码治理框架”“根据技术栈生成开发规范/skills”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。未指定深度时默认自动完整模式；明确指定最小、标准或完整时遵从用户。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
+  为代码仓库建立或扩展可持续升级的 AI 编码治理框架：识别技术栈并检索当前官方/主流标准，结合业务不变量生成细粒度编码 skills，并在权限功能、项目封装或可复用集成完成后自动提取或升级 skills；同时建立唯一正典源、上下文路由、适配器、知识记忆、机器门禁、hooks 与成长闭环。用户说“AI 编码治理框架”“代码治理框架”“根据技术栈生成开发规范/skills”“让治理自动升级/提取 skill”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。未指定深度时默认自动完整模式；明确指定最小、标准或完整时遵从用户。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
 ---
 
 # AI 代码治理框架
@@ -10,7 +10,7 @@ description: >-
 
 **产物不是一堆 Markdown。** 产物是三件事：一个**唯一正典规则源**、一层**让上下文保持最小的路由**、以及**一组在文档与代码脱节时会失败的机器检查**。少了第三件，前两件大约三周后开始腐烂——贡献者发现文档是虚构的，于是不再读它，于是框架变成考古现场。
 
-本 skill 蒸馏自一套在生产仓库中长期运行的治理框架。它不携带一份冻结的“万能最佳实践”，但必须根据目标技术栈主动检索当前官方/权威标准，直接生成项目可用的标准编码 skills；再根据需求、代码和业务不变量生成项目业务写法 skills。技术标准与项目事实分别记录来源，不能把前者冒充业务决定，也不能因后者尚无代码就放弃 greenfield 的明确用户需求。
+本 skill 蒸馏自一套在生产仓库中长期运行的治理框架。它不携带一份冻结的“万能最佳实践”，但必须根据目标技术栈主动检索当前官方/权威标准，直接生成项目可用的标准编码 skills；再根据需求、代码和业务不变量生成项目业务写法 skills。项目完成新的权限模型、统一 Client、adapter 或其他可复用能力后，还必须自动评估并升级已有 Skill 或提取新 Skill。技术标准、项目事实与已验证实现分别记录来源，不能互相冒充。
 
 ## 短语触发与自动完整模式
 
@@ -53,6 +53,19 @@ description: >-
 
 产物至少覆盖三类：栈基础 skills、横切质量 skills、业务写法 skills。`industry-standard`、`project-decision`、`business-invariant` 与 `unverified` 必须可区分。
 
+## 持续能力提取与自动升级
+
+框架落地后的成功实现也是治理证据。完整协议见 [references/continuous-skill-evolution.md](references/continuous-skill-evolution.md)：
+
+1. 每个有行为变化的任务在产品门禁通过后、complete 之前自动运行 capability harvest。
+2. 扫描 change set 中新增或变化的公共 export、client、adapter、guard/policy、repository、领域流程和第三方封装。
+3. 按稳定 capability ID 查重，优先 `update-existing`；只有确属新能力才 `create-new`。
+4. 证据不足时自动记录有 owner、gap、review date 的 candidate；一次性实现记录 `no-skill-with-reason`。
+5. 生成/升级后同步 Skill、capability registry、profile、catalog、routing examples、memory owner 和实现 fingerprint。
+6. owning implementation 或 public entrypoint 后续变化时，旧 harvest receipt 失效，Skill 漂移门禁要求重新评估。
+
+自动升级的目标是让后续代码复用项目最新正典能力，而不是让 Skill 数量无限增长。它不授权隐式重构或改变公共 API。
+
 跨系统实现与认证要求见 [references/cross-platform.md](references/cross-platform.md)。当前系统执行通过只能证明当前系统；其余系统必须分别标记为已验证、未验证或不支持。
 
 B → C 的产品结构与能力证据等级见 [references/product-architecture.md](references/product-architecture.md)。技术栈状态以 [assets/capability-pack-registry.json](assets/capability-pack-registry.json) 为准，使用协议见 [references/capability-packs.md](references/capability-packs.md)。
@@ -78,6 +91,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 15. **多语言仍然只有一个正典。** 双语产物在同一个正典记录中用稳定 ID 对齐，不建中英文两套规则树。
 16. **标准 skill 必须细粒度且可路由。** “React 最佳实践”“Node 开发规范”这种巨型文档不算完成；要拆成组件、状态、表单、接口、授权、Repository、事务、事件等可识别任务。
 17. **业务 skill 必须使用项目名词和不变量。** 只生成通用 CRUD 示例不算业务治理；但未知角色、状态和副作用必须保持开放问题，不能为了完整而编造。
+18. **成功实现必须进入能力收割。** 完成权限、统一 HTTP Client、adapter 或可复用业务流程后，不等待下次重复造轮子；在 complete 前自动更新已有 Skill、创建有证据的新 Skill，或留下可审计的不晋升理由。
 
 ## 十二条核心思想
 
@@ -208,6 +222,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 | E4 | 交互与治理产物使用什么语言？ | 跟随用户 / 中文 / English；产物选中文 / English / 双语 |
 | E5 | 是否要做技术现代化评估？ | 默认否；选择“是”时建立独立范围，不混入治理落地 |
 | E6 | 技术栈标准与业务 skills？ | 完整档默认检索当前标准并直接生成；标准档至少生成栈覆盖清单与高频编码 skills；最小档记录为后续 gap |
+| E7 | 功能完成后的 Skill 自动升级？ | 完整档默认接入 complete 前 harvest；标准档接入 delivery gate；最小档至少生成候选清单和手动 harvest 命令 |
 
 ## Step 3 — 计划
 
@@ -222,6 +237,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 - 选中的能力包、版本、证据等级与组合边界
 - 技术标准检索主题、来源优先级、版本边界与刷新日期
 - 栈基础 / 横切质量 / 业务写法 skill 矩阵，以及每项的 profile、证据和验证
+- capability harvest 入口、演进注册表、freshness 绑定、自动晋升/候选判据和旁路检查范围
 - 交互语言、治理产物语言和双语对齐方式
 - macOS、Windows、Linux 的目标支持与当前验证状态
 - 遗留项目是否保持原栈；现代化评估必须列为独立范围
@@ -241,8 +257,8 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 **阶段 3 — 能力层**（标准档生成栈清单和高频 skills；完整档生成完整矩阵）。L3 + L4 + L5 + L7。先按 [技术栈标准与业务写法 Skill 生成协议](references/stack-skill-generation.md) 检索当前标准，生成 `stack-sources`、`stack-skill-map`、细粒度栈 skills、横切质量 skills 和有真实证据的业务 skills。
 *验收*：每个 skill 的 `description` 都写清触发与相邻排除；每个选定技术组件有编码 capability，高频决策不只落在 umbrella skill；每个业务 skill 有业务证据和 owner；所有 skill/command/agent 从入口、context profile、能力目录或已验证原生机制可达。门禁检查来源、版本、skill-map/profile 覆盖和 routing examples，并用 `stack-standard-source-coverage`、`stack-skill-coverage`、`business-pattern-routing` 的适用探针证明删除来源、能力或业务路由会失败。每条编号业务禁令仍映射真实事故/代码/用户决定；只有清单没有加载路径的能力只能记 `present`。
 
-**阶段 4 — 完整档运行时。** L6 + L9 + L11；只有 B1 选择 Stop 且目标客户端确有相应 API 时增加 L10。
-*验收*：L9 必须证明“旧 gate → 再次 implementing → 不重验无法 complete”，且只有专用 complete 入口能进入终态；L11 必须让改进候选与健康检查具备可机读的 owner、复核日期和状态。若交付 L10，必须用真实客户端的 Read、patch、shell 等载荷矩阵证明写入分类，并跑通“写入 → Stop 阻断 → 门禁/对应 memory → 同一代 receipt → Stop 放行”的完整成功闭环。ack 还要证明绑定入口/改动指纹并被原子单次消费。真实客户端触发确认不了就按第 8 条写进 README，不能用直接调用 handler 代替。
+**阶段 4 — 完整档运行时。** L6 + L9 + L11；只有 B1 选择 Stop 且目标客户端确有相应 API 时增加 L10。按 [持续能力提取与自动升级协议](references/continuous-skill-evolution.md) 生成 `capability-evolution.json`、harvest 命令/receipt 和漂移检查。
+*验收*：L9 必须证明“旧 gate → 再次 implementing → 不重验无法 complete”，且只有专用 complete 入口能进入终态；每次行为 change set 还必须有绑定当前 fingerprint 的 harvest 结论。L11 必须让改进候选与健康检查具备可机读的 owner、复核日期和状态，并让 adopted capability 的实现、Skill、profile 和 routing 保持同步。用 `feature-skill-harvest-freshness`、`capability-promotion-evidence`、`skill-implementation-drift`、`canonical-capability-reuse` 证明遗漏收割、无证据晋升、实现漂移和绕过正典封装会失败。若交付 L10，必须用真实客户端的 Read、patch、shell 等载荷矩阵证明写入分类，并跑通“写入 → Stop 阻断 → 门禁/对应 memory/harvest → 同一代 receipt → Stop 放行”的完整成功闭环。ack 还要证明绑定入口/改动指纹并被原子单次消费。真实客户端触发确认不了就按第 8 条写进 README，不能用直接调用 handler 代替。
 
 每阶段之后：总结 diff 并跑该阶段验收。引导模式停下等确认；自动完整模式在没有新授权需求时继续。
 
@@ -260,6 +276,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 - 报告技术标准来源、目标版本、检索日期与冲突；来源缺失或需要刷新时，相关 skill 不得标 current。
 - 检查所有产出代码的 profile 必达设计质量策略；每个业务 skill 必须有业务 evidence，不能只靠技术栈名称生成。
 - 用至少一个真实风格请求独立 forward-test 生成的栈/业务 skills，检查是否选中正确上下文并产出项目标准写法。
+- 用至少两个成功实现场景 forward-test 自动升级：一个高后果业务能力（如权限），一个平台封装（如 Axios Client）；证明优先升级已有 Skill、无现有项时才创建，并阻止旁路重写。
 - 如果目标仓库自身有记忆/文档义务，在同一次改动里满足它。
 - 完整模式在宣布完成前必须由独立的对抗审计步骤复核声明—证据矩阵；同一实现步骤的自述不算独立证据。无法使用独立角色时，单独重置上下文按审计清单执行，并显式记录该限制。
 - **绝不以「文件已存在」为依据宣布框架落地。** 落地的证据是一次通过的门禁 + 一次真正用了它的会话。
@@ -271,6 +288,8 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 | 不检索版本就一次性生成“最佳实践” | 它描述的是模型记忆中的通用仓库；很快过时或与当前框架版本冲突 |
 | 每个框架只有一个巨型 skill | 触发范围模糊、上下文过载，实际写组件/接口/Repository 时无法精确路由 |
 | 只生成技术 skill，不生成业务写法 | AI 会写出框架正确但业务错误的通用 CRUD |
+| 只从失败学习，不从成功实现提取能力 | 项目已有统一封装和权限模型，后续 AI 仍会重新实现一套 |
+| 每次完成一个功能都无脑新增 Skill | Skill 数量单向膨胀，同一能力出现多份互相冲突的正典 |
 | 有文档没检查器 | 静默漂移；半年后框架变成考古 |
 | 真内容放在 `.claude/` / `.cursor/` 里 | 两个源分叉，且只有一个客户端看到修复 |
 | 没人证明会被自动加载的适配器 | 长得像治理的装饰品——最糟的一种 AI 文档 |
@@ -313,6 +332,7 @@ node scripts/validate-skill.mjs --negative-probe
 | [references/memory-layer.md](references/memory-layer.md) | 建 L6 知识层、会话留痕、代码溯源、漂移门禁时 |
 | [references/harness.md](references/harness.md) | 建 L9 任务运行时（跨会话/敏感/大任务）时 |
 | [references/lifecycle.md](references/lifecycle.md) | 框架已落地，要回答「怎么让它不腐烂」时 |
+| [references/continuous-skill-evolution.md](references/continuous-skill-evolution.md) | 功能、权限模型、统一 Client 或 adapter 完成后，自动提取/升级 Skill 并防止后续重复实现时 |
 | [references/cross-platform.md](references/cross-platform.md) | 支持 macOS/Windows/Linux，设计路径、脚本、适配器、hooks 或认证矩阵时 |
 | [references/product-architecture.md](references/product-architecture.md) | 判断 B → C 产品边界、项目模式或能力证据等级时 |
 | [references/interview-protocol.md](references/interview-protocol.md) | 多语言、多轮访谈、技术/UI 选型或跨会话恢复时 |

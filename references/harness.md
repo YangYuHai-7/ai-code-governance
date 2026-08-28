@@ -69,15 +69,18 @@ gate_catalog:
   memory_sync:
     description: 行为变更已写进 docs/memory/
     manual: true          # 没有命令能判定；由助手声明并给出证据
+  skill_harvest:
+    description: 当前行为 change set 已评估可复用 capability，并同步或记录不晋升理由
+    command: <pkg> run governance:harvest -- --task <slug>
   scope_review:
     description: 改动范围与讨论一致，无搭车改动
     manual: true
 
 # 按任务类型要求哪些门禁
 gates_by_task_type:
-  feature:       [framework_check, drift_check, tests, memory_sync, scope_review]
-  bugfix:        [framework_check, tests, scope_review]
-  migration:     [framework_check, drift_check, tests, memory_sync, scope_review]
+  feature:       [framework_check, drift_check, tests, memory_sync, skill_harvest, scope_review]
+  bugfix:        [framework_check, tests, skill_harvest, scope_review]
+  migration:     [framework_check, drift_check, tests, memory_sync, skill_harvest, scope_review]
   investigation: [framework_check, scope_review]
   docs:          [framework_check]
   review:        [framework_check, scope_review]
@@ -128,6 +131,13 @@ gates:                            # 从 gates_by_task_type 实例化，逐条带
     evidence: <命令 + 输出摘要 / 声明 + 证据>
     checked_at: YYYY-MM-DDTHH:MM
     generation: 0                 # 必须等于当前 implementation_generation
+
+harvest:
+  product_change_fingerprint: <当前受管产品路径 git/ledger 指纹>
+  governance_output_fingerprint: <Skill/registry/profile/routing/memory/evidence 指纹>
+  result: updated-existing | created-new | candidate-recorded | no-skill-with-reason | not-applicable
+  receipt: docs/ai/evidence/skill-harvest-<fingerprint>.json
+  generation: 0                   # 必须等于当前 implementation_generation
 
 state:
   current: <见状态机>
@@ -246,6 +256,7 @@ Next action: <具体清理动作或需要谁决策>
     "harness:status":   "node docs/ai/tools/harness.js status",
     "harness:resume":   "node docs/ai/tools/harness.js resume",
     "harness:gate":     "node docs/ai/tools/harness.js gate",
+    "governance:harvest": "node docs/ai/tools/harvest-capabilities.js",
     "harness:complete": "node docs/ai/tools/harness.js complete",
     "harness:doctor":   "node docs/ai/tools/harness.js doctor"
   }
@@ -258,7 +269,8 @@ Next action: <具体清理动作或需要谁决策>
 | `status` | 列出所有未完成任务 + 当前状态 + 未过的门禁。`session-start` 钩子调它 |
 | `resume` | 打印某个 slug 的恢复包：状态、历史尾部、未过门禁、留痕文件列表（按时间倒序） |
 | `gate` | 跑该任务类型要求的门禁链，把结果与证据写回 `task.yaml`；`manual: true` 的门禁提示需要助手声明 |
-| `complete` | 只在全部门禁 `passed` 或 `acked` 时允许转 `complete`；否则打印缺什么 |
+| `governance:harvest` | 对当前 change set 查重并评估 capability，升级/创建 Skill 或记录 candidate/no-skill，写 fingerprint-bound receipt |
+| `complete` | 只在全部门禁 `passed` 或 `acked`，且行为变化有当前 harvest receipt 时允许转 `complete`；否则打印缺什么 |
 | `doctor` | 校验所有 `task.yaml` 对 schema 有效、状态是合法值、`read-write` 有 `granted_by` |
 
 `doctor` 由 L8 检查器调用（或反过来），这样**运行时自身的完整性也被门禁覆盖**。
@@ -273,6 +285,7 @@ Next action: <具体清理动作或需要谁决策>
 - passed/attested → 重新 implementing → 未重验 complete 必须失败；
 - 通用 transition 到 complete 必须失败；
 - 删除 required gate、重复 gate、空 evidence/checked_at、旧 generation 必须失败；
+- 行为变化缺 harvest、复用旧 fingerprint receipt、harvest 后再次写代码必须失败；
 - strict doctor 必须让非法终态继续可见，不能因为 status 隐藏 complete 而漏掉；
 - 修复并对当前 generation 重验后，专用 complete 必须成功。
 
