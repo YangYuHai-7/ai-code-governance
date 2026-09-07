@@ -1,7 +1,7 @@
 ---
 name: ai-code-governance
 description: >-
-  为代码仓库建立或扩展可持续升级的 AI 编码治理框架：识别技术栈并检索当前官方/主流标准，结合业务不变量生成细粒度编码 skills，整合而不重复 OpenSpec、Superpowers 等现有规格/执行工作流，并在权限功能、项目封装或可复用集成完成后自动提取或升级 skills；同时建立唯一正典源、上下文路由、适配器、知识记忆、机器门禁、hooks 与成长闭环。用户说“AI 编码治理框架”“代码治理框架”“根据技术栈生成开发规范/skills”“让治理自动升级/提取 skill”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。未指定深度时默认自动完整模式；明确指定最小、标准或完整时遵从用户。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
+  使用跨平台 aicg CLI 为代码仓库建立或扩展可持续升级的 AI 编码治理框架：侦察仓库、选择 Codex/Claude Code/Cursor 等 Agent、识别技术栈、生成无链接适配器和机器门禁，并结合业务不变量生成或升级细粒度 skills；整合而不重复 OpenSpec、Superpowers 等规格/执行工作流。用户说“AI 编码治理框架”“代码治理框架”“aicg init”“根据技术栈生成开发规范/skills”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
 ---
 
 # AI 代码治理框架
@@ -13,6 +13,25 @@ description: >-
 本 skill 蒸馏自一套在生产仓库中长期运行的治理框架。它不携带一份冻结的“万能最佳实践”，但必须根据目标技术栈主动检索当前官方/权威标准，直接生成项目可用的标准编码 skills；再根据需求、代码和业务不变量生成项目业务写法 skills。项目完成新的权限模型、统一 Client、adapter 或其他可复用能力后，还必须自动评估并升级已有 Skill 或提取新 Skill。技术标准、项目事实与已验证实现分别记录来源，不能互相冒充。
 
 治理内核还必须先发现项目已有的规格与执行工作流，再决定复用、桥接或保持项目原生。OpenSpec、Superpowers 等外部系统是可选 provider，不是隐式依赖：不得自动安装，不得因为检测到目录就接管项目，不得生成第二份需求、设计、计划或完成状态。
+
+## CLI 是默认交付入口
+
+详细契约见 [references/initializer.md](references/initializer.md)。目标项目能运行 Node.js 22+ 时，优先使用：
+
+```bash
+aicg doctor .
+aicg init .
+aicg check .
+```
+
+`init` 必须先扫描再要求用户选择 Agent、技术栈、治理深度和产物语言，预览计划后才生成。确定式基础生成
+不依赖模型或网络；用户选择后才可调用已安装的 Codex、Claude Code 或 Cursor 做 AI 深度补全。无 TTY 时
+必须使用 `--yes` 或 `--config <json>`，缺少必需输入以退出码 2 停止。
+
+适配器只允许两种形态：客户端原生指针/导入，或带 generated 标记与 SHA-256 manifest 的普通文件。
+不得创建 symlink、junction 或其他链接；不得让 `--force` 覆盖未知用户文件。状态由
+`.ai-governance/config.json` 与 `.ai-governance/manifest.json` 记录，运行 `aicg sync .` 恢复受管漂移。
+Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-registry.json`，不得散落复制。
 
 ## 短语触发与自动完整模式
 
@@ -93,7 +112,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 1. **先侦察，再访谈，最后构建。** 绝不从假设生成目录树。规则由模型凭空发明 = 描述了一个不存在的仓库。
 2. **问，不要猜。** 引导模式通过 Step 2 访谈确认决策；自动完整模式只对可推断项使用上文默认，不猜测会实质改变产物的隐含决策。所有默认和 gap 都必须**写进 `docs/ai/README.md`**。
 3. **分阶段交付。** 四个阶段都要有可见的 diff 摘要和验收。引导模式每段停下确认；自动完整模式在无需新授权时连续执行，不用用户重复发送“继续”。
-4. **正典源唯一；客户端目录只是适配器。** 优先使用相对符号链接；Windows 或客户端不支持时，可以使用工具生成且有哈希/漂移检查的镜像。适配器不可人工维护，绝不成为第二正典。
+4. **正典源唯一；客户端目录只是适配器。** 使用客户端原生导入或 CLI 生成的普通文件；manifest 记录来源与哈希，门禁检查漂移。适配器不可人工维护，绝不成为第二正典，也不创建任何文件系统链接。
 5. **业务规则来自本仓库事实；技术写法来自当前权威标准。** 业务不变量按“需求/代码/测试/事故 → 候选 → 确认或证据 → 写入”；框架惯用法按“版本证据 → 官方/标准检索 → 兼容性判断 → 项目化 skill”。两条证据轨不能互相冒充。
 6. **每条机器强制的禁令都要有写下来的理由**，放 `anti-patterns.md`。没有理由的禁令会被下一个撞上它的人删掉。
 7. **绝不写你没跑过的命令。** 落进入口文件的每条命令都必须真实存在于 `package.json` / `Makefile`，并且本次会话执行成功过，否则标 `# not yet verified`。
@@ -119,7 +138,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 
 | # | 思想 | 一句话 |
 | --- | --- | --- |
-| P1 | 单一正典源 + 适配器 | N 个客户端 × M 份拷贝 = 必然分叉；工具目录只放符号链接 |
+| P1 | 单一正典源 + 适配器 | 客户端优先原生读取；必需副本由 CLI 生成并用 manifest 防漂移 |
 | P2 | 按档案路由上下文 | 不做全量加载；按任务档案（profile）加载最小可用上下文 |
 | P3 | 代码是事实来源 | 文档是快照且必然跑慢一拍；分歧时改仓库，别发明第三条规则 |
 | P4 | 完成由门禁判定 | 不是助手宣布"done"，是门禁通过或被显式标记为阻塞 |
@@ -138,7 +157,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 
 | 层 | 名称 | 最小产物 | 深度 |
 | --- | --- | --- | --- |
-| L0 | 入口与引导 | `AGENTS.md`（正典入口）+ `CLAUDE.md`（仅指针 + `@` 导入）+ 适配器符号链接 | 最小 |
+| L0 | 入口与引导 | `AGENTS.md`（共享入口）+ `CLAUDE.md` 原生导入 + manifest 管理的普通文件适配器 | 最小 |
 | L1 | 常驻规则 | `docs/ai/rules/00_always.mdc`，一个文件，≤80 行 | 最小 |
 | L2 | 上下文路由 | `docs/ai/context-map.yaml`：档案 = 触发词 + required/optional + verify | 标准 |
 | L3 | 领域规则与策略 | `docs/ai/rules/NN_<关注点>.mdc`（按档案触发）+ `policies/` | 标准 |
@@ -166,7 +185,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 - **形态** — 单仓库 / monorepo workspaces / 一族兄弟 checkout。真实代码在哪。
 - **技术栈与工具链** — 语言、框架、包管理器、测试运行器、linter、formatter、类型检查。
 - **版本与组合** — lockfile/manifest/配置里的运行时、框架、UI、ORM、数据库、实时、媒体和队列版本；用户已确认但尚未安装的 greenfield 选型单独记录。
-- **平台与 shell** — 当前 OS、团队支持的 OS、shell/PowerShell 版本、路径大小写、换行、symlink/junction 能力、已有 `core.hooksPath`。
+- **平台与 shell** — 当前 OS、团队支持的 OS、shell/PowerShell 版本、路径大小写、换行、遗留链接、已有 `core.hooksPath`。
 - **真实命令** — `package.json` / `Makefile` / `justfile` 里的每个脚本。标出哪些**快到可以当门禁**（实测耗时）。
 - **已有什么** — `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/`、`.github/copilot-instructions.md`、`docs/ai/`、`docs/memory/`、`.claude/settings.json`、`.git/hooks/` 与 `core.hooksPath`。
 - **外部工作流** — `openspec/`、OpenSpec 配置/版本/schema、Superpowers plugin/skills/bootstrap、其他 spec/change/SDLC 工具及其生成目录；记录能力重叠和真实客户端可达性，不静默采用。
@@ -284,7 +303,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 
 各文件骨架见 [references/templates.md](references/templates.md)。检查器与钩子细节见 [references/gates-and-hooks.md](references/gates-and-hooks.md)。
 
-**阶段 1 — 骨架。** L0 + L1 + L2：入口文件、`docs/ai/README.md`、`context-map.yaml`、`00_always.mdc`、按 A2 和目标 OS 选择 symlink、junction、原生导入或生成式适配器。
+**阶段 1 — 骨架。** L0 + L1 + L2：用 `aicg init` 生成入口文件、`docs/ai/README.md`、`context-map.yaml`、`00_always.mdc`、客户端原生导入与 manifest 管理的普通文件适配器。
 *验收*：决策账本有用户确认的客户端模式；A2 里选的每个客户端都能通过自己的原生入口触达常驻规则，且这些文件里点到的每个路径都真实存在。未选择的客户端明确记为 `not selected / not generated`，不能写成支持；每种目标 OS 分别记录已验证或未验证，不能从当前系统外推。
 
 **阶段 2 — 门禁。** L8 + 按 B4 装 hook。
@@ -356,17 +375,24 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 修改本 skill 自身后运行：
 
 ```bash
+npm test
+npm run smoke
+npm run smoke:package
 node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
+npm pack --dry-run
 ```
 
-第一条验证入口 front matter、本地链接、技术栈能力包、外部工作流集成注册表、验收契约、v3/v4 状态和 OS 证据；第二条在内存中注入重复能力包/集成、损坏验收契约与断链，证明检查器确实会失败。该命令验证的是可分发 skill 包，不代表任何目标项目、技术栈、外部 provider 或操作系统已经完成认证。
+测试覆盖 CLI 参数、扫描、普通文件生成、幂等、漂移和链接迁移；Skill 校验验证 front matter、本地链接、
+Agent/技术栈注册表、外部工作流、验收契约和链接禁令。三系统 CI 分别提供 OS 执行证据；任一未运行的
+真实客户端或目标项目能力仍保持 `unverified`。
 
 ## 深入阅读
 
 | 文件 | 何时读 |
 | --- | --- |
 | [references/principles.md](references/principles.md) | 需要向用户论证某个设计决定，或要判断某条候选规则该不该存在 |
+| [references/initializer.md](references/initializer.md) | 运行或扩展 `aicg init/check/sync/doctor`、处理适配器与迁移冲突时 |
 | [references/layers.md](references/layers.md) | 构建任意一层之前——逐层职责、边界、写什么不写什么 |
 | [references/templates.md](references/templates.md) | 阶段 1–4 落文件时 |
 | [references/gates-and-hooks.md](references/gates-and-hooks.md) | 建 L8 检查器或 L10 钩子时 |

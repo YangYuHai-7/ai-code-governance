@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "agents": [
+    {
+      "id": "codex",
+      "label": "Codex",
+      "detect_commands": ["codex"],
+      "instruction_entry": "AGENTS.md",
+      "skill_directories": [".agents/skills"],
+      "rule_directories": [],
+      "assist": {
+        "command": "codex",
+        "args": ["-C", "{target}", "{prompt}"]
+      }
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "detect_commands": ["claude"],
+      "instruction_entry": "CLAUDE.md",
+      "skill_directories": [".claude/skills"],
+      "rule_directories": [],
+      "assist": {
+        "command": "claude",
+        "args": ["{prompt}"]
+      }
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "detect_commands": ["cursor-agent"],
+      "instruction_entry": "AGENTS.md",
+      "skill_directories": [".agents/skills"],
+      "rule_directories": [".cursor/rules"],
+      "assist": {
+        "command": "cursor-agent",
+        "args": ["{prompt}"]
+      }
+    },
+    {
+      "id": "generic",
+      "label": "Generic AGENTS.md-compatible agent",
+      "detect_commands": [],
+      "instruction_entry": "AGENTS.md",
+      "skill_directories": [".agents/skills"],
+      "rule_directories": [],
+      "assist": null
+    }
+  ]
+}

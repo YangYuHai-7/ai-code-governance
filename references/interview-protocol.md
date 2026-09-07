@@ -52,7 +52,7 @@ platform:
   current_os: macos
   supported_os: [macos, windows, linux]
   verified_os: [macos]
-  adapter_mode: symlink
+  adapter_mode: generated-files
 
 facts:
   - id: fact-001

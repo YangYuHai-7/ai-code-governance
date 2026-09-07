@@ -326,6 +326,60 @@
       "recovery_case": "Restore a discoverable compatible capability and replay it without conflicting artifacts, adopt an attributed local adapter, or select a single full orchestrator.",
       "expected_recovery": "The same probe exits zero for the declared selective set, or the configuration honestly records a non-selective mode.",
       "proves": "Selective integration is an observed runtime property rather than a configuration wish."
+    },
+    {
+      "id": "generated-adapter-no-links",
+      "applies_when": "aicg init or aicg sync generates client-specific adapters on any supported platform.",
+      "negative_case": "Replace a generated adapter or any ancestor with a symbolic link, junction, or other link-style filesystem object.",
+      "expected_failure": "aicg check exits non-zero and names the linked path; initialization or synchronization stops unless link migration was explicitly authorized.",
+      "recovery_case": "Run the explicit link migration after reviewing its plan, regenerate ordinary files, and replay the same check.",
+      "expected_recovery": "The check exits zero, all managed adapters are regular files, and the former link target still exists unchanged.",
+      "proves": "Cross-platform adapters do not depend on symlink or junction semantics."
+    },
+    {
+      "id": "managed-adapter-drift",
+      "applies_when": "A generated full-file adapter or managed entrypoint block is recorded in the manifest.",
+      "negative_case": "Edit only the manifest-owned content without updating its canonical source.",
+      "expected_failure": "aicg check exits non-zero and identifies the content-hash mismatch.",
+      "recovery_case": "Run aicg sync --force after reviewing the drift and replay aicg check.",
+      "expected_recovery": "Only manifest-owned content is restored, surrounding user content is preserved, and the check exits zero.",
+      "proves": "Generated copies remain synchronized without becoming a second maintenance source."
+    },
+    {
+      "id": "initializer-idempotence",
+      "applies_when": "The same confirmed configuration is initialized or synchronized more than once.",
+      "negative_case": "Run deterministic generation twice and observe any second-run content or modification-time change.",
+      "expected_failure": "The idempotence test fails and names every unexpectedly rewritten path.",
+      "recovery_case": "Make generated content and manifest timestamps stable, then repeat both runs.",
+      "expected_recovery": "The second run reports zero changed files and preserves file bytes and modification times.",
+      "proves": "Repeated initialization is deterministic and does not create meaningless repository churn."
+    },
+    {
+      "id": "unmanaged-file-preservation",
+      "applies_when": "A planned full-file output already exists without a manifest ownership record or generated marker.",
+      "negative_case": "Attempt initialization or forced synchronization against that unknown user file.",
+      "expected_failure": "Generation stops before writing and reports that the unowned file will not be overwritten.",
+      "recovery_case": "Move or explicitly adopt the file through a reviewed migration, then rerun generation.",
+      "expected_recovery": "Generation succeeds without changing unrelated user content.",
+      "proves": "Force mode cannot silently expand ownership to arbitrary repository files."
+    },
+    {
+      "id": "noninteractive-required-input",
+      "applies_when": "aicg init runs without an interactive terminal and required choices are not provided by configuration or --yes defaults.",
+      "negative_case": "Invoke init with piped standard input and omit required client, stack, depth, or language decisions.",
+      "expected_failure": "The command exits with code 2 before writing any governance file.",
+      "recovery_case": "Provide a complete JSON configuration or use explicit --yes defaults and rerun.",
+      "expected_recovery": "Deterministic initialization completes and aicg check reports structural evidence.",
+      "proves": "Automation never receives hidden interactive guesses for required governance decisions."
+    },
+    {
+      "id": "agent-assist-fallback",
+      "applies_when": "AI-assisted completion is selected after deterministic initialization.",
+      "negative_case": "Use an unavailable, unauthenticated, timed-out, or failing selected Agent CLI.",
+      "expected_failure": "The deterministic framework remains intact, assisted completion is reported unverified, and a safe retry command is printed.",
+      "recovery_case": "Restore the normal Agent CLI session and run the printed retry without bypass or approval-skipping flags.",
+      "expected_recovery": "The assistant exits successfully and aicg check plus project verification can be replayed independently.",
+      "proves": "Optional AI enrichment cannot roll back or invalidate the offline foundation."
     }
   ]
 }
