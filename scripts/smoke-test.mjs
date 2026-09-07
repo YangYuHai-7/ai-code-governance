@@ -21,12 +21,12 @@ try {
     ['check', fixture, '--json'],
     ['sync', fixture, '--dry-run'],
   ]) {
-    const result = spawnSync(process.execPath, [path.join(root, 'bin/aicg.mjs'), ...args], { encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [path.join(root, 'bin/aicg.js'), ...args], { encoding: 'utf8' });
     assert.equal(result.status, 0, `${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
   }
   const noninteractive = path.join(fixture, 'noninteractive');
   fs.mkdirSync(noninteractive);
-  const missingAnswers = spawnSync(process.execPath, [path.join(root, 'bin/aicg.mjs'), 'init', noninteractive], { encoding: 'utf8' });
+  const missingAnswers = spawnSync(process.execPath, [path.join(root, 'bin/aicg.js'), 'init', noninteractive], { encoding: 'utf8' });
   assert.equal(missingAnswers.status, 2);
   assert.equal(fs.existsSync(path.join(noninteractive, 'AGENTS.md')), false);
   const links = [];

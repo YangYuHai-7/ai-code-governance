@@ -4,7 +4,7 @@
   "description": "Cross-platform initializer and governance toolkit for AI coding agents.",
   "type": "module",
   "bin": {
-    "aicg": "./bin/aicg.mjs"
+    "aicg": "bin/aicg.js"
   },
   "files": [
     "bin/",
@@ -22,7 +22,7 @@
   "scripts": {
     "test": "node --test",
     "validate:skill": "node scripts/validate-skill.mjs && node scripts/validate-skill.mjs --negative-probe",
-    "validate": "npm run validate:skill && node bin/aicg.mjs doctor . --json",
+    "validate": "npm run validate:skill && node bin/aicg.js doctor . --json",
     "smoke": "node scripts/smoke-test.mjs",
     "smoke:package": "node scripts/package-smoke.mjs"
   },
