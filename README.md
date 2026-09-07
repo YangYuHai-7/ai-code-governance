@@ -133,10 +133,17 @@ OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers
 
 ## 安装与运行
 
-需要 Node.js 22+。npm 包已经具备发布结构，但当前版本不发布到 npm registry；可以直接从 GitHub 临时运行：
+需要 Node.js 22+。无需全局安装即可直接从 npm 运行：
 
 ```bash
-npm exec --yes --package=github:YangYuHai-7/ai-code-governance -- aicg init .
+npm exec --yes --package=ai-code-governance -- aicg init .
+```
+
+也可以全局安装后使用短命令：
+
+```bash
+npm install --global ai-code-governance
+aicg init .
 ```
 
 维护本仓库时也可使用：
