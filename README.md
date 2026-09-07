@@ -254,8 +254,9 @@ npm pack --dry-run
 
 第一条检查 front matter、本地链接、技术栈生成、持续升级与外部工作流协议、两个注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包/工作流集成、缺失高风险探针、不完整协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
 
-GitHub Actions 在 macOS、Windows、Linux 上使用 Node.js 22/24 运行测试、Skill 校验、smoke 与打包检查。
-真实 Agent 加载和项目行为仍需独立回放，不能由结构测试代替。
+GitHub Actions 已在 macOS、Windows、Linux 上使用 Node.js 22/24 跑通测试、Skill 校验、smoke、打包检查
+和安装 tarball 后的 smoke。机器证据记录在能力包注册表；真实 Agent 加载、目标项目 hooks 和项目行为仍
+需独立回放，不能由 CLI CI 代替。
 
 ## 设计原则
 
@@ -277,7 +278,7 @@ GitHub Actions 在 macOS、Windows、Linux 上使用 Node.js 22/24 运行测试�
 
 - v3.0：完成 Web 主流栈的团队内部试运行与证据收集。
 - v3.1：建立 Svelte、Python、Go、PHP 能力包及样例矩阵。
-- v3.x：补齐 Windows/Linux 实机验证、安装与升级协议。
+- v3.x：补齐三平台真实 Agent 加载、目标项目 hooks、安装与升级协议。
 - v4：扩展 .NET、移动端、桌面端和系统/嵌入式平台家族。
 - 产品 C：只有通过真实项目和声明平台认证的组合才对外标记 `certified`。
 

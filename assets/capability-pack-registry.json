@@ -19,9 +19,23 @@
     "linux"
   ],
   "current_os_evidence": {
-    "macos": "skill-structure-verified",
-    "windows": "designed-not-run",
-    "linux": "designed-not-run"
+    "macos": "cli-ci-verified-node22-node24",
+    "windows": "cli-ci-verified-node22-node24",
+    "linux": "cli-ci-verified-node22-node24"
+  },
+  "os_evidence_source": {
+    "workflow": ".github/workflows/ci.yml",
+    "last_verified_commit": "75ebaba3cbee53536ee35b967a7ac54bcf37d803",
+    "last_verified_run": "https://github.com/YangYuHai-7/ai-code-governance/actions/runs/34090074693",
+    "verified_at": "2026-09-07",
+    "scope": [
+      "node-test",
+      "skill-positive-negative-validation",
+      "deterministic-init-check-sync-smoke",
+      "npm-pack-dry-run",
+      "installed-tarball-smoke"
+    ],
+    "boundary": "Real Codex, Claude Code, Cursor loading and target-project hooks remain unverified."
   },
   "packs": [
     {
