@@ -12,7 +12,7 @@ const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-package-smoke-'));
 const packDirectory = path.join(fixture, 'pack');
 const installDirectory = path.join(fixture, 'install');
 const projectDirectory = path.join(fixture, 'project with 空格');
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npmCli = process.env.npm_execpath;
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options });
@@ -20,15 +20,20 @@ function run(command, args, options = {}) {
   return result;
 }
 
+function runNpm(args, options = {}) {
+  assert.ok(npmCli, 'npm_execpath is required; run this smoke test through npm run smoke:package.');
+  return run(process.execPath, [npmCli, ...args], options);
+}
+
 try {
   fs.mkdirSync(packDirectory, { recursive: true });
   fs.mkdirSync(projectDirectory, { recursive: true });
-  const packed = run(npmCommand, ['pack', '--json', '--pack-destination', packDirectory], { cwd: root });
+  const packed = runNpm(['pack', '--json', '--pack-destination', packDirectory], { cwd: root });
   const packResult = JSON.parse(packed.stdout);
   const tarball = path.join(packDirectory, packResult[0].filename);
   assert.ok(fs.statSync(tarball).isFile());
 
-  run(npmCommand, ['install', '--prefix', installDirectory, tarball, '--ignore-scripts', '--no-audit', '--no-fund']);
+  runNpm(['install', '--prefix', installDirectory, tarball, '--ignore-scripts', '--no-audit', '--no-fund']);
   const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.mjs');
   assert.ok(fs.statSync(installedBin).isFile());
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
