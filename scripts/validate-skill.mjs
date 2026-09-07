@@ -142,7 +142,7 @@ function validateEntryPoint() {
 
 function validateCliPackage(pkg) {
   check(pkg.name === 'ai-code-governance', 'package.json name must be ai-code-governance.');
-  check(pkg.version === '0.1.0', 'Initial CLI version must be 0.1.0.');
+  check(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(pkg.version), 'CLI version must be valid semver.');
   check(pkg.type === 'module', 'CLI package must use ESM.');
   check(pkg.bin?.aicg === 'bin/aicg.js', 'package.json must expose the aicg binary.');
   check(pkg.engines?.node === '>=22', 'CLI must require Node.js >=22.');
