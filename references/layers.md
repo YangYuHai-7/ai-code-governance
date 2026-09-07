@@ -213,6 +213,8 @@ profiles: [哪些档案会加载它]
 
 **skills 与 rules 的边界**：规则是"必须成立的约束"，skill 是"做这类任务的操作指南 + 例子"。skill 引用规则，**不重述规则正文**。
 
+**外部 skills 的边界**：先按 [workflow-integrations.md](workflow-integrations.md) 记录 provider、版本、来源、许可证和重叠能力。可以通过已验证的原生发现路径引用，也可以在许可证允许时建立有 attribution 的本地适配 skill；不能把整套外部工作流复制进正典，也不能在已有批准 design/plan 时让外部 bootstrap 再创建一份。声称选择性调用必须有真实 runtime 回放证据。
+
 ### commands — 可重复流程
 
 **文件形态**：`docs/ai/commands/<verb>.md`，front matter 一个 `description`。
@@ -301,7 +303,7 @@ profiles:
 
 ## L9 任务运行时 [发明]
 
-详见 [harness.md](harness.md)。用于中等以上、敏感、生产排障、数据修复、跨会话任务。小的只读解释与单文件修复走 L2 常规流程即可——**不要让运行时层适用于所有任务**，那会触发 P6 的失败。
+详见 [harness.md](harness.md)。用于中等以上、敏感、生产排障、数据修复、跨会话任务。小的只读解释与单文件修复走 L2 常规流程即可——**不要让运行时层适用于所有任务**，那会触发 P6 的失败。存在 OpenSpec 或其他 change provider 时，L9 只保存 provider/change id/authority paths/observed version，并验证链接新鲜度；它不成为 proposal、spec、design 或 task list 的第二份正文。
 
 ---
 

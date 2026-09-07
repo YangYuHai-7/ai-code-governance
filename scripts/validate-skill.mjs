@@ -124,6 +124,10 @@ function validateEntryPoint() {
     'capability-promotion-evidence',
     'skill-implementation-drift',
     'canonical-capability-reuse',
+    'workflow-integration-registry.json',
+    'workflow-integrations.md',
+    'change-authority-single-source',
+    'selective-execution-capability',
   ];
   for (const term of requiredTerms) {
     if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
@@ -167,6 +171,26 @@ function validateEvolutionProtocol(protocol) {
     'authorize-project-operation',
   ]) {
     check(protocol.includes(term), `Continuous skill evolution protocol lacks required term: ${term}`);
+  }
+}
+
+function validateWorkflowProtocol(protocol) {
+  for (const term of [
+    'project-native',
+    'external-primary',
+    'coordinated',
+    'external-bridge',
+    'workflow-integrations.yaml',
+    'current_product_behavior',
+    'implementation_task_list',
+    'workflow-source-freshness',
+    'change-authority-single-source',
+    'execution-plan-single-authority',
+    'external-change-runtime-linkage',
+    'external-archive-completion-gate',
+    'selective-execution-capability',
+  ]) {
+    check(protocol.includes(term), `Workflow integration protocol lacks required term: ${term}`);
   }
 }
 
@@ -252,6 +276,77 @@ function validateRegistry(registry) {
   validateReleaseEvidence(registry, expected);
 }
 
+function validateWorkflowRegistry(registry) {
+  check(registry.schema_version === 1, 'Workflow registry schema_version must be 1.');
+  check(
+    registry.product_line === 'ai-code-governance',
+    'Workflow registry product_line is invalid.',
+  );
+
+  const evidence = new Set(registry.evidence_levels ?? []);
+  const lifecycles = new Set(registry.lifecycle_states ?? []);
+  const ids = new Set();
+
+  for (const integration of registry.integrations ?? []) {
+    check(!ids.has(integration.id), `Duplicate workflow integration id: ${integration.id}`);
+    ids.add(integration.id);
+    check(
+      ['change-governance', 'execution-discipline'].includes(integration.kind),
+      `Invalid workflow integration kind for ${integration.id}: ${integration.kind}`,
+    );
+    check(evidence.has(integration.evidence), `Invalid workflow evidence for ${integration.id}.`);
+    check(lifecycles.has(integration.lifecycle), `Invalid workflow lifecycle for ${integration.id}.`);
+    check(
+      Array.isArray(integration.upstream?.official_urls) &&
+        integration.upstream.official_urls.length > 0 &&
+        integration.upstream.official_urls.every((url) => /^https:\/\//.test(url)),
+      `${integration.id} must name official upstream URLs.`,
+    );
+    check(
+      integration.upstream?.refresh_required === true,
+      `${integration.id} must require upstream refresh.`,
+    );
+    check(
+      typeof integration.upstream?.license === 'string' && integration.upstream.license.length > 0,
+      `${integration.id} must record an upstream license.`,
+    );
+    check(
+      /^\d{4}-\d{2}-\d{2}$/.test(integration.upstream?.source_checked_at ?? ''),
+      `${integration.id} must record a source checked date.`,
+    );
+    check(
+      integration.upstream?.version_policy === 'observe-target-installation',
+      `${integration.id} must observe the target installation version.`,
+    );
+    const detectionSignals = [
+      ...(integration.detect?.path_any ?? []),
+      ...(integration.detect?.command_any ?? []),
+      ...(integration.detect?.native_skill_any ?? []),
+    ];
+    check(detectionSignals.length > 0, `${integration.id} must define a detection signal.`);
+    check(
+      Array.isArray(integration.capabilities) && integration.capabilities.length > 0,
+      `${integration.id} must name capabilities.`,
+    );
+    check(
+      Array.isArray(integration.overlaps) && integration.overlaps.length > 0,
+      `${integration.id} must name overlap risks.`,
+    );
+    check(
+      typeof integration.authority_rule === 'string' && integration.authority_rule.length > 0,
+      `${integration.id} must define an authority rule.`,
+    );
+    check(
+      Array.isArray(integration.validation_sources) && integration.validation_sources.length > 0,
+      `${integration.id} must name validation sources.`,
+    );
+  }
+
+  for (const id of ['openspec-change-governance', 'superpowers-execution-discipline']) {
+    check(ids.has(id), `Missing workflow integration: ${id}`);
+  }
+}
+
 const requiredProbeIds = [
   'broken-exact-path',
   'empty-glob',
@@ -279,6 +374,12 @@ const requiredProbeIds = [
   'ack-atomic-single-consume',
   'precommit-entrypoint-replay',
   'lifecycle-maintenance-metadata',
+  'workflow-source-freshness',
+  'change-authority-single-source',
+  'execution-plan-single-authority',
+  'external-change-runtime-linkage',
+  'external-archive-completion-gate',
+  'selective-execution-capability',
 ];
 
 function validateAcceptanceContract(contract) {
@@ -371,7 +472,14 @@ function validateAcceptanceContract(contract) {
   for (const id of requiredProbeIds) check(ids.has(id), `Missing acceptance probe family: ${id}`);
 }
 
-function runNegativeProbe(registry, acceptanceContract, generationProtocol, evolutionProtocol) {
+function runNegativeProbe(
+  registry,
+  workflowRegistry,
+  acceptanceContract,
+  generationProtocol,
+  evolutionProtocol,
+  workflowProtocol,
+) {
   const before = failures.length;
   const broken = structuredClone(registry);
   broken.packs.push(structuredClone(broken.packs[0]));
@@ -389,15 +497,33 @@ function runNegativeProbe(registry, acceptanceContract, generationProtocol, evol
   if (!duplicateCaught) fail('Negative probe did not catch a duplicate capability pack.');
   if (!brokenLinkCaught) fail('Negative probe did not catch a broken local link.');
 
+  const workflowRegistryBefore = failures.length;
+  const brokenWorkflowRegistry = structuredClone(workflowRegistry);
+  brokenWorkflowRegistry.integrations.push(structuredClone(brokenWorkflowRegistry.integrations[0]));
+  validateWorkflowRegistry(brokenWorkflowRegistry);
+  const workflowRegistryCaught = failures
+    .slice(workflowRegistryBefore)
+    .some((message) => message.includes('Duplicate workflow integration id'));
+  failures.splice(workflowRegistryBefore);
+
+  const workflowSourceBefore = failures.length;
+  const staleWorkflowRegistry = structuredClone(workflowRegistry);
+  staleWorkflowRegistry.integrations[0].upstream.source_checked_at = '';
+  validateWorkflowRegistry(staleWorkflowRegistry);
+  const workflowSourceCaught = failures
+    .slice(workflowSourceBefore)
+    .some((message) => message.includes('must record a source checked date'));
+  failures.splice(workflowSourceBefore);
+
   const acceptanceBefore = failures.length;
   const brokenAcceptance = structuredClone(acceptanceContract);
   brokenAcceptance.required_probe_families = brokenAcceptance.required_probe_families.filter(
-    (probe) => probe.id !== 'runtime-completion-freshness',
+    (probe) => probe.id !== 'selective-execution-capability',
   );
   validateAcceptanceContract(brokenAcceptance);
   const acceptanceCaught = failures
     .slice(acceptanceBefore)
-    .some((message) => message.includes('Missing acceptance probe family: runtime-completion-freshness'));
+    .some((message) => message.includes('Missing acceptance probe family: selective-execution-capability'));
   failures.splice(acceptanceBefore);
 
   const failurePolicyBefore = failures.length;
@@ -440,13 +566,27 @@ function runNegativeProbe(registry, acceptanceContract, generationProtocol, evol
     .some((message) => message.includes('Continuous skill evolution protocol lacks required term: feature-skill-harvest-freshness'));
   failures.splice(evolutionProtocolBefore);
 
+  const workflowProtocolBefore = failures.length;
+  const brokenWorkflowProtocol = workflowProtocol.replace(
+    'change-authority-single-source',
+    'removed-authority-probe',
+  );
+  validateWorkflowProtocol(brokenWorkflowProtocol);
+  const workflowProtocolCaught = failures
+    .slice(workflowProtocolBefore)
+    .some((message) => message.includes('Workflow integration protocol lacks required term: change-authority-single-source'));
+  failures.splice(workflowProtocolBefore);
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
   if (!generationProtocolCaught) fail('Negative probe did not catch an incomplete stack skill generation protocol.');
   if (!evolutionProtocolCaught) fail('Negative probe did not catch an incomplete continuous skill evolution protocol.');
-  if (duplicateCaught && brokenLinkCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught');
+  if (!workflowRegistryCaught) fail('Negative probe did not catch a duplicate workflow integration.');
+  if (!workflowSourceCaught) fail('Negative probe did not catch missing workflow source freshness.');
+  if (!workflowProtocolCaught) fail('Negative probe did not catch an incomplete workflow integration protocol.');
+  if (duplicateCaught && brokenLinkCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught');
   }
 }
 
@@ -456,6 +596,8 @@ const generationProtocol = read('references/stack-skill-generation.md');
 validateGenerationProtocol(generationProtocol);
 const evolutionProtocol = read('references/continuous-skill-evolution.md');
 validateEvolutionProtocol(evolutionProtocol);
+const workflowProtocol = read('references/workflow-integrations.md');
+validateWorkflowProtocol(workflowProtocol);
 
 let registry;
 try {
@@ -473,14 +615,31 @@ try {
   fail(`Acceptance contract is not valid JSON: ${error.message}`);
 }
 
-if (process.argv.includes('--negative-probe') && registry && acceptanceContract) {
-  runNegativeProbe(registry, acceptanceContract, generationProtocol, evolutionProtocol);
+let workflowRegistry;
+try {
+  workflowRegistry = JSON.parse(read('assets/workflow-integration-registry.json'));
+  validateWorkflowRegistry(workflowRegistry);
+} catch (error) {
+  fail(`Workflow integration registry is not valid JSON: ${error.message}`);
+}
+
+if (process.argv.includes('--negative-probe') && registry && workflowRegistry && acceptanceContract) {
+  runNegativeProbe(
+    registry,
+    workflowRegistry,
+    acceptanceContract,
+    generationProtocol,
+    evolutionProtocol,
+    workflowProtocol,
+  );
 }
 
 if (failures.length > 0) {
   for (const message of failures) console.error(`FAIL: ${message}`);
   process.exitCode = 1;
 } else {
-  console.log(`skill_validation=pass markdown_files=${markdownCount} capability_packs=${registry.packs.length}`);
+  console.log(
+    `skill_validation=pass markdown_files=${markdownCount} capability_packs=${registry.packs.length} workflow_integrations=${workflowRegistry.integrations.length}`,
+  );
   console.log('os_evidence=macos:skill-structure-verified,windows:designed-not-run,linux:designed-not-run');
 }

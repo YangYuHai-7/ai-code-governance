@@ -21,6 +21,7 @@
 | 门禁链 `package.json`、可检查清单、四个钩子事件、探针命令、客户端接线表、git hook | [gates-and-hooks.md](gates-and-hooks.md) |
 | 知识层目录结构、模块页必需章节、`memory-check` 块、来源 front matter、溯源块 | [memory-layer.md](memory-layer.md) |
 | `runtime.yaml`、`task.yaml`、状态机、fallback 表、harness CLI | [harness.md](harness.md) |
+| `workflow-integrations.yaml`、外部 provider 权威矩阵、OpenSpec/Superpowers 重叠与探针 | [workflow-integrations.md](workflow-integrations.md) |
 
 ---
 

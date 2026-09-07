@@ -272,6 +272,60 @@
       "recovery_case": "Restore an accountable owner, review date, allowed status, and last and next health-check metadata, then replay the same gate.",
       "expected_recovery": "The framework gate exits zero and the candidate remains queryable as an owned queue item rather than a prose checkbox.",
       "proves": "L11 has accountable maintenance state and a scheduled revalidation loop."
+    },
+    {
+      "id": "workflow-source-freshness",
+      "applies_when": "The project selects an external change-governance, execution-discipline, or bridge provider.",
+      "negative_case": "Remove its official source id, observed version, retrieval date, license when content is copied, or mark an unreviewed provider update as current.",
+      "expected_failure": "The real structure or delivery gate exits non-zero and names the provider plus stale or missing provenance; an unavailable refresh remains unverified rather than current.",
+      "recovery_case": "Restore authoritative source records, observe the installed version, record compatibility and license decisions, then replay the provider checks.",
+      "expected_recovery": "The same gate exits zero while any untested provider or platform boundary remains visible.",
+      "proves": "External workflow behavior is governed as a versioned dependency rather than remembered folklore."
+    },
+    {
+      "id": "change-authority-single-source",
+      "applies_when": "The project has product-behavior specs, active change artifacts, or more than one potential change-governance provider.",
+      "negative_case": "Declare two owners for current product behavior or active change, copy an owned proposal/spec/design into a parallel canonical location, or omit the conflict action.",
+      "expected_failure": "The real structure or delivery gate exits non-zero and identifies the duplicated or ownerless authority object and both conflicting paths.",
+      "recovery_case": "Select one owner for each authority object, replace non-owner copies with references, and restore stop-and-report conflict handling.",
+      "expected_recovery": "The same gate exits zero with exactly one resolvable owner per governed object.",
+      "proves": "External and project-native change systems cannot create a second source of truth."
+    },
+    {
+      "id": "execution-plan-single-authority",
+      "applies_when": "Implementation can consume a project plan, external change task list, or external execution plan.",
+      "negative_case": "Configure or generate two formal implementation task or plan owners for the same task, or allow an execution provider to create a second plan without an explicit supersession decision.",
+      "expected_failure": "The real routing or delivery gate exits non-zero and names both plan authorities and the required resolution.",
+      "recovery_case": "Keep exactly one plan authority and make every execution method reference it, or record a reviewed supersession that retires the old plan.",
+      "expected_recovery": "The same gate exits zero and resume reports one plan authority.",
+      "proves": "Implementation does not drift between parallel task lists."
+    },
+    {
+      "id": "external-change-runtime-linkage",
+      "applies_when": "An L9 task references an external active change.",
+      "negative_case": "Use a missing change id, mix authority paths from different changes, reference an archived or superseded change as active, or mismatch the task provider and project integration registry.",
+      "expected_failure": "Strict doctor, resume, or delivery exits non-zero and names the invalid change linkage.",
+      "recovery_case": "Restore one current change id, consistent authority paths, matching provider metadata, and the observed compatible version.",
+      "expected_recovery": "The same real entrypoint exits zero and prints the resolved change authority in the recovery package.",
+      "proves": "External specifications remain references tied to the actual task instead of stale copied context."
+    },
+    {
+      "id": "external-archive-completion-gate",
+      "applies_when": "The selected change provider supports synchronization or archive and the project exposes a wrapper or workflow that can invoke it.",
+      "negative_case": "Attempt archive before current-generation project gates, change validation, required human approval, or capability harvest are complete.",
+      "expected_failure": "The real project archive or completion wrapper exits non-zero before mutating the change lifecycle and lists the missing obligations.",
+      "recovery_case": "Satisfy every current-generation obligation and invoke the same wrapper against the same active change.",
+      "expected_recovery": "The wrapper succeeds, records the archive evidence, and leaves no active runtime reference to the archived change.",
+      "proves": "External archive cannot bypass project governance or reuse stale completion evidence."
+    },
+    {
+      "id": "selective-execution-capability",
+      "applies_when": "The integration claims that only selected capabilities from an external execution framework are used inside another orchestrator.",
+      "negative_case": "Remove one selected capability from real runtime discovery or replay an invocation that triggers an unapproved duplicate design, plan, task runtime, or completion artifact.",
+      "expected_failure": "The real capability probe or delivery gate exits non-zero, or the integration is explicitly downgraded to unverified instead of claiming conflict-free selective use.",
+      "recovery_case": "Restore a discoverable compatible capability and replay it without conflicting artifacts, adopt an attributed local adapter, or select a single full orchestrator.",
+      "expected_recovery": "The same probe exits zero for the declared selective set, or the configuration honestly records a non-selective mode.",
+      "proves": "Selective integration is an observed runtime property rather than a configuration wish."
     }
   ]
 }

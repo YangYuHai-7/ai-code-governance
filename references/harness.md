@@ -125,6 +125,18 @@ context:
   memory_pages: [docs/memory/<module>/README.md]
   sources: [docs/memory/sources/YYYY-MM-DD-<slug>.md]
 
+external_workflows:                 # 没有外部 provider 时省略整个块
+  change:
+    provider: <registry integration id>
+    change_id: <外部 change id>
+    authority_paths: [<只引用，不复制 proposal/spec/design/tasks>]
+    observed_version: <实际读取的版本>
+  execution:
+    provider: <registry integration id>
+    mode: full | selective
+    capabilities: [<已证明可调用的能力>]
+    plan_authority: project-runtime | external-change-tasks | external-execution-plan
+
 gates:                            # 从 gates_by_task_type 实例化，逐条带状态
   - name: framework_check
     status: pending | passed | failed | blocked | acked
@@ -162,6 +174,8 @@ audit:
 
 **`profiles` 字段把 L9 接回 L2**：恢复一个任务时，助手不用重新猜要加载什么。
 
+**`external_workflows` 只保存引用和选择证据**：它不允许把 OpenSpec proposal/spec/design/tasks 或外部 execution plan 再复制一份。启用时必须与 `<CANON>/workflow-integrations.yaml` 的 provider、权威矩阵和版本一致；完整协议见 [workflow-integrations.md](workflow-integrations.md)。`plan_authority` 只能有一个值，selective execution 还必须有真实运行时能力回放证据。
+
 ### Gate receipt 的新鲜度是不变量
 
 `passed` 不是永恒属性，而是“某个 gate 对某一代实现的证据”。运行时必须：
@@ -172,6 +186,7 @@ audit:
 4. completion 要求 required gate 集合与 `gates_by_task_type` 完全一致，每项 passed/acked 都有非空证据、
    合法时间且 generation 等于当前代；
 5. 完成时记录 `completed_generation`，供 doctor 与接手者核对。
+6. 外部 change/runtime 引用也属于当前 generation：change 不存在、已归档/被替代、权威路径改变、provider 版本未复核或出现第二份 plan 时，completion 必须失败。
 
 只比较 status 会产生“旧证据证明新实现”的假完成。时间戳本身也不够；generation 或稳定 change
 fingerprint 才是证据归属。
@@ -238,6 +253,9 @@ Next action: <具体清理动作或需要谁决策>
 | 上下文即将被压缩 | 先落留痕与 `task.yaml`，再继续 |
 | 换工具/换会话接手 | 先按时间倒序读完该 slug 的全部留痕与 `task.yaml`，再动手 |
 | 计划执行中发现方案不成立 | 回 `planning`，说明为什么，不要在 `implementing` 里悄悄换方案 |
+| 外部 change 与项目任务、设计或计划冲突 | 停止执行并回 `planning`；按唯一权威矩阵决定修哪一份，禁止双向手工同步 |
+| 外部执行 bootstrap 强制生成第二份 design/plan | 不声明 selective integration；选择一个 orchestrator，或停在 `blocked` 等用户决定 |
+| provider 更新后行为或命令发生变化 | 将相关接线降级为 `unverified`，刷新来源并重跑真实入口与负向探针 |
 | 发现范围外的真实问题 | 记录下来单独报，**不在本次改动里顺手修**（搭车改动会让评审失效） |
 | 状态文件与实际工作树不一致 | 以工作树为准（P3），修状态文件，并在 history 里记这次纠偏 |
 | ambient `status` / `resume` / `session-start` 自身坏了 | 警告 + 继续（P9），并把这层标为 `unverified` 直到修好 |
@@ -276,7 +294,7 @@ Next action: <具体清理动作或需要谁决策>
 `doctor` 由 L8 检查器调用（或反过来），这样**运行时自身的完整性也被门禁覆盖**。
 
 `resume` 的恢复包必须包含 `permissions`、`context`、`fallback`、`audit`、当前 generation 与 gate receipt
-摘要；对敏感/读写任务省略这些字段会让接手者看不到授权、脱敏或已使用的例外。
+摘要；存在外部 provider 时还必须包含 `external_workflows`、唯一 plan authority 和版本状态。对敏感/读写任务省略这些字段会让接手者看不到授权、脱敏或已使用的例外。
 
 ### L9 必需负向矩阵
 
@@ -286,6 +304,8 @@ Next action: <具体清理动作或需要谁决策>
 - 通用 transition 到 complete 必须失败；
 - 删除 required gate、重复 gate、空 evidence/checked_at、旧 generation 必须失败；
 - 行为变化缺 harvest、复用旧 fingerprint receipt、harvest 后再次写代码必须失败；
+- 外部 change id 不存在、指向 archive、权威路径跨 change、出现第二份正式 plan 或 provider 版本未复核必须失败；
+- 声明 `mode: selective` 但真实 runtime 找不到能力、或调用后强制生成冲突 artifact，必须失败或保持 `unverified`；
 - strict doctor 必须让非法终态继续可见，不能因为 status 隐藏 complete 而漏掉；
 - 修复并对当前 generation 重验后，专用 complete 必须成功。
 

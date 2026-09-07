@@ -24,6 +24,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 多轮访谈 | 区分仓库事实与用户决策，通过决策账本支持跨会话恢复 |
 | 分层治理 | 提供 12 条核心原则和 L0–L11 十二层参考架构 |
 | 技术栈能力包 | 识别前后端与平台组合，同时明确 `supported`、`unverified` 等证据等级 |
+| 外部工作流编排 | 发现并有选择地整合 OpenSpec、Superpowers 等规格/执行 provider，以单一权威矩阵防止重复 design、plan 与 completion state |
 | 标准 Skill 工厂 | 按目标版本检索当前官方规范，生成组件、状态、接口、授权、数据访问、事务、事件等细粒度编码 Skill |
 | 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
 | 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后自动 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
@@ -37,8 +38,8 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 ```mermaid
 flowchart LR
     A[仓库侦察] --> B[多轮访谈]
-    B --> C[确认决策账本]
-    C --> D[检索当前标准与版本边界]
+    B --> C[确认决策账本与工作流权威]
+    C --> D[检索当前标准与外部版本边界]
     D --> E[生成栈 质量 业务 Skills]
     E --> F[分阶段生成治理框架]
     F --> G[正向门禁与负向探针]
@@ -114,6 +115,17 @@ WSL 验证不等于原生 Windows 验证。详细约束见 [跨平台协议](ref
 - `monorepo`：判断根治理与包级自治的边界。
 - `repository-family`：根层只负责编排、契约和跨仓知识。
 - `modernization-assessment`：技术迁移独立评估，不与治理安装捆绑。
+
+### 外部工作流
+
+OpenSpec 和 Superpowers 是可选 provider，不是安装本 Skill 后自动启用的依赖。检测到它们时，框架会先要求确定：
+
+- `project-native`、`external-primary`、`coordinated` 或 `external-bridge` 模式；
+- 当前产品行为、active change、正式 design、task list、runtime state 和 delivery evidence 的唯一 owner；
+- 哪些执行能力已在真实客户端中证明可调用；
+- 外部版本、官方来源、许可证、刷新日期和剩余冲突边界。
+
+OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers 被选中时适合提供 TDD、系统调试、worktree、实施、评审和完成验证。已有批准 design/task 时不得生成第二份 Superpowers design/plan。详细协议见 [外部工作流集成](references/workflow-integrations.md)，机器可读候选见 [工作流集成注册表](assets/workflow-integration-registry.json)。
 
 ## 安装
 
@@ -194,7 +206,9 @@ ai-code-governance/
 ├── SKILL.md
 ├── README.md
 ├── assets/
-│   └── capability-pack-registry.json
+│   ├── capability-pack-registry.json
+│   ├── workflow-integration-registry.json
+│   └── acceptance-contract.json
 ├── references/
 │   ├── principles.md
 │   ├── layers.md
@@ -202,6 +216,7 @@ ai-code-governance/
 │   ├── capability-packs.md
 │   ├── stack-skill-generation.md
 │   ├── continuous-skill-evolution.md
+│   ├── workflow-integrations.md
 │   ├── interview-protocol.md
 │   ├── ui-selection.md
 │   ├── cross-platform.md
@@ -219,9 +234,9 @@ node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
 ```
 
-第一条检查 front matter、本地链接、技术栈生成与持续升级协议、能力包注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包、缺失高风险探针、不完整生成/升级协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
+第一条检查 front matter、本地链接、技术栈生成、持续升级与外部工作流协议、两个注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包/工作流集成、缺失高风险探针、不完整协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
 
-当前基线：17 个 Markdown 文件、16 个能力包；macOS 结构检查与负向探针通过。
+当前基线：18 个 Markdown 文件、16 个技术栈能力包、2 个未认证的外部工作流候选；macOS 结构检查与负向探针通过。
 
 ## 设计原则
 
@@ -234,6 +249,7 @@ node scripts/validate-skill.mjs --negative-probe
 - 每条机器禁令都要解释为什么，并尽量由检查器执行。
 - 客户端目录只是适配器，不能成为第二正典。
 - 遗留项目默认不换栈，现代化评估单独立项。
+- 外部规格和执行框架只有在用户选择、唯一权威明确且真实接线通过后才能标记已集成。
 - 没有实际验证的命令、平台和客户端必须保持可见。
 
 完整论证见 [十二条核心原则](references/principles.md)。

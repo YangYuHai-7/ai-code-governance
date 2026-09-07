@@ -47,7 +47,9 @@
 | 12 | **改动集合与文档同步的比例关系** | 见下面「比例化门禁」 |
 | 13 | **capability harvest freshness**：行为 change set 有当前 fingerprint 的评估 receipt | 成功实现否则不会进入 Skill，后续助手继续重新实现 |
 | 14 | **实现—Skill 漂移与正典能力旁路** | 统一 Client、权限 service 或 adapter 已存在时，拦住旧 Skill 和新 raw implementation |
-| 15 | 垃圾文件（`.DS_Store` 之类）未被提交 | 廉价，且脏目录会让符号链接检查产生噪音 |
+| 15 | **外部工作流权威唯一性**：活动 change、实现计划和完成证据各自只有一个 owner | OpenSpec、Superpowers 与项目内治理并存时，最危险的是三套任务状态互相漂移 |
+| 16 | **外部 provider 版本与选择性能力可证** | 插件升级或只暴露部分 skills 后，不能继续沿用旧版调用假设 |
+| 17 | 垃圾文件（`.DS_Store` 之类）未被提交 | 廉价，且脏目录会让符号链接检查产生噪音 |
 
 ### fail 还是 warn：先区分入口，再判断依赖
 
@@ -99,6 +101,24 @@
 `not-applicable` / `unverified`、适用项不能伪装成 `not-applicable`，且 `pass` 必须同时给出真实入口、
 负向证据和恢复证据。`not-applicable` 要给适用性理由；缺真实客户端证据时用 `unverified`。这样报告中
 “已跑 pre-commit/Stop 探针”不再是无法核对的散文声明。
+
+### 外部工作流必须进入同一条完成链
+
+当目标仓库选择 OpenSpec、Superpowers 或其他外部 workflow provider 时，不能另建一条平行的“外部完成”
+捷径。先按 [workflow-integrations.md](workflow-integrations.md) 生成权威矩阵，再让现有 delivery checker
+消费同一份配置与 receipt：
+
+- OpenSpec change ID 只作为活动变更引用；项目行为正典仍由权威矩阵指定，禁止复制一份长期平行 spec。
+- Superpowers plan、项目 task ledger 与 change tasks 中只能有一个实现计划 owner；其他位置仅保存可解析引用。
+- provider 的 `complete` / `archive` / `finish` 动作必须在当前 generation 的项目门禁、知识同步与能力提取
+  都通过后才允许；不能把 provider 自己的完成状态当作项目交付证据。
+- “只调用某个 skill/command”必须回放目标安装中的真实入口。名称存在、文档声称支持、或另一版本曾经可用，
+  都不能标为 `reachable` / `enforced`。
+- provider 版本、来源、许可或能力面改变时，旧验证证据失效；在重新探针前相应声明降为 `unverified`。
+
+至少执行 acceptance contract 中的 `workflow-source-freshness`、`change-authority-single-source`、
+`execution-plan-single-authority`、`external-change-runtime-linkage`、`external-archive-completion-gate` 与
+`selective-execution-capability`。未选择外部 provider 时可标 `not-applicable`，但必须给出适用性理由。
 
 ---
 

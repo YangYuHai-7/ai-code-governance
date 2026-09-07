@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "product_line": "ai-code-governance",
+  "evidence_levels": [
+    "certified",
+    "supported",
+    "unverified",
+    "unsupported"
+  ],
+  "lifecycle_states": [
+    "active",
+    "planned",
+    "deprecated"
+  ],
+  "integrations": [
+    {
+      "id": "openspec-change-governance",
+      "kind": "change-governance",
+      "lifecycle": "active",
+      "evidence": "unverified",
+      "upstream": {
+        "project": "Fission-AI/OpenSpec",
+        "license": "MIT",
+        "source_checked_at": "2026-09-07",
+        "version_policy": "observe-target-installation",
+        "official_urls": [
+          "https://github.com/Fission-AI/OpenSpec",
+          "https://github.com/Fission-AI/OpenSpec/blob/main/docs/getting-started.md",
+          "https://github.com/Fission-AI/OpenSpec/blob/main/docs/customization.md"
+        ],
+        "refresh_required": true
+      },
+      "detect": {
+        "path_any": [
+          "openspec/config.yaml",
+          "openspec/specs",
+          "openspec/changes"
+        ],
+        "command_any": [
+          "openspec --version"
+        ]
+      },
+      "capabilities": [
+        "proposal",
+        "behavior-specification",
+        "delta-specification",
+        "design-artifact",
+        "implementation-task-list",
+        "change-validation",
+        "spec-synchronization",
+        "change-archive"
+      ],
+      "overlaps": [
+        "requirement-intake",
+        "design-document",
+        "implementation-plan",
+        "task-list",
+        "completion-lifecycle"
+      ],
+      "authority_rule": "When explicitly selected, OpenSpec owns current product behavior and active change artifacts; docs/ai owns AI governance, and the task runtime references rather than copies the change.",
+      "validation_sources": [
+        "installed OpenSpec version output",
+        "project OpenSpec schema resolution",
+        "project OpenSpec change validation",
+        "project delivery and behavior gates"
+      ]
+    },
+    {
+      "id": "superpowers-execution-discipline",
+      "kind": "execution-discipline",
+      "lifecycle": "active",
+      "evidence": "unverified",
+      "upstream": {
+        "project": "obra/superpowers",
+        "license": "MIT",
+        "source_checked_at": "2026-09-07",
+        "version_policy": "observe-target-installation",
+        "official_urls": [
+          "https://github.com/obra/superpowers",
+          "https://github.com/obra/superpowers/blob/main/skills/using-superpowers/SKILL.md",
+          "https://github.com/obra/superpowers/blob/main/skills/systematic-debugging/SKILL.md"
+        ],
+        "refresh_required": true
+      },
+      "detect": {
+        "path_any": [
+          ".codex-plugin/plugin.json",
+          ".claude-plugin/plugin.json"
+        ],
+        "native_skill_any": [
+          "superpowers/using-superpowers",
+          "superpowers/test-driven-development",
+          "superpowers/systematic-debugging"
+        ]
+      },
+      "capabilities": [
+        "test-driven-development",
+        "systematic-debugging",
+        "worktree-isolation",
+        "plan-execution",
+        "subagent-driven-development",
+        "spec-compliance-review",
+        "code-quality-review",
+        "verification-before-completion",
+        "branch-finishing"
+      ],
+      "overlaps": [
+        "brainstorming",
+        "design-document",
+        "implementation-plan",
+        "task-runtime",
+        "completion-lifecycle"
+      ],
+      "authority_rule": "Superpowers may provide execution methods, but it does not become the project's product-behavior or governance source of truth unless the user explicitly selects its full workflow as the single orchestrator.",
+      "validation_sources": [
+        "installed plugin or skill version evidence",
+        "real runtime skill discovery",
+        "representative invocation replay",
+        "project delivery and behavior gates"
+      ]
+    }
+  ]
+}
