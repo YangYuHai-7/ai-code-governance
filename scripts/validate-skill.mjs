@@ -93,7 +93,7 @@ function validateMarkdownLinks() {
 
 function validateEntryPoint() {
   const skill = read('SKILL.md');
-  const frontMatter = skill.match(/^---\n([\s\S]*?)\n---\n/);
+  const frontMatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
   if (!frontMatter) {
     fail('SKILL.md is missing YAML front matter.');
     return;
