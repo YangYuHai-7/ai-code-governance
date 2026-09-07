@@ -128,9 +128,71 @@ function validateEntryPoint() {
     'workflow-integrations.md',
     'change-authority-single-source',
     'selective-execution-capability',
+    'aicg init',
+    'aicg check',
+    'aicg sync',
+    'agent-registry.json',
+    '.ai-governance/manifest.json',
+    'initializer.md',
   ];
   for (const term of requiredTerms) {
     if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
+  }
+}
+
+function validateCliPackage(pkg) {
+  check(pkg.name === 'ai-code-governance', 'package.json name must be ai-code-governance.');
+  check(pkg.version === '0.1.0', 'Initial CLI version must be 0.1.0.');
+  check(pkg.type === 'module', 'CLI package must use ESM.');
+  check(pkg.bin?.aicg === './bin/aicg.mjs', 'package.json must expose the aicg binary.');
+  check(pkg.engines?.node === '>=22', 'CLI must require Node.js >=22.');
+  check(!pkg.dependencies || Object.keys(pkg.dependencies).length === 0, 'CLI must not add runtime dependencies.');
+  for (const script of ['test', 'validate:skill', 'validate', 'smoke', 'smoke:package']) {
+    check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
+  }
+  check(fs.existsSync(path.join(root, 'bin/aicg.mjs')), 'aicg binary is missing.');
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs']) {
+    check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
+  }
+}
+
+function validateAgentRegistry(registry) {
+  check(registry.schema_version === 1, 'Agent registry schema_version must be 1.');
+  const ids = new Set();
+  for (const agent of registry.agents ?? []) {
+    check(typeof agent.id === 'string' && agent.id.length > 0, 'Agent registry entry lacks id.');
+    check(!ids.has(agent.id), `Duplicate agent registry id: ${agent.id}`);
+    ids.add(agent.id);
+    check(typeof agent.label === 'string' && agent.label.length > 0, `${agent.id} lacks label.`);
+    check(Array.isArray(agent.detect_commands), `${agent.id} lacks detect_commands.`);
+    check(typeof agent.instruction_entry === 'string', `${agent.id} lacks instruction_entry.`);
+    check(Array.isArray(agent.skill_directories), `${agent.id} lacks skill_directories.`);
+    check(Array.isArray(agent.rule_directories), `${agent.id} lacks rule_directories.`);
+    for (const directory of [...(agent.skill_directories ?? []), ...(agent.rule_directories ?? [])]) {
+      check(!/\.\.|^[\\/]/.test(directory), `${agent.id} contains an unsafe adapter directory: ${directory}`);
+    }
+  }
+  for (const id of ['codex', 'claude-code', 'cursor', 'generic']) {
+    check(ids.has(id), `Missing agent registry entry: ${id}`);
+  }
+}
+
+function validateNoLinkAdapters() {
+  const markdown = [path.join(root, 'SKILL.md'), path.join(root, 'README.md'), ...markdownFiles(path.join(root, 'references'))];
+  const forbidden = [
+    { pattern: /\bln\s+-s\b/, label: 'ln -s adapter command' },
+    { pattern: /New-Item\s+-ItemType\s+Junction/i, label: 'PowerShell junction command' },
+    { pattern: /adapter_mode:\s*(?:symlink|junction)/i, label: 'link adapter mode' },
+  ];
+  for (const file of markdown) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const item of forbidden) {
+      check(!item.pattern.test(content), `${path.relative(root, file)} contains forbidden ${item.label}.`);
+    }
+  }
+  for (const file of fs.readdirSync(path.join(root, 'src')).filter((name) => name.endsWith('.mjs'))) {
+    const content = fs.readFileSync(path.join(root, 'src', file), 'utf8');
+    check(!/\b(?:symlinkSync|linkSync)\s*\(/.test(content), `src/${file} creates a filesystem link.`);
   }
 }
 
@@ -380,6 +442,12 @@ const requiredProbeIds = [
   'external-change-runtime-linkage',
   'external-archive-completion-gate',
   'selective-execution-capability',
+  'generated-adapter-no-links',
+  'managed-adapter-drift',
+  'initializer-idempotence',
+  'unmanaged-file-preservation',
+  'noninteractive-required-input',
+  'agent-assist-fallback',
 ];
 
 function validateAcceptanceContract(contract) {
@@ -474,6 +542,7 @@ function validateAcceptanceContract(contract) {
 
 function runNegativeProbe(
   registry,
+  agentRegistry,
   workflowRegistry,
   acceptanceContract,
   generationProtocol,
@@ -496,6 +565,15 @@ function runNegativeProbe(
 
   if (!duplicateCaught) fail('Negative probe did not catch a duplicate capability pack.');
   if (!brokenLinkCaught) fail('Negative probe did not catch a broken local link.');
+
+  const agentRegistryBefore = failures.length;
+  const brokenAgentRegistry = structuredClone(agentRegistry);
+  brokenAgentRegistry.agents.push(structuredClone(brokenAgentRegistry.agents[0]));
+  validateAgentRegistry(brokenAgentRegistry);
+  const agentRegistryCaught = failures
+    .slice(agentRegistryBefore)
+    .some((message) => message.includes('Duplicate agent registry id'));
+  failures.splice(agentRegistryBefore);
 
   const workflowRegistryBefore = failures.length;
   const brokenWorkflowRegistry = structuredClone(workflowRegistry);
@@ -583,15 +661,32 @@ function runNegativeProbe(
   if (!generationProtocolCaught) fail('Negative probe did not catch an incomplete stack skill generation protocol.');
   if (!evolutionProtocolCaught) fail('Negative probe did not catch an incomplete continuous skill evolution protocol.');
   if (!workflowRegistryCaught) fail('Negative probe did not catch a duplicate workflow integration.');
+  if (!agentRegistryCaught) fail('Negative probe did not catch a duplicate agent registry entry.');
   if (!workflowSourceCaught) fail('Negative probe did not catch missing workflow source freshness.');
   if (!workflowProtocolCaught) fail('Negative probe did not catch an incomplete workflow integration protocol.');
-  if (duplicateCaught && brokenLinkCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught');
+  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught');
   }
 }
 
 validateEntryPoint();
 const markdownCount = validateMarkdownLinks();
+validateNoLinkAdapters();
+let cliPackage;
+try {
+  cliPackage = JSON.parse(read('package.json'));
+  validateCliPackage(cliPackage);
+} catch (error) {
+  fail(`package.json is not valid: ${error.message}`);
+}
+
+let agentRegistry;
+try {
+  agentRegistry = JSON.parse(read('assets/agent-registry.json'));
+  validateAgentRegistry(agentRegistry);
+} catch (error) {
+  fail(`Agent registry is not valid JSON: ${error.message}`);
+}
 const generationProtocol = read('references/stack-skill-generation.md');
 validateGenerationProtocol(generationProtocol);
 const evolutionProtocol = read('references/continuous-skill-evolution.md');
@@ -623,9 +718,10 @@ try {
   fail(`Workflow integration registry is not valid JSON: ${error.message}`);
 }
 
-if (process.argv.includes('--negative-probe') && registry && workflowRegistry && acceptanceContract) {
+if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract) {
   runNegativeProbe(
     registry,
+    agentRegistry,
     workflowRegistry,
     acceptanceContract,
     generationProtocol,
@@ -639,7 +735,7 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `skill_validation=pass markdown_files=${markdownCount} capability_packs=${registry.packs.length} workflow_integrations=${workflowRegistry.integrations.length}`,
+    `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} workflow_integrations=${workflowRegistry.integrations.length}`,
   );
   console.log('os_evidence=macos:skill-structure-verified,windows:designed-not-run,linux:designed-not-run');
 }

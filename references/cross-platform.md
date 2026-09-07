@@ -14,7 +14,7 @@ platform:
   current_shell: zsh
   required_shells: [posix-sh, powershell]
   path_case_sensitive: false
-  adapter_mode: symlink
+  adapter_mode: generated-files
   hook_mode: git-shim
 ```
 
@@ -33,18 +33,18 @@ platform:
 
 ## 正典与适配器
 
-“唯一正典源”要求只有一个地方可以被人工编辑，不等于所有系统都必须以同一种文件系统机制暴露它。
+“唯一正典源”要求只有一个地方可以被人工编辑。跨平台实现固定使用以下顺序：
 
-按优先级选择：
+1. **客户端原生入口/导入**：Codex 与 Cursor 读取 `AGENTS.md`；Claude Code 的普通 `CLAUDE.md` 使用
+   `@AGENTS.md` 导入。
+2. **manifest 管理的普通文件**：客户端必须使用专属 rule/skill 目录时，由 `aicg init/sync` 生成；文件
+   标记 generated，manifest 保存正典来源、所有权和 SHA-256。
 
-1. **相对符号链接**：macOS/Linux 默认；Windows 开启 Developer Mode 且 Git 正确保留 symlink 时可用。
-2. **目录 junction**：Windows 本地安装可选，但必须证明客户端能读取，且安装/卸载脚本幂等。
-3. **生成式镜像**：由正典生成，只允许工具写入；文件头标记 generated，清单保存源路径与内容哈希，门禁检查零漂移。
-4. **客户端原生指针/导入**：客户端支持时优先于复制。
+不创建 symlink、junction 或其他链接，不依赖管理员权限、Developer Mode 或 Git 链接配置。禁止人工维护
+两套内容；适配器变化时 `aicg check` 必须失败并给出 `aicg sync` 修复动作。
 
-禁止人工维护两套内容。使用生成式镜像时，README 必须写明它是适配器，不是第二正典；检查器要在内容变化时失败并给出重新生成命令。
-
-Git 在 Windows 上可能把 symlink 检出为包含目标路径的普通文本文件。检查器必须识别这种状态并给出明确修复方案；不能把“文本内容看起来像目标路径”当作客户端已经能够加载的证据。
+旧项目发现链接时默认停止。只有 `--migrate-links` 或交互确认后才能 unlink 已知适配器链接本身，再创建
+普通文件；不得递归删除或修改链接目标。未知链接保持不动并报告。
 
 ## 脚本与命令
 
@@ -57,7 +57,7 @@ scripts/
   governance-gate.ps1                           # PowerShell 薄启动器
 ```
 
-只有目标项目已经具备对应运行时时才选择 Node.js、Python、JVM 或 .NET。不要为了治理框架给一个纯 Java 项目强制安装 Node.js，也不要给纯 Node.js 项目强制安装 Python。
+`aicg` 管理工具本身需要 Node.js 22+；这是执行初始化、同步和检查的显式工具依赖。生成到目标项目里的项目门禁则优先复用项目已有运行时：不要因为项目用 `aicg` 初始化，就让纯 Java 项目的日常构建额外依赖 Node.js，也不要给纯 Node.js 项目强制安装 Python。
 
 ### 包管理器入口
 
@@ -100,7 +100,7 @@ dotnet tool run governance-check
 - Windows 盘符与 UNC 路径（即使在非 Windows 上可用纯函数测试）；
 - 大小写冲突；
 - LF/CRLF 读取；
-- symlink、junction、生成式镜像的状态识别；
+- 普通文件、遗留链接和 generated manifest 的状态识别；
 - 缺少 executable bit 时的 Windows 调用；
 - 已存在 `core.hooksPath` 时不覆盖；
 - 当前运行时或命令缺失时给出可执行 fallback。
@@ -111,9 +111,9 @@ dotnet tool run governance-check
 
 | OS | Shell/入口 | 适配器模式 | Gate | Hook probe | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| macOS | zsh 启动、POSIX `sh` 脚本 | symlink | pass/fail | pass/fail | verified/unverified |
-| Windows | PowerShell 7、Git hook | symlink/junction/generated | pass/fail | pass/fail | verified/unverified |
-| Linux | POSIX `sh`/Bash | symlink | pass/fail | pass/fail | verified/unverified |
+| macOS | Node.js CLI、zsh/POSIX 启动 | native/generated-files | pass/fail | pass/fail | verified/unverified |
+| Windows | Node.js CLI、PowerShell/Git hook | native/generated-files | pass/fail | pass/fail | verified/unverified |
+| Linux | Node.js CLI、POSIX `sh`/Bash | native/generated-files | pass/fail | pass/fail | verified/unverified |
 
 产品 C 只有在三个系统的声明组合都通过正向检查和至少一个负向探针后，才能标记 `cross-platform-certified`。在此之前使用更精确的表述，例如“macOS verified；Windows/Linux designed but not yet verified”。
 
@@ -122,9 +122,9 @@ dotnet tool run governance-check
 按系统分别报告：
 
 ```text
-macOS: gate verified; hook probe verified; symlink adapter verified
-Windows: design covered; execution not yet verified
-Linux: design covered; execution not yet verified
+macOS: CLI/gate verified; generated adapter verified; hook probe <status>
+Windows: CLI/gate <status>; generated adapter <status>; hook probe <status>
+Linux: CLI/gate <status>; generated adapter <status>; hook probe <status>
 ```
 
 “代码看起来可移植”不是验证证据。平台未运行不代表失败，但必须保持可见。

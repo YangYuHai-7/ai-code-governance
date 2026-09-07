@@ -1,6 +1,6 @@
 # AI Code Governance
 
-面向新建与遗留项目的跨技术栈、跨平台 AI 代码治理 Skill。
+面向新建与遗留项目的跨技术栈、跨平台 AI 代码治理 CLI 与 Agent Skill。
 
 AI Code Governance inspects a real repository, researches current stack standards, generates project-specific coding and business skills, and continuously upgrades those skills when verified reusable capabilities are implemented.
 
@@ -20,6 +20,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 
 | 能力 | 说明 |
 | --- | --- |
+| `aicg` CLI | 通过 `init/check/sync/doctor` 初始化、校验和维护项目治理，不使用文件系统链接 |
 | 仓库侦察 | 识别单仓、monorepo、仓库族、语言、框架、命令、文档、历史约束和现有 AI 配置 |
 | 多轮访谈 | 区分仓库事实与用户决策，通过决策账本支持跨会话恢复 |
 | 分层治理 | 提供 12 条核心原则和 L0–L11 十二层参考架构 |
@@ -68,6 +69,9 @@ flowchart LR
 2. 结构检查器、门禁与客户端适配器。
 3. 当前技术标准来源、栈基础 Skills、横切质量 Skills、有证据的业务写法 Skills、项目规则、反模式、commands、agents 和验证档案。
 4. 知识记忆、任务运行时、capability harvest、实现—Skill 漂移检查、hooks 和成长闭环。
+
+默认由 `aicg init` 完成确定式生成，再按用户选择调用本机 Agent 深度补全。客户端适配器是普通生成文件，
+由 `.ai-governance/manifest.json` 的 SHA-256 检查防止分叉。
 
 ### 5. 验证
 
@@ -127,41 +131,44 @@ OpenSpec 和 Superpowers 是可选 provider，不是安装本 Skill 后自动启
 
 OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers 被选中时适合提供 TDD、系统调试、worktree、实施、评审和完成验证。已有批准 design/task 时不得生成第二份 Superpowers design/plan。详细协议见 [外部工作流集成](references/workflow-integrations.md)，机器可读候选见 [工作流集成注册表](assets/workflow-integration-registry.json)。
 
-## 安装
+## 安装与运行
 
-这个仓库本身是一个 Agent Skill。可以将整个目录放入支持 Skill 的客户端目录，或放入项目级 `.agents/skills/`。
-
-| 客户端 | 常见目录 |
-| --- | --- |
-| Claude Code | `~/.claude/skills/ai-code-governance/` |
-| Codex | `~/.codex/skills/ai-code-governance/` |
-| Cursor | `.cursor/skills/ai-code-governance/` |
-| GitHub Copilot / 通用 Agent | `.agents/skills/ai-code-governance/` 或 `.github/skills/ai-code-governance/` |
-
-具体自动加载能力取决于客户端版本；无法通过探针确认时，应标记为 `unverified`。
-
-### macOS / Linux
+需要 Node.js 22+。npm 包已经具备发布结构，但当前版本不发布到 npm registry；可以直接从 GitHub 临时运行：
 
 ```bash
-git clone https://github.com/YangYuHai-7/ai-code-governance.git ~/ai-code-governance
-mkdir -p ~/.claude/skills
-ln -s ~/ai-code-governance ~/.claude/skills/ai-code-governance
+npm exec --yes --package=github:YangYuHai-7/ai-code-governance -- aicg init .
 ```
 
-根据实际客户端替换目标技能目录。
+维护本仓库时也可使用：
 
-### Windows PowerShell
-
-```powershell
-$Skill = "$HOME\ai-code-governance"
-git clone https://github.com/YangYuHai-7/ai-code-governance.git $Skill
-New-Item -ItemType Directory -Force "$HOME\.claude\skills"
-New-Item -ItemType Junction -Path "$HOME\.claude\skills\ai-code-governance" -Target $Skill
+```bash
+git clone https://github.com/YangYuHai-7/ai-code-governance.git
+cd ai-code-governance
+node bin/aicg.mjs doctor .
+node bin/aicg.mjs init /path/to/project
 ```
 
-如果组织策略不允许 junction，可以复制目录，但应明确唯一维护源并建立同步检查。
+CLI 不创建 symlink、junction 或其他链接。Codex 与 Cursor 直接读取 `AGENTS.md`；Claude Code 通过普通
+`CLAUDE.md` 的 `@AGENTS.md` 原生导入；客户端专属 rules/skills 是带生成标记和内容哈希的普通文件。
+`docs/ai` 在首次初始化时播种，之后是人和 AI 共同维护的正典；`sync --force` 只恢复 manifest 拥有的
+配置、入口区块和客户端副本，不会把正典回滚成内置模板。
 
 ## 快速使用
+
+```bash
+aicg doctor .
+aicg init .
+aicg check .
+aicg sync .
+```
+
+`init` 会依次扫描仓库、选择 Agent、确认技术栈、选择治理深度与产物语言、预览文件，再生成基础框架。
+hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。无交互环境使用 `--yes` 或
+`--config <json>`；先预览可使用 `--dry-run`。
+
+完整接口、安全覆盖与退出码见 [初始化协议](references/initializer.md)。
+
+### 作为 Agent Skill 使用
 
 安装后可以直接用短语触发：
 
@@ -203,13 +210,19 @@ Skill 会始终先侦察仓库并使规则追溯到真实证据。短语默认�
 
 ```text
 ai-code-governance/
+├── bin/aicg.mjs
+├── src/
+├── test/
+├── package.json
 ├── SKILL.md
 ├── README.md
 ├── assets/
 │   ├── capability-pack-registry.json
+│   ├── agent-registry.json
 │   ├── workflow-integration-registry.json
 │   └── acceptance-contract.json
 ├── references/
+│   ├── initializer.md
 │   ├── principles.md
 │   ├── layers.md
 │   ├── templates.md
@@ -222,21 +235,27 @@ ai-code-governance/
 │   ├── cross-platform.md
 │   └── ...
 └── scripts/
-    └── validate-skill.mjs
+    ├── validate-skill.mjs
+    └── smoke-test.mjs
 ```
 
 ## 自验证
 
-使用 Skill 不需要 Node.js；只有维护和验证这个 Skill 包时需要 Node.js 18+。
+CLI 需要 Node.js 22+。Skill 文档可以直接阅读，但初始化、同步和机器检查都应使用同一 CLI。
 
 ```bash
+npm test
+npm run smoke
+npm run smoke:package
 node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
+npm pack --dry-run
 ```
 
 第一条检查 front matter、本地链接、技术栈生成、持续升级与外部工作流协议、两个注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包/工作流集成、缺失高风险探针、不完整协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
 
-当前基线：18 个 Markdown 文件、16 个技术栈能力包、2 个未认证的外部工作流候选；macOS 结构检查与负向探针通过。
+GitHub Actions 在 macOS、Windows、Linux 上使用 Node.js 22/24 运行测试、Skill 校验、smoke 与打包检查。
+真实 Agent 加载和项目行为仍需独立回放，不能由结构测试代替。
 
 ## 设计原则
 
@@ -247,7 +266,7 @@ node scripts/validate-skill.mjs --negative-probe
 - 每个产品行为 change set 都要评估是否产生可复用能力；优先升级已有 Skill，没有才创建，证据不足则进入候选。
 - adopted capability 的实现入口、Skill、profile、路由和验证指纹必须一起演进。
 - 每条机器禁令都要解释为什么，并尽量由检查器执行。
-- 客户端目录只是适配器，不能成为第二正典。
+- 客户端目录只是 manifest 管理的普通文件适配器，不能成为第二正典；禁止链接式适配。
 - 遗留项目默认不换栈，现代化评估单独立项。
 - 外部规格和执行框架只有在用户选择、唯一权威明确且真实接线通过后才能标记已集成。
 - 没有实际验证的命令、平台和客户端必须保持可见。

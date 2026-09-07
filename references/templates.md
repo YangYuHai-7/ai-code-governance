@@ -39,7 +39,7 @@
 | --- | --- | --- |
 | `<CANON>/` | 正典：规则、上下文映射、技能、命令、角色、工具 | 本仓库 |
 | `<MEM>/` | 模块当前行为的事实 | 本仓库 |
-| `.claude/`、`.cursor/`、… | 指向 `<CANON>/` 的符号链接适配器 | 不要在此写内容 |
+| `.claude/`、`.cursor/`、… | `aicg` 生成的普通文件适配器 | 不要人工编辑 |
 
 ## 阅读顺序（每次任务）
 
@@ -78,14 +78,8 @@
 
 ## L1 客户端引导
 
-**支持规则目录的客户端**：只建符号链接，不写内容。
-
-```bash
-mkdir -p .cursor && ln -s ../<CANON>/rules .cursor/rules
-mkdir -p .claude && ln -s ../<CANON>/skills   .claude/skills \
-                 && ln -s ../<CANON>/commands .claude/commands \
-                 && ln -s ../<CANON>/agents   .claude/agents
-```
+**支持规则或 Skill 目录的客户端**：由 `aicg init` 生成普通文件，manifest 记录正典来源、所有权和
+SHA-256。修改正典后运行 `aicg sync .`；直接改适配器必须让 `aicg check .` 失败。
 
 **Claude Code 没有 `.claude/rules` 约定**，所以常驻规则靠 `CLAUDE.md` 的 `@` 导入拿到（这就是「引导平价性」，L8 第 4 条检查它）：
 
@@ -123,7 +117,7 @@ mkdir -p .claude && ln -s ../<CANON>/skills   .claude/skills \
 ```markdown
 # <PROJECT> AI 正典
 
-本目录是唯一源。客户端目录是符号链接适配器；**不要在适配器里放内容。**
+本目录是唯一人工维护源。客户端目录是 manifest 管理的普通文件适配器；**不要直接编辑适配器。**
 
 | 路径 | 是什么 |
 | --- | --- |
@@ -501,7 +495,7 @@ function checkContextMapReferences() {
 }
 
 function checkAdapterSymlinks() {
-  // 不只检查存在，还要检查它是符号链接且指向正典路径。
+  // Check that every selected adapter is a regular managed file with the expected source hash.
   // 被替换成真文件 = 两个源开始分叉。跨仓库/未跟踪场景只能 warn。
 }
 

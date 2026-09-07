@@ -1,0 +1,41 @@
+{
+  "name": "ai-code-governance",
+  "version": "0.1.0",
+  "description": "Cross-platform initializer and governance toolkit for AI coding agents.",
+  "type": "module",
+  "bin": {
+    "aicg": "./bin/aicg.mjs"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "assets/",
+    "references/",
+    "scripts/validate-skill.mjs",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "validate:skill": "node scripts/validate-skill.mjs && node scripts/validate-skill.mjs --negative-probe",
+    "validate": "npm run validate:skill && node bin/aicg.mjs doctor . --json",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:package": "node scripts/package-smoke.mjs"
+  },
+  "keywords": [
+    "ai-governance",
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "cursor"
+  ],
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YangYuHai-7/ai-code-governance.git"
+  }
+}
