@@ -8,7 +8,8 @@
 用户意图
   -> 仓库侦察与拓扑识别
   -> 多轮访谈与决策账本
-  -> 能力包选择与证据分级
+  -> 技术能力包与外部工作流 provider 选择
+  -> 单一权威矩阵与证据分级
   -> 治理方案编译
   -> 分阶段落地
   -> 正向门禁 + 负向探针
@@ -35,6 +36,10 @@
 ### 能力包注册表
 
 描述某技术栈如何被识别、需要哪类专家、应该继续问什么、从哪里发现验证命令。能力包给出候选，不直接向目标项目注入通用规则。
+
+### 外部工作流编排器
+
+发现 OpenSpec、Superpowers 或相邻 spec/change/execution 系统，记录真实版本、来源、许可证、能力与重叠，但不自动采用。用户选择后生成唯一权威矩阵：产品行为、active change、正式 design/task、runtime state 和 delivery evidence 各自只能有一个 owner。非 owner 系统只保存引用；选择性执行能力必须经过真实客户端回放。协议见 [workflow-integrations.md](workflow-integrations.md)。
 
 ### 产物编译器
 

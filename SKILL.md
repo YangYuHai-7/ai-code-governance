@@ -1,7 +1,7 @@
 ---
 name: ai-code-governance
 description: >-
-  为代码仓库建立或扩展可持续升级的 AI 编码治理框架：识别技术栈并检索当前官方/主流标准，结合业务不变量生成细粒度编码 skills，并在权限功能、项目封装或可复用集成完成后自动提取或升级 skills；同时建立唯一正典源、上下文路由、适配器、知识记忆、机器门禁、hooks 与成长闭环。用户说“AI 编码治理框架”“代码治理框架”“根据技术栈生成开发规范/skills”“让治理自动升级/提取 skill”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。未指定深度时默认自动完整模式；明确指定最小、标准或完整时遵从用户。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
+  为代码仓库建立或扩展可持续升级的 AI 编码治理框架：识别技术栈并检索当前官方/主流标准，结合业务不变量生成细粒度编码 skills，整合而不重复 OpenSpec、Superpowers 等现有规格/执行工作流，并在权限功能、项目封装或可复用集成完成后自动提取或升级 skills；同时建立唯一正典源、上下文路由、适配器、知识记忆、机器门禁、hooks 与成长闭环。用户说“AI 编码治理框架”“代码治理框架”“根据技术栈生成开发规范/skills”“让治理自动升级/提取 skill”或在代码仓库、AGENTS.md、skills、门禁、hooks 语境下说“治理框架”时使用。未指定深度时默认自动完整模式；明确指定最小、标准或完整时遵从用户。不用于产品 AI 安全、模型风险、隐私合规、监管或业务治理，除非用户同时要求治理 AI 编码助手。
 ---
 
 # AI 代码治理框架
@@ -11,6 +11,8 @@ description: >-
 **产物不是一堆 Markdown。** 产物是三件事：一个**唯一正典规则源**、一层**让上下文保持最小的路由**、以及**一组在文档与代码脱节时会失败的机器检查**。少了第三件，前两件大约三周后开始腐烂——贡献者发现文档是虚构的，于是不再读它，于是框架变成考古现场。
 
 本 skill 蒸馏自一套在生产仓库中长期运行的治理框架。它不携带一份冻结的“万能最佳实践”，但必须根据目标技术栈主动检索当前官方/权威标准，直接生成项目可用的标准编码 skills；再根据需求、代码和业务不变量生成项目业务写法 skills。项目完成新的权限模型、统一 Client、adapter 或其他可复用能力后，还必须自动评估并升级已有 Skill 或提取新 Skill。技术标准、项目事实与已验证实现分别记录来源，不能互相冒充。
+
+治理内核还必须先发现项目已有的规格与执行工作流，再决定复用、桥接或保持项目原生。OpenSpec、Superpowers 等外部系统是可选 provider，不是隐式依赖：不得自动安装，不得因为检测到目录就接管项目，不得生成第二份需求、设计、计划或完成状态。
 
 ## 短语触发与自动完整模式
 
@@ -53,6 +55,20 @@ description: >-
 
 产物至少覆盖三类：栈基础 skills、横切质量 skills、业务写法 skills。`industry-standard`、`project-decision`、`business-invariant` 与 `unverified` 必须可区分。
 
+## 外部规格与执行工作流
+
+完整协议见 [references/workflow-integrations.md](references/workflow-integrations.md)，机器可读候选见 [assets/workflow-integration-registry.json](assets/workflow-integration-registry.json)。当仓库或用户提到 OpenSpec、Superpowers、Spec Kit、BMAD 或相邻 change/execution framework 时必须读取该协议。
+
+1. **先发现，不接管**：记录安装位置、真实版本、官方来源、客户端可达性和重叠能力；检测结果不是采用决定。
+2. **一次只认一个 owner**：当前产品行为、active change、项目 AI 治理、实施任务表、运行时状态和交付证据分别只能有一个正典。
+3. **四种模式**：`project-native`、`external-primary`、`coordinated`、`external-bridge`；检测到或请求外部工具时由用户确认模式。
+4. **OpenSpec 只在被选中时拥有 change contract**：正式 specs/change artifacts 留在 `openspec/`，L9 只引用 change id 和路径，不复制内容。
+5. **Superpowers 只提供已证明可调用的执行能力**：优先复用 TDD、系统调试、隔离、实施、评审和完成验证；已有批准设计/计划时不得再生成第二份。
+6. **选择性组合必须被证明**：如果上游 bootstrap 强制完整流程且运行时不能选择性调用，不能声称无冲突集成；选择单一 orchestrator 或标记 `unverified`。
+7. **第三方 bridge 独立分级**：记录自己的版本、来源、许可证和探针证据，不继承上游项目的可信等级。
+
+外部工具补充治理内核，不降低项目原有 gate。结构验证、spec validation 和 Agent 流程完成都不能替代真实产品行为验证。
+
 ## 持续能力提取与自动升级
 
 框架落地后的成功实现也是治理证据。完整协议见 [references/continuous-skill-evolution.md](references/continuous-skill-evolution.md)：
@@ -92,6 +108,10 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 16. **标准 skill 必须细粒度且可路由。** “React 最佳实践”“Node 开发规范”这种巨型文档不算完成；要拆成组件、状态、表单、接口、授权、Repository、事务、事件等可识别任务。
 17. **业务 skill 必须使用项目名词和不变量。** 只生成通用 CRUD 示例不算业务治理；但未知角色、状态和副作用必须保持开放问题，不能为了完整而编造。
 18. **成功实现必须进入能力收割。** 完成权限、统一 HTTP Client、adapter 或可复用业务流程后，不等待下次重复造轮子；在 complete 前自动更新已有 Skill、创建有证据的新 Skill，或留下可审计的不晋升理由。
+19. **外部工作流必须显式选择。** 检测到 OpenSpec、Superpowers 或其他框架只产生候选和冲突报告；安装、采用、更新、archive 与 bridge 接线都需要对应授权或已记录决定。
+20. **一个事实只能有一个工作流 owner。** proposal/spec、design、task list、runtime state 与 completion evidence 不能在项目原生、OpenSpec 和 Superpowers 之间各维护一份；非 owner 只能引用。
+21. **选择性能力不能靠愿望成立。** 声称只复用某些外部 skills 时必须有真实运行时发现与回放证据；强制 bootstrap 冲突时选择单一 orchestrator 或保持 `unverified`。
+22. **外部版本漂移属于治理变化。** provider 的版本、来源、检查日期、许可证和采用能力进入证据台账；未复核更新不得继续标 `enforced`。
 
 ## 十二条核心思想
 
@@ -123,11 +143,11 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 | L2 | 上下文路由 | `docs/ai/context-map.yaml`：档案 = 触发词 + required/optional + verify | 标准 |
 | L3 | 领域规则与策略 | `docs/ai/rules/NN_<关注点>.mdc`（按档案触发）+ `policies/` | 标准 |
 | L4 | 反模式 | `docs/ai/anti-patterns.md`：Wrong / Right / Why wrong | 标准 |
-| L5 | 能力层 | `skills/`（任务触发的怎么做）+ `commands/`（可重复流程）+ `agents/`（分阶段角色） | 完整 |
+| L5 | 能力层 | `skills/`（任务触发的怎么做）+ `commands/`（可重复流程）+ `agents/`（分阶段角色）+ 经验证的外部执行能力 | 完整 |
 | L6 | 知识记忆层 | `docs/memory/<module>/`：当前状态 + 可机器校验断言 | 完整 |
 | L7 | 验证档案 | `docs/ai/verification-profiles.yaml`：路径 → 命令 → 兜底 | 标准 |
 | L8 | 检查器 | `docs/ai/tools/check-*.js`：唯一真正的强制力 | 最小 |
-| L9 | 任务运行时 | `harness/`：task.yaml + 状态机 + 兜底策略 + 按类型门禁 | 完整 |
+| L9 | 任务运行时 | `harness/`：task.yaml + 状态机 + 兜底策略 + 按类型门禁 + 外部 change 引用 | 完整 |
 | L10 | 运行时钩子 | `tools/hooks/`：session-start / post-tool-use / pre-compact / stop | 完整（客户端支持时） |
 | L11 | 成长闭环 | `harness/lifecycle.md`：失败 → 提升 → 退休 | 完整 |
 
@@ -149,6 +169,7 @@ B → C 的产品结构与能力证据等级见 [references/product-architecture
 - **平台与 shell** — 当前 OS、团队支持的 OS、shell/PowerShell 版本、路径大小写、换行、symlink/junction 能力、已有 `core.hooksPath`。
 - **真实命令** — `package.json` / `Makefile` / `justfile` 里的每个脚本。标出哪些**快到可以当门禁**（实测耗时）。
 - **已有什么** — `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/`、`.github/copilot-instructions.md`、`docs/ai/`、`docs/memory/`、`.claude/settings.json`、`.git/hooks/` 与 `core.hooksPath`。
+- **外部工作流** — `openspec/`、OpenSpec 配置/版本/schema、Superpowers plugin/skills/bootstrap、其他 spec/change/SDLC 工具及其生成目录；记录能力重叠和真实客户端可达性，不静默采用。
 - **既有文档地貌** — 架构文档、ADR、README 深度；框架应该**链接**它们而不是重述。
 - **真实反模式** — 遗留区、废弃 helper、双实现、"不要用这个目录"的注释、最近被 revert 的提交。这是 L3/L4 的原料，也是访谈 D1 的种子。
 - **词汇** — 代码与文档里被不一致使用的领域名词。
@@ -224,6 +245,20 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 | E6 | 技术栈标准与业务 skills？ | 完整档默认检索当前标准并直接生成；标准档至少生成栈覆盖清单与高频编码 skills；最小档记录为后续 gap |
 | E7 | 功能完成后的 Skill 自动升级？ | 完整档默认接入 complete 前 harvest；标准档接入 delivery gate；最小档至少生成候选清单和手动 harvest 命令 |
 
+### F. 外部规格与执行工作流
+
+只有仓库检测到相邻框架、用户明确提到它，或现有治理已包含外部 provider 时处理本组。完整协议见 [references/workflow-integrations.md](references/workflow-integrations.md)。
+
+| # | 决策 | 处理方式 |
+| --- | --- | --- |
+| F1 | 集成模式？ | `project-native` / `external-primary` / `coordinated` / `external-bridge`；这是实质选择，不自动推断 |
+| F2 | 谁拥有当前产品行为和 active change？ | 项目现有正典 / OpenSpec / 其他明确 provider；必须唯一 |
+| F3 | 谁拥有正式 design、task list 与 completion state？ | 逐对象指定唯一 owner，其他系统只引用 |
+| F4 | 复用哪些执行能力？ | 按能力列出，并用真实 runtime 证明可发现与可调用；不能只写框架名 |
+| F5 | 如何处理重叠或强制 bootstrap？ | 禁止重复 artifact；无法选择性调用时选单一 orchestrator 或标 `unverified` |
+
+检测到外部工具但用户尚未选择时，可以完成只读冲突审计和候选矩阵；不得安装、更新、生成 bridge、改变 schema 或重写现有正典。
+
 ## Step 3 — 计划
 
 产出下列计划。引导模式取得批准后构建；自动完整模式先展示计划和默认假设，若不需要新授权且没有实质分歧则继续：
@@ -241,6 +276,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 - 交互语言、治理产物语言和双语对齐方式
 - macOS、Windows、Linux 的目标支持与当前验证状态
 - 遗留项目是否保持原栈；现代化评估必须列为独立范围
+- 外部工作流发现结果、F1–F5 决策、单一权威矩阵、版本/来源/许可证、重叠能力和降级策略
 
 复杂项目按 [references/team-orchestration.md](references/team-orchestration.md) 分离侦察、访谈、架构、栈专家、实现和独立审计角色。一个人可以兼任，但探索、设计和批准不能在同一步骤自证。
 
@@ -254,10 +290,10 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 **阶段 2 — 门禁。** L8 + 按 B4 装 hook。
 *验收*：**证明每类声明都会以正确方式失败**。把 [机器可读验收契约](assets/acceptance-contract.json) 作为版本化快照放进目标正典（默认 `docs/ai/acceptance-contract.json`）；至少覆盖缺失精确路径，凡目标仓库使用 glob、能力层、知识断言、来源 front matter、任务运行时或 hooks，还必须运行其中对应的条件探针。探针必须触发本次声称会阻断的真实入口，记录非零退出与修复动作，恢复后再证明同一入口通过。显式 gate、pre-commit 或 CI 检查器的内部异常和受管输入 schema 错误必须非零；只有后台客户端 hook 可以警告放行并把该声明降级为 `unverified`。**从未失败过的检查器等于未知是否可用。**
 
-**阶段 3 — 能力层**（标准档生成栈清单和高频 skills；完整档生成完整矩阵）。L3 + L4 + L5 + L7。先按 [技术栈标准与业务写法 Skill 生成协议](references/stack-skill-generation.md) 检索当前标准，生成 `stack-sources`、`stack-skill-map`、细粒度栈 skills、横切质量 skills 和有真实证据的业务 skills。
+**阶段 3 — 能力层**（标准档生成栈清单和高频 skills；完整档生成完整矩阵）。L3 + L4 + L5 + L7。先按 [技术栈标准与业务写法 Skill 生成协议](references/stack-skill-generation.md) 检索当前标准，生成 `stack-sources`、`stack-skill-map`、细粒度栈 skills、横切质量 skills 和有真实证据的业务 skills。若 F 组适用，再按 [外部规格与执行工作流集成协议](references/workflow-integrations.md) 生成 `<CANON>/workflow-integrations.yaml`、唯一权威矩阵、provider 来源记录和最小路由；不得复制外部正典 artifact。
 *验收*：每个 skill 的 `description` 都写清触发与相邻排除；每个选定技术组件有编码 capability，高频决策不只落在 umbrella skill；每个业务 skill 有业务证据和 owner；所有 skill/command/agent 从入口、context profile、能力目录或已验证原生机制可达。门禁检查来源、版本、skill-map/profile 覆盖和 routing examples，并用 `stack-standard-source-coverage`、`stack-skill-coverage`、`business-pattern-routing` 的适用探针证明删除来源、能力或业务路由会失败。每条编号业务禁令仍映射真实事故/代码/用户决定；只有清单没有加载路径的能力只能记 `present`。
 
-**阶段 4 — 完整档运行时。** L6 + L9 + L11；只有 B1 选择 Stop 且目标客户端确有相应 API 时增加 L10。按 [持续能力提取与自动升级协议](references/continuous-skill-evolution.md) 生成 `capability-evolution.json`、harvest 命令/receipt 和漂移检查。
+**阶段 4 — 完整档运行时。** L6 + L9 + L11；只有 B1 选择 Stop 且目标客户端确有相应 API 时增加 L10。按 [持续能力提取与自动升级协议](references/continuous-skill-evolution.md) 生成 `capability-evolution.json`、harvest 命令/receipt 和漂移检查。使用外部 change provider 时，L9 只增加 provider/change id/authority paths/observed version 引用，并把 complete/archive 绑定同一代项目门禁；不得复制 proposal、spec、design 或 task 内容。
 *验收*：L9 必须证明“旧 gate → 再次 implementing → 不重验无法 complete”，且只有专用 complete 入口能进入终态；每次行为 change set 还必须有绑定当前 fingerprint 的 harvest 结论。L11 必须让改进候选与健康检查具备可机读的 owner、复核日期和状态，并让 adopted capability 的实现、Skill、profile 和 routing 保持同步。用 `feature-skill-harvest-freshness`、`capability-promotion-evidence`、`skill-implementation-drift`、`canonical-capability-reuse` 证明遗漏收割、无证据晋升、实现漂移和绕过正典封装会失败。若交付 L10，必须用真实客户端的 Read、patch、shell 等载荷矩阵证明写入分类，并跑通“写入 → Stop 阻断 → 门禁/对应 memory/harvest → 同一代 receipt → Stop 放行”的完整成功闭环。ack 还要证明绑定入口/改动指纹并被原子单次消费。真实客户端触发确认不了就按第 8 条写进 README，不能用直接调用 handler 代替。
 
 每阶段之后：总结 diff 并跑该阶段验收。引导模式停下等确认；自动完整模式在没有新授权需求时继续。
@@ -277,6 +313,8 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 - 检查所有产出代码的 profile 必达设计质量策略；每个业务 skill 必须有业务 evidence，不能只靠技术栈名称生成。
 - 用至少一个真实风格请求独立 forward-test 生成的栈/业务 skills，检查是否选中正确上下文并产出项目标准写法。
 - 用至少两个成功实现场景 forward-test 自动升级：一个高后果业务能力（如权限），一个平台封装（如 Axios Client）；证明优先升级已有 Skill、无现有项时才创建，并阻止旁路重写。
+- 启用外部工作流时，额外验证 `workflow-source-freshness`、`change-authority-single-source`、`execution-plan-single-authority`、`external-change-runtime-linkage`、`external-archive-completion-gate` 与 `selective-execution-capability`；不适用的 provider 必须写明理由，不能伪造空集成。
+- 对外部 provider 分别报告 `detected`、`selected`、`reachable`、`enforced` 和 `real-client-verified`；检测到目录或全局插件不等于项目已选择，更不等于无冲突集成。
 - 如果目标仓库自身有记忆/文档义务，在同一次改动里满足它。
 - 完整模式在宣布完成前必须由独立的对抗审计步骤复核声明—证据矩阵；同一实现步骤的自述不算独立证据。无法使用独立角色时，单独重置上下文按审计清单执行，并显式记录该限制。
 - **绝不以「文件已存在」为依据宣布框架落地。** 落地的证据是一次通过的门禁 + 一次真正用了它的会话。
@@ -300,6 +338,9 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 | 整份抄另一个仓库的规则 | 进口了那个仓库的历史，掩盖了本仓库的 |
 | 在根上重述子模块文档 | 一个事实的第二份拷贝 = 第二个需要维持为真的东西 |
 | 因为文件存在就宣布完成 | 落地由通过的门禁证明，不由 `ls` 证明 |
+| 把两个完整工作流叠在一起 | 两份 design/plan/completion state 会形成双重权威，冲突只能靠人猜 |
+| 声称只复用外部执行能力但未回放 | bootstrap 可能仍强制 brainstorming/planning；“选择性”只是愿望 |
+| 第三方 bridge 借用上游信誉 | bridge 有自己的版本、代码和风险，必须独立分级与验证 |
 
 ## 从一个样板仓库移植
 
@@ -319,7 +360,7 @@ node scripts/validate-skill.mjs
 node scripts/validate-skill.mjs --negative-probe
 ```
 
-第一条验证入口 front matter、本地链接、能力包注册表、验收契约、v3/v4 状态和 OS 证据；第二条在内存中注入重复能力包、损坏验收契约与断链，证明检查器确实会失败。该命令验证的是可分发 skill 包，不代表任何目标项目、技术栈或操作系统已经完成认证。
+第一条验证入口 front matter、本地链接、技术栈能力包、外部工作流集成注册表、验收契约、v3/v4 状态和 OS 证据；第二条在内存中注入重复能力包/集成、损坏验收契约与断链，证明检查器确实会失败。该命令验证的是可分发 skill 包，不代表任何目标项目、技术栈、外部 provider 或操作系统已经完成认证。
 
 ## 深入阅读
 
@@ -338,5 +379,6 @@ node scripts/validate-skill.mjs --negative-probe
 | [references/interview-protocol.md](references/interview-protocol.md) | 多语言、多轮访谈、技术/UI 选型或跨会话恢复时 |
 | [references/capability-packs.md](references/capability-packs.md) | 检测、选择、组合或认证 v3/v4 技术栈能力包时 |
 | [references/stack-skill-generation.md](references/stack-skill-generation.md) | 技术栈已识别后，检索当前标准并生成栈/质量/业务 skills 时（完整档必读） |
+| [references/workflow-integrations.md](references/workflow-integrations.md) | 发现或请求 OpenSpec、Superpowers、Spec Kit、BMAD 等规格/执行工作流，需要确定唯一权威、桥接或冲突边界时 |
 | [references/ui-selection.md](references/ui-selection.md) | 为 React/Vue/Angular/Svelte 提出 UI 候选或评估遗留 UI 时 |
 | [references/team-orchestration.md](references/team-orchestration.md) | 组建专家团队、定义 subagent 边界或做产品化发布时 |

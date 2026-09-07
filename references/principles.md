@@ -220,6 +220,9 @@
 
 | 内容类型 | 归属 |
 | --- | --- |
+| 当前产品可观察行为 | 选定的产品规格正典；采用 OpenSpec 时是 `openspec/specs/` |
+| 一次 active change 的 proposal/spec/design | 选定的 change provider；非 owner 只引用 |
+| 正式实施任务/计划 | 每个任务唯一的 plan authority；项目 runtime 或外部 provider 二选一 |
 | 持久的实现约束 | `docs/ai/rules/` |
 | 任务特定的怎么做 + 例子 | `docs/ai/skills/` |
 | 已知错误写法 | `docs/ai/anti-patterns.md` |
@@ -229,4 +232,4 @@
 | 可重复的验证 | 检查器 + 验证档案 |
 | 临时任务状态 | `state/<task-slug>/`（gitignored） |
 
-理由和上面所有条一样朴素：**一个事实的第二份拷贝，是第二个需要维持为真的东西。** 在根仓库重述子模块的文档、在 skill 里重述规则的正文、在钩子里打印规则文本——都是同一个错误的不同形态。钩子应该打印**指针和实时状态**，永不打印规则正文。
+理由和上面所有条一样朴素：**一个事实的第二份拷贝，是第二个需要维持为真的东西。** 在根仓库重述子模块的文档、把 OpenSpec tasks 再复制成 Superpowers plan、在 skill 里重述规则正文、在钩子里打印规则文本——都是同一个错误的不同形态。钩子应该打印**指针和实时状态**，永不打印规则正文。外部工作流的选择、权威和证据使用 [workflow-integrations.md](workflow-integrations.md)。

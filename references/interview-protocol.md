@@ -78,6 +78,18 @@ selected_packs:
     version: v3.0
     evidence_level: supported
 
+workflow_integrations:
+  mode: coordinated
+  selected:
+    - id: openspec-change-governance
+      status: confirmed
+      source: user
+  authority:
+    current_product_behavior: openspec/specs
+    active_change: openspec/changes/<change-id>
+    project_ai_governance: docs/ai
+    implementation_task_list: openspec/changes/<change-id>/tasks.md
+
 assumptions: []
 open_questions: []
 rejected_options: []
@@ -132,6 +144,16 @@ rejected_options: []
 
 收集只有项目成员知道的内容：重复错误、任务档案、验证命令、硬边界、术语和完成定义。每条候选规则都要能追溯到一个回答或一个代码/事故证据。
 
+如果侦察发现或用户请求 OpenSpec、Superpowers、Spec Kit、BMAD 等相邻工作流，先插入 **Round 5B：工作流权威**，再进入领域种子：
+
+1. 展示检测到的 provider、观察版本、来源、客户端可达性和重叠能力；
+2. 让用户选择 `project-native`、`external-primary`、`coordinated` 或 `external-bridge`；
+3. 分别确认当前产品行为、active change、design、task list、runtime state 和 delivery evidence 的唯一 owner；
+4. 对执行 provider 按具体能力选择，不用笼统的“启用整个框架”；
+5. 无法证明选择性调用、第三方 bridge 来源或版本兼容时，保持 `unverified` 并停止冲突接线。
+
+完整规则见 [workflow-integrations.md](workflow-integrations.md)。检测到工具不能代替本轮用户决定；未检测到且用户未要求时不进入本轮。
+
 ### Round 7：回读与批准
 
 按以下格式回读：
@@ -142,6 +164,7 @@ rejected_options: []
 仍开放：...
 明确不做：...
 能力包等级：...
+外部工作流模式与唯一权威：...
 各操作系统验证状态：...
 生成阶段与每阶段验收：...
 ```

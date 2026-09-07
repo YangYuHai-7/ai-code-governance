@@ -46,6 +46,7 @@
 | **新同事 / 新助手问的问题** | 中 | 他们问的正是入口层没说清的 |
 | **`gate_blocked` 记录** | 中 | 反复被同一个先存在问题挡住 = 有笔技术债该单独立项 |
 | **上游工具能力变化** | 中 | 新客户端出现、旧客户端加了钩子 API → L0/L1/L10 要更新 |
+| **外部规格/执行 provider 变化** | 强 | OpenSpec schema/命令或 Superpowers bootstrap/skill 行为变化 → 权威矩阵、接线和证据先降级再复核 |
 | **文档里的陈旧措辞** | 弱 | 由 L8 的陈旧措辞检查产出 |
 | **已验证的可复用功能** | 强 | complete 前扫描 change set；权限、租户、幂等等高后果能力一次即可评估晋升 |
 | **项目统一封装或 adapter** | 强 | 发现新 public export/client/provider 或第二个 consumer，自动查重并 create/update Skill |
@@ -163,6 +164,8 @@ L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零�
 - [ ] 上个周期完成的可复用能力是否都有当前 fingerprint 的 harvest receipt？有没有统一封装已经存在，但新代码仍在直接依赖底层库？
 - [ ] adopted capability 的 owning paths、public exports、Skill、profiles 和 routing examples 是否同步？
 - [ ] 有没有层是"建了但没人用"的（尤其 L9）？没人用就降级或删掉，不要留着装样子。
+- [ ] `<CANON>/workflow-integrations.yaml` 中每个 provider 的观察版本、来源、许可证和选择性能力回放是否仍新鲜？升级后未复核的 `enforced` 声明必须降级。
+- [ ] active task 是否只引用一个 current change 和一份 plan；有没有已归档 change 仍被 L9 当作活动权威？
 
 ---
 
@@ -180,6 +183,7 @@ L8 必须校验日期、允许状态、owner 与证据路径；缺字段非零�
 | 闭环回写条数 | 每周期 ≥ 1 | 0 → L11 已死 |
 | capability harvest 覆盖 | 每个行为 change set 有当前 receipt | 缺 receipt 或长期全是 no-skill → 成功学习闭环失效 |
 | 正典能力旁路次数 | 0 或迁移 allowlist 内递减 | 新 raw client/重复权限实现持续出现 |
+| 外部 provider 未复核升级 | 0 | 版本已变但权威矩阵和真实调用证据仍写 current |
 
 ---
 
