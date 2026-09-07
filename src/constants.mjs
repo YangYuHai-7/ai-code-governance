@@ -1,9 +1,10 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const TOOL_NAME = 'AI Code Governance';
-export const TOOL_VERSION = '0.1.0';
+export const TOOL_VERSION = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version;
 export const CONFIG_SCHEMA_VERSION = 1;
 export const MANIFEST_SCHEMA_VERSION = 1;
 export const TEMPLATE_VERSION = 1;

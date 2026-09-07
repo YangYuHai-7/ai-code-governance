@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-package-smoke-'));
 const packDirectory = path.join(fixture, 'pack');
 const installDirectory = path.join(fixture, 'install');
@@ -37,7 +38,7 @@ try {
   const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.js');
   assert.ok(fs.statSync(installedBin).isFile());
   const installedCommand = runNpm(['exec', '--prefix', installDirectory, '--', 'aicg', '--version']);
-  assert.match(installedCommand.stdout, /0\.1\.0/);
+  assert.equal(installedCommand.stdout.trim(), packageVersion);
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
