@@ -267,14 +267,18 @@ function validateRegistryHeader(registry) {
     registry.os_targets?.join(',') === 'macos,windows,linux',
     'Registry os_targets must list macos, windows, linux.',
   );
-  check(
-    registry.current_os_evidence?.windows === 'designed-not-run',
-    'Windows evidence must remain designed-not-run until Windows validation exists.',
-  );
-  check(
-    registry.current_os_evidence?.linux === 'designed-not-run',
-    'Linux evidence must remain designed-not-run until Linux validation exists.',
-  );
+  for (const os of ['macos', 'windows', 'linux']) {
+    check(
+      registry.current_os_evidence?.[os] === 'cli-ci-verified-node22-node24',
+      `${os} must retain Node.js 22/24 CLI CI evidence.`,
+    );
+  }
+  const source = registry.os_evidence_source ?? {};
+  check(source.workflow === '.github/workflows/ci.yml', 'OS evidence must name the CI workflow.');
+  check(/^https:\/\/github\.com\/.+\/actions\/runs\/\d+$/.test(source.last_verified_run ?? ''), 'OS evidence must name a successful Actions run.');
+  check(/^[a-f0-9]{40}$/.test(source.last_verified_commit ?? ''), 'OS evidence must name a verified commit.');
+  check(Array.isArray(source.scope) && source.scope.includes('installed-tarball-smoke'), 'OS evidence must include installed tarball smoke.');
+  check(/remain unverified/i.test(source.boundary ?? ''), 'OS evidence must preserve real-client boundaries.');
 }
 
 function validatePack(pack, ids, evidence, lifecycles) {
@@ -737,5 +741,5 @@ if (failures.length > 0) {
   console.log(
     `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} workflow_integrations=${workflowRegistry.integrations.length}`,
   );
-  console.log('os_evidence=macos:skill-structure-verified,windows:designed-not-run,linux:designed-not-run');
+  console.log(`os_evidence=${Object.entries(registry.current_os_evidence).map(([os, state]) => `${os}:${state}`).join(',')}`);
 }
