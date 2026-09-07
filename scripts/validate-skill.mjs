@@ -144,13 +144,13 @@ function validateCliPackage(pkg) {
   check(pkg.name === 'ai-code-governance', 'package.json name must be ai-code-governance.');
   check(pkg.version === '0.1.0', 'Initial CLI version must be 0.1.0.');
   check(pkg.type === 'module', 'CLI package must use ESM.');
-  check(pkg.bin?.aicg === './bin/aicg.mjs', 'package.json must expose the aicg binary.');
+  check(pkg.bin?.aicg === 'bin/aicg.js', 'package.json must expose the aicg binary.');
   check(pkg.engines?.node === '>=22', 'CLI must require Node.js >=22.');
   check(!pkg.dependencies || Object.keys(pkg.dependencies).length === 0, 'CLI must not add runtime dependencies.');
   for (const script of ['test', 'validate:skill', 'validate', 'smoke', 'smoke:package']) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
-  check(fs.existsSync(path.join(root, 'bin/aicg.mjs')), 'aicg binary is missing.');
+  check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
   for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }

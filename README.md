@@ -144,8 +144,8 @@ npm exec --yes --package=github:YangYuHai-7/ai-code-governance -- aicg init .
 ```bash
 git clone https://github.com/YangYuHai-7/ai-code-governance.git
 cd ai-code-governance
-node bin/aicg.mjs doctor .
-node bin/aicg.mjs init /path/to/project
+node bin/aicg.js doctor .
+node bin/aicg.js init /path/to/project
 ```
 
 CLI 不创建 symlink、junction 或其他链接。Codex 与 Cursor 直接读取 `AGENTS.md`；Claude Code 通过普通
@@ -210,7 +210,7 @@ Skill 会始终先侦察仓库并使规则追溯到真实证据。短语默认�
 
 ```text
 ai-code-governance/
-├── bin/aicg.mjs
+├── bin/aicg.js
 ├── src/
 ├── test/
 ├── package.json

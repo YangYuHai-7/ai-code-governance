@@ -34,8 +34,10 @@ try {
   assert.ok(fs.statSync(tarball).isFile());
 
   runNpm(['install', '--prefix', installDirectory, tarball, '--ignore-scripts', '--no-audit', '--no-fund']);
-  const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.mjs');
+  const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.js');
   assert.ok(fs.statSync(installedBin).isFile());
+  const installedCommand = runNpm(['exec', '--prefix', installDirectory, '--', 'aicg', '--version']);
+  assert.match(installedCommand.stdout, /0\.1\.0/);
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
