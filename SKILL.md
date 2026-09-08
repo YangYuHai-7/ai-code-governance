@@ -26,10 +26,10 @@ aicg check .
 
 `init` 必须先扫描再要求用户选择 Agent、技术栈、治理深度和产物语言，预览计划后才生成。确定式基础生成
 不依赖模型或网络；用户选择后才可调用已安装的 Codex、Claude Code 或 Cursor 做 AI 深度补全。无 TTY 时
-必须使用 `--yes` 或 `--config <json>`，缺少必需输入以退出码 2 停止。
+可用 `--config <json>` 提供决策，但任何写入还必须明确 `--yes`；缺少必需输入或批准以退出码 2 停止。
 
 适配器只允许两种形态：客户端原生指针/导入，或带 generated 标记与 SHA-256 manifest 的普通文件。
-不得创建 symlink、junction 或其他链接；不得让 `--force` 覆盖未知用户文件。状态由
+不得创建 symlink、junction 或其他链接作为适配器；唯一例外是已授权迁移失败时恢复被移除的用户原链接，不能生成新链接。不得让 `--force` 覆盖未知用户文件。状态由
 `.ai-governance/config.json` 与 `.ai-governance/manifest.json` 记录，运行 `aicg sync .` 恢复受管漂移。
 Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-registry.json`，不得散落复制。
 

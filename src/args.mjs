@@ -1,12 +1,13 @@
 import { usageError } from './utils.mjs';
 
-const VALUE_FLAGS = new Set(['config', 'assist']);
+const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve']);
 const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'help', 'version']);
 const COMMAND_FLAGS = {
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'no-assist', 'migrate-links', 'help']),
   check: new Set(['json', 'help']),
   sync: new Set(['dry-run', 'force', 'migrate-links', 'help']),
   doctor: new Set(['json', 'help']),
+  request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
 
@@ -17,7 +18,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -60,6 +61,7 @@ Usage:
   aicg check [path] [--json]
   aicg sync [path] [--dry-run] [--force] [--migrate-links]
   aicg doctor [path] [--json]
+  aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
 Commands:
@@ -67,4 +69,5 @@ Commands:
   check   Validate configuration, managed files, drift, and reachability.
   sync    Regenerate managed adapters from canonical governance sources.
   doctor  Inspect the local environment without changing the repository.
+  request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;

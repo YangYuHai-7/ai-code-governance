@@ -92,12 +92,13 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
     rl.close();
   }
 }
-export async function confirmPlan(paths) {
+export async function confirmPlan(paths, planHash = null) {
   const rl = createInterface({ input, output });
   try {
     console.log('\nPlanned managed files:');
     for (const item of paths) console.log(`  ${item.changed ? 'write' : 'keep '} ${item.path}`);
-    return yesNo(rl, 'Apply this plan?', true);
+    if (planHash) console.log(`Plan hash: ${planHash}`);
+    return yesNo(rl, 'Apply this plan?', false);
   } finally {
     rl.close();
   }

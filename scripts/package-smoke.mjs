@@ -39,6 +39,12 @@ try {
   assert.ok(fs.statSync(installedBin).isFile());
   const installedCommand = runNpm(['exec', '--prefix', installDirectory, '--', 'aicg', '--version']);
   assert.equal(installedCommand.stdout.trim(), packageVersion);
+  const requestPlan = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--dry-run', '--json']);
+  const requestPayload = JSON.parse(requestPlan.stdout);
+  assert.equal(requestPayload.plan.intent, 'governance.initialize');
+  assert.equal(fs.existsSync(path.join(projectDirectory, 'AGENTS.md')), false);
+  run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', `--approve=${requestPayload.plan.planHash}`, '--json']);
+  assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));

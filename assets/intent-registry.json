@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "intents": [
+    {
+      "id": "environment.diagnose",
+      "handler": "doctor",
+      "mode": "read",
+      "aliases": [
+        "诊断治理框架",
+        "检查治理环境",
+        "诊断项目治理环境",
+        "diagnose governance",
+        "inspect governance environment"
+      ]
+    },
+    {
+      "id": "governance.validate",
+      "handler": "check",
+      "mode": "read",
+      "aliases": [
+        "检查治理框架",
+        "验证治理框架",
+        "检查项目ai治理框架",
+        "check governance",
+        "validate governance"
+      ]
+    },
+    {
+      "id": "governance.initialize",
+      "handler": "init",
+      "mode": "write",
+      "aliases": [
+        "初始化治理框架",
+        "初始化项目ai治理框架",
+        "帮我初始化项目ai治理框架",
+        "建立ai治理框架",
+        "建立项目ai治理框架",
+        "initialize governance",
+        "initialize project governance"
+      ]
+    },
+    {
+      "id": "governance.sync-managed",
+      "handler": "sync",
+      "mode": "write",
+      "aliases": [
+        "同步受管治理适配器",
+        "同步治理适配器",
+        "sync governance adapters",
+        "sync managed governance"
+      ]
+    }
+  ]
+}
