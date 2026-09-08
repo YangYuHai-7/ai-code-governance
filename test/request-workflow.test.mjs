@@ -11,8 +11,8 @@ function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-request-${name}-`));
 }
 
-function run(args) {
-  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+function run(args, options = {}) {
+  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', ...options });
 }
 
 function treeSnapshot(root) {
@@ -35,7 +35,7 @@ function configuredAnswers(root, features = {}) {
   return {
     schemaVersion: 1,
     generatedBy: 'ai-code-governance',
-    toolVersion: '0.1.6',
+    toolVersion: '0.1.7',
     projectName: path.basename(root),
     projectMode: 'greenfield',
     canonicalRoot: 'docs/ai',
@@ -127,10 +127,43 @@ test('chat requests refuse AI-assist configuration without invoking an agent', (
   assert.deepEqual(treeSnapshot(root), before);
 });
 
-test('request rejects ambiguous repair language without writing a repository', (context) => {
+test('the exact requested repair phrase routes to read-only doctor without writing a repository', (context) => {
   const root = fixture('ambiguous');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const result = run(['request', root, '--text', '修复一下治理框架']);
-  assert.equal(result.status, 2);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /intent=environment\.diagnose mode=read/);
   assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false);
+});
+
+test('doctor and the requested repair phrase do not execute PATH probes or permit probe side effects', (context) => {
+  const root = fixture('doctor-no-probe');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'probe-bin');
+  const marker = path.join(root, 'doctor-side-effect');
+  fs.mkdirSync(bin);
+  for (const executable of ['codex', 'claude', 'cursor', 'git']) {
+    const shim = path.join(bin, executable);
+    fs.writeFileSync(shim, '#!/bin/sh\nprintf side-effect > "$AICG_DOCTOR_MARKER"\n');
+    fs.chmodSync(shim, 0o755);
+  }
+  const before = treeSnapshot(root);
+  const env = {
+    ...process.env,
+    PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    AICG_DOCTOR_MARKER: marker,
+  };
+  for (const args of [
+    ['doctor', root, '--json'],
+    ['request', root, '--text', '修复一下治理框架', '--json'],
+  ]) {
+    const result = run(args, { env });
+    assert.equal(result.status, 0, result.stderr);
+    const payload = JSON.parse(result.stdout);
+    const doctorResult = payload.result ?? payload;
+    assert.equal(doctorResult.checks.environmentCommandProbe, 'not-probed');
+    assert.ok(doctorResult.agents.every((agent) => agent.availability === 'not-probed' || agent.availability === 'built-in'));
+    assert.equal(fs.existsSync(marker), false);
+    assert.deepEqual(treeSnapshot(root), before);
+  }
 });

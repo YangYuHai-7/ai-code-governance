@@ -145,7 +145,8 @@ function platformId() {
   return 'linux';
 }
 
-export function scanProject(target) {
+export function scanProject(target, options = {}) {
+  const probeEnvironment = options.probeEnvironment !== false;
   const root = path.resolve(target);
   const stat = fs.existsSync(root) ? fs.statSync(root) : null;
   if (!stat?.isDirectory()) throw new Error(`Target directory does not exist: ${root}`);
@@ -154,11 +155,12 @@ export function scanProject(target) {
   const capabilityRegistry = loadCapabilityRegistry();
   const agentRegistry = loadAgentRegistry();
   const agents = agentRegistry.agents.map((agent) => {
-    const command = agent.detect_commands.find((candidate) => commandExists(candidate)) ?? null;
+    const command = probeEnvironment ? agent.detect_commands.find((candidate) => commandExists(candidate)) ?? null : null;
     return {
       id: agent.id,
       label: agent.label,
       installed: agent.id === 'generic' || Boolean(command),
+      availability: agent.id === 'generic' ? 'built-in' : probeEnvironment ? (command ? 'detected' : 'not-found') : 'not-probed',
       command,
       version: command ? commandVersion(command) : null,
     };
@@ -176,7 +178,8 @@ export function scanProject(target) {
 
   return {
     root,
-    gitRoot: gitRoot(root),
+    gitRoot: probeEnvironment ? gitRoot(root) : null,
+    environmentProbe: probeEnvironment ? 'executed' : 'not-probed',
     projectName: path.basename(root),
     projectMode: detectProjectMode(root, files),
     currentOs: platformId(),
