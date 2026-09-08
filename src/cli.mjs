@@ -1,8 +1,9 @@
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { parseArgs, HELP } from './args.mjs';
 import { assessArchitecture } from './architecture-assessment.mjs';
 import { runAssist, assistCandidates } from './assist.mjs';
-import { capabilityHarvestSummary, prepareCapabilityHarvest } from './capability-harvest.mjs';
+import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from './capability-harvest.mjs';
 import { checkProject, printCheck } from './checker.mjs';
 import { CONFIG_PATH, TOOL_VERSION } from './constants.mjs';
 import { doctor, printDoctor } from './doctor.mjs';
@@ -52,6 +53,52 @@ function loadConfiguredGovernance(scan) {
   const existing = loadExistingConfig(scan.root);
   if (!existing) throw usageError('Capability harvest requires an initialized governance configuration. Run aicg init first.');
   return validateConfig(mergeConfig(defaultConfig(scan), existing));
+}
+
+function promotionInputFromOptions(options) {
+  if (!options.id || !options.entrypoint || !options.verify) {
+    throw usageError('Capability promotion requires --id, --entrypoint, and --verify.');
+  }
+  return {
+    capabilityId: options.id,
+    publicEntrypoints: [options.entrypoint],
+    consumerPaths: options.consumer ? [options.consumer] : [],
+    verificationCommand: options.verify,
+  };
+}
+
+function promotionInputFromChatConfig(options) {
+  if (!options.config) {
+    throw usageError('Chat capability promotion requires --config with capabilityId, publicEntrypoints, and verificationCommand.');
+  }
+  const supplied = readJson(path.resolve(options.config));
+  const input = supplied.capabilityPromotion ?? supplied;
+  return {
+    capabilityId: input.capabilityId,
+    publicEntrypoints: input.publicEntrypoints,
+    consumerPaths: input.consumerPaths ?? [],
+    verificationCommand: input.verificationCommand,
+  };
+}
+
+function runPromotionVerification(scan, command) {
+  const selected = scan.commands.find((candidate) => candidate.command === command);
+  if (!selected || selected.source !== 'package.json' || !/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(selected.name)) {
+    throw usageError('Capability promotion currently executes only an exact, safely named npm script discovered from package.json.');
+  }
+  const executable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const result = spawnSync(executable, ['run', selected.name], {
+    cwd: scan.root,
+    encoding: 'utf8',
+    timeout: 300000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    const error = new Error(`Capability promotion verification failed for ${command}; no governance files were written.`);
+    error.exitCode = 1;
+    throw error;
+  }
+  return { command, status: 'passed' };
 }
 
 async function prepareInit(target, options, { allowDefaults = false } = {}) {
@@ -172,6 +219,7 @@ async function requestCommand(target, options) {
   }
 
   let config;
+  let promotion = null;
   let artifactPlan;
   if (intent.handler === 'init') {
     const prepared = await prepareInit(
@@ -184,6 +232,10 @@ async function requestCommand(target, options) {
     artifactPlan = prepared.plan;
   } else if (intent.handler === 'harvest') {
     config = prepareCapabilityHarvest(loadConfiguredGovernance(scan), scan).config;
+    artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
+  } else if (intent.handler === 'promote') {
+    promotion = prepareCapabilityPromotion(loadConfiguredGovernance(scan), scan, promotionInputFromChatConfig(options));
+    config = promotion.config;
     artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
   } else {
     config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
@@ -198,7 +250,7 @@ async function requestCommand(target, options) {
     throw error;
   }
   if (options['dry-run']) {
-    printRequest({ ...payload, dryRun: true }, Boolean(options.json));
+    printRequest({ ...payload, promotion: promotion?.promotion, dryRun: true }, Boolean(options.json));
     return;
   }
   if (executionPlan.requiredPermissions.length > 0) {
@@ -206,6 +258,9 @@ async function requestCommand(target, options) {
       if (options.approve !== executionPlan.planHash) throw usageError(`Approval does not match the current plan hash ${executionPlan.planHash}. Re-run dry-run and approve the displayed hash.`);
     } else throw usageError('Applying a chat governance request requires --approve <planHash> from a current dry-run plan.');
   }
+  assertPlanFresh(executionPlan);
+  assertArtifactPlanMatches(executionPlan, scan.root, artifactPlan);
+  const commandVerification = promotion ? runPromotionVerification(scan, promotion.promotion.verificationCommand) : null;
   const applied = applyArtifactPlan(scan.root, artifactPlan, {
     transactional: true,
     beforeApply: () => {
@@ -215,7 +270,7 @@ async function requestCommand(target, options) {
     verify: () => checkProject(scanProject(scan.root)),
   });
   const result = applied.verification;
-  printRequest({ ...payload, applied: { changed: applied.changed }, result }, Boolean(options.json));
+  printRequest({ ...payload, promotion: promotion?.promotion, commandVerification, applied: { changed: applied.changed }, result }, Boolean(options.json));
   if (!result.ok) process.exitCode = 1;
 }
 
@@ -265,6 +320,33 @@ async function harvestCommand(target, options) {
   if (!applied.verification.ok) process.exitCode = 1;
 }
 
+async function promoteCommand(target, options) {
+  const scan = scanProject(target);
+  const promotion = prepareCapabilityPromotion(loadConfiguredGovernance(scan), scan, promotionInputFromOptions(options));
+  const plan = planArtifacts(scan.root, buildArtifacts(promotion.config, scan));
+  if (plan.conflicts.length > 0) {
+    const error = new Error(`Cannot safely promote capability:\n- ${plan.conflicts.join('\n- ')}`);
+    error.exitCode = 2;
+    throw error;
+  }
+  if (options['dry-run']) {
+    console.log(JSON.stringify({ dryRun: true, promotion: promotion.promotion, files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })) }, null, 2));
+    return;
+  }
+  if (!options.yes) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Applying a capability promotion requires --yes or a TTY confirmation.');
+    const confirmed = await confirmPlan(plan.operations);
+    if (!confirmed) throw usageError('Capability promotion cancelled without running verification or writing files.');
+  }
+  const commandVerification = runPromotionVerification(scan, promotion.promotion.verificationCommand);
+  const applied = applyArtifactPlan(scan.root, plan, {
+    transactional: true,
+    verify: () => checkProject(scanProject(scan.root)),
+  });
+  console.log(JSON.stringify({ dryRun: false, promotion: promotion.promotion, commandVerification, changed: applied.changed, verification: applied.verification }, null, 2));
+  if (!applied.verification.ok) process.exitCode = 1;
+}
+
 export async function run(argv) {
   const major = Number.parseInt(process.versions.node.split('.')[0], 10);
   if (major < 22) throw new Error(`Node.js 22 or newer is required; current version is ${process.versions.node}.`);
@@ -300,6 +382,7 @@ export async function run(argv) {
     return;
   }
   if (command === 'harvest') return harvestCommand(target, options);
+  if (command === 'promote') return promoteCommand(target, options);
   if (command === 'check') {
     const result = checkProject(scan);
     printCheck(result, Boolean(options.json));

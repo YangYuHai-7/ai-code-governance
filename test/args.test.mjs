@@ -40,6 +40,15 @@ test('parses capability harvest only with its bounded write flags', () => {
   assert.throws(() => parseArgs(['harvest', '--config', 'answers.json']), (error) => error.exitCode === 2);
 });
 
+test('parses capability promotion only with an explicit capability, entrypoint, and verification command', () => {
+  assert.deepEqual(parseArgs(['promote', '.', '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--yes']), {
+    command: 'promote',
+    target: '.',
+    options: { id: 'project-http-client', entrypoint: 'src/http-client.ts', verify: 'npm run verify', yes: true },
+  });
+  assert.throws(() => parseArgs(['promote', '--force']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');

@@ -4,8 +4,8 @@ import { isSafeRelative, normalizeRelative, readText, sha256, stableJson, unique
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 const CAPABILITY_STATES = new Set(['candidate', 'adopted', 'superseded', 'retired']);
-const HARVEST_OUTCOMES = new Set(['candidate-recorded', 'no-skill-with-reason', 'review-required', 'not-run']);
-const HARVEST_VERIFICATION_STATES = new Set(['not-run-by-harvest', 'unverified']);
+const HARVEST_OUTCOMES = new Set(['candidate-recorded', 'adopted-promoted', 'no-skill-with-reason', 'review-required', 'not-run']);
+const HARVEST_VERIFICATION_STATES = new Set(['not-run-by-harvest', 'command-passed', 'unverified']);
 
 function reviewDueDate() {
   const due = new Date();
@@ -314,6 +314,9 @@ export function validateProjectCapabilities(capabilities) {
     if (capability.consumerPaths !== undefined && (!Array.isArray(capability.consumerPaths) || capability.consumerPaths.some((entry) => !isSafeCapabilityPath(entry)))) {
       throw usageError(`Project capability ${capability.id} has unsafe consumer paths.`);
     }
+    if (capability.consumerEvidence !== undefined && (!capability.consumerEvidence || !['operator-declared-unverified', 'not-declared'].includes(capability.consumerEvidence.status) || !Array.isArray(capability.consumerEvidence.paths) || capability.consumerEvidence.paths.some((entry) => !isSafeCapabilityPath(entry)) || (capability.consumerEvidence.status === 'not-declared' && capability.consumerEvidence.paths.length > 0) || (capability.consumerEvidence.status === 'operator-declared-unverified' && capability.consumerEvidence.paths.length === 0))) {
+      throw usageError(`Project capability ${capability.id} has invalid consumer evidence.`);
+    }
     if (!Number.isInteger(capability.capabilityVersion) || capability.capabilityVersion < 1) throw usageError(`Project capability ${capability.id} needs a positive capabilityVersion.`);
     if (typeof capability.kind !== 'string' || !capability.kind || typeof capability.detection !== 'string' || !capability.detection) {
       throw usageError(`Project capability ${capability.id} needs a kind and detection record.`);
@@ -326,7 +329,7 @@ export function validateProjectCapabilities(capabilities) {
       if (!capability.review || capability.review.status !== 'completed' || !isIsoDate(capability.review.reviewedAt)) {
         throw usageError(`Adopted capability ${capability.id} needs a completed review date.`);
       }
-      if (!capability.promotion || !isIsoDate(capability.promotion.verifiedAt) || typeof capability.promotion.command !== 'string' || !capability.promotion.command || capability.promotion.implementationFingerprint !== capability.implementationFingerprint) {
+      if (!capability.promotion || !isIsoDate(capability.promotion.verifiedAt) || typeof capability.promotion.command !== 'string' || !capability.promotion.command || capability.promotion.basis !== 'operator-confirmed-promotion-v1' || capability.promotion.implementationFingerprint !== capability.implementationFingerprint) {
         throw usageError(`Adopted capability ${capability.id} needs promotion evidence bound to its implementation fingerprint.`);
       }
     }
@@ -402,13 +405,13 @@ function preserveOrUpdate(existing, discovered) {
 }
 
 function observedImplementation(scan, capability) {
-  const files = new Set(scan.files.filter((file) => file.type === 'file').map((file) => file.relative));
+  const files = new Set(sourceFiles(scan).map((file) => file.relative));
   if (capability.implementationPaths.some((relative) => !files.has(relative))) return null;
   return implementationFingerprint(scan, capability.implementationPaths);
 }
 
 export function capabilityEvidenceIssues(scan, capabilities) {
-  const files = new Set(scan.files.filter((file) => file.type === 'file').map((file) => file.relative));
+  const files = new Set(sourceFiles(scan).map((file) => file.relative));
   return capabilities.flatMap((capability) => {
     if (capability.status !== 'adopted') return [];
     const issues = [];
@@ -496,6 +499,103 @@ export function prepareCapabilityHarvest(config, scan) {
   };
 }
 
+function requireCapabilityPaths(scan, values, label) {
+  if (!Array.isArray(values) || values.length === 0 || values.some((value) => !isSafeCapabilityPath(value))) {
+    throw usageError(`${label} needs one or more safe repository-relative paths.`);
+  }
+  const files = new Set(sourceFiles(scan).map((file) => file.relative));
+  if (values.some((value) => !files.has(value))) throw usageError(`${label} must reference existing product source files in the target repository.`);
+  return unique(values).sort((left, right) => left.localeCompare(right));
+}
+
+function promotionDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function prepareCapabilityPromotion(config, scan, input) {
+  if (!input || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(input.capabilityId ?? '')) {
+    throw usageError('Capability promotion needs a safe capabilityId.');
+  }
+  const prepared = prepareCapabilityHarvest(config, scan);
+  const capability = prepared.config.projectCapabilities.find((entry) => entry.id === input.capabilityId);
+  if (!capability || capability.status !== 'candidate') throw usageError(`Only a current candidate can be promoted: ${input.capabilityId}`);
+  if (!prepared.harvest.detectedCapabilityIds.includes(capability.id)) {
+    throw usageError(`Capability ${capability.id} is not currently detected. Run a harvest and resolve its review before promotion.`);
+  }
+  if (prepared.harvest.reviewItems.some((item) => item.id === capability.id)) {
+    throw usageError(`Capability ${capability.id} has an active review item and cannot be promoted.`);
+  }
+  const publicEntrypoints = requireCapabilityPaths(scan, input.publicEntrypoints, 'Capability promotion publicEntrypoints');
+  if (publicEntrypoints.some((entrypoint) => !capability.implementationPaths.includes(entrypoint))) {
+    throw usageError('Capability promotion publicEntrypoints must be current implementation paths until a verified barrel-export resolver is available.');
+  }
+  const declaredConsumerPaths = input.consumerPaths === undefined || input.consumerPaths.length === 0
+    ? []
+    : requireCapabilityPaths(scan, input.consumerPaths, 'Capability promotion consumerPaths');
+  const verificationCommand = input.verificationCommand;
+  if (typeof verificationCommand !== 'string' || !scan.commands.some((command) => command.command === verificationCommand)) {
+    throw usageError('Capability promotion verificationCommand must exactly match a discovered repository verification command.');
+  }
+  const verifiedAt = promotionDate();
+  const adopted = {
+    ...capability,
+    status: 'adopted',
+    publicEntrypoints,
+    consumerPaths: [],
+    consumerEvidence: {
+      status: declaredConsumerPaths.length > 0 ? 'operator-declared-unverified' : 'not-declared',
+      paths: declaredConsumerPaths,
+    },
+    capabilityVersion: capability.capabilityVersion + 1,
+    review: { status: 'completed', reviewedAt: verifiedAt },
+    promotion: {
+      verifiedAt,
+      command: verificationCommand,
+      implementationFingerprint: capability.implementationFingerprint,
+      basis: 'operator-confirmed-promotion-v1',
+    },
+    verification: unique([...capability.verification, verificationCommand]).sort((left, right) => left.localeCompare(right)),
+    gaps: [
+      'Consumer reuse is not machine-verified.',
+      'Bypass enforcement is not enabled by this promotion.',
+    ],
+  };
+  const capabilities = prepared.config.projectCapabilities
+    .map((entry) => entry.id === adopted.id ? adopted : entry)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const lastHarvest = {
+    ...prepared.harvest,
+    outcome: 'adopted-promoted',
+    candidateIds: capabilities.filter((entry) => entry.status === 'candidate').map((entry) => entry.id),
+    reviewItems: prepared.harvest.reviewItems.filter((item) => item.id !== adopted.id),
+    verification: {
+      projectCommands: [verificationCommand],
+      status: 'command-passed',
+      boundary: 'The approved promotion writes only after this exact discovered command exits successfully. It proves command execution, not broad product behavior or bypass enforcement.',
+    },
+    promotion: {
+      id: adopted.id,
+      verifiedAt,
+      command: verificationCommand,
+    },
+  };
+  return {
+    config: {
+      ...prepared.config,
+      projectCapabilities: capabilities,
+      capabilityEvolution: { lastHarvest },
+    },
+    promotion: {
+      id: adopted.id,
+      status: adopted.status,
+      publicEntrypoints,
+      declaredConsumerPaths,
+      verificationCommand,
+      verifiedAt,
+    },
+  };
+}
+
 function candidateSkill(capability) {
   const adoptionInstruction = capability.status === 'candidate'
     ? 'Do not treat this candidate as an approved public API or block a parallel implementation. Confirm and promote it first.'
@@ -517,6 +617,7 @@ description: ${capability.status === 'candidate' ? 'Review the discovered' : 'Re
 - Stable ID: \`${capability.id}\`
 - Status: \`${capability.status}\`
 - Owner: \`${capability.owner}\`
+- Capability version: \`${capability.capabilityVersion}\`
 - Current implementation fingerprint: \`${capability.implementationFingerprint}\`
 - Review: \`${capability.review.status}\`${capability.status === 'candidate' ? ` by \`${capability.review.dueDate}\`` : ` on \`${capability.review.reviewedAt}\``}
 
@@ -543,6 +644,14 @@ ${entrypoints}
 ## Verification
 
 ${capability.verification.length > 0 ? capability.verification.map((entry) => `- \`${entry}\``).join('\n') : '- No verified project command was discovered. Add one before promoting this capability.'}
+
+${capability.status === 'adopted' ? `## Promotion evidence
+
+- Operator confirmation: \`${capability.promotion.basis}\`
+- Verified on: \`${capability.promotion.verifiedAt}\`
+- Command: \`${capability.promotion.command}\`
+${capability.consumerEvidence?.paths?.length > 0 ? `- Consumer paths are \`${capability.consumerEvidence.status}\`: ${capability.consumerEvidence.paths.map((entry) => `\`${entry}\``).join(', ')}\n` : ''}
+` : ''}
 
 ## Capability boundary
 

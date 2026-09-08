@@ -74,6 +74,17 @@
       ]
     },
     {
+      "id": "capability.promote",
+      "handler": "promote",
+      "mode": "write",
+      "aliases": [
+        "晋升项目能力",
+        "确认项目能力复用",
+        "promote project capability",
+        "adopt project capability"
+      ]
+    },
+    {
       "id": "governance.initialize",
       "handler": "init",
       "mode": "write",

@@ -29,6 +29,12 @@ function runNpm(args, options = {}) {
 try {
   fs.mkdirSync(packDirectory, { recursive: true });
   fs.mkdirSync(projectDirectory, { recursive: true });
+  fs.writeFileSync(path.join(projectDirectory, 'package.json'), JSON.stringify({
+    dependencies: { axios: '1.7.0' },
+    scripts: { verify: 'node -e "process.exit(0)"' },
+  }));
+  fs.mkdirSync(path.join(projectDirectory, 'src'));
+  fs.writeFileSync(path.join(projectDirectory, 'src', 'http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
   const packed = runNpm(['pack', '--json', '--pack-destination', packDirectory], { cwd: root });
   const packResult = JSON.parse(packed.stdout);
   const tarball = path.join(packDirectory, packResult[0].filename);
@@ -52,6 +58,9 @@ try {
   assert.equal(JSON.parse(chatStandardsPreview.stdout).intent.id, 'technical-standards.preview');
   const harvestPreview = run(process.execPath, [installedBin, 'harvest', projectDirectory, '--dry-run', '--json']);
   assert.equal(JSON.parse(harvestPreview.stdout).harvest.mode, 'read-only-preview');
+  run(process.execPath, [installedBin, 'harvest', projectDirectory, '--yes', '--json']);
+  const promotion = run(process.execPath, [installedBin, 'promote', projectDirectory, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--yes', '--json']);
+  assert.equal(JSON.parse(promotion.stdout).promotion.status, 'adopted');
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   console.log('package_smoke=pass');

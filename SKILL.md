@@ -65,6 +65,8 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 `aicg harvest . --dry-run --json` 与聊天请求“提取项目能力”实现了持续升级的确定式 prepare 阶段：只在已安装 `axios` 且真实 import/require 后导出 `axios.create()` Client 时，或在非 TSX/JSX 文件中存在真实权限执行语义的 policy/guard/authorization 边界时，生成带 implementation fingerprint、当前路径、验证引用、owner 和复核日期的候选项目 Skill。候选不猜测 public entrypoint；只有 adopted record 才能声明确认后的入口和绑定当前指纹的 promotion evidence。写入仍要求 `--yes` 或聊天计划批准，并重新运行 `aicg check .`；候选不等于 adopted/enforced，也不能据此自动封禁旁路或宣称项目测试已经运行。adopted capability 漂移只会留下 review 记录，直到 owner 以真实验证完成升级。
 
+`aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 是当前可验证的晋升入口：仅当前检测到、无 review 的 candidate 可晋升；入口必须是该能力当前 implementation path，验证命令必须精确匹配扫描到的安全 npm script，并且该脚本在写入前成功退出。聊天请求“晋升项目能力”走同一内核：以 `--config` 提供 `capabilityId`、`publicEntrypoints`、可选 `consumerPaths` 和 `verificationCommand`，先预览并批准精确 planHash。consumerPaths 只会被记录为操作者声明、未验证的线索，不会写成已确认消费者。它把晋升记录为操作者确认和一次成功命令，不宣称完整产品行为、真实 Agent 加载或旁路门禁已经被证明。
+
 ## 动态技术标准与业务 Skill 工厂
 
 完整协议见 [references/stack-skill-generation.md](references/stack-skill-generation.md)。自动完整模式默认执行，不等待用户额外说“生成开发规范”：
