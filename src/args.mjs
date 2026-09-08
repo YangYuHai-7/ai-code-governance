@@ -1,6 +1,6 @@
 import { usageError } from './utils.mjs';
 
-const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve']);
+const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer']);
 const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'help', 'version']);
 const COMMAND_FLAGS = {
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'no-assist', 'migrate-links', 'help']),
@@ -11,6 +11,7 @@ const COMMAND_FLAGS = {
   architecture: new Set(['json', 'help']),
   standards: new Set(['json', 'help']),
   harvest: new Set(['yes', 'dry-run', 'force', 'json', 'help']),
+  promote: new Set(['id', 'entrypoint', 'verify', 'consumer', 'yes', 'dry-run', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
@@ -22,7 +23,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -69,6 +70,7 @@ Usage:
   aicg architecture [path] [--json]
   aicg standards [path] [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
+  aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
@@ -81,5 +83,6 @@ Commands:
   architecture  Assess source structure and present bounded migration choices without changing the repository.
   standards  Preview the selected technical-standard Skills and their audited source snapshot without changing the repository.
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
+  promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;

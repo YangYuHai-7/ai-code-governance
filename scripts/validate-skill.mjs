@@ -133,6 +133,7 @@ function validateEntryPoint() {
     'aicg check',
     'aicg sync',
     'aicg harvest',
+    'aicg promote',
     'agent-registry.json',
     'capability-evolution.json',
     '.ai-governance/manifest.json',

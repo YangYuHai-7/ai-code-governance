@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { capabilityHarvestSummary, prepareCapabilityHarvest } from '../src/capability-harvest.mjs';
+import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from '../src/capability-harvest.mjs';
 import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
@@ -139,6 +139,86 @@ test('harvest command has a zero-write preview and chat requires the exact appro
   assert.ok(fs.existsSync(path.join(directRoot, 'docs/ai/capability-evolution.json')));
 });
 
+test('promotion runs an exact discovered npm verification before adopting a candidate', (context) => {
+  const root = fixture('promote-direct');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    dependencies: { axios: '1.7.0' },
+    scripts: { verify: 'node -e "process.exit(0)"' },
+  }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src/http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
+  fs.writeFileSync(path.join(root, 'README.md'), 'not an HTTP entrypoint\n');
+  initialize(root);
+  const unrelated = run(['promote', root, '--id', 'project-http-client', '--entrypoint', 'README.md', '--consumer', 'package.json', '--verify', 'npm run verify', '--yes', '--json']);
+  assert.equal(unrelated.status, 2);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md')), false);
+  const preview = run(['promote', root, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--dry-run', '--json']);
+  assert.equal(preview.status, 0, preview.stderr);
+  assert.equal(JSON.parse(preview.stdout).promotion.status, 'adopted');
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md')), false);
+
+  const applied = run(['promote', root, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--consumer', 'src/http-client.ts', '--verify', 'npm run verify', '--yes', '--json']);
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(JSON.parse(applied.stdout).commandVerification.status, 'passed');
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const capability = config.projectCapabilities.find((entry) => entry.id === 'project-http-client');
+  assert.equal(capability.status, 'adopted');
+  assert.deepEqual(capability.publicEntrypoints, ['src/http-client.ts']);
+  assert.deepEqual(capability.consumerPaths, []);
+  assert.deepEqual(capability.consumerEvidence, { status: 'operator-declared-unverified', paths: ['src/http-client.ts'] });
+  assert.equal(capability.promotion.command, 'npm run verify');
+  assert.ok(capability.verification.includes('npm run verify'));
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md'), 'utf8'), /npm run verify/);
+  assert.equal(checkProject(scanProject(root)).ok, true);
+});
+
+test('chat promotion requires an exact plan and a real passing verification command', (context) => {
+  const root = fixture('promote-chat');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    dependencies: { axios: '1.7.0' },
+    scripts: { verify: 'node -e "process.exit(0)"' },
+  }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src/http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
+  initialize(root);
+  const input = path.join(root, 'promotion.json');
+  fs.writeFileSync(input, JSON.stringify({ capabilityId: 'project-http-client', publicEntrypoints: ['src/http-client.ts'], verificationCommand: 'npm run verify' }));
+  const preview = run(['request', root, '--text', '晋升项目能力', '--config', input, '--dry-run', '--json']);
+  assert.equal(preview.status, 0, preview.stderr);
+  const payload = JSON.parse(preview.stdout);
+  assert.equal(payload.intent.id, 'capability.promote');
+  assert.equal(payload.promotion.status, 'adopted');
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md')), false);
+  const applied = run(['request', root, '--text', '晋升项目能力', '--config', input, `--approve=${payload.plan.planHash}`, '--json']);
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.equal(JSON.parse(applied.stdout).commandVerification.status, 'passed');
+});
+
+test('a failed promotion verification writes neither adoption state nor generated Skills', (context) => {
+  const root = fixture('promote-failure');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    dependencies: { axios: '1.7.0' },
+    scripts: { verify: 'node -e "process.exit(1)"' },
+  }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src/http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
+  const config = initialize(root);
+  const original = fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8');
+  assert.throws(() => prepareCapabilityPromotion(config, scanProject(root), {
+    capabilityId: 'project-http-client',
+    publicEntrypoints: ['src/http-client.ts'],
+    verificationCommand: 'npm run unknown',
+  }), /exactly match a discovered/);
+  const result = run(['promote', root, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--yes', '--json']);
+  assert.equal(result.status, 1);
+  assert.match(`${result.stdout}${result.stderr}`, /verification failed/);
+  assert.equal(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'), original);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md')), false);
+});
+
 test('adopted capabilities are not silently overwritten when implementation drift is detected', (context) => {
   const root = fixture('drift');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -158,6 +238,7 @@ test('adopted capabilities are not silently overwritten when implementation drif
       promotion: {
         verifiedAt: '2026-09-08',
         command: 'npm run test',
+        basis: 'operator-confirmed-promotion-v1',
         implementationFingerprint: capability.implementationFingerprint,
       },
     })),
@@ -193,7 +274,7 @@ test('active candidates and adopted implementations that disappear require an ow
       status: 'adopted',
       publicEntrypoints: ['src/http-client.ts'],
       review: { status: 'completed', reviewedAt: '2026-09-08' },
-      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', implementationFingerprint: capability.implementationFingerprint },
+      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', basis: 'operator-confirmed-promotion-v1', implementationFingerprint: capability.implementationFingerprint },
     })),
   };
   fs.rmSync(source);
@@ -218,7 +299,7 @@ test('a review receipt cannot satisfy a later adopted implementation drift', (co
       status: 'adopted',
       publicEntrypoints: ['src/http-client.ts'],
       review: { status: 'completed', reviewedAt: '2026-09-08' },
-      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', implementationFingerprint: capability.implementationFingerprint },
+      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', basis: 'operator-confirmed-promotion-v1', implementationFingerprint: capability.implementationFingerprint },
     })),
   };
   fs.writeFileSync(source, "import axios from 'axios';\nexport const httpClient = axios.create({ timeout: 2000 });\n");
@@ -290,7 +371,7 @@ test('a hand-authored adopted record with a missing public entrypoint fails gove
       status: 'adopted',
       publicEntrypoints: ['src/missing-entrypoint.ts'],
       review: { status: 'completed', reviewedAt: '2026-09-08' },
-      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', implementationFingerprint: capability.implementationFingerprint },
+      promotion: { verifiedAt: '2026-09-08', command: 'npm run test', basis: 'operator-confirmed-promotion-v1', implementationFingerprint: capability.implementationFingerprint },
     })),
   };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(adoptedConfig, scanProject(root))), { transactional: true });
@@ -322,6 +403,27 @@ test('capability evolution configuration rejects unsupported provenance and unsa
       gaps: [],
     }],
   }), /safe public entrypoints/);
+  assert.throws(() => validateConfig({
+    ...config,
+    projectCapabilities: [{
+      id: 'unsafe-consumer-evidence',
+      kind: 'platform-adapter',
+      title: 'Unsafe consumer evidence',
+      status: 'candidate',
+      owner: 'platform',
+      implementationPaths: ['src/client.ts'],
+      publicEntrypoints: [],
+      consumerPaths: [],
+      consumerEvidence: { status: 'operator-declared-unverified', paths: ['src/evil`consumer.ts'] },
+      verification: [],
+      capabilityVersion: 1,
+      implementationFingerprint: 'a'.repeat(64),
+      skill: 'docs/ai/skills/project/unsafe-consumer-evidence/SKILL.md',
+      detection: 'test',
+      review: { status: 'required', dueDate: '2026-09-22' },
+      gaps: [],
+    }],
+  }), /invalid consumer evidence/);
   assert.throws(() => validateConfig({
     ...config,
     capabilityEvolution: { lastHarvest: { schemaVersion: 1, outcome: 'candidate-recorded', candidateIds: [], detectedCapabilityIds: [], drift: [], verification: { status: 'not-run-by-harvest', projectCommands: [], boundary: 'test' } } },

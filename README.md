@@ -197,6 +197,8 @@ hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。�
 
 `harvest` 让治理框架从当前代码中提取可复用能力候选。预览不写文件；应用必须使用 `--yes`，或通过聊天请求“提取项目能力”先取得并批准精确 `planHash`。目前它只把已安装 `axios` 的真实 import/require 后、导出的 `axios.create()` Client，以及非 TSX/JSX 文件中带真实 guard/policy/authorization 执行语义的边界作为候选，并生成连接当前实现路径的候选 Skill。候选并不等于 adopted/enforced：实际测试、owner、公共入口和受管消费者仍须验证后才能升级为强制复用规则。
 
+候选可通过 `aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 晋升为 adopted。该命令只执行扫描到的安全 npm script；脚本成功前不会写入治理文件。当前入口必须就是该能力的实现路径，尚不接受未经验证的 barrel/export 路径；聊天入口“晋升项目能力”同样使用精确计划批准，但需经 `--config` 提供 `capabilityId`、`publicEntrypoints` 和 `verificationCommand`。可选 consumer 路径仅标记为操作者声明、未验证的线索，不构成复用证据。晋升后的 Skill 记录当前入口、指纹、操作者确认和实际执行的验证命令；它仍不会自动封禁旁路调用。
+
 ### 作为 Agent Skill 使用
 
 安装后可以直接用短语触发：

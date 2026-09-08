@@ -13,15 +13,24 @@ const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-smoke-'));
 try {
   fs.writeFileSync(path.join(fixture, 'package.json'), JSON.stringify({
     name: 'aicg-smoke-fixture',
-    scripts: { test: 'node --test' },
-    dependencies: { react: '19.0.0', express: '5.0.0' },
+    scripts: { test: 'node --test', verify: 'node -e "process.exit(0)"' },
+    dependencies: { react: '19.0.0', express: '5.0.0', axios: '1.7.0' },
   }));
+  fs.mkdirSync(path.join(fixture, 'src'));
+  fs.writeFileSync(path.join(fixture, 'src', 'http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
   for (const args of [
     ['init', fixture, '--yes', '--no-assist'],
     ['standards', fixture, '--json'],
     ['harvest', fixture, '--dry-run', '--json'],
     ['check', fixture, '--json'],
     ['sync', fixture, '--dry-run'],
+  ]) {
+    const result = spawnSync(process.execPath, [path.join(root, 'bin/aicg.js'), ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, `${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
+  }
+  for (const args of [
+    ['harvest', fixture, '--yes', '--json'],
+    ['promote', fixture, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--yes', '--json'],
   ]) {
     const result = spawnSync(process.execPath, [path.join(root, 'bin/aicg.js'), ...args], { encoding: 'utf8' });
     assert.equal(result.status, 0, `${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
