@@ -198,7 +198,7 @@ aicg request . --text "给我团队建议" --config team-context.json --json
 
 `assess` 不写入仓库。它将生命周期（新项目、既有代码或证据不足）与拓扑（单仓库/monorepo）分开报告，并输出只含相对路径证据的决策账本草案。既有代码默认只建立治理边界，不会自动重构；初始化时必须明确选择“保持现有代码”“仅新代码采用标准”或“分阶段迁移”。
 
-`architecture` 同样只读：为新项目提出按领域模块化的目录蓝图；为既有项目报告可验证的扁平目录、混合职责或过大文件信号。它不会移动文件；`staged-migration` 是单独的现代化计划，必须再次批准。
+`architecture` 同样只读：为新项目提出按领域模块化的目录蓝图；为既有项目报告可验证的扁平目录、混合职责或过大文件信号。它不会移动文件；`staged-migration` 是单独的现代化计划，必须再次批准。已确认生命周期的 `init` 会生成唯一的 `docs/ai/architecture-profile.json`：新项目、或选择“仅新代码采用标准”的单仓项目，会启用“模块边界”未来代码放置策略；`aicg check .` 能发现之后绕过 `src/` 结构的应用源文件，以及直接堆在 `src/` 根目录的业务源文件。它不创建空 `src`、不生成组件/Controller/Repository，也不把依赖方向、高内聚或单一职责虚称为已机器证明。选择“保持现有代码”或“分阶段迁移”时，profile 保持 advisory，不拦截既有布局；monorepo 没有明确包级 scope 时同样不会猜测并强制根目录模板。旧版已确认 greenfield 的治理配置若在此策略引入前已长出源码，会保持 `legacy-unconfigured`，直到用户另行确认新的架构决策。
 
 `standards` 也是只读：它根据受扫描依赖和已确认的 `technologyPackages` 展示将生成的技术 Skill、官方或标准来源快照、刷新时间与每项验证清单。`init` 与 `sync` 在标准/完整深度生成这些受管 Skills，随后由 `aicg check .` 验证完整性；这不替代项目的测试，也不把来源快照说成在线实时标准。
 

@@ -1,6 +1,6 @@
 {
   "name": "ai-code-governance",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Cross-platform initializer and governance toolkit for AI coding agents.",
   "type": "module",
   "bin": {

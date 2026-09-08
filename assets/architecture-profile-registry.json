@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    {
+      "id": "module-boundaries-v1",
+      "version": 1,
+      "status": "active",
+      "summary": "A minimal module-boundary policy for new source without prescribing framework layers or creating product directories.",
+      "invariants": [
+        "Place each new business capability in a named feature or domain module with a clear responsibility.",
+        "Keep module-specific code cohesive and expose cross-module use through an explicit public entrypoint.",
+        "Keep shared code independent of concrete business modules.",
+        "Do not use this policy to pre-create speculative layers, repositories, interfaces, event buses, or empty directories.",
+        "Do not use this policy as authorization to move, rewrite, or reformat existing code."
+      ],
+      "placement": {
+        "scopeRoot": "src",
+        "entryFiles": ["main", "index", "app", "App", "app.module", "vite-env", "setupTests", "reportWebVitals"],
+        "moduleDirectories": ["app", "modules", "features", "entities", "shared", "platform", "bootstrap"]
+      },
+      "machineVerification": {
+        "newFilePlacement": "aicg-check-detects-current-tree",
+        "dependencyDirection": "stated-only",
+        "cohesion": "stated-only",
+        "singleResponsibility": "stated-only"
+      }
+    }
+  ]
+}

@@ -70,6 +70,8 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 
 `architecture` 只提出建议：新项目推荐先建立按领域拆分的模块边界；既有项目仅在存在可复核的扁平源目录、混合层职责或超大文件信号时报告发现。输出中的 `advice-only`、`new-code-standard`、`staged-migration` 与 `keep-current` 是用户策略选择，评估本身不移动文件；其中 `staged-migration` 必须创建新的现代化计划、兼容性验证与单独批准，不能由治理初始化隐式执行。
 
+在生命周期与既有代码策略已确认后，`init` 还会生成唯一的受管 `docs/ai/architecture-profile.json` 和派生的 `docs/ai/rules/15_architecture.mdc`。profile 绑定初始化决策、技术栈候选、适用 scope、基线源码路径与验证边界：单仓 greenfield 的策略要求未来应用源进入 `src/` 的受允许模块或入口；`existing + new-code-standard` 将初始化时已有应用源记为基线，只检查随后新增的文件；`keep-existing` 与 `staged-migration` 只保留 advisory 边界；没有记录初始化决策的旧配置保持 `legacy-unconfigured`。旧版已确认 greenfield 若在 architecture profile 引入前已长出源码，也保持 `legacy-unconfigured`，不会被静默倒查或纳入空基线。工具绝不创建 `src`、空目录、示例业务代码，或移动/格式化业务树。`aicg check .` 仅检测当前树中的新增文件位置和受管 profile 一致性，不证明 import 依赖方向、高内聚、单一职责或完成了架构迁移。monorepo 在未确认 package scope 时保持 advisory，绝不把多个技术栈猜成同一个根目录模板。
+
 ## 自然语言请求边界
 
 `request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。

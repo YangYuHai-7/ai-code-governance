@@ -90,7 +90,10 @@ export function commandVersion(command, env = process.env) {
 
 export function walkFiles(root, options = {}) {
   const maxDepth = options.maxDepth ?? 4;
-  const ignored = new Set(options.ignored ?? ['.git', 'node_modules', 'dist', 'build', 'target', '.next']);
+  const caseInsensitiveIgnored = options.caseInsensitiveIgnored === true;
+  const normalizeIgnored = (name) => caseInsensitiveIgnored ? name.toLowerCase() : name;
+  const ignored = new Set((options.ignored ?? ['.git', 'node_modules', 'dist', 'build', 'target', '.next']).map(normalizeIgnored));
+  const ignoredAtAnyDepth = new Set([...((options.ignoredAtAnyDepth ?? ignored))].map(normalizeIgnored));
   const result = [];
 
   function visit(current, depth) {
@@ -102,7 +105,8 @@ export function walkFiles(root, options = {}) {
       return;
     }
     for (const entry of entries) {
-      if (ignored.has(entry.name)) continue;
+      const ignoredName = normalizeIgnored(entry.name);
+      if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignored.has(ignoredName))) continue;
       const absolute = path.join(current, entry.name);
       const relative = normalizeRelative(path.relative(root, absolute));
       if (entry.isSymbolicLink()) {

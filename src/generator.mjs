@@ -3,6 +3,7 @@ import { CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, PACKAGE_ROOT, SUP
 import { resolveAgents, resolvePacks } from './registry.mjs';
 import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES } from './project-assessment.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from './capability-harvest.mjs';
+import { architectureProfileDocument, architectureRule, validateArchitectureDecision } from './architecture-policy.mjs';
 import { buildTechnicalStandardArtifacts } from './technical-standards.mjs';
 import { normalizeRelative, readText, stableJson, unique, usageError } from './utils.mjs';
 
@@ -82,6 +83,7 @@ export function validateConfig(config) {
   }
   validateProjectCapabilities(config.projectCapabilities);
   validateCapabilityEvolution(config.capabilityEvolution, config.projectCapabilities ?? []);
+  validateArchitectureDecision(config.architecture, config.initialization ?? null);
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
   if (config.initialClassification !== undefined) {
@@ -153,6 +155,7 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Governance depth: \`${config.governanceDepth}\`
 - Selected stacks: ${config.stacks.map((item) => `\`${item}\``).join(', ')}
 - Initialization boundary: ${initializationGuidance(config)}
+- Read \`${config.canonicalRoot}/architecture-profile.json\` and \`${config.canonicalRoot}/rules/15_architecture.mdc\` before placing new source. The profile is the sole current architecture policy; it never authorizes migration.
 - Read \`${config.canonicalRoot}/context-map.yaml\` before implementation and load only matching profiles.
 ${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
@@ -206,7 +209,9 @@ ${rows}
 }
 
 function contextMap(config) {
-  const rules = config.governanceDepth === 'minimal' ? ['docs/ai/rules/00_always.mdc'] : ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/20_stack.mdc'];
+  const rules = config.governanceDepth === 'minimal'
+    ? ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/15_architecture.mdc']
+    : ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/15_architecture.mdc', 'docs/ai/rules/20_stack.mdc'];
   const technicalStandardStart = config.governanceDepth === 'minimal' ? '' : '  - docs/ai/technical-standards.json\n  - docs/ai/capability-evolution.json\n';
   return `version: 1
 default_start:
@@ -258,6 +263,8 @@ function governanceReadme(config, scan, packs) {
   return `# ${config.projectName} — ${languageTitle(config, 'AI 治理正典', 'AI governance canon')}
 
 This directory is the human-maintained governance source. Client-specific regular files are generated adapters and are checked by \`aicg check .\`.
+
+The generated [architecture profile](architecture-profile.json) is the sole current policy for future source placement. It records whether the policy is active, advisory, or legacy-unconfigured; it never authorizes business-code migration.
 
 ## Configuration
 
@@ -379,6 +386,8 @@ export function buildArtifacts(config, scan) {
     { path: 'docs/ai/verification-profiles.yaml', content: verificationProfiles(scan), ownership: 'seed', kind: 'canonical', source: 'repository-scan' },
     { path: 'docs/ai/anti-patterns.md', content: antiPatterns(config), ownership: 'seed', kind: 'canonical', source: 'template:anti-patterns' },
     { path: 'docs/ai/stack-profile.json', content: stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), ownership: 'full', kind: 'canonical', source: 'capability-pack-registry' },
+    { path: 'docs/ai/architecture-profile.json', content: stableJson(architectureProfileDocument(config)), ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision' },
+    { path: 'docs/ai/rules/15_architecture.mdc', content: architectureRule(config), ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision' },
     { path: 'docs/ai/decision-ledger.json', content: stableJson(buildDecisionLedger(scan, config)), ownership: 'full', kind: 'canonical', source: 'project-classification-and-governance-config' },
     { path: 'docs/ai/bootstrap-prompt.md', content: bootstrapPrompt(config), ownership: 'seed', kind: 'canonical', source: 'template:bootstrap-prompt' },
     { path: 'docs/ai/acceptance-contract.json', content: readText(path.join(PACKAGE_ROOT, 'assets/acceptance-contract.json')), ownership: 'seed', kind: 'canonical', source: 'asset:acceptance-contract' },
