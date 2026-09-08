@@ -3,6 +3,7 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from './constants.mjs';
 import { buildArtifacts, validateConfig } from './generator.mjs';
 import { capabilityEvidenceIssues } from './capability-harvest.mjs';
+import { architecturePlacementIssues } from './architecture-policy.mjs';
 import { extractManagedBlock, loadManifest, renderManagedBlock } from './managed-files.mjs';
 import { isSafeRelative, readJson, readText, sha256 } from './utils.mjs';
 
@@ -42,6 +43,9 @@ export function checkProject(scan) {
   if (config && manifest) {
     if (!config.initialization?.lifecycle) {
       warnings.push(`${CONFIG_PATH}: legacy-unconfirmed initialization decision; re-run aicg init to record lifecycle and existing-code strategy before changing architecture or existing behavior.`);
+    }
+    if (!config.architecture || config.architecture.status === 'legacy-unconfigured') {
+      warnings.push(`${CONFIG_PATH}: legacy-unconfigured architecture profile; re-run aicg init to record a future-code policy before relying on directory guidance.`);
     }
     let expected = [];
     try {
@@ -116,9 +120,18 @@ export function checkProject(scan) {
       if (!expectedPaths.has(relative)) warnings.push(`${relative}: managed by an earlier configuration and no longer selected`);
     }
 
+    try {
+      for (const issue of architecturePlacementIssues(scan, config)) errors.push(`architecture placement: ${issue}`);
+    } catch (error) {
+      errors.push(`architecture policy: ${error.message}`);
+    }
+
     const agentsContent = readText(path.join(scan.root, 'AGENTS.md'), '');
     if (!agentsContent.includes(MANAGED_START) || !agentsContent.includes(MANAGED_END)) {
       errors.push('AGENTS.md: shared managed entrypoint is not reachable');
+    }
+    if (!agentsContent.includes('docs/ai/architecture-profile.json') || !agentsContent.includes('docs/ai/rules/15_architecture.mdc')) {
+      errors.push('AGENTS.md: architecture profile and generated rule are not reachable from the managed entrypoint');
     }
     if (config.clients.includes('claude-code')) {
       const claude = readText(path.join(scan.root, 'CLAUDE.md'), '');
@@ -150,8 +163,14 @@ export function checkProject(scan) {
       enforced: pass ? 'pass' : 'fail',
       realClientVerified: 'unverified',
     },
+    architecture: {
+      status: config?.architecture?.status ?? 'legacy-unconfigured',
+      newFilePlacement: config?.architecture?.verification?.newFilePlacement ?? 'not-enabled',
+      semanticDesign: 'stated-only',
+    },
     boundaries: [
       'aicg check proves structure, ownership, hashes, and configured entrypoint reachability.',
+      'A passing architecture placement check detects only current-tree source placement; it does not prove dependency direction, cohesion, or single responsibility.',
       'Real agent loading, project behavior, hooks, and operating-system execution require separate replay evidence.',
     ],
   };

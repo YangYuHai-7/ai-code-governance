@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { parseArgs, HELP } from './args.mjs';
 import { assessArchitecture } from './architecture-assessment.mjs';
+import { deriveArchitectureDecision } from './architecture-policy.mjs';
 import { runAssist, assistCandidates } from './assist.mjs';
 import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from './capability-harvest.mjs';
 import { checkProject, printCheck } from './checker.mjs';
@@ -10,13 +11,13 @@ import { doctor, printDoctor } from './doctor.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from './execution-plan.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from './generator.mjs';
 import { resolveIntent } from './intents.mjs';
-import { applyArtifactPlan, planArtifacts } from './managed-files.mjs';
+import { applyArtifactPlan, loadManifest, planArtifacts } from './managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
 import { assessmentSummary, buildDecisionLedger, classifyProject, resolveInitializationDecision } from './project-assessment.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
 import { technicalStandardsSummary } from './technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from './team-recommendation.mjs';
-import { readJson, usageError } from './utils.mjs';
+import { readJson, readText, sha256, usageError } from './utils.mjs';
 
 function mergeConfig(base, supplied) {
   return {
@@ -49,6 +50,18 @@ function sameInitialization(left, right) {
   );
 }
 
+const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/ai/', 'docs/memory/', '.cursor/', '.claude/', '.agents/'];
+const GOVERNANCE_WRITE_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
+
+function assertInitializationWriteBoundary(plan) {
+  const unexpected = plan.operations
+    .map((operation) => operation.path)
+    .filter((relative) => !GOVERNANCE_WRITE_FILES.has(relative) && !GOVERNANCE_WRITE_PREFIXES.some((prefix) => relative.startsWith(prefix)));
+  if (unexpected.length > 0) {
+    throw usageError(`Initialization plan attempted to modify a non-governance path: ${unexpected.sort((left, right) => left.localeCompare(right)).join(', ')}.`);
+  }
+}
+
 function printScan(scan) {
   console.log(JSON.stringify(scanSummary(scan), null, 2));
 }
@@ -58,10 +71,22 @@ function configForStandards(scan) {
   return validateConfig(mergeConfig(defaultConfig(scan), existing ?? {}));
 }
 
+function assertManagedArchitectureConfigTrusted(root, config) {
+  if (!config?.architecture) return;
+  const manifest = loadManifest(root);
+  const entry = manifest?.files?.find((candidate) => candidate?.path === CONFIG_PATH && candidate.ownership === 'full');
+  const content = readText(path.join(root, CONFIG_PATH), '');
+  if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') || sha256(content) !== entry.sha256) {
+    throw usageError('The managed architecture configuration drifted from its recorded manifest. Refuse to reuse or rewrite its baseline; restore the known-good config before running aicg write commands.');
+  }
+}
+
 function loadConfiguredGovernance(scan) {
   const existing = loadExistingConfig(scan.root);
   if (!existing) throw usageError('Capability harvest requires an initialized governance configuration. Run aicg init first.');
-  return validateConfig(mergeConfig(defaultConfig(scan), existing));
+  const config = validateConfig(mergeConfig(defaultConfig(scan), existing));
+  assertManagedArchitectureConfigTrusted(scan.root, config);
+  return config;
 }
 
 function promotionInputFromOptions(options) {
@@ -114,13 +139,14 @@ async function prepareInit(target, options, { allowDefaults = false } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
   const scan = scanProject(target, { probeEnvironment: false });
   const existing = loadExistingConfig(scan.root);
+  assertManagedArchitectureConfigTrusted(scan.root, existing);
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
   let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
   let prompted = false;
   if (options.config) {
     const supplied = readJson(path.resolve(options.config));
     if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
-    const { initialClassification: _ignoredClassification, ...safeSupplied } = supplied;
+    const { initialClassification: _ignoredClassification, architecture: _ignoredArchitecture, projectMode: _ignoredProjectMode, ...safeSupplied } = supplied;
     config = mergeConfig(config, safeSupplied);
     if (safeSupplied.initialization?.lifecycle !== undefined && !sameInitialization(existing?.initialization, safeSupplied.initialization)) {
       decisionSource = 'config';
@@ -132,6 +158,7 @@ async function prepareInit(target, options, { allowDefaults = false } = {}) {
     prompted = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   }
+  config = { ...config, projectMode: scan.projectMode, projectName: scan.projectName };
   if (options['no-assist']) config.features.aiAssist = false;
   if (options.assist) config.features.aiAssist = true;
   if (options.assist && !config.clients.includes(options.assist)) {
@@ -147,6 +174,10 @@ async function prepareInit(target, options, { allowDefaults = false } = {}) {
         allowRecordedGreenfield: Boolean(existing?.initialization?.lifecycle === 'greenfield' && sameInitialization(existing.initialization, config.initialization)),
       }),
     };
+    config = {
+      ...config,
+      architecture: deriveArchitectureDecision(scan, config, existing?.architecture ?? null, { legacyGovernance: Boolean(existing && !existing.architecture) }),
+    };
   } catch (error) {
     throw usageError(error.message);
   }
@@ -156,6 +187,7 @@ async function prepareInit(target, options, { allowDefaults = false } = {}) {
   validateConfig(config);
   const artifacts = buildArtifacts(config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
+  assertInitializationWriteBoundary(plan);
   return { scan, config, plan };
 }
 
@@ -293,6 +325,7 @@ async function requestCommand(target, options) {
     artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
   } else {
     config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
+    assertManagedArchitectureConfigTrusted(scan.root, config);
     artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
   }
   const executionPlan = buildExecutionPlan({ intent, scan, artifactPlan, config });
@@ -331,6 +364,7 @@ async function requestCommand(target, options) {
 async function syncCommand(target, options) {
   const scan = scanProject(target);
   const config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
+  assertManagedArchitectureConfigTrusted(scan.root, config);
   const artifacts = buildArtifacts(config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
   const result = applyArtifactPlan(scan.root, plan, {

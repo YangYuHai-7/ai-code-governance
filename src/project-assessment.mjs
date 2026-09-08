@@ -27,10 +27,20 @@ export const INITIALIZATION_SOURCES = ['config', 'interactive', 'yes-greenfield'
 const INITIALIZATION_SOURCE_SET = new Set(INITIALIZATION_SOURCES);
 
 const SOURCE_EXTENSIONS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift',
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift',
   '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.m', '.mm', '.sql', '.sh', '.bash', '.zsh', '.fish', '.tf', '.hcl', '.scala',
-  '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm',
+  '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm', '.vue', '.svelte', '.astro',
 ]);
+
+const IMPLEMENTATION_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte', '.astro', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php',
+  '.rs', '.cs', '.swift', '.c', '.cc', '.cpp', '.cxx', '.m', '.mm', '.scala', '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm',
+]);
+
+const NON_IMPLEMENTATION_PREFIXES = [
+  'scripts/', 'script/', 'tools/', 'tooling/', '.github/', 'migrations/', 'migration/', 'db/migrate/', 'database/migrations/',
+  'drizzle/', 'prisma/migrations/', 'infra/', 'infrastructure/', 'terraform/',
+];
 
 const GREENFIELD_SAFE_PATHS = [
   /^(?:README(?:\.[^/]+)?|LICENSE(?:\.[^/]+)?|NOTICE(?:\.[^/]+)?|CHANGELOG(?:\.[^/]+)?|CONTRIBUTING(?:\.[^/]+)?)$/i,
@@ -42,16 +52,48 @@ function isGovernancePath(relative) {
   return GOVERNANCE_PREFIXES.some((prefix) => relative === prefix || relative.startsWith(prefix));
 }
 
+function normalizedExtension(relative) {
+  return relative.slice(relative.lastIndexOf('.')).toLowerCase();
+}
+
+function isBuildConfiguration(relative) {
+  return /^(?:vite|next|webpack|rollup|eslint|prettier|tailwind|postcss|jest|vitest|drizzle|prisma)\.config\.[^/]+$/i.test(relative.split('/').at(-1));
+}
+
+export function isImplementationSourcePath(relative) {
+  const normalized = relative.replaceAll('\\', '/');
+  const basename = normalized.split('/').at(-1);
+  if (PROJECT_MANIFESTS.has(basename) || isGovernancePath(normalized) || isBuildConfiguration(normalized)) return false;
+  if (NON_IMPLEMENTATION_PREFIXES.some((prefix) => normalized.toLowerCase().startsWith(prefix))) return false;
+  if (normalized.toLowerCase().split('/').some((segment) => segment === 'migration' || segment === 'migrations')) return false;
+  return IMPLEMENTATION_EXTENSIONS.has(normalizedExtension(normalized));
+}
+
+export function projectSourcePaths(scan) {
+  return scan.files
+    .filter((file) => file.type === 'file' && isImplementationSourcePath(file.relative))
+    .map((file) => file.relative)
+    .sort((left, right) => left.localeCompare(right));
+}
+
+export function projectSourceLinks(scan) {
+  return scan.files
+    .filter((file) => file.type === 'link' && isImplementationSourcePath(file.relative))
+    .map((file) => file.relative)
+    .sort((left, right) => left.localeCompare(right));
+}
+
 function sourceEvidence(files) {
   return files
     .filter((file) => {
       const basename = file.relative.split('/').at(-1);
-      const extension = file.relative.slice(file.relative.lastIndexOf('.'));
+      const extension = normalizedExtension(file.relative);
       if (PROJECT_MANIFESTS.has(basename)) return false;
-      if (/^(?:vite|next|webpack|rollup|eslint|prettier|tailwind|postcss|jest|vitest)\.config\.[^/]+$/.test(basename)) return false;
+      if (isBuildConfiguration(file.relative)) return false;
       return SOURCE_EXTENSIONS.has(extension);
     })
     .map((file) => file.relative)
+    .sort((left, right) => left.localeCompare(right))
     .slice(0, 8);
 }
 
@@ -273,6 +315,21 @@ export function buildDecisionLedger(scan, config = null) {
         value: implementationBoundary,
         source: initialization?.source ?? 'project-classification-safety-default',
         status: pendingDecisions.length === 0 ? 'applied' : 'requires-user-confirmation',
+      },
+      {
+        id: 'architecture-profile',
+        value: config?.architecture
+          ? {
+              profileId: config.architecture.profileId,
+              profileVersion: config.architecture.profileVersion,
+              mode: config.architecture.mode,
+              status: config.architecture.status,
+              topologyBinding: config.architecture.topologyBinding ?? null,
+              appliesTo: config.architecture.scope?.appliesTo ?? null,
+            }
+          : null,
+        source: config?.architecture?.source ?? 'needs-initialization-decision',
+        status: config?.architecture ? 'recorded' : 'legacy-unconfigured',
       },
     ],
     pendingDecisions,

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
 import { validateTeamRoleRegistry } from '../src/team-recommendation.mjs';
+import { validateArchitectureProfileRegistry } from '../src/architecture-policy.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -158,7 +159,7 @@ function validateCliPackage(pkg) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
   check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
-  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs']) {
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs', 'architecture-policy.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }
 }
@@ -455,6 +456,14 @@ function validateTechnicalStandardCoverage(registry) {
   ]) check(ids.has(id), `Missing technical standard: ${id}`);
   check(registry.snapshot?.status === 'reviewed-offline-snapshot', 'Technical standard registry must preserve offline snapshot status.');
   check(registry.snapshot?.refreshAfterDays > 0, 'Technical standard registry must define a source refresh interval.');
+}
+
+function validateArchitectureProfiles() {
+  try {
+    validateArchitectureProfileRegistry();
+  } catch (error) {
+    fail(`Architecture profile registry is invalid: ${error.message}`);
+  }
 }
 
 const requiredProbeIds = [
@@ -811,6 +820,8 @@ try {
 } catch (error) {
   fail(`Team role registry is not valid JSON: ${error.message}`);
 }
+
+validateArchitectureProfiles();
 
 if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry) {
   runNegativeProbe(

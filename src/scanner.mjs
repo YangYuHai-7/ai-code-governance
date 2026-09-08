@@ -151,7 +151,10 @@ export function scanProject(target, options = {}) {
   const stat = fs.existsSync(root) ? fs.statSync(root) : null;
   if (!stat?.isDirectory()) throw new Error(`Target directory does not exist: ${root}`);
 
-  const files = walkFiles(root, { maxDepth: 5 });
+  // Governance decisions and placement gates must see the complete product tree.
+  // `walkFiles` records links but never follows them. Build outputs are ignored only at
+  // the repository root so a nested directory cannot become an unscanned escape hatch.
+  const files = walkFiles(root, { maxDepth: Infinity, ignoredAtAnyDepth: ['.git', 'node_modules'], caseInsensitiveIgnored: true });
   const capabilityRegistry = loadCapabilityRegistry();
   const agentRegistry = loadAgentRegistry();
   const agents = agentRegistry.agents.map((agent) => {
