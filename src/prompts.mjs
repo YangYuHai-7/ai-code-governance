@@ -1,6 +1,8 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { defaultConfig } from './generator.mjs';
+import { classifyProject } from './project-assessment.mjs';
+import { usageError } from './utils.mjs';
 
 function indexes(value, size) {
   const result = value.split(',').map((item) => Number.parseInt(item.trim(), 10) - 1).filter((item) => Number.isInteger(item) && item >= 0 && item < size);
@@ -10,9 +12,10 @@ function indexes(value, size) {
 async function chooseOne(rl, label, options, defaultIndex = 0) {
   console.log(`\n${label}`);
   options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}`));
-  const answer = (await rl.question(`Select [${defaultIndex + 1}]: `)).trim();
+  const prompt = Number.isInteger(defaultIndex) ? `Select [${defaultIndex + 1}]: ` : 'Select: ';
+  const answer = (await rl.question(prompt)).trim();
   const selected = answer ? Number.parseInt(answer, 10) - 1 : defaultIndex;
-  if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) throw new Error(`Invalid selection for ${label}.`);
+  if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) throw usageError(`An explicit selection is required for ${label}.`);
   return options[selected].value;
 }
 
@@ -22,7 +25,7 @@ async function chooseMany(rl, label, options, defaultValues) {
   const answer = (await rl.question('Select comma-separated numbers [defaults]: ')).trim();
   if (!answer) return [...defaultValues];
   const selected = indexes(answer, options.length);
-  if (selected.length === 0) throw new Error(`Select at least one value for ${label}.`);
+  if (selected.length === 0) throw usageError(`Select at least one value for ${label}.`);
   return selected.map((index) => options[index].value);
 }
 
@@ -32,7 +35,7 @@ async function yesNo(rl, label, defaultValue = false) {
   if (!answer) return defaultValue;
   if (['y', 'yes'].includes(answer)) return true;
   if (['n', 'no'].includes(answer)) return false;
-  throw new Error(`Expected yes or no for: ${label}`);
+  throw usageError(`Expected yes or no for: ${label}`);
 }
 
 export async function promptConfig(scan, seed = defaultConfig(scan)) {
@@ -41,6 +44,36 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
     console.log(`Target: ${scan.root}`);
     console.log(`Detected mode: ${scan.projectMode}`);
     console.log(`Detected stacks: ${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}`);
+    const assessment = classifyProject(scan);
+    const recordedInitialization = seed.initialization?.lifecycle && seed.initialization?.source ? seed.initialization : null;
+    let initialization = recordedInitialization ?? { lifecycle: null, existingCodeStrategy: null, source: null };
+    if (recordedInitialization) {
+      console.log(`Recorded initialization decision is preserved: lifecycle=${recordedInitialization.lifecycle}, strategy=${recordedInitialization.existingCodeStrategy ?? 'not-applicable'}, source=${recordedInitialization.source}. Use an explicit --config initialization change to replace it.`);
+    } else if (assessment.codebase.lifecycle.value === 'ambiguous') {
+      const lifecycle = await chooseOne(rl, 'Repository lifecycle confirmation', [
+        { label: 'New project scaffold', value: 'greenfield' },
+        { label: 'Existing project governance', value: 'existing' },
+      ], null);
+      initialization = { lifecycle, existingCodeStrategy: null, source: null };
+    } else if (assessment.codebase.lifecycle.value === 'existing') {
+      const strategy = await chooseOne(rl, 'Existing-code strategy', [
+        { label: 'Keep existing code unchanged', value: 'keep-existing' },
+        { label: 'Apply the standard to new code only', value: 'new-code-standard' },
+        { label: 'Prepare a separately approved staged migration', value: 'staged-migration' },
+      ], null);
+      initialization = { lifecycle: 'existing', existingCodeStrategy: strategy, source: null };
+    } else {
+      console.log('Repository lifecycle: greenfield (high-confidence scanner result).');
+      initialization = { lifecycle: 'greenfield', existingCodeStrategy: null, source: null };
+    }
+    if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
+      const strategy = await chooseOne(rl, 'Existing-code strategy', [
+        { label: 'Keep existing code unchanged', value: 'keep-existing' },
+        { label: 'Apply the standard to new code only', value: 'new-code-standard' },
+        { label: 'Prepare a separately approved staged migration', value: 'staged-migration' },
+      ], null);
+      initialization = { ...initialization, existingCodeStrategy: strategy };
+    }
 
     const clients = await chooseMany(
       rl,
@@ -85,6 +118,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
       governanceDepth,
       artifactLanguage,
       supportedOs,
+      initialization,
       features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, aiAssist },
       domainConstraints: constraintAnswer ? constraintAnswer.split(';').map((item) => item.trim()).filter(Boolean) : [],
     };
@@ -92,12 +126,17 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
     rl.close();
   }
 }
-export async function confirmPlan(paths, planHash = null) {
+export async function confirmPlan(paths, planHash = null, initialization = null, implementationBoundary = null) {
   const rl = createInterface({ input, output });
   try {
     console.log('\nPlanned managed files:');
     for (const item of paths) console.log(`  ${item.changed ? 'write' : 'keep '} ${item.path}`);
     if (planHash) console.log(`Plan hash: ${planHash}`);
+    if (initialization) {
+      console.log(`Initialization lifecycle: ${initialization.lifecycle} (source: ${initialization.source})`);
+      console.log(`Existing-code strategy: ${initialization.existingCodeStrategy ?? 'not-applicable'}`);
+      console.log(`Implementation boundary: ${implementationBoundary ?? 'unverified'}`);
+    }
     return yesNo(rl, 'Apply this plan?', false);
   } finally {
     rl.close();

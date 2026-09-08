@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, PACKAGE_ROOT, SUPPORTED_DEPTHS, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from './constants.mjs';
 import { resolveAgents, resolvePacks } from './registry.mjs';
-import { buildDecisionLedger, classifyProject } from './project-assessment.mjs';
+import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES } from './project-assessment.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from './capability-harvest.mjs';
 import { buildTechnicalStandardArtifacts } from './technical-standards.mjs';
 import { normalizeRelative, readText, stableJson, unique, usageError } from './utils.mjs';
@@ -89,10 +89,56 @@ export function validateConfig(config) {
       throw usageError('initialClassification must preserve a scanner classification snapshot.');
     }
   }
+  if (config.initialization !== undefined) {
+    const initialization = config.initialization;
+    if (!initialization || typeof initialization !== 'object') throw usageError('initialization must be an object when provided.');
+    if (initialization.lifecycle !== null && initialization.lifecycle !== undefined && !INITIALIZATION_LIFECYCLES.includes(initialization.lifecycle)) {
+      throw usageError('initialization.lifecycle must be greenfield or existing.');
+    }
+    if (initialization.existingCodeStrategy !== null && initialization.existingCodeStrategy !== undefined && !EXISTING_CODE_STRATEGIES.includes(initialization.existingCodeStrategy)) {
+      throw usageError(`initialization.existingCodeStrategy must be one of: ${EXISTING_CODE_STRATEGIES.join(', ')}.`);
+    }
+    if (initialization.lifecycle === 'greenfield' && initialization.existingCodeStrategy !== null && initialization.existingCodeStrategy !== undefined) {
+      throw usageError('initialization.existingCodeStrategy must be null when initialization.lifecycle is greenfield.');
+    }
+    if (initialization.source !== null && initialization.source !== undefined && !INITIALIZATION_SOURCES.includes(initialization.source)) {
+      throw usageError(`initialization.source must be one of: ${INITIALIZATION_SOURCES.join(', ')}.`);
+    }
+    if (initialization.lifecycle && !initialization.source) {
+      throw usageError('initialization.source is required when initialization.lifecycle is set.');
+    }
+    if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
+      throw usageError('initialization.existingCodeStrategy is required when initialization.lifecycle is existing.');
+    }
+    if (!initialization.lifecycle && initialization.existingCodeStrategy) {
+      throw usageError('initialization.existingCodeStrategy requires initialization.lifecycle to be existing.');
+    }
+    if (!initialization.lifecycle && initialization.source) {
+      throw usageError('initialization.source requires initialization.lifecycle.');
+    }
+  }
   return config;
 }
 
+function initializationGuidance(config) {
+  const initialization = config.initialization;
+  if (initialization?.lifecycle === 'greenfield') {
+    return 'The repository is confirmed as greenfield. Establish new code with the approved project architecture profile; do not collapse unrelated layers into a catch-all directory.';
+  }
+  switch (initialization?.existingCodeStrategy) {
+    case 'keep-existing':
+      return 'Existing code is protected. Do not change its architecture or behavior unless a separate request explicitly authorizes that work.';
+    case 'new-code-standard':
+      return 'Existing code is protected. Apply the approved project architecture profile to new code only; do not rewrite legacy code as incidental cleanup.';
+    case 'staged-migration':
+      return 'Existing code is protected until a separate staged-migration plan, compatibility contract, and approval exist. Initialization itself must not rewrite business code.';
+    default:
+      return 'Existing-code handling is not yet confirmed. Preserve existing code and stop before architectural or behavioral changes.';
+  }
+}
+
 function rootInstructions(config, scan) {
+  const assessment = config.initialClassification ?? classifyProject(scan);
   const commands = scan.commands.length > 0 ? scan.commands.map((item) => `- \`${item.command}\` — discovered from \`${item.source}\``).join('\n') : '- No verified repository command was discovered; do not invent one.';
   const technicalStandards = config.governanceDepth === 'minimal'
     ? ''
@@ -102,9 +148,11 @@ function rootInstructions(config, scan) {
 This block is managed by \`aicg\`. Project-specific content outside this block is preserved.
 
 - Canonical governance: \`${config.canonicalRoot}/\`
-- Project mode: \`${config.projectMode}\`
+- Repository topology: \`${assessment.codebase.topology.value}\`
+- Initial scanner lifecycle evidence: \`${assessment.codebase.lifecycle.value}\` (\`${assessment.codebase.lifecycle.confidence}\` confidence)
 - Governance depth: \`${config.governanceDepth}\`
 - Selected stacks: ${config.stacks.map((item) => `\`${item}\``).join(', ')}
+- Initialization boundary: ${initializationGuidance(config)}
 - Read \`${config.canonicalRoot}/context-map.yaml\` before implementation and load only matching profiles.
 ${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
@@ -133,6 +181,7 @@ alwaysApply: true
 6. Do not claim a client, platform, hook, or external workflow is enforced without replay evidence.
 7. Before completion, run \`aicg harvest . --dry-run\` when product behavior changes; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
 8. Before completion, run \`aicg check .\` and the selected verification profile.
+9. Before architecture or behavior changes, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`. They are the sole current record of initialization lifecycle, existing-code strategy, and implementation boundary; do not infer a migration authorization from this seed file.
 `;
 }
 
@@ -212,12 +261,16 @@ This directory is the human-maintained governance source. Client-specific regula
 
 ## Configuration
 
-- Mode: \`${config.projectMode}\`
+- Repository topology at initialization: \`${classifyProject(scan).codebase.topology.value}\`
 - Depth: \`${config.governanceDepth}\`
 - Clients: ${config.clients.map((item) => `\`${item}\``).join(', ')}
 - Stacks: ${packs.map((pack) => `\`${pack.id}\` (${pack.evidence})`).join(', ')}
 - Supported OS targets: ${config.supportedOs.map((item) => `\`${item}\``).join(', ')}
 - Current generator evidence: \`${scan.currentOs}\` only until CI or real-client probes complete.
+
+## Initialization boundary
+
+The single current initialization decision is stored in \`.ai-governance/config.json\` and derived into \`docs/ai/decision-ledger.json\`. Read both before changing architecture or existing behavior. This seed document never grants migration authorization.
 
 ## Ownership
 
@@ -275,7 +328,7 @@ function bootstrapPrompt(config) {
 
 The deterministic \`aicg init\` phase is complete for ${config.projectName}.
 
-Inspect the repository and refine the human-maintained files under \`${config.canonicalRoot}/\`. Preserve generated adapters and existing user content. Derive business rules only from requirements, code, tests, ADRs, incidents, or explicit user decisions. Research current official documentation for the selected stack versions. Run \`aicg sync .\` after canonical Skill or rule changes, then run \`aicg check .\` and real project verification commands. Do not enable hooks, CI, external providers, publishing, or destructive migration without explicit authorization.
+Inspect the repository and refine the human-maintained files under \`${config.canonicalRoot}/\`. Preserve generated adapters and existing user content. Before proposing any code change, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`; initialization decisions are authoritative there, and this seed prompt never authorizes migration or business-code changes. Derive business rules only from requirements, code, tests, ADRs, incidents, or explicit user decisions. Research current official documentation for the selected stack versions. Run \`aicg sync .\` after canonical Skill or rule changes, then run \`aicg check .\` and real project verification commands. Do not enable hooks, CI, external providers, publishing, or destructive migration without explicit authorization.
 `;
 }
 
