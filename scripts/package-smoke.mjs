@@ -46,6 +46,10 @@ try {
   run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', `--approve=${requestPayload.plan.planHash}`, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
+  const standardsPreview = run(process.execPath, [installedBin, 'standards', projectDirectory, '--json']);
+  assert.equal(JSON.parse(standardsPreview.stdout).mode, 'read-only-preview');
+  const chatStandardsPreview = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '生成技术规范预览', '--json']);
+  assert.equal(JSON.parse(chatStandardsPreview.stdout).intent.id, 'technical-standards.preview');
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   console.log('package_smoke=pass');

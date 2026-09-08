@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "snapshot": {
+    "status": "reviewed-offline-snapshot",
+    "reviewedAt": "2026-09-08",
+    "refreshAfterDays": 90,
+    "boundary": "This registry is a reproducible offline snapshot of selected primary sources. It is not a claim that an installed framework version is current or that a project has enforced every rule."
+  },
+  "standards": [
+    {
+      "id": "software-design-and-verification",
+      "title": "Software design and change verification",
+      "appliesTo": { "always": true },
+      "sources": [
+        {
+          "id": "governance-design-principles",
+          "kind": "governance-principle",
+          "title": "AI Code Governance design principles",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Give each module one cohesive business responsibility and expose a small explicit public contract.",
+        "Keep orchestration at the application boundary; do not let UI, transport, persistence, and domain policy depend on each other indiscriminately.",
+        "Prefer the smallest change that meets a confirmed requirement. Do not add extension points, abstractions, or infrastructure without a current use and owner.",
+        "Reuse a verified project capability instead of creating a parallel client, authorization path, or data-access wrapper.",
+        "For every behavior change, add or update the narrowest useful verification and run the affected project command plus aicg check."
+      ],
+      "verification": [
+        "Run a focused behavior test or type check for the changed module.",
+        "Run aicg check . after governance generation or a Skill update.",
+        "Record commands not run and the remaining boundary instead of claiming completion."
+      ],
+      "boundaries": [
+        "These are governance principles, not a substituted official framework specification.",
+        "A generated Skill states guidance; it is not proof that a codebase is automatically low-coupled or fully tested."
+      ]
+    },
+    {
+      "id": "react-component-purity",
+      "title": "React component purity and effect boundaries",
+      "appliesTo": { "packagesAny": ["react", "react-dom"] },
+      "sources": [
+        {
+          "id": "react-keeping-components-pure",
+          "kind": "official-documentation",
+          "title": "React: Keeping Components Pure",
+          "url": "https://react.dev/learn/keeping-components-pure",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Keep render logic pure: identical props, state, and context must produce the same result.",
+        "Do not mutate props, state, context, or non-local values while rendering.",
+        "Put user-caused effects in event handlers and synchronization with external systems in Effects; keep effects narrowly scoped.",
+        "Split a component when independent state, data loading, or business policy gives it a separate reason to change."
+      ],
+      "verification": [
+        "Exercise the affected interaction and loading/error state with the project test runner.",
+        "Run the project type check or build when it exists."
+      ],
+      "boundaries": [
+        "Confirm the installed React version before applying version-specific APIs.",
+        "Client validation improves usability but does not replace server authorization or validation."
+      ]
+    },
+    {
+      "id": "mantine-ui-composition",
+      "title": "Mantine UI composition and form boundaries",
+      "appliesTo": { "packagesAny": ["@mantine/core", "@mantine/form"] },
+      "sources": [
+        {
+          "id": "mantine-styles-overview",
+          "kind": "official-documentation",
+          "title": "Mantine: Styles overview",
+          "url": "https://mantine.dev/styles/styles-overview/",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "mantine-form-validation",
+          "kind": "official-documentation",
+          "title": "Mantine: Form validation",
+          "url": "https://mantine.dev/form/validation/",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Prefer component APIs and a shared theme for repeated visual decisions; move repeated or complex styling into local CSS modules or theme extensions.",
+        "Do not use inline style props as the primary styling system for a feature.",
+        "Give each form a typed value model, explicit validation errors, pending state, and one owner for submission side effects.",
+        "Cancel or supersede stale asynchronous field validation and keep server validation authoritative."
+      ],
+      "verification": [
+        "Test invalid, valid, pending, and resubmission form paths.",
+        "Check keyboard access and visible error feedback for changed controls."
+      ],
+      "boundaries": [
+        "Mantine documents UI behavior; it does not validate server-side business rules.",
+        "Confirm package style-import requirements for the installed Mantine version."
+      ]
+    },
+    {
+      "id": "nestjs-module-boundaries",
+      "title": "NestJS module boundaries",
+      "appliesTo": { "packagesAny": ["@nestjs/core", "@nestjs/common"] },
+      "sources": [
+        {
+          "id": "nestjs-modules",
+          "kind": "official-documentation",
+          "title": "NestJS: Modules",
+          "url": "https://docs.nestjs.com/modules",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "nestjs-controllers",
+          "kind": "official-documentation",
+          "title": "NestJS: Controllers",
+          "url": "https://docs.nestjs.com/controllers",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Model each business capability as a feature module with controllers as transport adapters and providers behind the module boundary.",
+        "Export only the providers that form a deliberate module public interface; avoid turning convenience providers into global dependencies.",
+        "Keep authorization and use-case orchestration in application services, not in controllers or repositories.",
+        "Use DTO or contract validation at the transport boundary and map persistence details before returning a response."
+      ],
+      "verification": [
+        "Test the module public behavior through its controller or application service boundary.",
+        "Compile the Nest application and run its focused test command."
+      ],
+      "boundaries": [
+        "Do not infer multi-tenancy, roles, or workflow transitions without project evidence.",
+        "Confirm installed NestJS major-version guidance before adopting decorators or platform integrations."
+      ]
+    },
+    {
+      "id": "fastify-contracts-and-serialization",
+      "title": "Fastify request and response contracts",
+      "appliesTo": { "packagesAny": ["fastify", "@nestjs/platform-fastify"] },
+      "sources": [
+        {
+          "id": "fastify-validation-serialization",
+          "kind": "official-documentation",
+          "title": "Fastify: Validation and Serialization",
+          "url": "https://fastify.dev/docs/latest/Reference/Validation-and-Serialization/",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "fastify-reference",
+          "kind": "official-documentation",
+          "title": "Fastify: Reference",
+          "url": "https://fastify.dev/docs/latest/Reference/",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Define input schemas for route parameters, query, headers, and bodies; treat schemas as trusted application code, never as user input.",
+        "Use response schemas for public endpoints so only intended fields are serialized.",
+        "Keep initial validation synchronous and free of database calls; perform asynchronous authorization or lookups in the appropriate later lifecycle hook.",
+        "Return stable, documented errors without leaking internal validation or implementation details."
+      ],
+      "verification": [
+        "Test malformed input, unauthorized input, and unexpected fields for the route.",
+        "Test that sensitive or internal response fields are absent from the serialized response."
+      ],
+      "boundaries": [
+        "Schema validation is not authorization, idempotency, or workflow-state enforcement.",
+        "Confirm Fastify and Nest platform adapter versions before selecting plugins or lifecycle APIs."
+      ]
+    },
+    {
+      "id": "critical-api-integrity-and-replay",
+      "title": "Critical API integrity, idempotency, and replay resistance",
+      "appliesTo": { "packagesAny": ["@nestjs/core", "@nestjs/common", "fastify", "@nestjs/platform-fastify"] },
+      "sources": [
+        {
+          "id": "owasp-rest-security",
+          "kind": "security-baseline",
+          "title": "OWASP: REST Security Cheat Sheet",
+          "url": "https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "rfc-9421-http-message-signatures",
+          "kind": "internet-standard",
+          "title": "RFC 9421: HTTP Message Signatures",
+          "url": "https://www.rfc-editor.org/rfc/rfc9421",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Classify a write endpoint as critical from its business impact before adding controls; enforce authorization and workflow-state transitions on the server for every such request.",
+        "Make externally retryable writes idempotent: bind an idempotency key to authenticated subject, operation, and a canonical request identity; atomically retain the first outcome and reject key reuse with a different request.",
+        "When end-to-end request integrity is required by the threat model, define an explicit signature profile with covered components, permitted algorithms, key resolution, creation/expiry window, and verifier errors; do not invent an ad-hoc signing format.",
+        "For replay-sensitive requests, enforce a bounded validity window and one-time or idempotent server-side state appropriate to the operation; never trust the frontend to enforce ordering.",
+        "Keep secrets and signatures out of URLs and redact them from logs."
+      ],
+      "verification": [
+        "Test a valid request, an altered signed component, an expired request, and a replay or duplicate request.",
+        "Test concurrent duplicate submissions produce one business effect and a defined repeat response.",
+        "Test invalid or out-of-order state transitions are rejected by the server."
+      ],
+      "boundaries": [
+        "Do not add message signatures to every endpoint by default; document the threat model and key lifecycle first.",
+        "Idempotency storage duration, canonicalization, and response semantics are product decisions that require an owner."
+      ]
+    },
+    {
+      "id": "drizzle-transaction-boundaries",
+      "title": "Drizzle data access and transaction boundaries",
+      "appliesTo": { "packagesAny": ["drizzle-orm"] },
+      "sources": [
+        {
+          "id": "drizzle-transactions",
+          "kind": "official-documentation",
+          "title": "Drizzle ORM: Transactions",
+          "url": "https://orm.drizzle.team/docs/transactions",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "drizzle-postgresql-get-started",
+          "kind": "official-documentation",
+          "title": "Drizzle ORM: PostgreSQL",
+          "url": "https://orm.drizzle.team/docs/get-started-postgresql",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Keep query construction and persistence mapping in a repository or data-access boundary owned by one module.",
+        "Wrap only the database changes that must succeed or fail together in a transaction; keep external network calls outside the transaction when possible.",
+        "Pass the transaction handle through the use case explicitly instead of silently starting nested, unrelated units of work.",
+        "Use database constraints and conflict handling for correctness that must hold under concurrency; do not rely only on a prior read."
+      ],
+      "verification": [
+        "Test rollback on a failing multi-step write.",
+        "Test duplicate and concurrent writes against the relevant unique or state constraint."
+      ],
+      "boundaries": [
+        "Choose isolation level and retry behavior from a documented business invariant, not from a generic default.",
+        "Drizzle transaction support depends on the installed database driver and version."
+      ]
+    },
+    {
+      "id": "postgresql-concurrency-invariants",
+      "title": "PostgreSQL concurrency invariants",
+      "appliesTo": { "packagesAny": ["pg", "postgres", "@neondatabase/serverless", "@vercel/postgres"] },
+      "sources": [
+        {
+          "id": "postgresql-transaction-isolation",
+          "kind": "official-documentation",
+          "title": "PostgreSQL: Transaction Isolation",
+          "url": "https://www.postgresql.org/docs/current/transaction-iso.html",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "State the concurrency invariant for a critical operation before choosing locks, constraints, isolation, or retries.",
+        "Use unique constraints, conditional updates, and row locking where appropriate so correctness does not depend on timing between reads and writes.",
+        "Handle serialization failures or conflict outcomes explicitly when the selected isolation level can produce them.",
+        "Treat sequence values as identifiers, not as rolled-back business events or gap-free counters."
+      ],
+      "verification": [
+        "Run a concurrent test that attempts to violate the invariant.",
+        "Verify rollback, conflict, and retry behavior with the real PostgreSQL-compatible test environment."
+      ],
+      "boundaries": [
+        "PostgreSQL defaults and behavior do not decide product conflict policy for you.",
+        "Production scale, pool configuration, and migration sequencing need environment-specific evidence."
+      ]
+    },
+    {
+      "id": "socketio-realtime-contracts",
+      "title": "Socket.IO realtime event contracts",
+      "appliesTo": { "packagesAny": ["socket.io", "socket.io-client"] },
+      "sources": [
+        {
+          "id": "socketio-emitting-events",
+          "kind": "official-documentation",
+          "title": "Socket.IO: Emitting events",
+          "url": "https://socket.io/docs/v4/emitting-events/",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "socketio-rooms",
+          "kind": "official-documentation",
+          "title": "Socket.IO: Rooms",
+          "url": "https://socket.io/docs/v4/rooms/",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Define versioned event names and typed payload/acknowledgement contracts in one shared boundary.",
+        "Authorize room membership on the server and derive room names from validated tenant, user, or entity ownership; rooms are not a client authorization primitive.",
+        "Use acknowledgement and timeout semantics for commands that need a known result; make command handlers idempotent if clients can retry.",
+        "Use volatile events only for intentionally lossy latest-state signals, never for business state that must be delivered."
+      ],
+      "verification": [
+        "Test unauthorized room join and cross-tenant broadcast attempts.",
+        "Test acknowledgement timeout, reconnect, duplicate command, and event-version compatibility behavior."
+      ],
+      "boundaries": [
+        "Socket.IO delivery does not replace persisted domain events or a durable job queue.",
+        "Multi-server scaling needs a deliberate adapter and delivery-semantics decision."
+      ]
+    },
+    {
+      "id": "livekit-token-boundaries",
+      "title": "LiveKit token and media authorization boundaries",
+      "appliesTo": { "packagesAny": ["livekit-server-sdk", "livekit-client", "@livekit/components-react"] },
+      "sources": [
+        {
+          "id": "livekit-server-sdk-js",
+          "kind": "official-documentation",
+          "title": "LiveKit: Server SDK for JavaScript",
+          "url": "https://docs.livekit.io/reference/server-sdk-js/",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Mint access tokens only on a trusted backend after authorizing the user and room membership; never expose API secrets to a browser or mobile client.",
+        "Give each token the minimum grants, room identity, and short validity required for the current operation.",
+        "Keep room creation, participant authorization, and application business state in the backend domain boundary rather than trusting client room input.",
+        "Audit token issuance without recording raw tokens or secrets."
+      ],
+      "verification": [
+        "Test that an unauthorized user cannot obtain or use a room token.",
+        "Test reduced grants, expired token rejection, and a valid participant join path."
+      ],
+      "boundaries": [
+        "LiveKit grants control media access; they do not replace application-level authorization for business data.",
+        "Token TTL, identity format, and room lifecycle must be owned by the product security design."
+      ]
+    },
+    {
+      "id": "redis-delivery-semantics",
+      "title": "Redis delivery semantics and ownership",
+      "appliesTo": { "packagesAny": ["redis", "ioredis"] },
+      "sources": [
+        {
+          "id": "redis-streaming-use-case",
+          "kind": "official-documentation",
+          "title": "Redis: Streaming use case",
+          "url": "https://redis.io/docs/latest/develop/use-cases/streaming/",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "redis-data-type-comparison",
+          "kind": "official-documentation",
+          "title": "Redis: Compare data types",
+          "url": "https://redis.io/docs/latest/develop/data-types/compare-data-types/",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Choose Redis data structures by delivery and recovery requirements, not by convenience.",
+        "Use Pub/Sub only when loss during disconnection is acceptable; use a durable mechanism such as Streams when consumers need replay, recovery, or consumer-group coordination.",
+        "Define key ownership, TTL, serialization, retry, and cleanup together with the owning module.",
+        "Do not treat Redis as the source of truth for irreversible business state unless the product explicitly accepts that durability model."
+      ],
+      "verification": [
+        "Test disconnect, restart, duplicate, and consumer recovery behavior for the declared delivery guarantee.",
+        "Test TTL or retention cleanup without deleting another module's key namespace."
+      ],
+      "boundaries": [
+        "Redis topology, persistence, and cluster behavior require deployment-specific validation.",
+        "At-least-once delivery still requires idempotent consumers."
+      ]
+    },
+    {
+      "id": "bullmq-idempotent-jobs",
+      "title": "BullMQ idempotent job processing",
+      "appliesTo": { "packagesAny": ["bullmq"] },
+      "sources": [
+        {
+          "id": "bullmq-idempotent-jobs",
+          "kind": "official-documentation",
+          "title": "BullMQ: Idempotent jobs",
+          "url": "https://docs.bullmq.io/patterns/idempotent-jobs",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "bullmq-retrying-failed-jobs",
+          "kind": "official-documentation",
+          "title": "BullMQ: Retrying failing jobs",
+          "url": "https://docs.bullmq.io/guide/retrying-failing-jobs",
+          "retrievedAt": "2026-09-08"
+        },
+        {
+          "id": "bullmq-deduplication",
+          "kind": "official-documentation",
+          "title": "BullMQ: Deduplication",
+          "url": "https://docs.bullmq.io/guide/jobs/deduplication",
+          "retrievedAt": "2026-09-08"
+        }
+      ],
+      "practices": [
+        "Make each job safe to run more than once and keep one job focused on a small, observable unit of work.",
+        "Choose attempts, backoff, timeout, retention, and deduplication mode from the operation's delivery contract; do not enable retries by habit.",
+        "Persist or derive an idempotency identity at the business boundary so duplicate processing cannot create duplicate effects.",
+        "Separate retryable transient failures from permanent validation or authorization failures and record an operator-visible outcome."
+      ],
+      "verification": [
+        "Test duplicate enqueue, retry after a partial failure, and the terminal failure path.",
+        "Test that retention and deduplication settings do not silently permit a duplicate business effect."
+      ],
+      "boundaries": [
+        "Queue retries alone do not make external side effects idempotent.",
+        "Production worker concurrency and observability need operational ownership."
+      ]
+    }
+  ]
+}

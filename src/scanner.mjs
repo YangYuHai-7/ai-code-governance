@@ -108,6 +108,36 @@ function detectCommands(root) {
   return commands;
 }
 
+function detectPackageDependencies(files) {
+  const packages = new Map();
+  for (const file of files) {
+    if (file.type !== 'file' || path.basename(file.relative) !== 'package.json') continue;
+    try {
+      const manifest = readJson(file.absolute);
+      const sections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
+      for (const section of sections) {
+        for (const [name, version] of Object.entries(manifest[section] ?? {})) {
+          if (typeof name !== 'string' || typeof version !== 'string') continue;
+          const current = packages.get(name) ?? { versions: new Set(), paths: new Set(), sections: new Set() };
+          current.versions.add(version);
+          current.paths.add(file.relative);
+          current.sections.add(section);
+          packages.set(name, current);
+        }
+      }
+    } catch {
+      // Invalid manifests remain scanner evidence but cannot provide dependency facts.
+    }
+  }
+  return Object.fromEntries([...packages.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, detail]) => [name, {
+      versions: [...detail.versions].sort((left, right) => left.localeCompare(right)),
+      paths: [...detail.paths].sort((left, right) => left.localeCompare(right)),
+      sections: [...detail.sections].sort((left, right) => left.localeCompare(right)),
+    }]));
+}
+
 function platformId() {
   if (process.platform === 'darwin') return 'macos';
   if (process.platform === 'win32') return 'windows';
@@ -152,6 +182,7 @@ export function scanProject(target) {
     architecture: os.arch(),
     files,
     stacks: detectStacks(files, capabilityRegistry),
+    packageDependencies: detectPackageDependencies(files),
     commands: detectCommands(root),
     agents,
     existingGovernance,
@@ -166,6 +197,7 @@ export function scanSummary(scan) {
     project_mode: scan.projectMode,
     current_os: scan.currentOs,
     detected_stacks: scan.stacks,
+    detected_packages: scan.packageDependencies,
     detected_commands: scan.commands,
     agents: scan.agents,
     existing_governance: scan.existingGovernance,
