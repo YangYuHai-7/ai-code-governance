@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
+import { validateTeamRoleRegistry } from '../src/team-recommendation.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -134,6 +135,8 @@ function validateEntryPoint() {
     'aicg sync',
     'aicg harvest',
     'aicg promote',
+    'aicg team',
+    'team-role-registry.json',
     'agent-registry.json',
     'capability-evolution.json',
     '.ai-governance/manifest.json',
@@ -155,7 +158,7 @@ function validateCliPackage(pkg) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
   check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
-  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs']) {
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }
 }
@@ -594,6 +597,7 @@ function runNegativeProbe(
   evolutionProtocol,
   workflowProtocol,
   technicalRegistry,
+  teamRegistry,
 ) {
   const before = failures.length;
   const broken = structuredClone(registry);
@@ -710,6 +714,23 @@ function runNegativeProbe(
     technicalRegistryCaught = /duplicate source id/.test(error.message);
   }
 
+  const teamRegistryCaught = [
+    (broken) => { broken.supportedTeamScopes.push('agent'); },
+    (broken) => { broken.roles[0].selection = { alwaysWithBusinessContext: 'false' }; },
+    (broken) => { broken.roles[0].selection.magicAny = ['anything']; },
+    (broken) => { broken.roles[0].canCombineWith.push('does-not-exist'); },
+    (broken) => { broken.roles[0].mustRemainIndependentFrom.push('technical-delivery-owner'); },
+  ].every((mutate) => {
+    try {
+      const broken = structuredClone(teamRegistry);
+      mutate(broken);
+      validateTeamRoleRegistry(broken);
+      return false;
+    } catch {
+      return true;
+    }
+  });
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
@@ -720,8 +741,9 @@ function runNegativeProbe(
   if (!workflowSourceCaught) fail('Negative probe did not catch missing workflow source freshness.');
   if (!workflowProtocolCaught) fail('Negative probe did not catch an incomplete workflow integration protocol.');
   if (!technicalRegistryCaught) fail('Negative probe did not catch a duplicate technical-standard source.');
-  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught');
+  if (!teamRegistryCaught) fail('Negative probe did not catch an unsafe team role registry.');
+  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught');
   }
 }
 
@@ -782,7 +804,15 @@ try {
   fail(`Technical standard registry is not valid JSON: ${error.message}`);
 }
 
-if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry) {
+let teamRegistry;
+try {
+  teamRegistry = JSON.parse(read('assets/team-role-registry.json'));
+  validateTeamRoleRegistry(teamRegistry);
+} catch (error) {
+  fail(`Team role registry is not valid JSON: ${error.message}`);
+}
+
+if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry) {
   runNegativeProbe(
     registry,
     agentRegistry,
@@ -792,6 +822,7 @@ if (process.argv.includes('--negative-probe') && registry && agentRegistry && wo
     evolutionProtocol,
     workflowProtocol,
     technicalRegistry,
+    teamRegistry,
   );
 }
 

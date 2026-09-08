@@ -31,6 +31,15 @@ test('parses the read-only technical standards command', () => {
   assert.throws(() => parseArgs(['standards', '--force']), (error) => error.exitCode === 2);
 });
 
+test('parses the read-only team recommendation command without write authorization flags', () => {
+  const parsed = parseArgs(['team', 'project', '--config', 'team-context.json', '--json']);
+  assert.equal(parsed.command, 'team');
+  assert.equal(parsed.target, 'project');
+  assert.equal(parsed.options.config, 'team-context.json');
+  assert.equal(parsed.options.json, true);
+  assert.throws(() => parseArgs(['team', '--yes']), (error) => error.exitCode === 2);
+});
+
 test('parses capability harvest only with its bounded write flags', () => {
   assert.deepEqual(parseArgs(['harvest', '.', '--dry-run', '--json']), {
     command: 'harvest',

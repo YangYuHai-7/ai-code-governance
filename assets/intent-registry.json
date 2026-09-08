@@ -62,6 +62,18 @@
       ]
     },
     {
+      "id": "team.recommend",
+      "handler": "team",
+      "mode": "read",
+      "aliases": [
+        "给我团队建议",
+        "建议项目团队配置",
+        "根据技术栈和业务给出团队建议",
+        "recommend a project team",
+        "recommend team coverage"
+      ]
+    },
+    {
       "id": "capability.harvest",
       "handler": "harvest",
       "mode": "write",

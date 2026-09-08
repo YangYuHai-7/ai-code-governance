@@ -170,6 +170,7 @@ aicg sync .
 aicg assess . --json
 aicg architecture . --json
 aicg standards . --json
+aicg team . --config team-context.json --json
 aicg harvest . --dry-run --json
 ```
 
@@ -179,6 +180,7 @@ aicg harvest . --dry-run --json
 aicg request . --text "帮我初始化项目 AI 治理框架" --dry-run --json
 aicg request . --text "初始化治理框架" --approve <planHash>
 aicg request . --text "检查治理框架" --json
+aicg request . --text "给我团队建议" --config team-context.json --json
 ```
 
 写入请求先生成带 `planHash` 的计划，显示精确文件操作和权限；只有 `--approve <planHash>` 与当前计划完全一致时才会写入，并在写后重新运行结构检查。它不批准迁移链接、覆盖漂移内容、调用 Agent、联网、安装依赖、修改 hooks/CI 或迁移业务代码。
@@ -194,6 +196,18 @@ hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。�
 `architecture` 同样只读：为新项目提出按领域模块化的目录蓝图；为既有项目报告可验证的扁平目录、混合职责或过大文件信号。它不会移动文件；`staged-migration` 是单独的现代化计划，必须再次批准。
 
 `standards` 也是只读：它根据受扫描依赖和已确认的 `technologyPackages` 展示将生成的技术 Skill、官方或标准来源快照、刷新时间与每项验证清单。`init` 与 `sync` 在标准/完整深度生成这些受管 Skills，随后由 `aicg check .` 验证完整性；这不替代项目的测试，也不把来源快照说成在线实时标准。
+
+`team` 是确定式、只读的“人类交付与治理职责覆盖建议器”。它不会创建人员、Agent、任务、权限、文件或外部消息，也不会输出人数、成本、工期或招聘结论。它要求一个位于目标仓库内、普通文件形式的 `--config`：其中包含 `teamScope: "human"`、1–4000 字符的 `businessDescription`，以及可选的用户确认 `confirmedSignals`（`authorization`、`multi-tenancy`、`payment`、`sensitive-data`、`regulated-data`、`realtime-media`）、`stage` 与精确 `technologyPackages`。业务原文只在内存处理，结果只标记“已提供但不返回”；自由文本中的关键词不会被升级为业务事实。仓库包证据只读取根 `package.json`，或根 `package.json#workspaces` / `pnpm-workspace.yaml` 显式列出的成员；只支持根锚定的安全 `*`/`**` 模式，忽略 fixtures、未声明成员、符号链接、排除项和不受支持的通配符。每个建议均引用精确包证据或用户确认信号、置信度、可兼任边界和独立复核要求；未确认的角色保持条件化，不会被说成已组建或已强制执行。聊天短语“给我团队建议”走同一只读内核；缺少上下文会返回 `needs-user-input`，而“给我团队建议并创建任务”等复合写入请求不会被匹配。
+
+```json
+{
+  "teamScope": "human",
+  "businessDescription": "A multi-tenant collaboration product with realtime meetings.",
+  "confirmedSignals": ["authorization", "multi-tenancy", "realtime-media"],
+  "stage": "production-build",
+  "technologyPackages": ["react", "@nestjs/core", "socket.io"]
+}
+```
 
 `harvest` 让治理框架从当前代码中提取可复用能力候选。预览不写文件；应用必须使用 `--yes`，或通过聊天请求“提取项目能力”先取得并批准精确 `planHash`。目前它只把已安装 `axios` 的真实 import/require 后、导出的 `axios.create()` Client，以及非 TSX/JSX 文件中带真实 guard/policy/authorization 执行语义的边界作为候选，并生成连接当前实现路径的候选 Skill。候选并不等于 adopted/enforced：实际测试、owner、公共入口和受管消费者仍须验证后才能升级为强制复用规则。
 

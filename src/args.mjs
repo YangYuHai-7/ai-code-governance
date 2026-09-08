@@ -10,6 +10,7 @@ const COMMAND_FLAGS = {
   assess: new Set(['json', 'help']),
   architecture: new Set(['json', 'help']),
   standards: new Set(['json', 'help']),
+  team: new Set(['config', 'json', 'help']),
   harvest: new Set(['yes', 'dry-run', 'force', 'json', 'help']),
   promote: new Set(['id', 'entrypoint', 'verify', 'consumer', 'yes', 'dry-run', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
@@ -23,7 +24,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -69,6 +70,7 @@ Usage:
   aicg assess [path] [--json]
   aicg architecture [path] [--json]
   aicg standards [path] [--json]
+  aicg team [path] [--config team-context.json] [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
@@ -82,6 +84,7 @@ Commands:
   assess  Classify the project and report its decision ledger without changing the repository.
   architecture  Assess source structure and present bounded migration choices without changing the repository.
   standards  Preview the selected technical-standard Skills and their audited source snapshot without changing the repository.
+  team  Recommend human delivery and governance responsibility coverage without creating people, agents, tasks, or files.
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
