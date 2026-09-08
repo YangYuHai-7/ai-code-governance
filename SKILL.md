@@ -67,6 +67,8 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 `aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 是当前可验证的晋升入口：仅当前检测到、无 review 的 candidate 可晋升；入口必须是该能力当前 implementation path，验证命令必须精确匹配扫描到的安全 npm script，并且该脚本在写入前成功退出。聊天请求“晋升项目能力”走同一内核：以 `--config` 提供 `capabilityId`、`publicEntrypoints`、可选 `consumerPaths` 和 `verificationCommand`，先预览并批准精确 planHash。consumerPaths 只会被记录为操作者声明、未验证的线索，不会写成已确认消费者。它把晋升记录为操作者确认和一次成功命令，不宣称完整产品行为、真实 Agent 加载或旁路门禁已经被证明。
 
+`aicg team . --config team-context.json --json` 与聊天请求“给我团队建议”使用 `assets/team-role-registry.json`，根据精确依赖证据和用户确认的业务信号提出**人类交付与治理职责覆盖**。它是纯只读建议：不创建人员、Agent、任务、权限、文件或外部消息，不输出人数、招聘结论、成本或成功保证；业务原文仅内存处理，结果不回显原文。上下文必须明确 `teamScope: "human"` 与 `businessDescription`，可选的高风险信号和阶段只能由用户确认，不能从关键词、相似 package、本机 Agent 或代码量猜测。每个角色带证据、置信度、可兼任边界、独立复核关系和条件触发器；缺少输入返回 `needs-user-input`，复合的创建/分配请求不匹配此只读 intent。
+
 ## 动态技术标准与业务 Skill 工厂
 
 完整协议见 [references/stack-skill-generation.md](references/stack-skill-generation.md)。自动完整模式默认执行，不等待用户额外说“生成开发规范”：

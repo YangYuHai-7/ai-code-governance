@@ -15,6 +15,7 @@ import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
 import { assessmentSummary } from './project-assessment.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
 import { technicalStandardsSummary } from './technical-standards.mjs';
+import { readTeamContext, teamRecommendation } from './team-recommendation.mjs';
 import { readJson, usageError } from './utils.mjs';
 
 function mergeConfig(base, supplied) {
@@ -182,6 +183,10 @@ function printRequest(payload, json) {
     console.log(JSON.stringify(payload, null, 2));
     return;
   }
+  if (payload.result?.mode === 'read-only-advice') {
+    console.log(JSON.stringify(payload.result, null, 2));
+    return;
+  }
   console.log(`intent=${payload.intent.id} mode=${payload.intent.mode}`);
   if (payload.plan) console.log(`plan_hash=${payload.plan.planHash} operations=${payload.plan.operations.filter((operation) => operation.action !== 'keep').length}`);
   if (typeof payload.result?.ok === 'boolean') console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
@@ -189,6 +194,14 @@ function printRequest(payload, json) {
 
 async function requestCommand(target, options) {
   const intent = resolveIntent(options.text);
+  if (intent.handler === 'team') {
+    if (options.approve || options['dry-run']) throw usageError('Team recommendations are already read-only and do not accept --approve or --dry-run.');
+    const root = path.resolve(target);
+    const context = readTeamContext(root, options.config);
+    const result = teamRecommendation(root, context);
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    return;
+  }
   const scan = scanProject(target);
   if (intent.handler === 'doctor') {
     const result = doctor(scan);
@@ -347,6 +360,12 @@ async function promoteCommand(target, options) {
   if (!applied.verification.ok) process.exitCode = 1;
 }
 
+function teamCommand(target, options) {
+  const root = path.resolve(target);
+  const context = readTeamContext(root, options.config);
+  console.log(JSON.stringify(teamRecommendation(root, context), null, 2));
+}
+
 export async function run(argv) {
   const major = Number.parseInt(process.versions.node.split('.')[0], 10);
   if (major < 22) throw new Error(`Node.js 22 or newer is required; current version is ${process.versions.node}.`);
@@ -361,6 +380,7 @@ export async function run(argv) {
   }
   if (command === 'request') return requestCommand(target, options);
   if (command === 'init') return initCommand(target, options);
+  if (command === 'team') return teamCommand(target, options);
   const scan = scanProject(target);
   if (command === 'doctor') {
     const result = doctor(scan);

@@ -1,0 +1,232 @@
+{
+  "schemaVersion": 1,
+  "teamType": "human-delivery-and-governance",
+  "supportedTeamScopes": [
+    "human"
+  ],
+  "supportedBusinessSignals": [
+    "authorization",
+    "multi-tenancy",
+    "payment",
+    "sensitive-data",
+    "regulated-data",
+    "realtime-media"
+  ],
+  "supportedStages": [
+    "validation",
+    "production-build",
+    "operations",
+    "scale"
+  ],
+  "roles": [
+    {
+      "id": "product-domain-owner",
+      "title": "Product and domain owner",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Confirm the problem boundary, risk tolerance, and acceptance outcomes.",
+        "Make business decisions that cannot be inferred from repository evidence."
+      ],
+      "deliverables": [
+        "A confirmed business scope and decision record.",
+        "Acceptance criteria for the next delivery slice."
+      ],
+      "canCombineWith": [
+        "technical-delivery-owner",
+        "quality-and-release-reviewer"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "technical-delivery-owner",
+      "title": "Technical delivery owner",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Own module boundaries, delivery sequencing, and cross-stack integration decisions.",
+        "Keep implementation choices traceable to repository evidence and confirmed business constraints."
+      ],
+      "deliverables": [
+        "A bounded implementation plan.",
+        "A verification strategy for each delivery slice."
+      ],
+      "canCombineWith": [
+        "product-domain-owner",
+        "frontend-delivery-owner",
+        "backend-api-and-data-owner"
+      ],
+      "mustRemainIndependentFrom": [
+        "quality-and-release-reviewer",
+        "security-and-integrity-reviewer"
+      ]
+    },
+    {
+      "id": "frontend-delivery-owner",
+      "title": "Frontend delivery owner",
+      "selection": {
+        "technologyPackagesAny": [
+          "react",
+          "react-dom",
+          "@mantine/core",
+          "vue",
+          "@angular/core",
+          "svelte"
+        ]
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Own user-facing module boundaries, accessibility, and client contract integration.",
+        "Keep UI state and data-fetching behavior independently testable."
+      ],
+      "deliverables": [
+        "A component and route ownership map.",
+        "Client-side verification for critical user flows."
+      ],
+      "canCombineWith": [
+        "technical-delivery-owner"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "backend-api-and-data-owner",
+      "title": "Backend, API, and data owner",
+      "selection": {
+        "technologyPackagesAny": [
+          "@nestjs/core",
+          "@nestjs/platform-fastify",
+          "fastify",
+          "express",
+          "drizzle-orm",
+          "pg",
+          "ioredis",
+          "bullmq"
+        ]
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Own service-module boundaries, API contracts, data invariants, and idempotent delivery behavior.",
+        "Define transaction and failure-handling ownership for backend changes."
+      ],
+      "deliverables": [
+        "Versioned API and data-contract checks.",
+        "Failure and duplicate-delivery verification for critical flows."
+      ],
+      "canCombineWith": [
+        "technical-delivery-owner",
+        "realtime-media-owner",
+        "platform-and-operations-owner"
+      ],
+      "mustRemainIndependentFrom": [
+        "security-and-integrity-reviewer"
+      ]
+    },
+    {
+      "id": "quality-and-release-reviewer",
+      "title": "Quality and release reviewer",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Own independent acceptance evidence, negative cases, and release-readiness review.",
+        "Report remaining verification gaps without changing the delivery scope."
+      ],
+      "deliverables": [
+        "A release evidence checklist.",
+        "Independent review records for high-risk changes."
+      ],
+      "canCombineWith": [
+        "product-domain-owner",
+        "security-and-integrity-reviewer"
+      ],
+      "mustRemainIndependentFrom": [
+        "technical-delivery-owner"
+      ]
+    },
+    {
+      "id": "realtime-media-owner",
+      "title": "Realtime and media reliability owner",
+      "selection": {
+        "technologyPackagesAny": [
+          "socket.io",
+          "livekit-server-sdk",
+          "livekit-client"
+        ],
+        "confirmedSignalsAny": [
+          "realtime-media"
+        ],
+        "priorityWhenSignal": "needed-now"
+      },
+      "defaultPriority": "conditional-later",
+      "responsibilities": [
+        "Own realtime event compatibility, media-token boundaries, and recovery behavior when these capabilities are in scope.",
+        "Define observability and load-test criteria before production realtime delivery."
+      ],
+      "deliverables": [
+        "Realtime compatibility and reconnection checks.",
+        "Media-token and failure-mode verification."
+      ],
+      "canCombineWith": [
+        "backend-api-and-data-owner"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "security-and-integrity-reviewer",
+      "title": "Security and integrity reviewer",
+      "selection": {
+        "confirmedSignalsAny": [
+          "authorization",
+          "multi-tenancy",
+          "payment",
+          "sensitive-data",
+          "regulated-data"
+        ]
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Independently review authorization boundaries, tamper resistance, replay protection, and sensitive-data handling that the owner has confirmed.",
+        "Escalate legal, privacy, or regulated-industry questions to qualified specialists instead of declaring compliance."
+      ],
+      "deliverables": [
+        "Threat-model and negative-path review evidence for confirmed high-risk flows.",
+        "A record of unresolved security and compliance questions."
+      ],
+      "canCombineWith": [
+        "quality-and-release-reviewer"
+      ],
+      "mustRemainIndependentFrom": [
+        "technical-delivery-owner",
+        "backend-api-and-data-owner"
+      ]
+    },
+    {
+      "id": "platform-and-operations-owner",
+      "title": "Platform and operations owner",
+      "selection": {
+        "stagesAny": [
+          "operations",
+          "scale"
+        ]
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Own deployment safety, observability, incident response, and operational recovery criteria for a confirmed operating service.",
+        "Keep production readiness distinct from feature implementation."
+      ],
+      "deliverables": [
+        "Deployment, rollback, and incident-response evidence.",
+        "Service-level objectives confirmed by the product owner."
+      ],
+      "canCombineWith": [
+        "backend-api-and-data-owner"
+      ],
+      "mustRemainIndependentFrom": []
+    }
+  ]
+}

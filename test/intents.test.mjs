@@ -7,6 +7,7 @@ test('normalizes exact Chinese and English intent aliases without fuzzy matching
   assert.equal(resolveIntent('帮我初始化项目 AI 治理框架').id, 'governance.initialize');
   assert.equal(resolveIntent(' CHECK GOVERNANCE ').id, 'governance.validate');
   assert.equal(resolveIntent('晋升项目能力').id, 'capability.promote');
+  assert.equal(resolveIntent('给我团队建议').id, 'team.recommend');
   assert.throws(() => resolveIntent('修复一下治理框架'), (error) => error.exitCode === 2);
   assert.throws(() => resolveIntent('检查治理框架 && rm -rf /'), (error) => error.exitCode === 2);
 });
