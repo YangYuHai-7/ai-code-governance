@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -424,6 +425,32 @@ function validateWorkflowRegistry(registry) {
   }
 }
 
+function validateTechnicalStandardCoverage(registry) {
+  try {
+    validateTechnicalStandardRegistry(registry);
+  } catch (error) {
+    fail(`Technical standard registry is invalid: ${error.message}`);
+    return;
+  }
+  const ids = new Set(registry.standards.map((standard) => standard.id));
+  for (const id of [
+    'software-design-and-verification',
+    'react-component-purity',
+    'mantine-ui-composition',
+    'nestjs-module-boundaries',
+    'fastify-contracts-and-serialization',
+    'critical-api-integrity-and-replay',
+    'drizzle-transaction-boundaries',
+    'postgresql-concurrency-invariants',
+    'socketio-realtime-contracts',
+    'livekit-token-boundaries',
+    'redis-delivery-semantics',
+    'bullmq-idempotent-jobs',
+  ]) check(ids.has(id), `Missing technical standard: ${id}`);
+  check(registry.snapshot?.status === 'reviewed-offline-snapshot', 'Technical standard registry must preserve offline snapshot status.');
+  check(registry.snapshot?.refreshAfterDays > 0, 'Technical standard registry must define a source refresh interval.');
+}
+
 const requiredProbeIds = [
   'broken-exact-path',
   'empty-glob',
@@ -563,6 +590,7 @@ function runNegativeProbe(
   generationProtocol,
   evolutionProtocol,
   workflowProtocol,
+  technicalRegistry,
 ) {
   const before = failures.length;
   const broken = structuredClone(registry);
@@ -670,6 +698,15 @@ function runNegativeProbe(
     .some((message) => message.includes('Workflow integration protocol lacks required term: change-authority-single-source'));
   failures.splice(workflowProtocolBefore);
 
+  let technicalRegistryCaught = false;
+  try {
+    const brokenTechnicalRegistry = structuredClone(technicalRegistry);
+    brokenTechnicalRegistry.standards[1].sources[0].id = brokenTechnicalRegistry.standards[0].sources[0].id;
+    validateTechnicalStandardRegistry(brokenTechnicalRegistry);
+  } catch (error) {
+    technicalRegistryCaught = /duplicate source id/.test(error.message);
+  }
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
@@ -679,8 +716,9 @@ function runNegativeProbe(
   if (!agentRegistryCaught) fail('Negative probe did not catch a duplicate agent registry entry.');
   if (!workflowSourceCaught) fail('Negative probe did not catch missing workflow source freshness.');
   if (!workflowProtocolCaught) fail('Negative probe did not catch an incomplete workflow integration protocol.');
-  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught');
+  if (!technicalRegistryCaught) fail('Negative probe did not catch a duplicate technical-standard source.');
+  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught');
   }
 }
 
@@ -733,7 +771,15 @@ try {
   fail(`Workflow integration registry is not valid JSON: ${error.message}`);
 }
 
-if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract) {
+let technicalRegistry;
+try {
+  technicalRegistry = JSON.parse(read('assets/technical-standard-registry.json'));
+  validateTechnicalStandardCoverage(technicalRegistry);
+} catch (error) {
+  fail(`Technical standard registry is not valid JSON: ${error.message}`);
+}
+
+if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry) {
   runNegativeProbe(
     registry,
     agentRegistry,
@@ -742,6 +788,7 @@ if (process.argv.includes('--negative-probe') && registry && agentRegistry && wo
     generationProtocol,
     evolutionProtocol,
     workflowProtocol,
+    technicalRegistry,
   );
 }
 
@@ -750,7 +797,7 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} workflow_integrations=${workflowRegistry.integrations.length}`,
+    `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} technical_standards=${technicalRegistry.standards.length} workflow_integrations=${workflowRegistry.integrations.length}`,
   );
   console.log(`os_evidence=${Object.entries(registry.current_os_evidence).map(([os, state]) => `${os}:${state}`).join(',')}`);
 }

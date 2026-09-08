@@ -35,7 +35,7 @@ function configuredAnswers(root, features = {}) {
   return {
     schemaVersion: 1,
     generatedBy: 'ai-code-governance',
-    toolVersion: '0.1.2',
+    toolVersion: '0.1.3',
     projectName: path.basename(root),
     projectMode: 'greenfield',
     canonicalRoot: 'docs/ai',

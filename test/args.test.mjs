@@ -22,6 +22,15 @@ test('keeps equals signs inside option values', () => {
   assert.equal(parseArgs(['init', '--config=path=with-equals.json']).options.config, 'path=with-equals.json');
 });
 
+test('parses the read-only technical standards command', () => {
+  assert.deepEqual(parseArgs(['standards', 'project with spaces', '--json']), {
+    command: 'standards',
+    target: 'project with spaces',
+    options: { json: true },
+  });
+  assert.throws(() => parseArgs(['standards', '--force']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');

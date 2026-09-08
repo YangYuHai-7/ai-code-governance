@@ -13,6 +13,18 @@
 
 技术标准是合法的外部证据，可以直接生成项目级编码 skill；但必须先确认版本与项目兼容。业务写法必须由项目证据支持，greenfield 可由用户明确的业务描述和架构决定作为来源。
 
+## 当前 CLI 的可验证实现边界
+
+当前确定式 CLI 使用 `assets/technical-standard-registry.json` 保存经过审阅的离线来源快照，而不是在每次 `init`/`sync` 时隐式联网。它会：
+
+- 从所有受扫描 `package.json` 的直接依赖识别精确技术；新项目也可在确认配置中声明 `technologyPackages`；
+- 生成 `docs/ai/technical-standards.json`，其中记录适用依据、来源 URL、检索日期、刷新周期、生成路径、验证清单与明确边界；
+- 为每个匹配项生成小粒度的 `docs/ai/skills/standards/<id>/SKILL.md`，以及已选 Agent 的普通文件副本；
+- 通过 `aicg standards . --json` 或聊天请求“生成技术规范预览”在零写入情况下展示同一选择结果；
+- 在写入后用 `aicg check .` 验证受管清单、内容哈希和入口可达性。
+
+快照状态只能表示 `stated`，不能表示框架版本已经在线确认、项目规则已经 `enforced`，或真实 Agent 已加载 Skill。来源达到刷新期限、框架大版本变化、安全公告或用户要求刷新时，必须显式重新检索一手来源、审查差异并发布新的注册表快照；不得静默改写业务代码。
+
 ## 1. 建立栈清单
 
 按 package/module 记录，而不是只写“前端/后端”：
@@ -65,7 +77,7 @@ Greenfield 以用户确认的选型为事实；brownfield 以 lockfile、配置�
 }
 ```
 
-完整/标准档必须把来源保存为 `docs/ai/stack-sources.json`，并为每条来源分配稳定、唯一的 `id`。Skill 覆盖清单用 `source_ids` 引用这些 ID；`topic` 只用于检索和阅读，不能代替稳定关联。来源只证明技术写法；项目仍需通过自己的测试和门禁。
+完整的 AI 辅助覆盖可以把来源扩展为 `docs/ai/stack-sources.json`，并为每条来源分配稳定、唯一的 `id`。当前确定式 CLI 的等价、受管输出是 `docs/ai/technical-standards.json`：它保存每条来源与生成 Skill 的关系。Skill 覆盖清单用 `source_ids` 或来源对象引用这些 ID；`topic` 只用于检索和阅读，不能代替稳定关联。来源只证明技术写法；项目仍需通过自己的测试和门禁。
 
 ## 3. 处理冲突与过时
 

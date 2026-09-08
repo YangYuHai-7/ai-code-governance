@@ -18,6 +18,7 @@ try {
   }));
   for (const args of [
     ['init', fixture, '--yes', '--no-assist'],
+    ['standards', fixture, '--json'],
     ['check', fixture, '--json'],
     ['sync', fixture, '--dry-run'],
   ]) {

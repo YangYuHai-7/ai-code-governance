@@ -61,6 +61,8 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 技术栈能力包提供侦察信号、研究主题、skill 候选和验证发现方法。Agent 必须对已确认的栈检索目标版本官方文档、正式标准与权威安全基线，综合成项目级细粒度 skills；不直接复制文档，不使用无版本、无来源的模型记忆。遗留项目默认在原栈上增量治理；技术现代化是独立、显式选择的评估任务，不与治理落地捆绑。
 
+当前确定式 CLI 将经过审阅的来源快照保存在 `assets/technical-standard-registry.json`。它根据受扫描直接依赖或用户确认的 `technologyPackages` 生成 `docs/ai/technical-standards.json` 和细粒度 `docs/ai/skills/standards/*/SKILL.md`；每项保留适用依据、来源日期、刷新周期、验证清单和 `stated` 边界。`aicg standards . --json` 或聊天请求“生成技术规范预览”只预览、不写入；`init`/`sync` 后必须用 `aicg check .` 验证受管产物。离线快照不等于实时在线标准、项目已强制执行或真实 Agent 加载已验证。
+
 ## 动态技术标准与业务 Skill 工厂
 
 完整协议见 [references/stack-skill-generation.md](references/stack-skill-generation.md)。自动完整模式默认执行，不等待用户额外说“生成开发规范”：

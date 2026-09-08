@@ -50,6 +50,18 @@
       ]
     },
     {
+      "id": "technical-standards.preview",
+      "handler": "standards",
+      "mode": "read",
+      "aliases": [
+        "生成技术规范预览",
+        "查看技术标准技能",
+        "查看技术栈开发规范",
+        "preview technical standards",
+        "show technical standard skills"
+      ]
+    },
+    {
       "id": "governance.initialize",
       "handler": "init",
       "mode": "write",

@@ -12,6 +12,7 @@ import { applyArtifactPlan, planArtifacts } from './managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
 import { assessmentSummary } from './project-assessment.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
+import { technicalStandardsSummary } from './technical-standards.mjs';
 import { readJson, usageError } from './utils.mjs';
 
 function mergeConfig(base, supplied) {
@@ -39,6 +40,11 @@ function requireConfiguredChoices(supplied) {
 
 function printScan(scan) {
   console.log(JSON.stringify(scanSummary(scan), null, 2));
+}
+
+function configForStandards(scan) {
+  const existing = loadExistingConfig(scan.root);
+  return validateConfig(mergeConfig(defaultConfig(scan), existing ?? {}));
 }
 
 async function prepareInit(target, options, { allowDefaults = false } = {}) {
@@ -152,6 +158,11 @@ async function requestCommand(target, options) {
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }
+  if (intent.handler === 'standards') {
+    const result = technicalStandardsSummary(scan, configForStandards(scan));
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    return;
+  }
 
   let config;
   let artifactPlan;
@@ -244,6 +255,10 @@ export async function run(argv) {
   }
   if (command === 'architecture') {
     console.log(JSON.stringify(assessArchitecture(scan), null, 2));
+    return;
+  }
+  if (command === 'standards') {
+    console.log(JSON.stringify(technicalStandardsSummary(scan, configForStandards(scan)), null, 2));
     return;
   }
   if (command === 'check') {

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, PACKAGE_ROOT, SUPPORTED_DEPTHS, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from './constants.mjs';
 import { resolveAgents, resolvePacks } from './registry.mjs';
 import { buildDecisionLedger, classifyProject } from './project-assessment.mjs';
+import { buildTechnicalStandardArtifacts } from './technical-standards.mjs';
 import { normalizeRelative, readText, stableJson, unique, usageError } from './utils.mjs';
 
 function yamlList(values, indent = 0) {
@@ -34,6 +35,7 @@ export function defaultConfig(scan) {
     governanceDepth: 'standard',
     artifactLanguage: 'zh-CN',
     supportedOs: ['macos', 'windows', 'linux'],
+    technologyPackages: [],
     features: {
       knowledge: false,
       taskRuntime: false,
@@ -73,6 +75,9 @@ export function validateConfig(config) {
   if (!Array.isArray(config.supportedOs) || config.supportedOs.some((value) => !SUPPORTED_OSES.includes(value))) {
     throw usageError('config.supportedOs contains an unsupported operating system.');
   }
+  if (config.technologyPackages !== undefined && (!Array.isArray(config.technologyPackages) || config.technologyPackages.some((value) => typeof value !== 'string' || !value))) {
+    throw usageError('technologyPackages must be an array of non-empty package names when provided.');
+  }
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
   if (config.initialClassification !== undefined) {
@@ -85,6 +90,9 @@ export function validateConfig(config) {
 
 function rootInstructions(config, scan) {
   const commands = scan.commands.length > 0 ? scan.commands.map((item) => `- \`${item.command}\` — discovered from \`${item.source}\``).join('\n') : '- No verified repository command was discovered; do not invent one.';
+  const technicalStandards = config.governanceDepth === 'minimal'
+    ? ''
+    : `\n- Read \`${config.canonicalRoot}/technical-standards.json\` and load only the matching generated technical Skills before a stack-specific change.`;
   return `## ${languageTitle(config, 'AI 编码治理', 'AI coding governance')}
 
 This block is managed by \`aicg\`. Project-specific content outside this block is preserved.
@@ -94,6 +102,7 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Governance depth: \`${config.governanceDepth}\`
 - Selected stacks: ${config.stacks.map((item) => `\`${item}\``).join(', ')}
 - Read \`${config.canonicalRoot}/context-map.yaml\` before implementation and load only matching profiles.
+${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
 - Completion requires \`aicg check .\` plus the strongest discovered project verification below.
 
@@ -103,13 +112,16 @@ ${commands}`;
 }
 
 function alwaysRule(config) {
+  const technicalStandards = config.governanceDepth === 'minimal'
+    ? ''
+    : ' and matching entries in `docs/ai/technical-standards.json`';
   return `---
 alwaysApply: true
 ---
 
 # ${languageTitle(config, '常驻治理规则', 'Always-on governance')}
 
-1. Read \`AGENTS.md\`, then select the smallest matching profile from \`${config.canonicalRoot}/context-map.yaml\`.
+1. Read \`AGENTS.md\`, then select the smallest matching profile from \`${config.canonicalRoot}/context-map.yaml\`${technicalStandards}.
 2. Preserve unrelated user changes and keep work inside the requested scope.
 3. Treat code and tests as current behavior evidence; repair stale governance documentation in the same change.
 4. Use only repository commands that exist and report commands that were not run.
@@ -141,12 +153,13 @@ ${rows}
 
 function contextMap(config) {
   const rules = config.governanceDepth === 'minimal' ? ['docs/ai/rules/00_always.mdc'] : ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/20_stack.mdc'];
+  const technicalStandardStart = config.governanceDepth === 'minimal' ? '' : '  - docs/ai/technical-standards.json\n';
   return `version: 1
 default_start:
   - AGENTS.md
   - docs/ai/context-map.yaml
   - docs/ai/rules/00_always.mdc
-profiles:
+${technicalStandardStart}profiles:
   implementation:
     description: Implement or change observable repository behavior.
     triggers:
@@ -315,6 +328,7 @@ export function buildArtifacts(config, scan) {
 
   if (config.governanceDepth !== 'minimal') {
     artifacts.push({ path: 'docs/ai/rules/20_stack.mdc', content: stackRule(config, packs), ownership: 'seed', kind: 'canonical', source: 'capability-pack-registry' });
+    artifacts.push(...buildTechnicalStandardArtifacts(config, scan).artifacts);
   }
   if (config.governanceDepth === 'complete') artifacts.push(...fullDepthArtifacts(config));
   if (config.features.externalWorkflows) {
