@@ -101,6 +101,36 @@ test('dry-run does not write files', (context) => {
   assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false);
 });
 
+test('transactional apply restores every generated file after verification fails', (context) => {
+  const root = fixture('transactional-rollback');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'AGENTS.md'), '# Existing rules\nKeep this exact content.\n');
+  const scan = scanProject(root);
+  const config = defaultConfig(scan);
+  const plan = planArtifacts(root, buildArtifacts(config, scan));
+  assert.throws(() => applyArtifactPlan(root, plan, {
+    transactional: true,
+    verify: () => ({ ok: false, errors: ['injected verification failure'] }),
+  }), /Post-apply verification failed/);
+  assert.equal(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), '# Existing rules\nKeep this exact content.\n');
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
+  assert.equal(fs.existsSync(path.join(root, 'docs')), false);
+});
+
+test('apply refuses a symlink ancestor inserted after planning', (context) => {
+  const root = fixture('post-plan-symlink');
+  const outside = fixture('post-plan-symlink-outside');
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+  const scan = scanProject(root);
+  const plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan));
+  fs.symlinkSync(outside, path.join(root, '.cursor'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => applyArtifactPlan(root, plan, { transactional: true }), /symbolic link/);
+  assert.equal(fs.existsSync(path.join(outside, 'rules/ai-code-governance.mdc')), false);
+});
+
 test('unselected agents do not receive client-specific adapters', (context) => {
   const root = fixture('one-agent');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -169,10 +199,69 @@ test('link migration removes only the adapter link and preserves its target', (c
   const blocked = planArtifacts(root, buildArtifacts(config, scan));
   assert.ok(blocked.conflicts.some((item) => item.includes('--migrate-links')));
   const migrating = planArtifacts(root, buildArtifacts(config, scan), { migrateLinks: true });
-  applyArtifactPlan(root, migrating, { migrateLinks: true });
+  applyArtifactPlan(root, migrating, { migrateLinks: true, transactional: true });
   assert.ok(fs.existsSync(path.join(legacy, 'keep.txt')));
   assert.equal(fs.lstatSync(path.join(root, '.cursor/rules')).isSymbolicLink(), false);
   assert.ok(fs.existsSync(path.join(root, '.cursor/rules/ai-code-governance.mdc')));
+});
+
+test('link migration rejects a symlink reinserted after deletion without writing outside the repository', (context) => {
+  const root = fixture('link-reinsert');
+  const legacy = fixture('link-reinsert-legacy');
+  const outside = fixture('link-reinsert-outside');
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(legacy, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+  fs.symlinkSync(legacy, path.join(root, '.cursor/rules'), process.platform === 'win32' ? 'junction' : 'dir');
+  const scan = scanProject(root);
+  const plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan), { migrateLinks: true });
+  const link = path.join(root, '.cursor/rules');
+  const originalUnlink = fs.unlinkSync;
+  let injected = false;
+  fs.unlinkSync = function patchedUnlink(target, ...args) {
+    const result = originalUnlink.call(this, target, ...args);
+    if (!injected && target === link) {
+      injected = true;
+      fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+    }
+    return result;
+  };
+  try {
+    assert.throws(() => applyArtifactPlan(root, plan, { migrateLinks: true, transactional: true }), /symbolic link/);
+  } finally {
+    fs.unlinkSync = originalUnlink;
+  }
+  assert.equal(injected, true);
+  assert.equal(fs.readdirSync(outside).length, 0);
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(link), legacy);
+});
+
+test('transactional link migration restores the original link after post-apply verification fails', (context) => {
+  const root = fixture('link-rollback');
+  const legacy = fixture('link-rollback-legacy');
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(legacy, { recursive: true, force: true });
+  });
+  fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+  fs.writeFileSync(path.join(legacy, 'keep.txt'), 'keep');
+  const link = path.join(root, '.cursor/rules');
+  fs.symlinkSync(legacy, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const scan = scanProject(root);
+  const plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan), { migrateLinks: true });
+  assert.throws(() => applyArtifactPlan(root, plan, {
+    migrateLinks: true,
+    transactional: true,
+    verify: () => ({ ok: false, errors: ['injected verification failure'] }),
+  }), /Post-apply verification failed/);
+  assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(link), legacy);
+  assert.equal(fs.readFileSync(path.join(legacy, 'keep.txt'), 'utf8'), 'keep');
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
 });
 
 test('rejects unsafe manifest paths without touching files outside the repository', (context) => {

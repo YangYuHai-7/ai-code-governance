@@ -192,7 +192,18 @@ function validateNoLinkAdapters() {
   }
   for (const file of fs.readdirSync(path.join(root, 'src')).filter((name) => name.endsWith('.mjs'))) {
     const content = fs.readFileSync(path.join(root, 'src', file), 'utf8');
-    check(!/\b(?:symlinkSync|linkSync)\s*\(/.test(content), `src/${file} creates a filesystem link.`);
+    const linkCreates = content.match(/\b(?:symlinkSync|linkSync)\s*\(/g) ?? [];
+    if (file === 'managed-files.mjs') {
+      check(
+        linkCreates.length === 1
+          && linkCreates[0].startsWith('symlinkSync')
+          && content.includes('Controlled rollback: restore only the user-owned link removed by this failed migration.')
+          && content.includes('fs.symlinkSync(entry.target, absolute);'),
+        'src/managed-files.mjs may restore exactly one user-owned link during transactional rollback and may not create adapters as links.',
+      );
+    } else {
+      check(linkCreates.length === 0, `src/${file} creates a filesystem link.`);
+    }
   }
 }
 

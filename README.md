@@ -169,9 +169,19 @@ aicg check .
 aicg sync .
 ```
 
+也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
+
+```bash
+aicg request . --text "帮我初始化项目 AI 治理框架" --dry-run --json
+aicg request . --text "初始化治理框架" --approve <planHash>
+aicg request . --text "检查治理框架" --json
+```
+
+写入请求先生成带 `planHash` 的计划，显示精确文件操作和权限；只有 `--approve <planHash>` 与当前计划完全一致时才会写入，并在写后重新运行结构检查。它不批准迁移链接、覆盖漂移内容、调用 Agent、联网、安装依赖、修改 hooks/CI 或迁移业务代码。
+
 `init` 会依次扫描仓库、选择 Agent、确认技术栈、选择治理深度与产物语言、预览文件，再生成基础框架。
-hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。无交互环境使用 `--yes` 或
-`--config <json>`；先预览可使用 `--dry-run`。
+hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。无交互环境可用 `--config <json>`
+提供可复现决策，但实际写入仍需显式 `--yes`；先预览可使用 `--dry-run`。
 
 完整接口、安全覆盖与退出码见 [初始化协议](references/initializer.md)。
 

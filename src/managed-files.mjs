@@ -10,7 +10,8 @@ import {
   TOOL_NAME,
   TOOL_VERSION,
 } from './constants.mjs';
-import { isSafeRelative, lstatSafe, normalizeRelative, readJson, readText, sha256, stableJson, writeText } from './utils.mjs';
+import { assertNoLinkAncestor, sameSnapshot, snapshotPath } from './preconditions.mjs';
+import { isSafeRelative, lstatSafe, normalizeRelative, readJson, readText, sha256, stableJson, writeAtomicFile } from './utils.mjs';
 
 export function renderManagedBlock(body) {
   return `${MANAGED_START}\n${body.trim()}\n${MANAGED_END}`;
@@ -62,6 +63,15 @@ function linkAncestor(root, relative) {
     if (!stat) return null;
   }
   return null;
+}
+
+function plannedLinkAncestor(root, links, relative) {
+  const normalized = normalizeRelative(relative);
+  const candidates = (links ?? [])
+    .map((link) => normalizeRelative(path.relative(root, link)))
+    .filter((link) => normalized === link || normalized.startsWith(`${link}/`))
+    .sort((left, right) => right.length - left.length);
+  return candidates[0] ?? null;
 }
 
 function previousEntry(manifest, relative) {
@@ -209,16 +219,41 @@ export function planArtifacts(root, artifacts, options = {}) {
       operations.push({ ...entry, absolute, changed: true, remove: true, deleteWhenEmpty: true });
     }
   }
-  return { operations, conflicts, links: [...links], previousManifest: manifest };
+  const linkPaths = [...links];
+  const manifestValue = buildManifest(operations, { generatedAt: manifest?.generatedAt ?? null });
+  const manifestContent = stableJson(manifestValue);
+  const manifestPath = path.join(root, MANIFEST_PATH);
+  return {
+    operations,
+    conflicts,
+    links: linkPaths,
+    previousManifest: manifest,
+    manifest: {
+      value: manifestValue,
+      content: manifestContent,
+      changed: readText(manifestPath, '') !== manifestContent,
+    },
+    preconditions: {
+      root: fs.realpathSync(root),
+      files: operations.map((operation) => {
+        const coveredByLink = plannedLinkAncestor(root, linkPaths, operation.path);
+        return {
+          path: operation.path,
+          before: coveredByLink ? { kind: 'covered-by-planned-link', link: coveredByLink } : snapshotPath(operation.absolute),
+        };
+      }),
+      links: linkPaths.map((link) => ({ path: normalizeRelative(path.relative(root, link)), before: snapshotPath(link) })),
+      manifest: snapshotPath(path.join(root, MANIFEST_PATH)),
+    },
+  };
 }
 
-export function buildManifest(operations) {
-  return {
+export function buildManifest(operations, { generatedAt = null } = {}) {
+  const manifest = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
     toolVersion: TOOL_VERSION,
     templateVersion: TEMPLATE_VERSION,
-    generatedAt: new Date().toISOString(),
     files: operations.filter((operation) => !operation.remove && operation.ownership !== 'seed').map((operation) => ({
       path: operation.path,
       ownership: operation.ownership,
@@ -227,6 +262,113 @@ export function buildManifest(operations) {
       sha256: operation.ownership === 'managed-block' ? sha256(renderManagedBlock(operation.content)) : sha256(operation.desired),
     })),
   };
+  if (generatedAt) manifest.generatedAt = generatedAt;
+  return manifest;
+}
+
+function assertArtifactPlanPreconditions(root, plan) {
+  const preconditions = plan.preconditions;
+  if (!preconditions) return;
+  if (fs.realpathSync(root) !== preconditions.root) throw new Error('Repository root changed after planning. Generate a new plan.');
+  for (const entry of preconditions.links ?? []) {
+    assertNoLinkAncestor(root, entry.path, { allowFinalLink: true });
+    const actual = snapshotPath(path.join(root, entry.path));
+    if (!sameSnapshot(actual, entry.before)) throw new Error(`Planned link changed before apply: ${entry.path}. Generate a new plan.`);
+  }
+  for (const entry of preconditions.files ?? []) {
+    if (entry.before?.kind === 'covered-by-planned-link') continue;
+    assertNoLinkAncestor(root, entry.path);
+    const actual = snapshotPath(path.join(root, entry.path));
+    if (!sameSnapshot(actual, entry.before)) throw new Error(`Planned file changed before apply: ${entry.path}. Generate a new plan.`);
+  }
+  assertNoLinkAncestor(root, MANIFEST_PATH);
+  const manifest = snapshotPath(path.join(root, MANIFEST_PATH));
+  if (!sameSnapshot(manifest, preconditions.manifest)) throw new Error(`${MANIFEST_PATH} changed before apply. Generate a new plan.`);
+}
+
+function assertOperationWritePath(root, relative) {
+  assertNoLinkAncestor(root, relative);
+}
+
+function rollbackSnapshot(root, plan) {
+  const linkPaths = [...new Set((plan.links ?? []).map((link) => normalizeRelative(path.relative(root, link))))];
+  const coveredByMigration = (relative) => plannedLinkAncestor(root, plan.links, relative);
+  const paths = new Set([MANIFEST_PATH, ...plan.operations.map((operation) => operation.path)]);
+  const files = [...paths].map((relative) => {
+    const absolute = path.join(root, relative);
+    if (coveredByMigration(relative)) return { relative, kind: 'missing' };
+    const stat = lstatSafe(absolute);
+    if (!stat) return { relative, kind: 'missing' };
+    if (!stat.isFile()) throw new Error(`Transactional apply does not support non-file target ${relative}.`);
+    return {
+      relative,
+      kind: 'file',
+      content: fs.readFileSync(absolute),
+      mode: stat.mode & 0o777,
+      atimeMs: stat.atimeMs,
+      mtimeMs: stat.mtimeMs,
+    };
+  });
+  const directories = new Map();
+  for (const entry of files) {
+    let relative = normalizeRelative(path.dirname(entry.relative));
+    while (relative && relative !== '.') {
+      const migrationLink = coveredByMigration(relative);
+      if (migrationLink === relative) break;
+      if (!directories.has(relative)) {
+        directories.set(relative, migrationLink ? { kind: 'missing' } : snapshotPath(path.join(root, relative)));
+      }
+      relative = normalizeRelative(path.dirname(relative));
+    }
+  }
+  const links = linkPaths.map((relative) => {
+    const before = snapshotPath(path.join(root, relative));
+    if (before.kind !== 'link') throw new Error(`Transactional link migration expected a symbolic link at ${relative}.`);
+    return { relative, target: before.target };
+  });
+  return { files, directories: [...directories].map(([relative, before]) => ({ relative, before })), links };
+}
+
+function restoreRollbackSnapshot(root, snapshot) {
+  const failures = [];
+  for (const entry of [...snapshot.files].sort((left, right) => right.relative.length - left.relative.length)) {
+    const absolute = path.join(root, entry.relative);
+    try {
+      const current = lstatSafe(absolute);
+      if (entry.kind === 'missing') {
+        if (current?.isFile() || current?.isSymbolicLink()) fs.unlinkSync(absolute);
+        else if (current) throw new Error('expected a regular file while restoring a missing path');
+        continue;
+      }
+      if (current && !current.isFile()) throw new Error('expected a regular file while restoring a file');
+      writeAtomicFile(absolute, entry.content, entry.mode);
+      fs.utimesSync(absolute, entry.atimeMs / 1000, entry.mtimeMs / 1000);
+    } catch (error) {
+      failures.push(`${entry.relative}: ${error.message}`);
+    }
+  }
+  for (const entry of [...snapshot.directories].sort((left, right) => right.relative.length - left.relative.length)) {
+    if (entry.before.kind !== 'missing') continue;
+    const absolute = path.join(root, entry.relative);
+    try {
+      if (lstatSafe(absolute)?.isDirectory()) fs.rmdirSync(absolute);
+    } catch (error) {
+      if (!['ENOTEMPTY', 'ENOENT'].includes(error.code)) failures.push(`${entry.relative}: ${error.message}`);
+    }
+  }
+  for (const entry of [...(snapshot.links ?? [])].sort((left, right) => right.relative.length - left.relative.length)) {
+    const absolute = path.join(root, entry.relative);
+    try {
+      const current = lstatSafe(absolute);
+      if (current?.isDirectory()) fs.rmdirSync(absolute);
+      else if (current) fs.unlinkSync(absolute);
+      // Controlled rollback: restore only the user-owned link removed by this failed migration.
+      fs.symlinkSync(entry.target, absolute);
+    } catch (error) {
+      failures.push(`${entry.relative}: ${error.message}`);
+    }
+  }
+  if (failures.length > 0) throw new Error(`Rollback could not restore all files:\n- ${failures.join('\n- ')}`);
 }
 
 export function applyArtifactPlan(root, plan, options = {}) {
@@ -236,37 +378,75 @@ export function applyArtifactPlan(root, plan, options = {}) {
     throw error;
   }
   if (options.dryRun) return { changed: plan.operations.filter((operation) => operation.changed).map((operation) => operation.path), manifest: null };
+  assertArtifactPlanPreconditions(root, plan);
+  if (typeof options.beforeApply === 'function') options.beforeApply();
+  const snapshot = options.transactional ? rollbackSnapshot(root, plan) : null;
 
-  for (const link of plan.links.sort((a, b) => a.length - b.length)) {
-    const stat = lstatSafe(link);
-    if (stat?.isSymbolicLink()) fs.unlinkSync(link);
-  }
+  try {
+    for (const link of plan.links.sort((a, b) => a.length - b.length)) {
+      const relative = normalizeRelative(path.relative(root, link));
+      assertNoLinkAncestor(root, relative, { allowFinalLink: true });
+      const stat = lstatSafe(link);
+      if (!stat?.isSymbolicLink()) throw new Error(`Planned link changed before migration: ${relative}. Generate a new plan.`);
+      fs.unlinkSync(link);
+    }
 
-  const changed = [];
-  for (const operation of plan.operations) {
-    if (operation.remove) {
-      if (operation.deleteWhenEmpty) {
-        if (lstatSafe(operation.absolute)?.isFile()) {
-          fs.unlinkSync(operation.absolute);
+    const changed = [];
+    for (const operation of plan.operations) {
+      // Re-check immediately before every mutation to reject a symlink inserted after planning.
+      assertOperationWritePath(root, operation.path);
+      if (operation.remove) {
+        if (operation.deleteWhenEmpty) {
+          if (lstatSafe(operation.absolute)?.isFile()) {
+            fs.unlinkSync(operation.absolute);
+            changed.push(operation.path);
+          }
+        } else if (operation.changed) {
+          const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o777 : null;
+          writeAtomicFile(operation.absolute, operation.desired, mode);
           changed.push(operation.path);
         }
-      } else if (writeText(operation.absolute, operation.desired)) {
+        continue;
+      }
+      if (operation.changed) {
+        const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o777 : null;
+        writeAtomicFile(operation.absolute, operation.desired, mode);
         changed.push(operation.path);
       }
-      continue;
     }
-    if (writeText(operation.absolute, operation.desired)) changed.push(operation.path);
+    if (!plan.manifest?.value || typeof plan.manifest.content !== 'string') {
+      throw new Error('Artifact plan is missing its deterministic manifest content. Generate a new plan.');
+    }
+    const manifest = plan.manifest.value;
+    const manifestPath = path.join(root, MANIFEST_PATH);
+    const previous = readText(manifestPath, '');
+    const next = plan.manifest.content;
+    if (previous !== next) {
+      assertOperationWritePath(root, MANIFEST_PATH);
+      const mode = lstatSafe(manifestPath)?.isFile() ? lstatSafe(manifestPath).mode & 0o777 : null;
+      writeAtomicFile(manifestPath, next, mode);
+      changed.push(MANIFEST_PATH);
+    }
+    let verification = null;
+    if (typeof options.verify === 'function') {
+      verification = options.verify();
+      if (!verification?.ok) {
+        const error = new Error('Post-apply verification failed.');
+        error.verification = verification;
+        throw error;
+      }
+    }
+    return { changed, manifest, verification };
+  } catch (error) {
+    if (snapshot) {
+      try {
+        restoreRollbackSnapshot(root, snapshot);
+      } catch (rollbackError) {
+        error.message = `${error.message}\nRollback failed: ${rollbackError.message}`;
+      }
+    }
+    throw error;
   }
-  const manifest = buildManifest(plan.operations);
-  const manifestPath = path.join(root, MANIFEST_PATH);
-  const previous = readText(manifestPath, '');
-  const stableManifest = { ...manifest, generatedAt: plan.previousManifest?.generatedAt ?? manifest.generatedAt };
-  const next = stableJson(stableManifest);
-  if (previous !== next) {
-    writeText(manifestPath, next);
-    changed.push(MANIFEST_PATH);
-  }
-  return { changed, manifest: stableManifest };
 }
 
 export function generatedHeader(comment = '<!--') {

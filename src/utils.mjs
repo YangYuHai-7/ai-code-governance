@@ -60,6 +60,22 @@ export function writeText(target, content) {
   return true;
 }
 
+export function writeAtomicFile(target, content, mode = null) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  try {
+    fs.writeFileSync(temporary, content, { encoding: typeof content === 'string' ? 'utf8' : undefined, flag: 'wx' });
+    if (mode !== null) fs.chmodSync(temporary, mode);
+    fs.renameSync(temporary, target);
+  } finally {
+    try {
+      fs.unlinkSync(temporary);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+}
+
 export function commandExists(command, env = process.env) {
   const executable = process.platform === 'win32' ? 'where' : 'sh';
   const args = process.platform === 'win32' ? [command] : ['-c', 'command -v "$1" >/dev/null 2>&1', 'sh', command];

@@ -22,20 +22,31 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 | `aicg check [path] [--json]` | 只读 | 校验配置、manifest、受管内容哈希、链接禁令和客户端可达性 |
 | `aicg sync [path]` | 写 | 从正典重新生成 manifest 拥有的普通文件适配器 |
 | `aicg doctor [path] [--json]` | 只读 | 检查 Node、Git、目录权限、Agent CLI 与遗留链接 |
+| `aicg request [path] --text <alias>` | 按 intent | 把已登记的中英文请求路由到与 CLI 相同的只读或写入内核 |
 
 通用退出码：`0` 成功；`1` 检查或执行失败；`2` 用法错误、输入不完整、用户取消或安全冲突。
 
 `init` 支持：
 
 - `--config <json>`：读取机器可复现答案；单独使用时必须包含 Agent、技术栈、深度和语言，和 `--yes`
-  一起使用时才允许由侦察默认补齐缺项。
-- `--yes`：接受侦察默认，不进入交互；默认选择三款核心 Agent、标准深度和所有 OS。
+  一起使用时才允许由侦察默认补齐缺项。它提供决策输入，不代表批准写入。
+- `--yes`：显式批准本次无冲突、确定式的治理写入，并在没有配置时接受侦察默认（默认选择三款核心 Agent、标准深度和所有 OS）。
 - `--dry-run`：输出扫描结果、计划文件和待迁移链接，不写任何内容。
 - `--no-assist` / `--assist <agent>`：禁止或明确选择 AI 补全执行器。
 - `--migrate-links`：显式授权迁移已知客户端路径上的旧链接。
 - `--force`：只允许恢复 manifest 已拥有或带生成标记的内容，不覆盖未知用户文件。
 
-无 TTY 且没有 `--yes` 或 `--config` 时必须以退出码 2 结束，不能靠猜测继续。
+无 TTY 且没有 `--yes` 或 `--config` 时必须以退出码 2 结束，不能靠猜测继续；无 TTY 的写入即使提供 `--config` 也必须有 `--yes`。
+
+## 自然语言请求边界
+
+`request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。
+
+- `environment.diagnose` 与 `governance.validate` 始终只读。
+- `governance.initialize` 与 `governance.sync-managed` 在写入前必须计划、确认并在写后重新检查。
+- 无匹配、多匹配或“修复/升级/优化”等尚未登记的歧义表达以退出码 2 停止，不能猜测为 `doctor` 或 `sync`。
+- `--dry-run` 只输出计划，零写入；计划带目标根、配置和 manifest 快照、逐文件前置状态、所需权限和验证边界。
+- `request` 的任何写入都须明确提供当前 `--dry-run` 输出的 `--approve <planHash>`；不存在交互确认旁路。配置文件仅提供决策输入，不等于批准更高风险操作。
 
 ## 固定决策顺序
 
