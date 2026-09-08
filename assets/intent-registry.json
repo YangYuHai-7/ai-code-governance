@@ -26,6 +26,18 @@
       ]
     },
     {
+      "id": "project.assess",
+      "handler": "assess",
+      "mode": "read",
+      "aliases": [
+        "评估项目治理路径",
+        "评估项目架构治理路径",
+        "识别新旧项目治理策略",
+        "assess governance project path",
+        "assess project governance"
+      ]
+    },
+    {
       "id": "governance.initialize",
       "handler": "init",
       "mode": "write",

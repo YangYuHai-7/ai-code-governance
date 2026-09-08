@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { CONFIG_PATH, MANIFEST_PATH, TOOL_VERSION } from './constants.mjs';
 import { assertNoLinkAncestor, repositoryFingerprint, sameSnapshot, snapshotPath } from './preconditions.mjs';
+import { classifyProject, buildDecisionLedger } from './project-assessment.mjs';
 import { normalizeRelative, sha256, stableJson, usageError } from './utils.mjs';
 
 function operationAction(operation, before) {
@@ -72,6 +73,8 @@ export function buildExecutionPlan({ intent, scan, artifactPlan = null, config =
     configFile: snapshotPath(path.join(root, CONFIG_PATH)),
     manifestFile: snapshotPath(path.join(root, MANIFEST_PATH)),
     repositoryFingerprint: repositoryFingerprint(root),
+    projectAssessment: classifyProject(scan),
+    decisionLedger: buildDecisionLedger(scan, config),
     operations,
     conflicts: artifactPlan?.conflicts ?? [],
     linksToMigrate,
