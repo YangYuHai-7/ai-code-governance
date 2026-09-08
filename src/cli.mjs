@@ -12,7 +12,7 @@ import { buildArtifacts, defaultConfig, validateConfig } from './generator.mjs';
 import { resolveIntent } from './intents.mjs';
 import { applyArtifactPlan, planArtifacts } from './managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
-import { assessmentSummary } from './project-assessment.mjs';
+import { assessmentSummary, buildDecisionLedger, classifyProject, resolveInitializationDecision } from './project-assessment.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
 import { technicalStandardsSummary } from './technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from './team-recommendation.mjs';
@@ -39,6 +39,14 @@ function requireConfiguredChoices(supplied) {
   for (const key of ['clients', 'stacks', 'governanceDepth', 'artifactLanguage']) {
     if (supplied[key] === undefined) throw usageError(`--config must provide ${key} unless --yes is also used.`);
   }
+}
+
+function sameInitialization(left, right) {
+  return Boolean(
+    left?.lifecycle
+    && left.lifecycle === right?.lifecycle
+    && (left.existingCodeStrategy ?? null) === (right?.existingCodeStrategy ?? null),
+  );
 }
 
 function printScan(scan) {
@@ -104,22 +112,46 @@ function runPromotionVerification(scan, command) {
 
 async function prepareInit(target, options, { allowDefaults = false } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
-  const scan = scanProject(target);
+  const scan = scanProject(target, { probeEnvironment: false });
   const existing = loadExistingConfig(scan.root);
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
+  let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
+  let prompted = false;
   if (options.config) {
     const supplied = readJson(path.resolve(options.config));
-    if (!options.yes) requireConfiguredChoices(supplied);
-    config = mergeConfig(config, supplied);
+    if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
+    const { initialClassification: _ignoredClassification, ...safeSupplied } = supplied;
+    config = mergeConfig(config, safeSupplied);
+    if (safeSupplied.initialization?.lifecycle !== undefined && !sameInitialization(existing?.initialization, safeSupplied.initialization)) {
+      decisionSource = 'config';
+    }
   }
   if (!options.yes && !options.config && !allowDefaults) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Interactive init requires a TTY. Use --yes or --config <json>.');
     config = await promptConfig(scan, config);
+    prompted = true;
+    if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   }
   if (options['no-assist']) config.features.aiAssist = false;
   if (options.assist) config.features.aiAssist = true;
   if (options.assist && !config.clients.includes(options.assist)) {
     throw usageError(`AI completion agent ${options.assist} was not selected in config.clients.`);
+  }
+  const currentAssessment = classifyProject(scan);
+  try {
+    config = {
+      ...config,
+      initialization: resolveInitializationDecision(scan, config, {
+        source: decisionSource ?? (allowDefaults ? 'chat-plan' : options.yes ? 'yes-greenfield' : prompted ? 'interactive' : null),
+        allowGreenfieldDefault: Boolean(options.yes || options.config || allowDefaults || prompted),
+        allowRecordedGreenfield: Boolean(existing?.initialization?.lifecycle === 'greenfield' && sameInitialization(existing.initialization, config.initialization)),
+      }),
+    };
+  } catch (error) {
+    throw usageError(error.message);
+  }
+  if (config.features.aiAssist && currentAssessment.codebase.lifecycle.value !== 'greenfield') {
+    throw usageError('AI assist is unavailable when the repository has existing or ambiguous product evidence; deterministic initialization must not modify business code.');
   }
   validateConfig(config);
   const artifacts = buildArtifacts(config, scan);
@@ -137,11 +169,20 @@ async function initCommand(target, options) {
   }
   if (!options.yes && !options['dry-run']) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Applying an initialization plan requires a TTY confirmation or --yes.');
-    const confirmed = await confirmPlan(plan.operations);
+    const ledger = buildDecisionLedger(scan, config);
+    const boundary = ledger.decisions.find((decision) => decision.id === 'implementation-boundary')?.value ?? null;
+    const confirmed = await confirmPlan(plan.operations, null, config.initialization, boundary);
     if (!confirmed) throw usageError('Initialization cancelled without writing files.');
   }
   if (options['dry-run']) {
-    console.log(JSON.stringify({ dryRun: true, files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })), linksToMigrate: plan.links.map((link) => path.relative(scan.root, link)) }, null, 2));
+    const ledger = buildDecisionLedger(scan, config);
+    console.log(JSON.stringify({
+      dryRun: true,
+      initialization: config.initialization,
+      implementationBoundary: ledger.decisions.find((decision) => decision.id === 'implementation-boundary')?.value ?? null,
+      files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })),
+      linksToMigrate: plan.links.map((link) => path.relative(scan.root, link)),
+    }, null, 2));
     return;
   }
 

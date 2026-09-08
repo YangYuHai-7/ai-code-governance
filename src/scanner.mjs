@@ -146,7 +146,7 @@ function platformId() {
 }
 
 export function scanProject(target, options = {}) {
-  const probeEnvironment = options.probeEnvironment !== false;
+  const probeEnvironment = options.probeEnvironment === true;
   const root = path.resolve(target);
   const stat = fs.existsSync(root) ? fs.statSync(root) : null;
   if (!stat?.isDirectory()) throw new Error(`Target directory does not exist: ${root}`);

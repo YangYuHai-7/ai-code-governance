@@ -18,8 +18,15 @@ try {
   }));
   fs.mkdirSync(path.join(fixture, 'src'));
   fs.writeFileSync(path.join(fixture, 'src', 'http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
+  const answers = path.join(fixture, 'answers.json');
+  fs.writeFileSync(answers, JSON.stringify({
+    initialization: {
+      lifecycle: 'existing',
+      existingCodeStrategy: 'new-code-standard',
+    },
+  }));
   for (const args of [
-    ['init', fixture, '--yes', '--no-assist'],
+    ['init', fixture, '--config', answers, '--yes', '--no-assist'],
     ['standards', fixture, '--json'],
     ['harvest', fixture, '--dry-run', '--json'],
     ['check', fixture, '--json'],

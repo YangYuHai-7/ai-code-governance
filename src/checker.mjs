@@ -40,6 +40,9 @@ export function checkProject(scan) {
   }
 
   if (config && manifest) {
+    if (!config.initialization?.lifecycle) {
+      warnings.push(`${CONFIG_PATH}: legacy-unconfirmed initialization decision; re-run aicg init to record lifecycle and existing-code strategy before changing architecture or existing behavior.`);
+    }
     let expected = [];
     try {
       expected = buildArtifacts(config, scan);

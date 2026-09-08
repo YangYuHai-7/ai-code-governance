@@ -35,6 +35,33 @@ try {
   }));
   fs.mkdirSync(path.join(projectDirectory, 'src'));
   fs.writeFileSync(path.join(projectDirectory, 'src', 'http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
+  const answers = path.join(projectDirectory, 'answers.json');
+  fs.writeFileSync(answers, JSON.stringify({
+    schemaVersion: 1,
+    generatedBy: 'ai-code-governance',
+    toolVersion: packageVersion,
+    projectName: path.basename(projectDirectory),
+    projectMode: 'brownfield',
+    canonicalRoot: 'docs/ai',
+    clients: ['codex'],
+    stacks: ['generic-unknown'],
+    governanceDepth: 'standard',
+    artifactLanguage: 'zh-CN',
+    supportedOs: ['macos', 'windows', 'linux'],
+    initialization: {
+      lifecycle: 'existing',
+      existingCodeStrategy: 'new-code-standard',
+    },
+    features: {
+      knowledge: false,
+      taskRuntime: false,
+      hooks: false,
+      externalWorkflows: false,
+      ciIntegration: false,
+      aiAssist: false,
+    },
+    domainConstraints: [],
+  }));
   const packed = runNpm(['pack', '--json', '--pack-destination', packDirectory], { cwd: root });
   const packResult = JSON.parse(packed.stdout);
   const tarball = path.join(packDirectory, packResult[0].filename);
@@ -45,11 +72,11 @@ try {
   assert.ok(fs.statSync(installedBin).isFile());
   const installedCommand = runNpm(['exec', '--prefix', installDirectory, '--', 'aicg', '--version']);
   assert.equal(installedCommand.stdout.trim(), packageVersion);
-  const requestPlan = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--dry-run', '--json']);
+  const requestPlan = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--config', answers, '--dry-run', '--json']);
   const requestPayload = JSON.parse(requestPlan.stdout);
   assert.equal(requestPayload.plan.intent, 'governance.initialize');
   assert.equal(fs.existsSync(path.join(projectDirectory, 'AGENTS.md')), false);
-  run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', `--approve=${requestPayload.plan.planHash}`, '--json']);
+  run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--config', answers, `--approve=${requestPayload.plan.planHash}`, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
   const standardsPreview = run(process.execPath, [installedBin, 'standards', projectDirectory, '--json']);

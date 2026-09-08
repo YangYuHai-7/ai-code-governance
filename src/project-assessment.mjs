@@ -21,7 +21,22 @@ const PROJECT_MANIFESTS = new Set([
   'Cargo.toml',
 ]);
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift']);
+export const EXISTING_CODE_STRATEGIES = ['keep-existing', 'new-code-standard', 'staged-migration'];
+export const INITIALIZATION_LIFECYCLES = ['greenfield', 'existing'];
+export const INITIALIZATION_SOURCES = ['config', 'interactive', 'yes-greenfield', 'chat-plan', 'existing-governance'];
+const INITIALIZATION_SOURCE_SET = new Set(INITIALIZATION_SOURCES);
+
+const SOURCE_EXTENSIONS = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift',
+  '.c', '.cc', '.cpp', '.cxx', '.h', '.hpp', '.m', '.mm', '.sql', '.sh', '.bash', '.zsh', '.fish', '.tf', '.hcl', '.scala',
+  '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm',
+]);
+
+const GREENFIELD_SAFE_PATHS = [
+  /^(?:README(?:\.[^/]+)?|LICENSE(?:\.[^/]+)?|NOTICE(?:\.[^/]+)?|CHANGELOG(?:\.[^/]+)?|CONTRIBUTING(?:\.[^/]+)?)$/i,
+  /^(?:\.gitignore|\.gitattributes|\.editorconfig|\.npmrc|\.node-version|\.tool-versions)$/,
+  /^docs\/(?!ai\/).+\.(?:md|mdx|rst|txt)$/i,
+];
 
 function isGovernancePath(relative) {
   return GOVERNANCE_PREFIXES.some((prefix) => relative === prefix || relative.startsWith(prefix));
@@ -44,6 +59,13 @@ function evidencePaths(files, matcher) {
   return files.filter((file) => matcher(file.relative)).map((file) => file.relative).slice(0, 8);
 }
 
+function unexplainedProductPaths(files) {
+  return files
+    .map((file) => file.relative)
+    .filter((relative) => !GREENFIELD_SAFE_PATHS.some((pattern) => pattern.test(relative)))
+    .slice(0, 8);
+}
+
 export function classifyProject(scan) {
   const productFiles = scan.files.filter((file) => file.type === 'file' && !isGovernancePath(file.relative));
   const manifests = productFiles.filter((file) => PROJECT_MANIFESTS.has(file.relative.split('/').at(-1))).map((file) => file.relative).slice(0, 8);
@@ -51,9 +73,10 @@ export function classifyProject(scan) {
   const tests = evidencePaths(productFiles, (relative) => /(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[^/]+$/.test(relative));
   const migrations = evidencePaths(productFiles, (relative) => /(^|\/)(?:migrations?|db\/migrate)(\/|$)/.test(relative));
   const substantiveEvidence = [...sources, ...tests, ...migrations];
-  const lifecycle = substantiveEvidence.length > 0 ? 'existing' : manifests.length > 0 ? 'ambiguous' : 'greenfield';
+  const unexplainedPaths = unexplainedProductPaths(productFiles);
+  const lifecycle = substantiveEvidence.length > 0 ? 'existing' : manifests.length > 0 || unexplainedPaths.length > 0 ? 'ambiguous' : 'greenfield';
   const topology = scan.projectMode === 'monorepo' ? 'monorepo' : 'single-repo';
-  const confidence = lifecycle === 'ambiguous' ? 'low' : substantiveEvidence.length > 0 ? 'high' : 'high';
+  const confidence = lifecycle === 'ambiguous' ? 'low' : 'high';
   const kind = lifecycle === 'existing'
     ? topology === 'monorepo' ? 'existing-monorepo' : 'existing-application'
     : lifecycle === 'ambiguous' ? 'ambiguous-skeleton'
@@ -83,6 +106,7 @@ export function classifyProject(scan) {
         sourceFiles: sources,
         testFiles: tests,
         migrationFiles: migrations,
+        unexplainedPaths,
         productFileCount: productFiles.length,
       },
     },
@@ -92,11 +116,11 @@ export function classifyProject(scan) {
     },
     implementationBoundary: preservesExistingCode
       ? 'preserve-existing-code-until-an-explicit-migration-strategy-is-approved'
-      : 'new-code-must-follow-the-module-first-architecture-standard',
+      : 'new-code-must-follow-the-approved-project-architecture-profile',
     requiredDecisions: lifecycle === 'ambiguous'
       ? [{
           id: 'project-lifecycle-confirmation',
-          question: 'The repository has manifests but no substantive source, test, or migration evidence. Confirm whether it is a new scaffold or an existing project.',
+          question: 'The repository has manifests or unexplained product files but no substantive source, test, or migration evidence. Confirm whether it is a new scaffold or an existing project.',
           options: ['greenfield-bootstrap', 'existing-project-governance'],
         }]
       : preservesExistingCode
@@ -109,6 +133,76 @@ export function classifyProject(scan) {
   };
 }
 
+function initializationBoundary(initialization, assessment) {
+  if (initialization?.lifecycle === 'greenfield') {
+    return 'new-code-must-follow-the-approved-project-architecture-profile';
+  }
+  switch (initialization?.existingCodeStrategy) {
+    case 'keep-existing':
+      return 'preserve-existing-code-and-avoid-architecture-or-behavior-changes-without-a-separately-approved-request';
+    case 'new-code-standard':
+      return 'preserve-existing-code-and-apply-the-approved-project-architecture-profile-only-to-new-code';
+    case 'staged-migration':
+      return 'preserve-existing-code-until-a-separately-approved-staged-migration-plan-and-verification-contract-exist';
+    default:
+      return assessment.implementationBoundary;
+  }
+}
+
+function pendingInitializationDecisions(assessment, initialization) {
+  if (!initialization?.lifecycle) return assessment.requiredDecisions;
+  if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
+    return [{
+      id: 'existing-code-strategy',
+      question: 'Choose whether to keep existing code unchanged, apply the standard only to new code, or approve a staged migration.',
+      options: EXISTING_CODE_STRATEGIES,
+    }];
+  }
+  return [];
+}
+
+export function resolveInitializationDecision(scan, config, { source = null, allowGreenfieldDefault = false, allowRecordedGreenfield = false } = {}) {
+  const assessment = classifyProject(scan);
+  const supplied = config.initialization ?? {};
+  const lifecycle = supplied.lifecycle ?? null;
+  const existingCodeStrategy = supplied.existingCodeStrategy ?? null;
+  const configuredSource = source ?? supplied.source ?? null;
+
+  if (lifecycle !== null && !INITIALIZATION_LIFECYCLES.includes(lifecycle)) {
+    throw new Error('initialization.lifecycle must be greenfield or existing.');
+  }
+  if (existingCodeStrategy !== null && !EXISTING_CODE_STRATEGIES.includes(existingCodeStrategy)) {
+    throw new Error(`initialization.existingCodeStrategy must be one of: ${EXISTING_CODE_STRATEGIES.join(', ')}.`);
+  }
+  if (lifecycle === 'greenfield' && existingCodeStrategy !== null) {
+    throw new Error('initialization.existingCodeStrategy must be null when initialization.lifecycle is greenfield.');
+  }
+  if (assessment.codebase.lifecycle.value === 'existing' && lifecycle === 'greenfield' && !allowRecordedGreenfield) {
+    throw new Error('Repository evidence shows existing source, test, or migration files. Confirm initialization.lifecycle as existing and choose initialization.existingCodeStrategy.');
+  }
+
+  const resolvedLifecycle = lifecycle ?? (assessment.codebase.lifecycle.value === 'greenfield' && allowGreenfieldDefault ? 'greenfield' : null);
+  if (!resolvedLifecycle) {
+    if (assessment.codebase.lifecycle.value === 'ambiguous') {
+      throw new Error('Repository lifecycle is ambiguous. Set initialization.lifecycle to greenfield or existing before initialization.');
+    }
+    throw new Error('Repository contains existing implementation evidence. Set initialization.lifecycle to existing and choose initialization.existingCodeStrategy before initialization.');
+  }
+  if (resolvedLifecycle === 'existing' && !existingCodeStrategy) {
+    throw new Error(`Existing-project initialization requires initialization.existingCodeStrategy: ${EXISTING_CODE_STRATEGIES.join(', ')}.`);
+  }
+
+  const resolvedSource = configuredSource ?? (allowGreenfieldDefault ? 'yes-greenfield' : null);
+  if (!resolvedSource || !INITIALIZATION_SOURCE_SET.has(resolvedSource)) {
+    throw new Error('Initialization decision source must be recorded by the CLI.');
+  }
+  return {
+    lifecycle: resolvedLifecycle,
+    existingCodeStrategy: resolvedLifecycle === 'existing' ? existingCodeStrategy : null,
+    source: resolvedSource,
+  };
+}
+
 export function buildDecisionLedger(scan, config = null) {
   const assessment = classifyProject(scan);
   const initialClassification = config?.initialClassification ?? {
@@ -117,6 +211,21 @@ export function buildDecisionLedger(scan, config = null) {
     requiredDecisions: assessment.requiredDecisions,
   };
   const configured = Boolean(config);
+  const baselineAssessment = {
+    ...assessment,
+    codebase: initialClassification.codebase,
+    implementationBoundary: initialClassification.implementationBoundary,
+    requiredDecisions: initialClassification.requiredDecisions ?? assessment.requiredDecisions,
+  };
+  const initialization = config?.initialization ?? null;
+  const implementationBoundary = initializationBoundary(initialization, baselineAssessment);
+  const pendingDecisions = pendingInitializationDecisions(baselineAssessment, initialization);
+  const lifecycleStatus = initialization?.lifecycle
+    ? 'confirmed'
+    : initialClassification.codebase.lifecycle.value === 'greenfield' ? 'inferred' : 'pending';
+  const strategyStatus = initialization?.lifecycle === 'existing' && initialization.existingCodeStrategy
+    ? 'confirmed'
+    : initialClassification.codebase.lifecycle.value === 'greenfield' || initialization?.lifecycle === 'greenfield' ? 'not-applicable' : 'pending';
   const base = {
     schemaVersion: 1,
     project: {
@@ -148,13 +257,25 @@ export function buildDecisionLedger(scan, config = null) {
         status: configured ? 'recorded' : 'pending',
       },
       {
+        id: 'project-lifecycle',
+        value: initialization?.lifecycle ?? null,
+        source: initialization?.source ?? 'repository-evidence',
+        status: lifecycleStatus,
+      },
+      {
+        id: 'existing-code-strategy',
+        value: initialization?.existingCodeStrategy ?? null,
+        source: initialization?.source ?? 'needs-user-input',
+        status: strategyStatus,
+      },
+      {
         id: 'implementation-boundary',
-        value: initialClassification.implementationBoundary,
-        source: 'project-classification-safety-default',
-        status: initialClassification.codebase.lifecycle.value === 'greenfield' ? 'applied' : 'requires-user-confirmation',
+        value: implementationBoundary,
+        source: initialization?.source ?? 'project-classification-safety-default',
+        status: pendingDecisions.length === 0 ? 'applied' : 'requires-user-confirmation',
       },
     ],
-    pendingDecisions: initialClassification.requiredDecisions ?? assessment.requiredDecisions,
+    pendingDecisions,
   };
   return {
     ...base,
