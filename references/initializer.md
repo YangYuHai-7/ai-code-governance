@@ -22,6 +22,7 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 | `aicg check [path] [--json]` | 只读 | 校验配置、manifest、受管内容哈希、链接禁令和客户端可达性 |
 | `aicg sync [path]` | 写 | 从正典重新生成 manifest 拥有的普通文件适配器 |
 | `aicg doctor [path] [--json]` | 只读 | 检查 Node、Git、目录权限、Agent CLI 与遗留链接 |
+| `aicg assess [path] [--json]` | 只读 | 报告生命周期/拓扑分类、扫描证据和决策账本草案 |
 | `aicg request [path] --text <alias>` | 按 intent | 把已登记的中英文请求路由到与 CLI 相同的只读或写入内核 |
 
 通用退出码：`0` 成功；`1` 检查或执行失败；`2` 用法错误、输入不完整、用户取消或安全冲突。
@@ -37,6 +38,14 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 - `--force`：只允许恢复 manifest 已拥有或带生成标记的内容，不覆盖未知用户文件。
 
 无 TTY 且没有 `--yes` 或 `--config` 时必须以退出码 2 结束，不能靠猜测继续；无 TTY 的写入即使提供 `--config` 也必须有 `--yes`。
+
+## 项目分类与决策账本
+
+`assess` 将生命周期与拓扑分开：生命周期是 `greenfield`、`existing` 或 `ambiguous`，拓扑是 `single-repo` 或 `monorepo`。只有源码、测试或迁移等实质证据才建议 `existing`；仅 manifest 的脚手架必须标为 `ambiguous` 并等待用户确认。扫描排除 `.ai-governance`、已生成适配器和 `docs/ai`，因此初始化后的治理文件不会反向改变项目分类。
+
+生成的 `docs/ai/decision-ledger.json` 记录扫描证据、已记录的 Agent/技术栈/深度决策和未决事项。对既有或证据不足的项目，默认边界是保护现有代码；任何现代化或迁移都需要单独的策略和新计划批准。
+
+早期配置若没有初始分类，首次 `sync` 会用当时可见的仓库状态建立并持久化基线；它不能恢复未知的历史状态。之后的 `sync` 只使用这个已记录快照，新的源码增长只会成为 `assess` 的当前观察，不能静默切换治理路径。
 
 ## 自然语言请求边界
 

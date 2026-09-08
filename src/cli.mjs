@@ -9,6 +9,7 @@ import { buildArtifacts, defaultConfig, validateConfig } from './generator.mjs';
 import { resolveIntent } from './intents.mjs';
 import { applyArtifactPlan, planArtifacts } from './managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
+import { assessmentSummary } from './project-assessment.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
 import { readJson, usageError } from './utils.mjs';
 
@@ -122,7 +123,7 @@ function printRequest(payload, json) {
   }
   console.log(`intent=${payload.intent.id} mode=${payload.intent.mode}`);
   if (payload.plan) console.log(`plan_hash=${payload.plan.planHash} operations=${payload.plan.operations.filter((operation) => operation.action !== 'keep').length}`);
-  if (payload.result) console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
+  if (typeof payload.result?.ok === 'boolean') console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
 }
 
 async function requestCommand(target, options) {
@@ -138,6 +139,11 @@ async function requestCommand(target, options) {
     const result = checkProject(scan);
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (intent.handler === 'assess') {
+    const result = assessmentSummary(scan);
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }
 
@@ -223,6 +229,11 @@ export async function run(argv) {
     const result = doctor(scan);
     printDoctor(result, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (command === 'assess') {
+    const result = assessmentSummary(scan);
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (command === 'check') {

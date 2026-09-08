@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, PACKAGE_ROOT, SUPPORTED_DEPTHS, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from './constants.mjs';
 import { resolveAgents, resolvePacks } from './registry.mjs';
+import { buildDecisionLedger, classifyProject } from './project-assessment.mjs';
 import { normalizeRelative, readText, stableJson, unique, usageError } from './utils.mjs';
 
 function yamlList(values, indent = 0) {
@@ -15,12 +16,18 @@ function languageTitle(config, zh, en) {
 }
 
 export function defaultConfig(scan) {
+  const assessment = classifyProject(scan);
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
     toolVersion: TOOL_VERSION,
     projectName: scan.projectName,
     projectMode: scan.projectMode,
+    initialClassification: {
+      codebase: assessment.codebase,
+      implementationBoundary: assessment.implementationBoundary,
+      requiredDecisions: assessment.requiredDecisions,
+    },
     canonicalRoot: 'docs/ai',
     clients: ['codex', 'claude-code', 'cursor'],
     stacks: scan.stacks.map((stack) => stack.id),
@@ -36,6 +43,19 @@ export function defaultConfig(scan) {
       aiAssist: false,
     },
     domainConstraints: [],
+  };
+}
+
+function normalizeInitialClassification(config, scan) {
+  if (config.initialClassification) return config;
+  const assessment = classifyProject(scan);
+  return {
+    ...config,
+    initialClassification: {
+      codebase: assessment.codebase,
+      implementationBoundary: assessment.implementationBoundary,
+      requiredDecisions: assessment.requiredDecisions,
+    },
   };
 }
 
@@ -55,6 +75,11 @@ export function validateConfig(config) {
   }
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
+  if (config.initialClassification !== undefined) {
+    if (!config.initialClassification?.codebase?.lifecycle?.value || typeof config.initialClassification.implementationBoundary !== 'string' || !Array.isArray(config.initialClassification.requiredDecisions)) {
+      throw usageError('initialClassification must preserve a scanner classification snapshot.');
+    }
+  }
   return config;
 }
 
@@ -270,6 +295,7 @@ function fullDepthArtifacts(config) {
 }
 
 export function buildArtifacts(config, scan) {
+  config = normalizeInitialClassification(config, scan);
   validateConfig(config);
   const agents = resolveAgents(config.clients);
   const packs = resolvePacks(config.stacks);
@@ -282,6 +308,7 @@ export function buildArtifacts(config, scan) {
     { path: 'docs/ai/verification-profiles.yaml', content: verificationProfiles(scan), ownership: 'seed', kind: 'canonical', source: 'repository-scan' },
     { path: 'docs/ai/anti-patterns.md', content: antiPatterns(config), ownership: 'seed', kind: 'canonical', source: 'template:anti-patterns' },
     { path: 'docs/ai/stack-profile.json', content: stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), ownership: 'full', kind: 'canonical', source: 'capability-pack-registry' },
+    { path: 'docs/ai/decision-ledger.json', content: stableJson(buildDecisionLedger(scan, config)), ownership: 'full', kind: 'canonical', source: 'project-classification-and-governance-config' },
     { path: 'docs/ai/bootstrap-prompt.md', content: bootstrapPrompt(config), ownership: 'seed', kind: 'canonical', source: 'template:bootstrap-prompt' },
     { path: 'docs/ai/acceptance-contract.json', content: readText(path.join(PACKAGE_ROOT, 'assets/acceptance-contract.json')), ownership: 'seed', kind: 'canonical', source: 'asset:acceptance-contract' },
   ];
