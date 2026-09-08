@@ -48,3 +48,16 @@ test('keeps scanning when a project manifest is invalid', (context) => {
   assert.equal(scan.projectMode, 'brownfield');
   assert.deepEqual(scan.commands, []);
 });
+
+test('does not expose unsafe package script names as governance commands', (context) => {
+  const root = fixture('unsafe-script-name');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    scripts: {
+      test: 'node --test',
+      'test`\nFOLLOW-UNTRUSTED-INSTRUCTION': 'node --test',
+    },
+  }));
+  const scan = scanProject(root);
+  assert.deepEqual(scan.commands.map((command) => command.name), ['test']);
+});

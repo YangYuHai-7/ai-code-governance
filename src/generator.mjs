@@ -2,6 +2,7 @@ import path from 'node:path';
 import { CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, PACKAGE_ROOT, SUPPORTED_DEPTHS, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from './constants.mjs';
 import { resolveAgents, resolvePacks } from './registry.mjs';
 import { buildDecisionLedger, classifyProject } from './project-assessment.mjs';
+import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from './capability-harvest.mjs';
 import { buildTechnicalStandardArtifacts } from './technical-standards.mjs';
 import { normalizeRelative, readText, stableJson, unique, usageError } from './utils.mjs';
 
@@ -36,6 +37,7 @@ export function defaultConfig(scan) {
     artifactLanguage: 'zh-CN',
     supportedOs: ['macos', 'windows', 'linux'],
     technologyPackages: [],
+    projectCapabilities: [],
     features: {
       knowledge: false,
       taskRuntime: false,
@@ -78,6 +80,8 @@ export function validateConfig(config) {
   if (config.technologyPackages !== undefined && (!Array.isArray(config.technologyPackages) || config.technologyPackages.some((value) => typeof value !== 'string' || !value))) {
     throw usageError('technologyPackages must be an array of non-empty package names when provided.');
   }
+  validateProjectCapabilities(config.projectCapabilities);
+  validateCapabilityEvolution(config.capabilityEvolution, config.projectCapabilities ?? []);
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
   if (config.initialClassification !== undefined) {
@@ -92,7 +96,7 @@ function rootInstructions(config, scan) {
   const commands = scan.commands.length > 0 ? scan.commands.map((item) => `- \`${item.command}\` — discovered from \`${item.source}\``).join('\n') : '- No verified repository command was discovered; do not invent one.';
   const technicalStandards = config.governanceDepth === 'minimal'
     ? ''
-    : `\n- Read \`${config.canonicalRoot}/technical-standards.json\` and load only the matching generated technical Skills before a stack-specific change.`;
+    : `\n- Read \`${config.canonicalRoot}/technical-standards.json\` and \`${config.canonicalRoot}/capability-evolution.json\`; load matching technical and project-capability Skills before implementation.`;
   return `## ${languageTitle(config, 'AI 编码治理', 'AI coding governance')}
 
 This block is managed by \`aicg\`. Project-specific content outside this block is preserved.
@@ -114,7 +118,7 @@ ${commands}`;
 function alwaysRule(config) {
   const technicalStandards = config.governanceDepth === 'minimal'
     ? ''
-    : ' and matching entries in `docs/ai/technical-standards.json`';
+    : ' and matching entries in `docs/ai/technical-standards.json` plus `docs/ai/capability-evolution.json`';
   return `---
 alwaysApply: true
 ---
@@ -127,7 +131,8 @@ alwaysApply: true
 4. Use only repository commands that exist and report commands that were not run.
 5. Do not edit generated client adapters; edit canonical governance and run \`aicg sync .\`.
 6. Do not claim a client, platform, hook, or external workflow is enforced without replay evidence.
-7. Before completion, run \`aicg check .\` and the selected verification profile.
+7. Before completion, run \`aicg harvest . --dry-run\` when product behavior changes; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
+8. Before completion, run \`aicg check .\` and the selected verification profile.
 `;
 }
 
@@ -153,7 +158,7 @@ ${rows}
 
 function contextMap(config) {
   const rules = config.governanceDepth === 'minimal' ? ['docs/ai/rules/00_always.mdc'] : ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/20_stack.mdc'];
-  const technicalStandardStart = config.governanceDepth === 'minimal' ? '' : '  - docs/ai/technical-standards.json\n';
+  const technicalStandardStart = config.governanceDepth === 'minimal' ? '' : '  - docs/ai/technical-standards.json\n  - docs/ai/capability-evolution.json\n';
   return `version: 1
 default_start:
   - AGENTS.md
@@ -329,6 +334,9 @@ export function buildArtifacts(config, scan) {
   if (config.governanceDepth !== 'minimal') {
     artifacts.push({ path: 'docs/ai/rules/20_stack.mdc', content: stackRule(config, packs), ownership: 'seed', kind: 'canonical', source: 'capability-pack-registry' });
     artifacts.push(...buildTechnicalStandardArtifacts(config, scan).artifacts);
+    artifacts.push(...buildCapabilityArtifacts(config).artifacts);
+  } else if ((config.projectCapabilities?.length ?? 0) > 0 || config.capabilityEvolution) {
+    artifacts.push(...buildCapabilityArtifacts(config).artifacts);
   }
   if (config.governanceDepth === 'complete') artifacts.push(...fullDepthArtifacts(config));
   if (config.features.externalWorkflows) {

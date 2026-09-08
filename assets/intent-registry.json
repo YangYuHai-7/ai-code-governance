@@ -62,6 +62,18 @@
       ]
     },
     {
+      "id": "capability.harvest",
+      "handler": "harvest",
+      "mode": "write",
+      "aliases": [
+        "提取项目能力",
+        "收割项目能力",
+        "更新项目能力技能",
+        "harvest project capabilities",
+        "extract project capabilities"
+      ]
+    },
+    {
       "id": "governance.initialize",
       "handler": "init",
       "mode": "write",

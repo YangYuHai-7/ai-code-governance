@@ -50,6 +50,8 @@ try {
   assert.equal(JSON.parse(standardsPreview.stdout).mode, 'read-only-preview');
   const chatStandardsPreview = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '生成技术规范预览', '--json']);
   assert.equal(JSON.parse(chatStandardsPreview.stdout).intent.id, 'technical-standards.preview');
+  const harvestPreview = run(process.execPath, [installedBin, 'harvest', projectDirectory, '--dry-run', '--json']);
+  assert.equal(JSON.parse(harvestPreview.stdout).harvest.mode, 'read-only-preview');
   run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   console.log('package_smoke=pass');

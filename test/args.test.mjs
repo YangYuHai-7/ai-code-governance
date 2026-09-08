@@ -31,6 +31,15 @@ test('parses the read-only technical standards command', () => {
   assert.throws(() => parseArgs(['standards', '--force']), (error) => error.exitCode === 2);
 });
 
+test('parses capability harvest only with its bounded write flags', () => {
+  assert.deepEqual(parseArgs(['harvest', '.', '--dry-run', '--json']), {
+    command: 'harvest',
+    target: '.',
+    options: { 'dry-run': true, json: true },
+  });
+  assert.throws(() => parseArgs(['harvest', '--config', 'answers.json']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');

@@ -132,7 +132,9 @@ function validateEntryPoint() {
     'aicg init',
     'aicg check',
     'aicg sync',
+    'aicg harvest',
     'agent-registry.json',
+    'capability-evolution.json',
     '.ai-governance/manifest.json',
     'initializer.md',
   ];
@@ -152,7 +154,7 @@ function validateCliPackage(pkg) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
   check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
-  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs']) {
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }
 }

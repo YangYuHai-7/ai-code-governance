@@ -63,6 +63,8 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 当前确定式 CLI 将经过审阅的来源快照保存在 `assets/technical-standard-registry.json`。它根据受扫描直接依赖或用户确认的 `technologyPackages` 生成 `docs/ai/technical-standards.json` 和细粒度 `docs/ai/skills/standards/*/SKILL.md`；每项保留适用依据、来源日期、刷新周期、验证清单和 `stated` 边界。`aicg standards . --json` 或聊天请求“生成技术规范预览”只预览、不写入；`init`/`sync` 后必须用 `aicg check .` 验证受管产物。离线快照不等于实时在线标准、项目已强制执行或真实 Agent 加载已验证。
 
+`aicg harvest . --dry-run --json` 与聊天请求“提取项目能力”实现了持续升级的确定式 prepare 阶段：只在已安装 `axios` 且真实 import/require 后导出 `axios.create()` Client 时，或在非 TSX/JSX 文件中存在真实权限执行语义的 policy/guard/authorization 边界时，生成带 implementation fingerprint、当前路径、验证引用、owner 和复核日期的候选项目 Skill。候选不猜测 public entrypoint；只有 adopted record 才能声明确认后的入口和绑定当前指纹的 promotion evidence。写入仍要求 `--yes` 或聊天计划批准，并重新运行 `aicg check .`；候选不等于 adopted/enforced，也不能据此自动封禁旁路或宣称项目测试已经运行。adopted capability 漂移只会留下 review 记录，直到 owner 以真实验证完成升级。
+
 ## 动态技术标准与业务 Skill 工厂
 
 完整协议见 [references/stack-skill-generation.md](references/stack-skill-generation.md)。自动完整模式默认执行，不等待用户额外说“生成开发规范”：
