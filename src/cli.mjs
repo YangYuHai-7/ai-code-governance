@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { parseArgs, HELP } from './args.mjs';
+import { assessArchitecture } from './architecture-assessment.mjs';
 import { runAssist, assistCandidates } from './assist.mjs';
 import { checkProject, printCheck } from './checker.mjs';
 import { CONFIG_PATH, TOOL_VERSION } from './constants.mjs';
@@ -146,6 +147,11 @@ async function requestCommand(target, options) {
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }
+  if (intent.handler === 'architecture') {
+    const result = assessArchitecture(scan);
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    return;
+  }
 
   let config;
   let artifactPlan;
@@ -234,6 +240,10 @@ export async function run(argv) {
   if (command === 'assess') {
     const result = assessmentSummary(scan);
     console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  if (command === 'architecture') {
+    console.log(JSON.stringify(assessArchitecture(scan), null, 2));
     return;
   }
   if (command === 'check') {
