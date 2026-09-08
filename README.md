@@ -28,7 +28,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 外部工作流编排 | 发现并有选择地整合 OpenSpec、Superpowers 等规格/执行 provider，以单一权威矩阵防止重复 design、plan 与 completion state |
 | 标准 Skill 工厂 | 用可审计的一手来源快照按已安装或用户确认的精确技术生成组件、接口、授权、数据访问、事务、事件等细粒度编码 Skill，并标记刷新边界 |
 | 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
-| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后自动 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
+| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后显式 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
 | UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
 | 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
@@ -172,7 +172,17 @@ aicg architecture . --json
 aicg standards . --json
 aicg team . --config team-context.json --json
 aicg harvest . --dry-run --json
+aicg complete . --verify "npm run test" --json
+aicg hook install . --yes
 ```
+
+### 完成门禁的触发时机
+
+治理不会在每一次普通对话或每个文件编辑后运行昂贵检查。准备交付时可手动运行一次 `aicg complete .`；需要项目行为验证时，操作者必须显式选择扫描到的 npm script，例如 `aicg complete . --verify "npm run test"`。它不会推断或执行任意 shell 命令。
+
+需要在提交时自动验证时，先执行 `aicg hook status .` 检查目标，再执行 `aicg hook install . --yes`。安装的 Git `pre-commit` hook 只对**精确的暂存区快照**运行治理结构检查；它不会在普通对话中运行、不会修改业务文件、不会 `git add`，也不会执行项目测试（后者可能读取未暂存的工作树）。已有非 aicg 管理的 `pre-commit` hook 会被拒绝覆盖。
+
+`complete` 和提交钩子都不会凭空生成语义化 memory、项目 Skill 或文档。能力提取和治理材料变更仍需明确执行并确认 `aicg harvest`、`aicg promote` 或 `aicg sync`，避免把未经证据支持的内容写进长期知识层。
 
 也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
 
@@ -181,11 +191,16 @@ aicg request . --text "帮我初始化项目 AI 治理框架" --dry-run --json
 aicg request . --text "初始化治理框架" --approve <planHash>
 aicg request . --text "检查治理框架" --json
 aicg request . --text "给我团队建议" --config team-context.json --json
+aicg request . --text "运行完成门禁" --json
+aicg request . --text "安装 Git 提交门禁" --dry-run --json
+aicg request . --text "查看提交门禁状态" --json
 ```
 
-写入请求先生成带 `planHash` 的计划，显示精确文件操作和权限；只有 `--approve <planHash>` 与当前计划完全一致时才会写入，并在写后重新运行结构检查。它不批准迁移链接、覆盖漂移内容、调用 Agent、联网、安装依赖、修改 hooks/CI 或迁移业务代码。
+写入请求先生成带 `planHash` 的计划，显示精确文件操作和权限；只有 `--approve <planHash>` 与当前计划完全一致时才会写入，并在写后重新运行结构检查。安装 Git 提交门禁也走该两步批准流程；它不批准迁移链接、覆盖漂移内容、调用 Agent、联网、安装依赖、修改 CI 或迁移业务代码。
 
 每个可执行治理处理器都有至少一个精确聊天短语。为兼容日常表达，“修复一下治理框架”精确映射到只读 `doctor` 诊断，**不会**修改任何文件或执行 PATH 中的 Git/Agent 命令；这意味着它将环境命令标为 `not-probed`，而不会把未执行的命令说成不可用。需要同步受管适配器时必须明确说“同步治理适配器”。
+
+聊天短语“运行完成门禁”默认只运行结构门禁；若要同样显式选择项目验证，可在 `--config` 文件提供 `{"verificationCommand":"npm run test"}`。这仍只接受扫描到的 npm script，不会读取自然语言并执行任意命令。
 
 `init` 会依次扫描仓库、确认项目生命周期、选择 Agent、确认技术栈、选择治理深度与产物语言、预览文件，再生成基础框架。
 高置信度新项目可由 `--yes` 确认；既有代码项目必须明确选择“保持现有代码”“仅新代码采用标准”或“分阶段迁移”，仅有 manifest 或未知产品文件的

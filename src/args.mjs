@@ -1,7 +1,7 @@
 import { usageError } from './utils.mjs';
 
 const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer']);
-const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'help', 'version']);
+const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'from-git-hook', 'help', 'version']);
 const COMMAND_FLAGS = {
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'no-assist', 'migrate-links', 'help']),
   check: new Set(['json', 'help']),
@@ -13,6 +13,8 @@ const COMMAND_FLAGS = {
   team: new Set(['config', 'json', 'help']),
   harvest: new Set(['yes', 'dry-run', 'force', 'json', 'help']),
   promote: new Set(['id', 'entrypoint', 'verify', 'consumer', 'yes', 'dry-run', 'json', 'help']),
+  complete: new Set(['verify', 'json', 'from-git-hook', 'help']),
+  hook: new Set(['yes', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
@@ -24,8 +26,14 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'complete', 'hook', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
+  }
+
+  let action = null;
+  if (command === 'hook') {
+    action = args.shift() ?? null;
+    if (!['install', 'status'].includes(action)) throw usageError('hook requires an action: install or status.');
   }
 
   let target = '.';
@@ -56,7 +64,7 @@ export function parseArgs(argv) {
   for (const name of Object.keys(options)) {
     if (!COMMAND_FLAGS[command].has(name)) throw usageError(`Option --${name} is not valid for ${command}.`);
   }
-  return { command, target, options };
+  return action ? { command, action, target, options } : { command, target, options };
 }
 
 export const HELP = `AI Code Governance CLI
@@ -73,6 +81,8 @@ Usage:
   aicg team [path] [--config team-context.json] [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
+  aicg complete [path] [--verify <discovered-command>] [--json]
+  aicg hook <install|status> [path] [--yes] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
@@ -87,5 +97,7 @@ Commands:
   team  Recommend human delivery and governance responsibility coverage without creating people, agents, tasks, or files.
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
+  complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
+  hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;

@@ -29,6 +29,40 @@
       ]
     },
     {
+      "id": "governance.complete",
+      "handler": "complete",
+      "mode": "read",
+      "aliases": [
+        "运行完成门禁",
+        "手动运行完成门禁",
+        "完成治理验证",
+        "run completion gate",
+        "run governance completion"
+      ]
+    },
+    {
+      "id": "governance.install-precommit",
+      "handler": "hook-install",
+      "mode": "write",
+      "aliases": [
+        "安装git提交门禁",
+        "启用提交门禁",
+        "install git commit gate",
+        "install pre-commit governance gate"
+      ]
+    },
+    {
+      "id": "governance.precommit-status",
+      "handler": "hook-status",
+      "mode": "read",
+      "aliases": [
+        "查看提交门禁状态",
+        "检查git提交门禁",
+        "show pre-commit governance status",
+        "check git commit gate"
+      ]
+    },
+    {
       "id": "project.assess",
       "handler": "assess",
       "mode": "read",

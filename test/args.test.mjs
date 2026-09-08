@@ -58,6 +58,22 @@ test('parses capability promotion only with an explicit capability, entrypoint, 
   assert.throws(() => parseArgs(['promote', '--force']), (error) => error.exitCode === 2);
 });
 
+test('parses manual completion and explicit pre-commit hook actions', () => {
+  assert.deepEqual(parseArgs(['complete', 'project', '--verify', 'npm run test', '--json']), {
+    command: 'complete',
+    target: 'project',
+    options: { verify: 'npm run test', json: true },
+  });
+  assert.deepEqual(parseArgs(['hook', 'install', 'project', '--yes']), {
+    command: 'hook',
+    action: 'install',
+    target: 'project',
+    options: { yes: true },
+  });
+  assert.throws(() => parseArgs(['hook', 'remove']), (error) => error.exitCode === 2);
+  assert.throws(() => parseArgs(['complete', '--yes']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');
