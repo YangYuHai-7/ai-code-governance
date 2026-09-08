@@ -17,6 +17,12 @@
 
 自动升级不授权隐式重构、发布、安装 hook、修改 CI/CD 或改变公共 API。若能力边界仍不稳定，框架自动记录有 owner 和复核日期的候选，而不是把猜测晋升为规范。
 
+## 当前 CLI 的可验证实现边界
+
+当前确定式 CLI 已提供 `aicg harvest . --dry-run --json` 和精确聊天请求“提取项目能力”。它只在用户以 `--yes` 或匹配聊天 `planHash` 明确批准后写入，并在写后执行 `aicg check .`。初版识别两种高价值、可复用候选：已安装 `axios` 的真实 import/require 后导出的 `axios.create()` 项目 HTTP Client，以及非 TSX/JSX 文件中包含权限执行语义的导出 policy/guard/authorization 边界；它把当前 implementation fingerprint、发现规则、验证命令、owner、复核日期、候选 Skill 和剩余缺口写入 `docs/ai/capability-evolution.json`。
+
+确定式发现绝不把候选直接说成 adopted 或 enforced：它不会自动执行项目测试、猜测 public import 名称、阻止现有旁路调用，或在 adopted capability 的实现变化时静默重写 Skill。adopted 项发生漂移时只记录 review 项，保留原记录。真实验证、owner/public entrypoint/consumer 确认、Skill forward-test 与旁路门禁仍须在后续 promote/finalize 能力中完成。
+
 ### 两段式实现，不伪装成后台魔法
 
 能力提取同时需要确定性机器层和语义判断层：

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { parseArgs, HELP } from './args.mjs';
 import { assessArchitecture } from './architecture-assessment.mjs';
 import { runAssist, assistCandidates } from './assist.mjs';
+import { capabilityHarvestSummary, prepareCapabilityHarvest } from './capability-harvest.mjs';
 import { checkProject, printCheck } from './checker.mjs';
 import { CONFIG_PATH, TOOL_VERSION } from './constants.mjs';
 import { doctor, printDoctor } from './doctor.mjs';
@@ -45,6 +46,12 @@ function printScan(scan) {
 function configForStandards(scan) {
   const existing = loadExistingConfig(scan.root);
   return validateConfig(mergeConfig(defaultConfig(scan), existing ?? {}));
+}
+
+function loadConfiguredGovernance(scan) {
+  const existing = loadExistingConfig(scan.root);
+  if (!existing) throw usageError('Capability harvest requires an initialized governance configuration. Run aicg init first.');
+  return validateConfig(mergeConfig(defaultConfig(scan), existing));
 }
 
 async function prepareInit(target, options, { allowDefaults = false } = {}) {
@@ -175,6 +182,9 @@ async function requestCommand(target, options) {
     if (prepared.config.features.aiAssist) throw usageError('Chat requests do not invoke an AI agent. Use the explicit init command to request AI assist.');
     config = prepared.config;
     artifactPlan = prepared.plan;
+  } else if (intent.handler === 'harvest') {
+    config = prepareCapabilityHarvest(loadConfiguredGovernance(scan), scan).config;
+    artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
   } else {
     config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
     artifactPlan = planArtifacts(scan.root, buildArtifacts(config, scan));
@@ -227,6 +237,34 @@ async function syncCommand(target, options) {
   }
 }
 
+async function harvestCommand(target, options) {
+  const scan = scanProject(target);
+  const prepared = prepareCapabilityHarvest(loadConfiguredGovernance(scan), scan);
+  const artifacts = buildArtifacts(prepared.config, scan);
+  const plan = planArtifacts(scan.root, artifacts, { force: options.force });
+  const preview = capabilityHarvestSummary(loadConfiguredGovernance(scan), scan);
+  if (plan.conflicts.length > 0) {
+    const error = new Error(`Cannot safely harvest capabilities:\n- ${plan.conflicts.join('\n- ')}`);
+    error.exitCode = 2;
+    throw error;
+  }
+  if (options['dry-run']) {
+    console.log(JSON.stringify({ dryRun: true, harvest: preview, files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })) }, null, 2));
+    return;
+  }
+  if (!options.yes) {
+    if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Applying a capability harvest requires --yes or a TTY confirmation.');
+    const confirmed = await confirmPlan(plan.operations);
+    if (!confirmed) throw usageError('Capability harvest cancelled without writing files.');
+  }
+  const applied = applyArtifactPlan(scan.root, plan, {
+    transactional: true,
+    verify: () => checkProject(scanProject(scan.root)),
+  });
+  console.log(JSON.stringify({ dryRun: false, harvest: preview, changed: applied.changed, verification: applied.verification }, null, 2));
+  if (!applied.verification.ok) process.exitCode = 1;
+}
+
 export async function run(argv) {
   const major = Number.parseInt(process.versions.node.split('.')[0], 10);
   if (major < 22) throw new Error(`Node.js 22 or newer is required; current version is ${process.versions.node}.`);
@@ -261,6 +299,7 @@ export async function run(argv) {
     console.log(JSON.stringify(technicalStandardsSummary(scan, configForStandards(scan)), null, 2));
     return;
   }
+  if (command === 'harvest') return harvestCommand(target, options);
   if (command === 'check') {
     const result = checkProject(scan);
     printCheck(result, Boolean(options.json));

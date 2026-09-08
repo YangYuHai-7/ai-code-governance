@@ -17,7 +17,7 @@ export function normalizeRelative(value) {
 
 export function isSafeRelative(value) {
   const normalized = normalizeRelative(value);
-  if (!normalized || normalized.includes('\0') || normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return false;
+  if (!normalized || /[\x00-\x1f\x7f]/.test(normalized) || normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return false;
   return !normalized.split('/').some((part) => part === '' || part === '.' || part === '..');
 }
 

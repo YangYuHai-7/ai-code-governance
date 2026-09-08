@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from './constants.mjs';
 import { buildArtifacts, validateConfig } from './generator.mjs';
+import { capabilityEvidenceIssues } from './capability-harvest.mjs';
 import { extractManagedBlock, loadManifest, renderManagedBlock } from './managed-files.mjs';
 import { isSafeRelative, readJson, readText, sha256 } from './utils.mjs';
 
@@ -122,6 +123,16 @@ export function checkProject(scan) {
     }
     if (config.clients.includes('cursor') && !manifestPaths.has('.cursor/rules/ai-code-governance.mdc')) {
       errors.push('.cursor/rules/ai-code-governance.mdc: selected Cursor adapter is missing');
+    }
+
+    const reviewItems = config.capabilityEvolution?.lastHarvest?.reviewItems ?? [];
+    for (const issue of capabilityEvidenceIssues(scan, config.projectCapabilities ?? [])) {
+      const reviewed = reviewItems.some((item) => item.id === issue.id && item.status === 'required' && item.code === issue.code && item.observedFingerprint === issue.observedFingerprint);
+      if (reviewed) warnings.push(`capability ${issue.id}: ${issue.reason}; owner review is required before promotion or reuse enforcement`);
+      else errors.push(`capability ${issue.id}: ${issue.reason}; run aicg harvest . and record the required review`);
+    }
+    for (const item of reviewItems) {
+      warnings.push(`capability ${item.id}: ${item.reason} Owner ${item.owner} review is due ${item.dueDate}.`);
     }
   }
 

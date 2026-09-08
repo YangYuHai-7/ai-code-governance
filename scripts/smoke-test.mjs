@@ -19,6 +19,7 @@ try {
   for (const args of [
     ['init', fixture, '--yes', '--no-assist'],
     ['standards', fixture, '--json'],
+    ['harvest', fixture, '--dry-run', '--json'],
     ['check', fixture, '--json'],
     ['sync', fixture, '--dry-run'],
   ]) {

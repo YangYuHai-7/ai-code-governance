@@ -10,6 +10,7 @@ const COMMAND_FLAGS = {
   assess: new Set(['json', 'help']),
   architecture: new Set(['json', 'help']),
   standards: new Set(['json', 'help']),
+  harvest: new Set(['yes', 'dry-run', 'force', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
@@ -21,7 +22,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -67,6 +68,7 @@ Usage:
   aicg assess [path] [--json]
   aicg architecture [path] [--json]
   aicg standards [path] [--json]
+  aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
@@ -78,5 +80,6 @@ Commands:
   assess  Classify the project and report its decision ledger without changing the repository.
   architecture  Assess source structure and present bounded migration choices without changing the repository.
   standards  Preview the selected technical-standard Skills and their audited source snapshot without changing the repository.
+  harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;

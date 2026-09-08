@@ -93,6 +93,7 @@ function detectCommands(root) {
     try {
       const pkg = readJson(packagePath);
       for (const [name, command] of Object.entries(pkg.scripts ?? {})) {
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(name)) continue;
         commands.push({ name, command: `npm run ${name}`, source: 'package.json', implementation: command });
       }
     } catch {
