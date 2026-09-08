@@ -202,13 +202,13 @@ async function requestCommand(target, options) {
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }
-  const scan = scanProject(target);
   if (intent.handler === 'doctor') {
-    const result = doctor(scan);
+    const result = doctor(scanProject(target, { probeEnvironment: false }));
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
     return;
   }
+  const scan = scanProject(target);
   if (intent.handler === 'check') {
     const result = checkProject(scan);
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
@@ -381,13 +381,13 @@ export async function run(argv) {
   if (command === 'request') return requestCommand(target, options);
   if (command === 'init') return initCommand(target, options);
   if (command === 'team') return teamCommand(target, options);
-  const scan = scanProject(target);
   if (command === 'doctor') {
-    const result = doctor(scan);
+    const result = doctor(scanProject(target, { probeEnvironment: false }));
     printDoctor(result, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
     return;
   }
+  const scan = scanProject(target);
   if (command === 'assess') {
     const result = assessmentSummary(scan);
     console.log(JSON.stringify(result, null, 2));

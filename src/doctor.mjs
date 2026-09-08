@@ -1,19 +1,13 @@
 import fs from 'node:fs';
-import { loadAgentRegistry } from './registry.mjs';
-import { commandExists, commandVersion } from './utils.mjs';
 
 export function doctor(scan) {
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
-  const registry = loadAgentRegistry();
-  const agents = registry.agents.map((agent) => {
-    const command = agent.detect_commands.find((candidate) => commandExists(candidate)) ?? null;
-    return {
-      id: agent.id,
-      available: agent.id === 'generic' || Boolean(command),
-      command,
-      version: command ? commandVersion(command) : null,
-    };
-  });
+  const agents = scan.agents.map((agent) => ({
+    id: agent.id,
+    availability: agent.availability,
+    command: agent.command,
+    version: agent.version,
+  }));
   const checks = {
     targetDirectory: fs.statSync(scan.root).isDirectory(),
     writable: (() => {
@@ -25,7 +19,7 @@ export function doctor(scan) {
       }
     })(),
     nodeSupported: nodeMajor >= 22,
-    gitAvailable: commandExists('git'),
+    environmentCommandProbe: scan.environmentProbe,
   };
   return {
     ok: checks.targetDirectory && checks.writable && checks.nodeSupported,
@@ -47,7 +41,7 @@ export function printDoctor(result, json = false) {
   }
   console.log(`doctor=${result.ok ? 'pass' : 'fail'} os=${result.currentOs} arch=${result.architecture} node=${result.node}`);
   console.log(`target=${result.target}`);
-  for (const [name, value] of Object.entries(result.checks)) console.log(`${name}=${value ? 'pass' : 'fail'}`);
-  for (const agent of result.agents) console.log(`agent.${agent.id}=${agent.available ? agent.version ?? 'available' : 'not-found'}`);
+  for (const [name, value] of Object.entries(result.checks)) console.log(`${name}=${typeof value === 'boolean' ? (value ? 'pass' : 'fail') : value}`);
+  for (const agent of result.agents) console.log(`agent.${agent.id}=${agent.version ?? agent.availability}`);
   for (const link of result.managedLinksDetected) console.warn(`WARN: managed link detected: ${link}`);
 }
