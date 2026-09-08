@@ -38,6 +38,18 @@
       ]
     },
     {
+      "id": "architecture.assess",
+      "handler": "architecture",
+      "mode": "read",
+      "aliases": [
+        "评估项目目录结构",
+        "评估项目架构",
+        "给出项目迁移方案",
+        "assess project architecture",
+        "assess project structure"
+      ]
+    },
+    {
       "id": "governance.initialize",
       "handler": "init",
       "mode": "write",

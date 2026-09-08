@@ -23,6 +23,7 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 | `aicg sync [path]` | 写 | 从正典重新生成 manifest 拥有的普通文件适配器 |
 | `aicg doctor [path] [--json]` | 只读 | 检查 Node、Git、目录权限、Agent CLI 与遗留链接 |
 | `aicg assess [path] [--json]` | 只读 | 报告生命周期/拓扑分类、扫描证据和决策账本草案 |
+| `aicg architecture [path] [--json]` | 只读 | 报告目录/模块结构证据、蓝图和有边界的迁移选择 |
 | `aicg request [path] --text <alias>` | 按 intent | 把已登记的中英文请求路由到与 CLI 相同的只读或写入内核 |
 
 通用退出码：`0` 成功；`1` 检查或执行失败；`2` 用法错误、输入不完整、用户取消或安全冲突。
@@ -46,6 +47,10 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 生成的 `docs/ai/decision-ledger.json` 记录扫描证据、已记录的 Agent/技术栈/深度决策和未决事项。对既有或证据不足的项目，默认边界是保护现有代码；任何现代化或迁移都需要单独的策略和新计划批准。
 
 早期配置若没有初始分类，首次 `sync` 会用当时可见的仓库状态建立并持久化基线；它不能恢复未知的历史状态。之后的 `sync` 只使用这个已记录快照，新的源码增长只会成为 `assess` 的当前观察，不能静默切换治理路径。
+
+## 目录与架构评估
+
+`architecture` 只提出建议：新项目推荐先建立按领域拆分的模块边界；既有项目仅在存在可复核的扁平源目录、混合层职责或超大文件信号时报告发现。输出中的 `advice-only`、`new-code-standard`、`staged-migration` 与 `keep-current` 是用户策略选择，评估本身不移动文件；其中 `staged-migration` 必须创建新的现代化计划、兼容性验证与单独批准，不能由治理初始化隐式执行。
 
 ## 自然语言请求边界
 

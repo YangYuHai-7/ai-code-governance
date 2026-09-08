@@ -168,6 +168,7 @@ aicg init .
 aicg check .
 aicg sync .
 aicg assess . --json
+aicg architecture . --json
 ```
 
 也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
@@ -187,6 +188,8 @@ hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。�
 完整接口、安全覆盖与退出码见 [初始化协议](references/initializer.md)。
 
 `assess` 不写入仓库。它将生命周期（新项目、既有代码或证据不足）与拓扑（单仓库/monorepo）分开报告，并输出只含相对路径证据的决策账本草案。既有代码默认只建立治理边界，不会自动重构；必须由用户后续明确选择“保持现有代码”“仅新代码采用标准”或“分阶段迁移”。
+
+`architecture` 同样只读：为新项目提出按领域模块化的目录蓝图；为既有项目报告可验证的扁平目录、混合职责或过大文件信号。它不会移动文件；`staged-migration` 是单独的现代化计划，必须再次批准。
 
 ### 作为 Agent Skill 使用
 

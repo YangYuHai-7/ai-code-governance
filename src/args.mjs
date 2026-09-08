@@ -8,6 +8,7 @@ const COMMAND_FLAGS = {
   sync: new Set(['dry-run', 'force', 'migrate-links', 'help']),
   doctor: new Set(['json', 'help']),
   assess: new Set(['json', 'help']),
+  architecture: new Set(['json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
@@ -19,7 +20,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -63,6 +64,7 @@ Usage:
   aicg sync [path] [--dry-run] [--force] [--migrate-links]
   aicg doctor [path] [--json]
   aicg assess [path] [--json]
+  aicg architecture [path] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
@@ -72,5 +74,6 @@ Commands:
   sync    Regenerate managed adapters from canonical governance sources.
   doctor  Inspect the local environment without changing the repository.
   assess  Classify the project and report its decision ledger without changing the repository.
+  architecture  Assess source structure and present bounded migration choices without changing the repository.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;
