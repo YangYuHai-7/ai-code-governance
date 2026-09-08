@@ -6,6 +6,7 @@ import { deriveArchitectureDecision } from './architecture-policy.mjs';
 import { runAssist, assistCandidates } from './assist.mjs';
 import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from './capability-harvest.mjs';
 import { checkProject, printCheck } from './checker.mjs';
+import { assertCommitHookPlanFresh, inspectCommitHook, installCommitHook, prepareCommitHookInstall, runCompletion } from './commit-completion.mjs';
 import { CONFIG_PATH, TOOL_VERSION } from './constants.mjs';
 import { doctor, printDoctor } from './doctor.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from './execution-plan.mjs';
@@ -113,6 +114,17 @@ function promotionInputFromChatConfig(options) {
     consumerPaths: input.consumerPaths ?? [],
     verificationCommand: input.verificationCommand,
   };
+}
+
+function completionInputFromChatConfig(options) {
+  if (!options.config) return null;
+  const supplied = readJson(path.resolve(options.config));
+  const input = supplied.completion ?? supplied;
+  if (input.verificationCommand === undefined) return null;
+  if (typeof input.verificationCommand !== 'string' || !input.verificationCommand.trim()) {
+    throw usageError('Chat completion config verificationCommand must be a non-empty discovered npm script command.');
+  }
+  return input.verificationCommand;
 }
 
 function runPromotionVerification(scan, command) {
@@ -261,7 +273,10 @@ function printRequest(payload, json) {
     return;
   }
   console.log(`intent=${payload.intent.id} mode=${payload.intent.mode}`);
-  if (payload.plan) console.log(`plan_hash=${payload.plan.planHash} operations=${payload.plan.operations.filter((operation) => operation.action !== 'keep').length}`);
+  if (payload.plan) {
+    const operations = Array.isArray(payload.plan.operations) ? payload.plan.operations.filter((operation) => operation.action !== 'keep').length : null;
+    console.log(`plan_hash=${payload.plan.planHash}${operations === null ? '' : ` operations=${operations}`}`);
+  }
   if (typeof payload.result?.ok === 'boolean') console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
 }
 
@@ -301,6 +316,34 @@ async function requestCommand(target, options) {
   if (intent.handler === 'standards') {
     const result = technicalStandardsSummary(scan, configForStandards(scan));
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    return;
+  }
+  if (intent.handler === 'complete') {
+    if (options.approve || options['dry-run']) throw usageError('Manual completion validation is read-only and does not accept --approve or --dry-run. Use aicg complete --verify for an explicit project command.');
+    const result = runCompletion(target, { verificationCommand: completionInputFromChatConfig(options) });
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (intent.handler === 'hook-status') {
+    if (options.approve || options['dry-run'] || options.config) throw usageError('Git pre-commit status is read-only and does not accept --approve, --dry-run, or --config.');
+    const result = inspectCommitHook(target);
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    return;
+  }
+  if (intent.handler === 'hook-install') {
+    if (options.config) throw usageError('Installing a Git pre-commit hook does not accept --config. Inspect the generated plan and approve it directly.');
+    const plan = prepareCommitHookInstall(target);
+    const payload = { intent: { id: intent.id, mode: intent.mode }, plan };
+    if (options['dry-run']) {
+      printRequest({ ...payload, dryRun: true }, Boolean(options.json));
+      return;
+    }
+    if (!options.approve) throw usageError('Installing a Git pre-commit hook from chat requires --approve <planHash> from a current dry-run plan.');
+    if (options.approve !== plan.planHash) throw usageError(`Approval does not match the current plan hash ${plan.planHash}. Re-run dry-run and approve the displayed hash.`);
+    assertCommitHookPlanFresh(plan);
+    const installed = installCommitHook(plan);
+    printRequest({ ...payload, installed }, Boolean(options.json));
     return;
   }
 
@@ -441,10 +484,42 @@ function teamCommand(target, options) {
   console.log(JSON.stringify(teamRecommendation(root, context), null, 2));
 }
 
+function printCompletion(result, json) {
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(`completion_gate=${result.ok ? 'pass' : 'fail'} mode=${result.mode}`);
+  if (result.stagedFiles.length > 0) console.log(`staged_files=${result.stagedFiles.join(',')}`);
+  console.log(`governance=${result.governance.ok ? 'pass' : 'fail'} project_verification=${result.projectVerification.status}`);
+  for (const warning of result.governance.warnings) console.warn(`WARN: ${warning}`);
+  for (const error of result.governance.errors) console.error(`FAIL: ${error}`);
+  for (const boundary of result.boundaries) console.log(`BOUNDARY: ${boundary}`);
+  console.log(`GENERATION: ${result.generation.boundary}`);
+}
+
+function completeCommand(target, options) {
+  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null });
+  printCompletion(result, Boolean(options.json));
+  if (!result.ok) process.exitCode = 1;
+}
+
+function hookCommand(target, action, options) {
+  if (action === 'status') {
+    const inspected = inspectCommitHook(target);
+    console.log(JSON.stringify({ target: inspected.targetRoot, hookPath: inspected.hookPath, status: inspected.hookStatus, marker: 'ai-code-governance:pre-commit-v1' }, null, 2));
+    return;
+  }
+  const plan = prepareCommitHookInstall(target);
+  if (!options.yes) throw usageError('Installing a Git pre-commit hook requires --yes. Run aicg hook status first to inspect the target hook path.');
+  const installed = installCommitHook(plan);
+  console.log(JSON.stringify({ planHash: plan.planHash, installed, verification: plan.verification, boundaries: plan.boundaries }, null, 2));
+}
+
 export async function run(argv) {
   const major = Number.parseInt(process.versions.node.split('.')[0], 10);
   if (major < 22) throw new Error(`Node.js 22 or newer is required; current version is ${process.versions.node}.`);
-  const { command, target, options } = parseArgs(argv);
+  const { command, action, target, options } = parseArgs(argv);
   if (command === 'help' || options.help) {
     console.log(HELP);
     return;
@@ -456,6 +531,8 @@ export async function run(argv) {
   if (command === 'request') return requestCommand(target, options);
   if (command === 'init') return initCommand(target, options);
   if (command === 'team') return teamCommand(target, options);
+  if (command === 'complete') return completeCommand(target, options);
+  if (command === 'hook') return hookCommand(target, action, options);
   if (command === 'doctor') {
     const result = doctor(scanProject(target, { probeEnvironment: false }));
     printDoctor(result, Boolean(options.json));

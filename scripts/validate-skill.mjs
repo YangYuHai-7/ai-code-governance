@@ -159,7 +159,7 @@ function validateCliPackage(pkg) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
   check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
-  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs', 'architecture-policy.mjs']) {
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs', 'architecture-policy.mjs', 'commit-completion.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }
 }

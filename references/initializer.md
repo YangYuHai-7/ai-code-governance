@@ -24,6 +24,9 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 | `aicg doctor [path] [--json]` | 只读 | 检查 Node、Git、目录权限、Agent CLI 与遗留链接 |
 | `aicg assess [path] [--json]` | 只读 | 报告生命周期/拓扑分类、扫描证据和决策账本草案 |
 | `aicg architecture [path] [--json]` | 只读 | 报告目录/模块结构证据、蓝图和有边界的迁移选择 |
+| `aicg complete [path] [--verify <discovered-command>]` | 只读 | 在操作者明确触发时校验治理；只允许精确匹配已扫描 `package.json` npm script 的行为验证 |
+| `aicg hook status [path]` | 只读 | 报告 Git pre-commit hook 是未安装、aicg 管理还是冲突，不修改 hook |
+| `aicg hook install [path] --yes` | 写 Git 元数据 | 写入受 aicg 标记的 pre-commit hook；拒绝覆盖用户或其他工具的 hook |
 | `aicg request [path] --text <alias>` | 按 intent | 把已登记的中英文请求路由到与 CLI 相同的只读或写入内核 |
 
 通用退出码：`0` 成功；`1` 检查或执行失败；`2` 用法错误、输入不完整、用户取消或安全冲突。
@@ -39,6 +42,12 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 - `--force`：只允许恢复 manifest 已拥有或带生成标记的内容，不覆盖未知用户文件。
 
 无 TTY 且没有 `--yes` 或 `--config` 时必须以退出码 2 结束，不能靠猜测继续；无 TTY 的写入即使提供 `--config` 也必须有 `--yes`。
+
+## 完成门禁与 Git 提交边界
+
+普通 Agent 对话和单次文件写入不会自动运行完成门禁。操作者可在准备交付时执行一次 `aicg complete .`；若需要项目行为验证，必须显式指定扫描到的 npm script，例如 `aicg complete . --verify "npm run test"`。未发现、非 npm script 或不安全名称的命令一律拒绝，不会退化成任意 shell 执行。
+
+`aicg hook install . --yes` 仅在明确授权后写入 Git `pre-commit` hook。hook 在每次 `git commit` 前将 Git index 物化到隔离临时目录，并只对该精确暂存快照运行 `aicg complete --from-git-hook` 的结构治理验证：未暂存工作树内容、项目测试和 Agent 对话均不参与。hook 不写项目文件、不自动暂存、不修改 memory/Skill/文档；已有非 aicg hook 保持原样并以安全冲突失败。项目行为测试与 `sync`/`harvest`/`promote` 等生成动作仍是显式手动授权，不能在 pre-commit 中隐式发生。
 
 ## 项目分类与决策账本
 
@@ -76,8 +85,8 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 
 `request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。
 
-- `environment.diagnose` 与 `governance.validate` 始终只读。
-- `governance.initialize` 与 `governance.sync-managed` 在写入前必须计划、确认并在写后重新检查。
+- `environment.diagnose`、`governance.validate`、`governance.complete` 与 `governance.precommit-status` 始终只读。聊天 completion 如需项目验证，只能由 `--config` 中显式的 `verificationCommand` 选择已发现的 npm script。
+- `governance.initialize`、`governance.sync-managed` 与 `governance.install-precommit` 在写入前必须计划、确认并在写后重新检查；后一项只写目标 Git hook，且计划绑定其提交前状态。
 - 无匹配、多匹配或“修复/升级/优化”等尚未登记的歧义表达以退出码 2 停止，不能猜测为 `doctor` 或 `sync`。
 - `--dry-run` 只输出计划，零写入；计划带目标根、配置和 manifest 快照、逐文件前置状态、所需权限和验证边界。
 - `request` 的任何写入都须明确提供当前 `--dry-run` 输出的 `--approve <planHash>`；不存在交互确认旁路。配置文件仅提供决策输入，不等于批准更高风险操作。

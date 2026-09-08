@@ -159,7 +159,8 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Read \`${config.canonicalRoot}/context-map.yaml\` before implementation and load only matching profiles.
 ${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
-- Completion requires \`aicg check .\` plus the strongest discovered project verification below.
+- Do not run completion gates after ordinary conversation turns. When a change is ready, run \`aicg complete .\` once; after \`aicg hook install . --yes\`, Git also validates the exact staged snapshot before commit.
+- A completion gate is validation only: it never stages files or invents semantic memory, capability Skills, or documentation. Use separately approved \`aicg sync .\`, \`aicg harvest .\`, or \`aicg promote ...\` commands for those changes.
 
 ### ${languageTitle(config, '已发现的验证入口', 'Discovered verification entrypoints')}
 
@@ -182,8 +183,8 @@ alwaysApply: true
 4. Use only repository commands that exist and report commands that were not run.
 5. Do not edit generated client adapters; edit canonical governance and run \`aicg sync .\`.
 6. Do not claim a client, platform, hook, or external workflow is enforced without replay evidence.
-7. Before completion, run \`aicg harvest . --dry-run\` when product behavior changes; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
-8. Before completion, run \`aicg check .\` and the selected verification profile.
+7. When product behavior changes are ready for capability evolution, an authorized operator explicitly runs \`aicg harvest . --dry-run\`; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
+8. Do not run completion gates after ordinary conversation turns. Before delivery, run \`aicg complete .\` with an explicitly selected discovered verification command when needed; an installed Git pre-commit hook validates only the staged snapshot. Completion never stages files or synthesizes semantic memory, Skills, or documentation; use separately approved \`aicg sync .\`, \`aicg harvest .\`, or \`aicg promote ...\` commands for those mutations.
 9. Before architecture or behavior changes, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`. They are the sole current record of initialization lifecycle, existing-code strategy, and implementation boundary; do not infer a migration authorization from this seed file.
 `;
 }
