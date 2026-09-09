@@ -1,6 +1,6 @@
 {
   "name": "ai-code-governance",
-  "version": "0.1.10",
+  "version": "0.2.0",
   "description": "Cross-platform initializer and governance toolkit for AI coding agents.",
   "type": "module",
   "bin": {
@@ -12,6 +12,7 @@
     "assets/",
     "references/",
     "scripts/validate-skill.mjs",
+    "scripts/prepublish-check.mjs",
     "SKILL.md",
     "README.md",
     "LICENSE"
@@ -24,7 +25,9 @@
     "validate:skill": "node scripts/validate-skill.mjs && node scripts/validate-skill.mjs --negative-probe",
     "validate": "npm run validate:skill && node bin/aicg.js doctor . --json",
     "smoke": "node scripts/smoke-test.mjs",
-    "smoke:package": "node scripts/package-smoke.mjs"
+    "smoke:package": "node scripts/package-smoke.mjs",
+    "release:check": "node bin/aicg.js release-check .",
+    "prepublishOnly": "npm test && npm run validate && npm run smoke && npm run smoke:package && node scripts/prepublish-check.mjs"
   },
   "keywords": [
     "ai-governance",

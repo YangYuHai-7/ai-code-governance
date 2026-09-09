@@ -12,6 +12,7 @@ test('normalizes exact Chinese and English intent aliases without fuzzy matching
   assert.equal(resolveIntent('运行完成门禁').id, 'governance.complete');
   assert.equal(resolveIntent('安装 Git 提交门禁').id, 'governance.install-precommit');
   assert.equal(resolveIntent('查看提交门禁状态').id, 'governance.precommit-status');
+  assert.equal(resolveIntent('检查发布验收').id, 'release.acceptance-check');
   assert.throws(() => resolveIntent('修复一下这个治理框架'), (error) => error.exitCode === 2);
   assert.throws(() => resolveIntent('检查治理框架 && rm -rf /'), (error) => error.exitCode === 2);
 });
@@ -29,6 +30,7 @@ test('every supported operational CLI handler has at least one exact chat intent
     'hook-status',
     'init',
     'promote',
+    'release-check',
     'standards',
     'sync',
     'team',

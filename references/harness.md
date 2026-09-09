@@ -86,6 +86,8 @@ gates_by_task_type:
   review:        [framework_check, scope_review]
 ```
 
+这里的 task-type gate 判断单个任务能否完成，不等于部署发布批准。真正上线前还要按 [分级发布验收协议](release-acceptance.md) 先预检 `aicg release-check ...`，再以 `--replay --approve <planHash>` 执行已批准的精确命令计划；它根据 bugfix、feature、major 和风险信号要求不同的独立评审、回归范围与证据，且不会在普通对话中自动触发。
+
 三个设计点：
 
 1. **`gate_catalog` 与 `gates_by_task_type` 分开。** 门禁定义一次，引用多次。合在一起写会让同一个门禁的命令在五个地方漂移。

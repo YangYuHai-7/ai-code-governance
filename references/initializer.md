@@ -25,6 +25,7 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 | `aicg assess [path] [--json]` | 只读 | 报告生命周期/拓扑分类、扫描证据和决策账本草案 |
 | `aicg architecture [path] [--json]` | 只读 | 报告目录/模块结构证据、蓝图和有边界的迁移选择 |
 | `aicg complete [path] [--verify <discovered-command>]` | 只读 | 在操作者明确触发时校验治理；只允许精确匹配已扫描 `package.json` npm script 的行为验证 |
+| `aicg release-check [path] --type <bugfix\|feature\|major> --evidence <path> [--replay --approve <planHash>]` | 预检 + 精确计划批准后执行 | 在部署/发布前校验版本、风险升级、独立评审、评分、缺陷和 Git 证据；只重放已批准 plan 中绑定 candidate 的 npm script |
 | `aicg hook status [path]` | 只读 | 报告 Git pre-commit hook 是未安装、aicg 管理还是冲突，不修改 hook |
 | `aicg hook install [path] --yes` | 写 Git 元数据 | 写入受 aicg 标记的 pre-commit hook；拒绝覆盖用户或其他工具的 hook |
 | `aicg request [path] --text <alias>` | 按 intent | 把已登记的中英文请求路由到与 CLI 相同的只读或写入内核 |
@@ -46,6 +47,8 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 ## 完成门禁与 Git 提交边界
 
 普通 Agent 对话和单次文件写入不会自动运行完成门禁。操作者可在准备交付时执行一次 `aicg complete .`；若需要项目行为验证，必须显式指定扫描到的 npm script，例如 `aicg complete . --verify "npm run test"`。未发现、非 npm script 或不安全名称的命令一律拒绝，不会退化成任意 shell 执行。
+
+部署/发布前另行执行 `aicg release-check`。它读取项目内受管的 `docs/ai/release-acceptance-policy.json`（未初始化项目使用 CLI 内置策略）、可选的只增严 override 和显式证据文件，按 bugfix、feature、major 选择不同验收深度；实现者与独立架构师声明的权限、租户、支付、敏感数据、迁移、外部副作用和公共契约等风险取并集并可提升验收级别。command/probe receipt 先形成包含 candidate 脚本文本/hash、退出码和输出 digest 的 `replayPlan`，只有 `--replay --approve <planHash>` 精确匹配后才执行；install/publish 生命周期脚本和隐式 pre/post hook 被拒绝。精确聊天短语“检查发布验收”通过 `--config` 提供 `releaseAcceptance.changeType`、`evidencePath` 与 `replayCommands`，并以 `--approve` 完成相同的两阶段批准。具体标准见 [分级发布验收协议](release-acceptance.md)。
 
 `aicg hook install . --yes` 仅在明确授权后写入 Git `pre-commit` hook。hook 在每次 `git commit` 前将 Git index 物化到隔离临时目录，并只对该精确暂存快照运行 `aicg complete --from-git-hook` 的结构治理验证：未暂存工作树内容、项目测试和 Agent 对话均不参与。hook 不写项目文件、不自动暂存、不修改 memory/Skill/文档；已有非 aicg hook 保持原样并以安全冲突失败。项目行为测试与 `sync`/`harvest`/`promote` 等生成动作仍是显式手动授权，不能在 pre-commit 中隐式发生。
 
@@ -85,7 +88,7 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 
 `request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。
 
-- `environment.diagnose`、`governance.validate`、`governance.complete` 与 `governance.precommit-status` 始终只读。聊天 completion 如需项目验证，只能由 `--config` 中显式的 `verificationCommand` 选择已发现的 npm script。
+- `environment.diagnose`、`governance.validate`、`governance.complete` 与 `governance.precommit-status` 始终只读。`release.acceptance-check` 在无批准时只预检；重放属于显式执行操作，必须同时提供配置中的 `replayCommands: true` 和匹配 plan 的 `--approve`。聊天 completion 如需项目验证，只能由 `--config` 中显式的 `verificationCommand` 选择已发现的 npm script。
 - `governance.initialize`、`governance.sync-managed` 与 `governance.install-precommit` 在写入前必须计划、确认并在写后重新检查；后一项只写目标 Git hook，且计划绑定其提交前状态。
 - 无匹配、多匹配或“修复/升级/优化”等尚未登记的歧义表达以退出码 2 停止，不能猜测为 `doctor` 或 `sync`。
 - `--dry-run` 只输出计划，零写入；计划带目标根、配置和 manifest 快照、逐文件前置状态、所需权限和验证边界。

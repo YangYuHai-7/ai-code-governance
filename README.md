@@ -29,6 +29,7 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 标准 Skill 工厂 | 用可审计的一手来源快照按已安装或用户确认的精确技术生成组件、接口、授权、数据访问、事务、事件等细粒度编码 Skill，并标记刷新边界 |
 | 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
 | 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后显式 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
+| 分级发布验收 | 按 bugfix、feature、major 使用不同人数、证据和回归深度；双人声明的风险信号触发更高验收级别 |
 | UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
 | 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
@@ -173,6 +174,9 @@ aicg standards . --json
 aicg team . --config team-context.json --json
 aicg harvest . --dry-run --json
 aicg complete . --verify "npm run test" --json
+aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --json
+# Inspect replayPlan, then approve that exact hash:
+aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --replay --approve <planHash>
 aicg hook install . --yes
 ```
 
@@ -184,6 +188,23 @@ aicg hook install . --yes
 
 `complete` 和提交钩子都不会凭空生成语义化 memory、项目 Skill 或文档。能力提取和治理材料变更仍需明确执行并确认 `aicg harvest`、`aicg promote` 或 `aicg sync`，避免把未经证据支持的内容写进长期知识层。
 
+### 部署与发布验收
+
+提交完成门禁和部署验收是两件事：`complete` 证明本次工作达到项目交付边界；`release-check` 在真正部署或发布前检查版本分类、候选提交与策略哈希、发布单元、双人风险评估、结构化独立评分、P0/P1 缺陷和必选 receipt。第一次调用只做完整预检并返回 `replayPlan`：其中包含 preflight HEAD、candidate `package.json` 的精确脚本文本、hash、预期退出码和输出 digest。只有再次同时传入 `--replay --approve <planHash>` 才执行；任一其他验收错误都会阻止执行，执行后还会复查 HEAD、所有 evidence hash、candidate 与工作树，并在 npm 发布模式重算包指纹。它拒绝 install/publish 生命周期、隐式 pre/post hook、伪 package JSON 以及未进入 Git 的证据。不提供精确批准时 command/probe receipt 不能通过。bugfix 对应 patch，feature 对应 minor，major 对应 major；被实现者与独立评审者任一方声明为权限、租户、支付、敏感数据、迁移、外部副作用或公共契约的改动，即使仍发 patch，也至少执行 feature 级验收。破坏公共 API 或治理 schema 必须走 major。工具不会自行理解所有 diff 语义；两名评估者同时漏报仍属于明确边界。
+
+详细规则和 5 名全栈工程师 + 3 名架构师的对抗分工见 [分级发布验收协议](references/release-acceptance.md)，机器规则见 [发布验收策略](assets/release-acceptance-policy.json)。`aicg init` 会生成目标项目的 `docs/ai/release-acceptance-policy.json`，后续由 `sync` 更新受管基线；项目只能用 `release-acceptance-override.json` 收紧要求。机器只校验证据契约、候选/策略绑定和仓库内结构化 receipts，不会认证真人身份或替代独立评审判断。
+
+维护 AICG 自身时，npm 的 `prepublishOnly` 会先跑完整测试、Skill 验证、源码 smoke、安装包 smoke，再要求同一份分级证据：
+
+```bash
+AICG_RELEASE_TYPE=feature \
+AICG_RELEASE_EVIDENCE=docs/ai/release-evidence/0.2.0.json \
+AICG_RELEASE_APPROVAL=<exact-replay-plan-hash> \
+npm publish
+```
+
+缺少这两个变量或证据不达标时，发布会在访问 registry 前失败。手动预检可运行 `npm run release:check -- --type feature --evidence <path>`。本地 `prepublishOnly` 是防误操作边界，不是不可绕过的组织权限；正式强制仍应放在受保护的 CI release job、受限 npm token 和 registry provenance 上，`--ignore-scripts` 会绕过本地生命周期脚本。
+
 也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
 
 ```bash
@@ -192,6 +213,7 @@ aicg request . --text "初始化治理框架" --approve <planHash>
 aicg request . --text "检查治理框架" --json
 aicg request . --text "给我团队建议" --config team-context.json --json
 aicg request . --text "运行完成门禁" --json
+aicg request . --text "检查发布验收" --config release-context.json --json
 aicg request . --text "安装 Git 提交门禁" --dry-run --json
 aicg request . --text "查看提交门禁状态" --json
 ```
