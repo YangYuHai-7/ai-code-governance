@@ -29,6 +29,12 @@ test('generates regular adapters for all selected agents and passes check', (con
   assert.ok(fs.statSync(path.join(root, '.cursor/rules/ai-code-governance.mdc')).isFile());
   assert.ok(fs.statSync(path.join(root, '.agents/skills/frontend-react/SKILL.md')).isFile());
   assert.ok(fs.statSync(path.join(root, '.claude/skills/frontend-react/SKILL.md')).isFile());
+  const releasePolicy = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/release-acceptance-policy.json'), 'utf8'));
+  assert.equal(releasePolicy.tiers.major.minimumParticipants.engineers, 5);
+  assert.equal(releasePolicy.tiers.major.minimumParticipants.architects, 3);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /aicg release-check/);
+  const releasePolicyManifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8')).files.find((entry) => entry.path === 'docs/ai/release-acceptance-policy.json');
+  assert.equal(releasePolicyManifest.ownership, 'full');
   assert.equal(scanProject(root).links.length, 0);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

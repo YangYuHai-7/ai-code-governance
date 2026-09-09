@@ -1,7 +1,7 @@
 import { usageError } from './utils.mjs';
 
-const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer']);
-const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'from-git-hook', 'help', 'version']);
+const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence']);
+const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'no-assist', 'migrate-links', 'from-git-hook', 'replay', 'help', 'version']);
 const COMMAND_FLAGS = {
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'no-assist', 'migrate-links', 'help']),
   check: new Set(['json', 'help']),
@@ -15,6 +15,7 @@ const COMMAND_FLAGS = {
   promote: new Set(['id', 'entrypoint', 'verify', 'consumer', 'yes', 'dry-run', 'json', 'help']),
   complete: new Set(['verify', 'json', 'from-git-hook', 'help']),
   hook: new Set(['yes', 'json', 'help']),
+  'release-check': new Set(['type', 'evidence', 'replay', 'approve', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'help']),
   help: new Set(['help']),
 };
@@ -26,7 +27,7 @@ export function parseArgs(argv) {
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 
   const command = args.shift();
-  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'complete', 'hook', 'request', 'help'].includes(command)) {
+  if (!['init', 'check', 'sync', 'doctor', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'complete', 'hook', 'release-check', 'request', 'help'].includes(command)) {
     throw usageError(`Unknown command: ${command}`);
   }
 
@@ -83,6 +84,7 @@ Usage:
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
   aicg complete [path] [--verify <discovered-command>] [--json]
   aicg hook <install|status> [path] [--yes] [--json]
+  aicg release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--dry-run] [--approve planHash] [--json]
   aicg --version
 
@@ -99,5 +101,6 @@ Commands:
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
+  release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 `;

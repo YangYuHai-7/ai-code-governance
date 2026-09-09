@@ -3,7 +3,7 @@ import path from 'node:path';
 import { INTENT_REGISTRY_PATH, PACKAGE_ROOT } from './constants.mjs';
 import { readJson, usageError } from './utils.mjs';
 
-const SUPPORTED_HANDLERS = new Set(['doctor', 'check', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'init', 'sync', 'complete', 'hook-install', 'hook-status']);
+const SUPPORTED_HANDLERS = new Set(['doctor', 'check', 'assess', 'architecture', 'standards', 'team', 'harvest', 'promote', 'init', 'sync', 'complete', 'hook-install', 'hook-status', 'release-check']);
 const SUPPORTED_MODES = new Set(['read', 'write']);
 
 export function normalizeIntentText(value) {

@@ -63,6 +63,18 @@
       ]
     },
     {
+      "id": "release.acceptance-check",
+      "handler": "release-check",
+      "mode": "write",
+      "aliases": [
+        "检查发布验收",
+        "运行部署前验收",
+        "检查部署前验收标准",
+        "check release acceptance",
+        "run pre-deployment acceptance"
+      ]
+    },
+    {
       "id": "project.assess",
       "handler": "assess",
       "mode": "read",

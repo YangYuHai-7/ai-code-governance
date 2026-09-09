@@ -15,6 +15,7 @@ import { resolveIntent } from './intents.mjs';
 import { applyArtifactPlan, loadManifest, planArtifacts } from './managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from './prompts.mjs';
 import { assessmentSummary, buildDecisionLedger, classifyProject, resolveInitializationDecision } from './project-assessment.mjs';
+import { runReleaseAcceptance } from './release-acceptance.mjs';
 import { scanProject, scanSummary } from './scanner.mjs';
 import { technicalStandardsSummary } from './technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from './team-recommendation.mjs';
@@ -125,6 +126,18 @@ function completionInputFromChatConfig(options) {
     throw usageError('Chat completion config verificationCommand must be a non-empty discovered npm script command.');
   }
   return input.verificationCommand;
+}
+
+function releaseAcceptanceInputFromChatConfig(options) {
+  if (!options.config) throw usageError('Chat release acceptance requires --config with releaseAcceptance.changeType and optional evidencePath.');
+  const supplied = readJson(path.resolve(options.config));
+  const input = supplied.releaseAcceptance ?? supplied;
+  return {
+    changeType: input.changeType,
+    evidencePath: input.evidencePath ?? null,
+    replayCommands: input.replayCommands === true,
+    replayApproval: options.approve ?? null,
+  };
 }
 
 function runPromotionVerification(scan, command) {
@@ -278,6 +291,7 @@ function printRequest(payload, json) {
     console.log(`plan_hash=${payload.plan.planHash}${operations === null ? '' : ` operations=${operations}`}`);
   }
   if (typeof payload.result?.ok === 'boolean') console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
+  if (payload.result?.replayPlan?.planHash) console.log(`replay_plan_hash=${payload.result.replayPlan.planHash}`);
 }
 
 async function requestCommand(target, options) {
@@ -292,6 +306,14 @@ async function requestCommand(target, options) {
   }
   if (intent.handler === 'doctor') {
     const result = doctor(scanProject(target, { probeEnvironment: false }));
+    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
+    if (!result.ok) process.exitCode = 1;
+    return;
+  }
+  if (intent.handler === 'release-check') {
+    if (options['dry-run']) throw usageError('Release acceptance previews command execution whenever replay approval is absent; --dry-run is unnecessary.');
+    const input = releaseAcceptanceInputFromChatConfig(options);
+    const result = runReleaseAcceptance(target, input);
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
     return;
@@ -516,6 +538,18 @@ function hookCommand(target, action, options) {
   console.log(JSON.stringify({ planHash: plan.planHash, installed, verification: plan.verification, boundaries: plan.boundaries }, null, 2));
 }
 
+function releaseCheckCommand(target, options) {
+  if (!options.type) throw usageError('release-check requires --type bugfix, feature, or major.');
+  const result = runReleaseAcceptance(target, {
+    changeType: options.type,
+    evidencePath: options.evidence ?? null,
+    replayCommands: Boolean(options.replay),
+    replayApproval: options.approve ?? null,
+  });
+  console.log(JSON.stringify(result, null, 2));
+  if (!result.ok) process.exitCode = 1;
+}
+
 export async function run(argv) {
   const major = Number.parseInt(process.versions.node.split('.')[0], 10);
   if (major < 22) throw new Error(`Node.js 22 or newer is required; current version is ${process.versions.node}.`);
@@ -533,6 +567,7 @@ export async function run(argv) {
   if (command === 'team') return teamCommand(target, options);
   if (command === 'complete') return completeCommand(target, options);
   if (command === 'hook') return hookCommand(target, action, options);
+  if (command === 'release-check') return releaseCheckCommand(target, options);
   if (command === 'doctor') {
     const result = doctor(scanProject(target, { probeEnvironment: false }));
     printDoctor(result, Boolean(options.json));

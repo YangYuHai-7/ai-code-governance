@@ -63,6 +63,8 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 当前确定式 CLI 将经过审阅的来源快照保存在 `assets/technical-standard-registry.json`。它根据受扫描直接依赖或用户确认的 `technologyPackages` 生成 `docs/ai/technical-standards.json` 和细粒度 `docs/ai/skills/standards/*/SKILL.md`；每项保留适用依据、来源日期、刷新周期、验证清单和 `stated` 边界。`aicg standards . --json` 或聊天请求“生成技术规范预览”只预览、不写入；`init`/`sync` 后必须用 `aicg check .` 验证受管产物。离线快照不等于实时在线标准、项目已强制执行或真实 Agent 加载已验证。
 
+部署或发布前先使用 `aicg release-check . --type <bugfix|feature|major> --evidence <repository-relative-json>` 做完整预检，再以 `--replay --approve <planHash>` 批准并执行精确 command plan。计划必须暴露 candidate npm 脚本文本/hash、预期退出码与输出 digest；任何其他验收错误会阻止执行，执行后必须复查 Git clean/candidate。缺少精确批准时 command/probe 证据不能通过。`init` 会把 [分级发布验收策略](assets/release-acceptance-policy.json) 生成到目标项目 `docs/ai/release-acceptance-policy.json`，`sync` 负责更新这一受管基线；项目只能通过独立的 `release-acceptance-override.json` 收紧要求。检查器把结构化评审与 receipts 绑定到 Git candidate 和实际 policy hash，并按双人声明的风险并集提升人数、测试和证据要求。精确聊天短语“检查发布验收”通过 `--config` 调用同一内核并遵守相同的两阶段批准。机器不能认证 5 名工程师和 3 名架构师的真人身份或生成独立批准，缺证据必须阻断。
+
 `aicg harvest . --dry-run --json` 与聊天请求“提取项目能力”实现了持续升级的确定式 prepare 阶段：只在已安装 `axios` 且真实 import/require 后导出 `axios.create()` Client 时，或在非 TSX/JSX 文件中存在真实权限执行语义的 policy/guard/authorization 边界时，生成带 implementation fingerprint、当前路径、验证引用、owner 和复核日期的候选项目 Skill。候选不猜测 public entrypoint；只有 adopted record 才能声明确认后的入口和绑定当前指纹的 promotion evidence。写入仍要求 `--yes` 或聊天计划批准，并重新运行 `aicg check .`；候选不等于 adopted/enforced，也不能据此自动封禁旁路或宣称项目测试已经运行。adopted capability 漂移只会留下 review 记录，直到 owner 以真实验证完成升级。
 
 `aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 是当前可验证的晋升入口：仅当前检测到、无 review 的 candidate 可晋升；入口必须是该能力当前 implementation path，验证命令必须精确匹配扫描到的安全 npm script，并且该脚本在写入前成功退出。聊天请求“晋升项目能力”走同一内核：以 `--config` 提供 `capabilityId`、`publicEntrypoints`、可选 `consumerPaths` 和 `verificationCommand`，先预览并批准精确 planHash。consumerPaths 只会被记录为操作者声明、未验证的线索，不会写成已确认消费者。它把晋升记录为操作者确认和一次成功命令，不宣称完整产品行为、真实 Agent 加载或旁路门禁已经被证明。
@@ -317,6 +319,8 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 **阶段 2 — 门禁。** L8 + 按 B4 装 hook。
 *验收*：**证明每类声明都会以正确方式失败**。把 [机器可读验收契约](assets/acceptance-contract.json) 作为版本化快照放进目标正典（默认 `docs/ai/acceptance-contract.json`）；至少覆盖缺失精确路径，凡目标仓库使用 glob、能力层、知识断言、来源 front matter、任务运行时或 hooks，还必须运行其中对应的条件探针。探针必须触发本次声称会阻断的真实入口，记录非零退出与修复动作，恢复后再证明同一入口通过。显式 gate、pre-commit 或 CI 检查器的内部异常和受管输入 schema 错误必须非零；只有后台客户端 hook 可以警告放行并把该声明降级为 `unverified`。**从未失败过的检查器等于未知是否可用。**
 
+发布门禁与上述项目治理探针分离：把 [分级发布验收协议](references/release-acceptance.md) 的策略快照写入 `docs/ai/release-acceptance-policy.json`，仅在部署/发布前或操作者手动要求时运行 `aicg release-check`，不得回退为每次对话执行。bugfix、feature、major 共用质量底线，但分别使用 1+1、2+2、5+3 的独立评审下限和逐级扩大的证据集合；风险信号可以提高验收深度，breaking API 或 governance schema 必须提高版本类型。
+
 **阶段 3 — 能力层**（标准档生成栈清单和高频 skills；完整档生成完整矩阵）。L3 + L4 + L5 + L7。先按 [技术栈标准与业务写法 Skill 生成协议](references/stack-skill-generation.md) 检索当前标准，生成 `stack-sources`、`stack-skill-map`、细粒度栈 skills、横切质量 skills 和有真实证据的业务 skills。若 F 组适用，再按 [外部规格与执行工作流集成协议](references/workflow-integrations.md) 生成 `<CANON>/workflow-integrations.yaml`、唯一权威矩阵、provider 来源记录和最小路由；不得复制外部正典 artifact。
 *验收*：每个 skill 的 `description` 都写清触发与相邻排除；每个选定技术组件有编码 capability，高频决策不只落在 umbrella skill；每个业务 skill 有业务证据和 owner；所有 skill/command/agent 从入口、context profile、能力目录或已验证原生机制可达。门禁检查来源、版本、skill-map/profile 覆盖和 routing examples，并用 `stack-standard-source-coverage`、`stack-skill-coverage`、`business-pattern-routing` 的适用探针证明删除来源、能力或业务路由会失败。每条编号业务禁令仍映射真实事故/代码/用户决定；只有清单没有加载路径的能力只能记 `present`。
 
@@ -340,6 +344,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 - 检查所有产出代码的 profile 必达设计质量策略；每个业务 skill 必须有业务 evidence，不能只靠技术栈名称生成。
 - 用至少一个真实风格请求独立 forward-test 生成的栈/业务 skills，检查是否选中正确上下文并产出项目标准写法。
 - 用至少两个成功实现场景 forward-test 自动升级：一个高后果业务能力（如权限），一个平台封装（如 Axios Client）；证明优先升级已有 Skill、无现有项时才创建，并阻止旁路重写。
+- 真正部署或发布前，根据变更声明执行 `aicg release-check`：bugfix 验证缺陷复现与回归闭环，feature 验证业务契约、架构/封装/Skill 演进，major 使用 5 名全栈工程师和 3 名架构师盲审并覆盖真实新旧项目、兼容迁移、平台矩阵与回滚演练。未解决 P0/P1、缺少独立报告或证据引用时必须停止。
 - 启用外部工作流时，额外验证 `workflow-source-freshness`、`change-authority-single-source`、`execution-plan-single-authority`、`external-change-runtime-linkage`、`external-archive-completion-gate` 与 `selective-execution-capability`；不适用的 provider 必须写明理由，不能伪造空集成。
 - 对外部 provider 分别报告 `detected`、`selected`、`reachable`、`enforced` 和 `real-client-verified`；检测到目录或全局插件不等于项目已选择，更不等于无冲突集成。
 - 如果目标仓库自身有记忆/文档义务，在同一次改动里满足它。
@@ -416,3 +421,4 @@ Agent/技术栈注册表、外部工作流、验收契约和链接禁令。三�
 | [references/workflow-integrations.md](references/workflow-integrations.md) | 发现或请求 OpenSpec、Superpowers、Spec Kit、BMAD 等规格/执行工作流，需要确定唯一权威、桥接或冲突边界时 |
 | [references/ui-selection.md](references/ui-selection.md) | 为 React/Vue/Angular/Svelte 提出 UI 候选或评估遗留 UI 时 |
 | [references/team-orchestration.md](references/team-orchestration.md) | 组建专家团队、定义 subagent 边界或做产品化发布时 |
+| [references/release-acceptance.md](references/release-acceptance.md) | 区分 bugfix、feature、major 的部署前标准，执行 5+3 对抗验收或接入发布门禁时 |

@@ -74,6 +74,15 @@ test('parses manual completion and explicit pre-commit hook actions', () => {
   assert.throws(() => parseArgs(['complete', '--yes']), (error) => error.exitCode === 2);
 });
 
+test('parses the risk-tiered release acceptance command', () => {
+  assert.deepEqual(parseArgs(['release-check', 'project', '--type', 'feature', '--evidence', 'docs/ai/release.json', '--replay', '--approve', 'plan-hash', '--json']), {
+    command: 'release-check',
+    target: 'project',
+    options: { type: 'feature', evidence: 'docs/ai/release.json', replay: true, approve: 'plan-hash', json: true },
+  });
+  assert.throws(() => parseArgs(['release-check', '--yes']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');

@@ -161,6 +161,7 @@ ${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
 - Do not run completion gates after ordinary conversation turns. When a change is ready, run \`aicg complete .\` once; after \`aicg hook install . --yes\`, Git also validates the exact staged snapshot before commit.
 - A completion gate is validation only: it never stages files or invents semantic memory, capability Skills, or documentation. Use separately approved \`aicg sync .\`, \`aicg harvest .\`, or \`aicg promote ...\` commands for those changes.
+- Before deployment or publication, classify the release as \`bugfix\`, \`feature\`, or \`major\`, read \`${config.canonicalRoot}/release-acceptance-policy.json\`, and preview \`aicg release-check . --type <type> --evidence <repository-relative-json>\`. Execute receipt-bound npm scripts only with \`--replay --approve <planHash>\` for the exact returned plan; do not fabricate human review evidence.
 
 ### ${languageTitle(config, '已发现的验证入口', 'Discovered verification entrypoints')}
 
@@ -186,6 +187,7 @@ alwaysApply: true
 7. When product behavior changes are ready for capability evolution, an authorized operator explicitly runs \`aicg harvest . --dry-run\`; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
 8. Do not run completion gates after ordinary conversation turns. Before delivery, run \`aicg complete .\` with an explicitly selected discovered verification command when needed; an installed Git pre-commit hook validates only the staged snapshot. Completion never stages files or synthesizes semantic memory, Skills, or documentation; use separately approved \`aicg sync .\`, \`aicg harvest .\`, or \`aicg promote ...\` commands for those mutations.
 9. Before architecture or behavior changes, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`. They are the sole current record of initialization lifecycle, existing-code strategy, and implementation boundary; do not infer a migration authorization from this seed file.
+10. Before deployment or publication, run the tiered \`aicg release-check\` against repository-local evidence. Bug fixes, features, and major releases have different evidence and independent-review requirements; never synthesize reviewer approval.
 `;
 }
 
@@ -238,6 +240,15 @@ ${yamlList(rules, 6)}
       - docs/ai/rules/00_always.mdc
     verify:
       - aicg check .
+  release:
+    description: Validate risk-tiered evidence before deployment or publication.
+    triggers:
+      en: [release, deploy, publish]
+      zh: [发布, 部署, 上线]
+    required:
+      - docs/ai/rules/00_always.mdc
+      - docs/ai/release-acceptance-policy.json
+    commandTemplate: aicg release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]
 `;
 }
 
@@ -267,6 +278,8 @@ This directory is the human-maintained governance source. Client-specific regula
 
 The generated [architecture profile](architecture-profile.json) is the sole current policy for future source placement. It records whether the policy is active, advisory, or legacy-unconfigured; it never authorizes business-code migration.
 
+Before deployment or publication, use the generated [release acceptance policy](release-acceptance-policy.json) and Git-tracked evidence with \`aicg release-check ...\`, inspect the exact replay plan, then execute it with \`--replay --approve <planHash>\`. The tool never invents independent reviewer approval.
+
 ## Configuration
 
 - Repository topology at initialization: \`${classifyProject(scan).codebase.topology.value}\`
@@ -285,6 +298,7 @@ The single current initialization decision is stored in \`.ai-governance/config.
 | Path | Owner |
 | --- | --- |
 | \`docs/ai/\` | Human-maintained governance canon |
+| \`docs/ai/release-acceptance-policy.json\` | Managed baseline updated by \`aicg sync\`; tighten only through a separate override |
 | \`.ai-governance/config.json\` | Confirmed initialization decisions |
 | \`.ai-governance/manifest.json\` | Generated ownership and content hashes |
 | Client-specific adapters | \`aicg sync\`; do not edit directly |
@@ -392,6 +406,7 @@ export function buildArtifacts(config, scan) {
     { path: 'docs/ai/decision-ledger.json', content: stableJson(buildDecisionLedger(scan, config)), ownership: 'full', kind: 'canonical', source: 'project-classification-and-governance-config' },
     { path: 'docs/ai/bootstrap-prompt.md', content: bootstrapPrompt(config), ownership: 'seed', kind: 'canonical', source: 'template:bootstrap-prompt' },
     { path: 'docs/ai/acceptance-contract.json', content: readText(path.join(PACKAGE_ROOT, 'assets/acceptance-contract.json')), ownership: 'seed', kind: 'canonical', source: 'asset:acceptance-contract' },
+    { path: 'docs/ai/release-acceptance-policy.json', content: readText(path.join(PACKAGE_ROOT, 'assets/release-acceptance-policy.json')), ownership: 'full', kind: 'release-policy', source: 'asset:release-acceptance-policy' },
   ];
 
   if (config.governanceDepth !== 'minimal') {

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
 import { validateTeamRoleRegistry } from '../src/team-recommendation.mjs';
 import { validateArchitectureProfileRegistry } from '../src/architecture-policy.mjs';
+import { validateReleaseAcceptancePolicy } from '../src/release-acceptance.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -137,11 +138,14 @@ function validateEntryPoint() {
     'aicg harvest',
     'aicg promote',
     'aicg team',
+    'aicg release-check',
     'team-role-registry.json',
     'agent-registry.json',
     'capability-evolution.json',
     '.ai-governance/manifest.json',
     'initializer.md',
+    'release-acceptance.md',
+    'release-acceptance-policy.json',
   ];
   for (const term of requiredTerms) {
     if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
@@ -155,11 +159,12 @@ function validateCliPackage(pkg) {
   check(pkg.bin?.aicg === 'bin/aicg.js', 'package.json must expose the aicg binary.');
   check(pkg.engines?.node === '>=22', 'CLI must require Node.js >=22.');
   check(!pkg.dependencies || Object.keys(pkg.dependencies).length === 0, 'CLI must not add runtime dependencies.');
-  for (const script of ['test', 'validate:skill', 'validate', 'smoke', 'smoke:package']) {
+  for (const script of ['test', 'validate:skill', 'validate', 'smoke', 'smoke:package', 'release:check', 'prepublishOnly']) {
     check(typeof pkg.scripts?.[script] === 'string', `package.json lacks script: ${script}`);
   }
   check(fs.existsSync(path.join(root, 'bin/aicg.js')), 'aicg binary is missing.');
-  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs', 'architecture-policy.mjs', 'commit-completion.mjs']) {
+  check(fs.existsSync(path.join(root, 'scripts/prepublish-check.mjs')), 'npm prepublish acceptance gate is missing.');
+  for (const module of ['cli.mjs', 'scanner.mjs', 'generator.mjs', 'checker.mjs', 'managed-files.mjs', 'capability-harvest.mjs', 'team-recommendation.mjs', 'architecture-policy.mjs', 'commit-completion.mjs', 'release-acceptance.mjs']) {
     check(fs.existsSync(path.join(root, 'src', module)), `CLI module is missing: src/${module}`);
   }
 }
@@ -466,6 +471,14 @@ function validateArchitectureProfiles() {
   }
 }
 
+function validateReleasePolicy(policy) {
+  try {
+    validateReleaseAcceptancePolicy(policy);
+  } catch (error) {
+    fail(`Release acceptance policy is invalid: ${error.message}`);
+  }
+}
+
 const requiredProbeIds = [
   'broken-exact-path',
   'empty-glob',
@@ -607,6 +620,7 @@ function runNegativeProbe(
   workflowProtocol,
   technicalRegistry,
   teamRegistry,
+  releasePolicy,
 ) {
   const before = failures.length;
   const broken = structuredClone(registry);
@@ -740,6 +754,15 @@ function runNegativeProbe(
     }
   });
 
+  let releasePolicyCaught = false;
+  try {
+    const brokenReleasePolicy = structuredClone(releasePolicy);
+    brokenReleasePolicy.scorecard.dimensions[0].weight += 1;
+    validateReleaseAcceptancePolicy(brokenReleasePolicy);
+  } catch (error) {
+    releasePolicyCaught = /weights must total 100/.test(error.message);
+  }
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
@@ -751,8 +774,9 @@ function runNegativeProbe(
   if (!workflowProtocolCaught) fail('Negative probe did not catch an incomplete workflow integration protocol.');
   if (!technicalRegistryCaught) fail('Negative probe did not catch a duplicate technical-standard source.');
   if (!teamRegistryCaught) fail('Negative probe did not catch an unsafe team role registry.');
-  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught');
+  if (!releasePolicyCaught) fail('Negative probe did not catch an invalid release acceptance scorecard.');
+  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught && releasePolicyCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught release_acceptance_policy=caught');
   }
 }
 
@@ -821,9 +845,17 @@ try {
   fail(`Team role registry is not valid JSON: ${error.message}`);
 }
 
+let releasePolicy;
+try {
+  releasePolicy = JSON.parse(read('assets/release-acceptance-policy.json'));
+  validateReleasePolicy(releasePolicy);
+} catch (error) {
+  fail(`Release acceptance policy is not valid JSON: ${error.message}`);
+}
+
 validateArchitectureProfiles();
 
-if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry) {
+if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry && releasePolicy) {
   runNegativeProbe(
     registry,
     agentRegistry,
@@ -834,6 +866,7 @@ if (process.argv.includes('--negative-probe') && registry && agentRegistry && wo
     workflowProtocol,
     technicalRegistry,
     teamRegistry,
+    releasePolicy,
   );
 }
 
@@ -842,7 +875,7 @@ if (failures.length > 0) {
   process.exitCode = 1;
 } else {
   console.log(
-    `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} technical_standards=${technicalRegistry.standards.length} workflow_integrations=${workflowRegistry.integrations.length}`,
+    `skill_validation=pass markdown_files=${markdownCount} agents=${agentRegistry.agents.length} capability_packs=${registry.packs.length} technical_standards=${technicalRegistry.standards.length} workflow_integrations=${workflowRegistry.integrations.length} release_tiers=${Object.keys(releasePolicy.tiers).length}`,
   );
   console.log(`os_evidence=${Object.entries(registry.current_os_evidence).map(([os, state]) => `${os}:${state}`).join(',')}`);
 }

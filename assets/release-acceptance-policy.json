@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "policyId": "aicg-release-acceptance-v1",
+  "changeTypes": ["bugfix", "feature", "major"],
+  "scorecard": {
+    "minimumWeightedScore": 85,
+    "blockingFindingSeverities": ["P0", "P1"],
+    "dimensions": [
+      { "id": "business-understanding", "weight": 15, "minimumScore": 80, "critical": true },
+      { "id": "project-lifecycle-boundary", "weight": 10, "minimumScore": 70, "critical": false },
+      { "id": "directory-design", "weight": 10, "minimumScore": 70, "critical": false },
+      { "id": "architecture-design", "weight": 15, "minimumScore": 80, "critical": true },
+      { "id": "code-design", "weight": 15, "minimumScore": 80, "critical": true },
+      { "id": "encapsulation-and-reuse", "weight": 10, "minimumScore": 70, "critical": false },
+      { "id": "security-and-reliability", "weight": 10, "minimumScore": 80, "critical": true },
+      { "id": "skill-quality-and-evolution", "weight": 10, "minimumScore": 70, "critical": false },
+      { "id": "gate-efficiency-and-usability", "weight": 5, "minimumScore": 70, "critical": false }
+    ]
+  },
+  "riskSignals": {
+    "authorization": { "minimumTier": "feature", "reason": "Authorization defects can cross actor and resource boundaries." },
+    "multi-tenancy": { "minimumTier": "feature", "reason": "Tenant isolation failures can expose or corrupt another tenant's data." },
+    "payment": { "minimumTier": "feature", "reason": "Money movement requires independent negative and recovery evidence." },
+    "sensitive-data": { "minimumTier": "feature", "reason": "Sensitive-data changes require independent security review." },
+    "data-migration": { "minimumTier": "feature", "reason": "Migration failures can be irreversible without a rehearsed recovery." },
+    "external-side-effect": { "minimumTier": "feature", "reason": "External side effects require idempotency and recovery evidence." },
+    "public-contract": { "minimumTier": "feature", "reason": "Public contract changes require compatibility and consumer evidence." },
+    "breaking-public-api": { "minimumTier": "major", "requiresChangeType": "major", "reason": "A breaking public contract requires major-release acceptance." },
+    "governance-schema": { "minimumTier": "major", "requiresChangeType": "major", "reason": "A governance schema change can invalidate every generated project." }
+  },
+  "tiers": {
+    "bugfix": {
+      "semverChange": "patch",
+      "maximumEvidenceAgeDays": 14,
+      "minimumParticipants": { "engineers": 1, "architects": 1 },
+      "requiredEngineerScenarios": ["defect-regression"],
+      "requiredArchitectLenses": ["change-scope"],
+      "requiredEvidence": [
+        "scope-boundary",
+        "defect-reproduction",
+        "negative-positive-regression",
+        "affected-scope-verification",
+        "governance-gate",
+        "package-smoke",
+        "rollback-plan"
+      ]
+    },
+    "feature": {
+      "semverChange": "minor",
+      "maximumEvidenceAgeDays": 14,
+      "minimumParticipants": { "engineers": 2, "architects": 2 },
+      "requiredEngineerScenarios": ["business-flow", "integration-contract"],
+      "requiredArchitectLenses": ["business-domain", "application-platform"],
+      "requiredEvidence": [
+        "scope-boundary",
+        "business-contract",
+        "directory-and-architecture-review",
+        "implementation-verification",
+        "targeted-negative-probes",
+        "canonical-reuse-review",
+        "capability-evolution-review",
+        "governance-gate",
+        "package-smoke",
+        "rollback-plan"
+      ]
+    },
+    "major": {
+      "semverChange": "major",
+      "maximumEvidenceAgeDays": 30,
+      "minimumParticipants": { "engineers": 5, "architects": 3 },
+      "requiredEngineerScenarios": ["greenfield", "brownfield", "high-risk-boundary", "canonical-reuse", "upgrade-compatibility"],
+      "requiredArchitectLenses": ["business-domain", "application-platform", "security-governance"],
+      "requiredEvidence": [
+        "scope-boundary",
+        "five-by-three-blind-evaluation",
+        "greenfield-real-project",
+        "brownfield-real-project",
+        "business-and-architecture-scorecards",
+        "cross-platform-matrix",
+        "baseline-comparison",
+        "migration-and-compatibility",
+        "all-applicable-negative-probes",
+        "real-client-replay",
+        "governance-gate",
+        "package-install-smoke",
+        "rollback-rehearsal"
+      ]
+    }
+  },
+  "evidenceCatalog": {
+    "scope-boundary": { "description": "The change scope, exclusions, user-owned files, and migration authorization were independently reviewed.", "verificationModes": ["review"] },
+    "defect-reproduction": { "description": "The defect was reproduced against the prior version with exact inputs and observable failure.", "verificationModes": ["probe"] },
+    "negative-positive-regression": { "description": "A regression test fails before the fix and passes after it.", "verificationModes": ["probe"] },
+    "affected-scope-verification": { "description": "Tests, type checks, lint, and build for the affected scope passed.", "verificationModes": ["command"] },
+    "business-contract": { "description": "Actors, resources, owners, states, authorization, transactions, side effects, and open gaps are evidenced.", "verificationModes": ["review"] },
+    "directory-and-architecture-review": { "description": "Module placement, dependency direction, cohesion, coupling, and migration boundaries were reviewed.", "verificationModes": ["review"] },
+    "implementation-verification": { "description": "Unit, integration, contract, and build evidence appropriate to the feature passed.", "verificationModes": ["command"] },
+    "targeted-negative-probes": { "description": "At least one feature-specific failure was injected, rejected, repaired, and replayed successfully.", "verificationModes": ["probe"] },
+    "canonical-reuse-review": { "description": "New code uses existing clients, guards, repositories, adapters, and public entrypoints instead of duplicating them.", "verificationModes": ["review"] },
+    "capability-evolution-review": { "description": "The change was explicitly evaluated for Skill update, creation, candidate status, or a reasoned no-skill result.", "verificationModes": ["review"] },
+    "governance-gate": { "description": "The real governance completion entrypoint passed and its failure behavior is covered by a current probe.", "verificationModes": ["command"] },
+    "package-smoke": { "description": "The distributable package or deployable artifact completed a clean install and smoke test.", "verificationModes": ["command"] },
+    "rollback-plan": { "description": "A concrete revert or rollback procedure exists and names irreversible boundaries.", "verificationModes": ["review"] },
+    "five-by-three-blind-evaluation": { "description": "Five independent engineering evaluators and three architects evaluated isolated scenarios before consensus review.", "verificationModes": ["review"] },
+    "greenfield-real-project": { "description": "A real greenfield project completed initialization and a representative implementation task.", "verificationModes": ["artifact"] },
+    "brownfield-real-project": { "description": "A structurally different brownfield project preserved existing code while completing a representative change.", "verificationModes": ["artifact"] },
+    "business-and-architecture-scorecards": { "description": "Independent scorecards cover business understanding, directories, architecture, code design, encapsulation, security, Skills, and usability.", "verificationModes": ["review"] },
+    "cross-platform-matrix": { "description": "Every declared operating-system and runtime combination has current evidence or is explicitly excluded from the release claim.", "verificationModes": ["artifact"] },
+    "baseline-comparison": { "description": "The governed run is compared with the prior release or an ungoverned control for defects, reuse, time, tokens, and intervention.", "verificationModes": ["artifact"] },
+    "migration-and-compatibility": { "description": "Upgrade, backward compatibility, deprecation, and data/config migration paths were exercised.", "verificationModes": ["command"] },
+    "all-applicable-negative-probes": { "description": "Every applicable acceptance-contract probe has current negative and recovery evidence.", "verificationModes": ["probe"] },
+    "real-client-replay": { "description": "Every declared AI client executed its actual configured entrypoint; synthetic invocation alone is insufficient.", "verificationModes": ["artifact"] },
+    "package-install-smoke": { "description": "The published-shape package was installed and exercised in clean fixtures for supported environments.", "verificationModes": ["command"] },
+    "rollback-rehearsal": { "description": "Rollback was rehearsed from the release candidate and verified to preserve user-owned state.", "verificationModes": ["probe"] }
+  }
+}
