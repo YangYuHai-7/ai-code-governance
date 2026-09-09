@@ -271,7 +271,7 @@ export function buildDecisionLedger(scan, config = null) {
   const base = {
     schemaVersion: 1,
     project: {
-      name: scan.projectName,
+      name: config?.projectName ?? scan.projectName,
       initialClassification,
     },
     evidence: {

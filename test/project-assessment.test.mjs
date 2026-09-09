@@ -200,6 +200,34 @@ test('first sync of a legacy config persists its baseline and preserves it after
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).initialClassification.codebase.lifecycle.value, 'greenfield');
 });
 
+test('configured project identity survives a copy to a checkout with a different basename', (context) => {
+  const root = fixture('configured-name-source');
+  const cloneParent = fixture('configured-name-clone-parent');
+  const copiedRoot = path.join(cloneParent, 'different-checkout-name');
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(cloneParent, { recursive: true, force: true });
+  });
+
+  const initialized = run(['init', root, '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const originalLedger = fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8');
+  assert.notEqual(config.projectName, path.basename(copiedRoot));
+
+  fs.cpSync(root, copiedRoot, { recursive: true });
+  const checked = run(['check', copiedRoot, '--json']);
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.equal(JSON.parse(checked.stdout).ok, true);
+
+  const synced = run(['sync', copiedRoot]);
+  assert.equal(synced.status, 0, synced.stderr);
+  assert.match(synced.stdout, /"changed": \[\]/);
+  const copiedLedger = fs.readFileSync(path.join(copiedRoot, 'docs/ai/decision-ledger.json'), 'utf8');
+  assert.equal(copiedLedger, originalLedger);
+  assert.equal(JSON.parse(copiedLedger).project.name, config.projectName);
+});
+
 test('assess and its exact chat intent are read-only', (context) => {
   const root = fixture('read-only');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
