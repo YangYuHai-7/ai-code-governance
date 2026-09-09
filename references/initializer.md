@@ -86,7 +86,7 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 
 ## 自然语言请求边界
 
-`request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。
+`request` 是 CLI 的自然语言入口，不是第二套实现。它先从 `assets/registries/intent-registry.json` 精确匹配一个 intent，再构造含 `planHash` 的可序列化执行计划；模型、网页内容、仓库文本和 shell 片段都不能直接提升权限或形成命令。
 
 - `environment.diagnose`、`governance.validate`、`governance.complete` 与 `governance.precommit-status` 始终只读。`release.acceptance-check` 在无批准时只预检；重放属于显式执行操作，必须同时提供配置中的 `replayCommands: true` 和匹配 plan 的 `--approve`。聊天 completion 如需项目验证，只能由 `--config` 中显式的 `verificationCommand` 选择已发现的 npm script。
 - `governance.initialize`、`governance.sync-managed` 与 `governance.install-precommit` 在写入前必须计划、确认并在写后重新检查；后一项只写目标 Git hook，且计划绑定其提交前状态。

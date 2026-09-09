@@ -80,13 +80,13 @@
 
 ## 机器可读的团队建议边界
 
-`aicg team` 使用 `assets/team-role-registry.json` 为项目输出确定式的**人类职责覆盖建议**。它只读取精确依赖与用户确认的业务上下文；业务描述本身不进行关键词推断，也不写入、缓存或回显。每个建议必须分别列出 `stackEvidence`、`businessEvidence`、`confidence`、`assumptions` 和 `activationTrigger`，并明确可兼任关系与不能由同一实现者自我验收的责任分离。
+`aicg team` 使用 `assets/registries/team-role-registry.json` 为项目输出确定式的**人类职责覆盖建议**。它只读取精确依赖与用户确认的业务上下文；业务描述本身不进行关键词推断，也不写入、缓存或回显。每个建议必须分别列出 `stackEvidence`、`businessEvidence`、`confidence`、`assumptions` 和 `activationTrigger`，并明确可兼任关系与不能由同一实现者自我验收的责任分离。
 
 该命令及聊天请求“给我团队建议”永远是只读：不得创建人员、Agent、任务、权限、文件、外部消息或招聘记录。它不输出人数、预算、工期或成功保证；技术依赖只说明声明的技术，不能证明生产使用、安全、合规或人员能力。输入必须是仓库内的普通 JSON 文件，不能经过符号链接；缺少明确 `teamScope` 或业务描述时返回 `needs-user-input`。
 
 ## AICG 产品团队成员池
 
-`assets/aicg-product-team.json` 是 AICG 产品团队的版本化正典，记录 Product Owner、治理架构、CLI、Agent 集成、知识工程、独立评测、DevEx、安全、产品设计、控制平面、SRE、企业合规、DevRel、Sales/Customer Success 和技术栈认证专家池。每个成员都必须记录：
+`assets/registries/aicg-product-team.json` 是 AICG 产品团队的版本化正典，记录 Product Owner、治理架构、CLI、Agent 集成、知识工程、独立评测、DevEx、安全、产品设计、控制平面、SRE、企业合规、DevRel、Sales/Customer Success 和技术栈认证专家池。每个成员都必须记录：
 
 - 明确职责和不负责的边界；
 - 能力标识、阶段和按需激活方式；

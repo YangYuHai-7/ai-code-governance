@@ -49,6 +49,16 @@ function markdownFiles(directory) {
   return found;
 }
 
+function moduleFiles(directory) {
+  const found = [];
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const absolute = path.join(directory, entry.name);
+    if (entry.isDirectory()) found.push(...moduleFiles(absolute));
+    if (entry.isFile() && entry.name.endsWith('.mjs')) found.push(absolute);
+  }
+  return found;
+}
+
 function markdownLinkTargets(text) {
   const targets = [];
   let cursor = 0;
@@ -203,16 +213,17 @@ function validateNoLinkAdapters() {
       check(!item.pattern.test(content), `${path.relative(root, file)} contains forbidden ${item.label}.`);
     }
   }
-  for (const file of fs.readdirSync(path.join(root, 'src')).filter((name) => name.endsWith('.mjs'))) {
-    const content = fs.readFileSync(path.join(root, 'src', file), 'utf8');
+  for (const absolute of moduleFiles(path.join(root, 'src'))) {
+    const file = path.relative(path.join(root, 'src'), absolute).replaceAll('\\', '/');
+    const content = fs.readFileSync(absolute, 'utf8');
     const linkCreates = content.match(/\b(?:symlinkSync|linkSync)\s*\(/g) ?? [];
-    if (file === 'managed-files.mjs') {
+    if (file === 'modules/governance/managed-files.mjs') {
       check(
         linkCreates.length === 1
           && linkCreates[0].startsWith('symlinkSync')
           && content.includes('Controlled rollback: restore only the user-owned link removed by this failed migration.')
           && content.includes('fs.symlinkSync(entry.target, absolute);'),
-        'src/managed-files.mjs may restore exactly one user-owned link during transactional rollback and may not create adapters as links.',
+        'src/modules/governance/managed-files.mjs may restore exactly one user-owned link during transactional rollback and may not create adapters as links.',
       );
     } else {
       check(linkCreates.length === 0, `src/${file} creates a filesystem link.`);
@@ -793,7 +804,7 @@ try {
 
 let agentRegistry;
 try {
-  agentRegistry = JSON.parse(read('assets/agent-registry.json'));
+  agentRegistry = JSON.parse(read('assets/registries/agent-registry.json'));
   validateAgentRegistry(agentRegistry);
 } catch (error) {
   fail(`Agent registry is not valid JSON: ${error.message}`);
@@ -807,7 +818,7 @@ validateWorkflowProtocol(workflowProtocol);
 
 let registry;
 try {
-  registry = JSON.parse(read('assets/capability-pack-registry.json'));
+  registry = JSON.parse(read('assets/registries/capability-pack-registry.json'));
   validateRegistry(registry);
 } catch (error) {
   fail(`Capability registry is not valid JSON: ${error.message}`);
@@ -815,7 +826,7 @@ try {
 
 let acceptanceContract;
 try {
-  acceptanceContract = JSON.parse(read('assets/acceptance-contract.json'));
+  acceptanceContract = JSON.parse(read('assets/contracts/acceptance-contract.json'));
   validateAcceptanceContract(acceptanceContract);
 } catch (error) {
   fail(`Acceptance contract is not valid JSON: ${error.message}`);
@@ -823,7 +834,7 @@ try {
 
 let workflowRegistry;
 try {
-  workflowRegistry = JSON.parse(read('assets/workflow-integration-registry.json'));
+  workflowRegistry = JSON.parse(read('assets/registries/workflow-integration-registry.json'));
   validateWorkflowRegistry(workflowRegistry);
 } catch (error) {
   fail(`Workflow integration registry is not valid JSON: ${error.message}`);
@@ -831,7 +842,7 @@ try {
 
 let technicalRegistry;
 try {
-  technicalRegistry = JSON.parse(read('assets/technical-standard-registry.json'));
+  technicalRegistry = JSON.parse(read('assets/registries/technical-standard-registry.json'));
   validateTechnicalStandardCoverage(technicalRegistry);
 } catch (error) {
   fail(`Technical standard registry is not valid JSON: ${error.message}`);
@@ -839,7 +850,7 @@ try {
 
 let teamRegistry;
 try {
-  teamRegistry = JSON.parse(read('assets/team-role-registry.json'));
+  teamRegistry = JSON.parse(read('assets/registries/team-role-registry.json'));
   validateTeamRoleRegistry(teamRegistry);
 } catch (error) {
   fail(`Team role registry is not valid JSON: ${error.message}`);
@@ -847,7 +858,7 @@ try {
 
 let releasePolicy;
 try {
-  releasePolicy = JSON.parse(read('assets/release-acceptance-policy.json'));
+  releasePolicy = JSON.parse(read('assets/policies/release-acceptance-policy.json'));
   validateReleasePolicy(releasePolicy);
 } catch (error) {
   fail(`Release acceptance policy is not valid JSON: ${error.message}`);

@@ -93,7 +93,7 @@
 - `enforced` 要同时有非零退出的检查器路径与本次跑过的定向负向探针。默认 warn-only、只打印错误、或只有可选严格环境变量才失败的命令只能标 `stated` / `unverified`。
 - `real-client-verified` 必须回放客户端配置中的真实命令或由真实客户端事件触发；直接调用 handler 的合成载荷只证明 handler 存在。
 
-条件探针以 [`assets/acceptance-contract.json`](../assets/acceptance-contract.json) 为最小契约。凡目标仓库使用相应特性，都必须覆盖，而不是只跑“断链 + 缺文件”两个结构探针。契约同时要求负向退出与恢复后通过；只证明“会挡住”却没有正常成功路径，也不能算闭环。
+条件探针以 [`assets/contracts/acceptance-contract.json`](../assets/contracts/acceptance-contract.json) 为最小契约。凡目标仓库使用相应特性，都必须覆盖，而不是只跑“断链 + 缺文件”两个结构探针。契约同时要求负向退出与恢复后通过；只证明“会挡住”却没有正常成功路径，也不能算闭环。
 
 目标仓库先把契约作为版本化快照放在 `docs/ai/acceptance-contract.json`，再保存机器可读的
 `docs/ai/acceptance-results.json`（正典目录不同则等价放置），并让 delivery checker 对照项目内快照校验：

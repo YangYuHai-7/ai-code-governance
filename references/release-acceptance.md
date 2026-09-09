@@ -2,7 +2,7 @@
 
 本协议把“发布前要验证什么”变成与变更风险成比例、可机器拒绝的证据契约。质量底线不会因为改动小而降低；变化的是参与人数、测试范围和证据深度。
 
-机器正典是 [`assets/release-acceptance-policy.json`](../assets/release-acceptance-policy.json)。发布证据建议保存在目标仓库的 `docs/ai/release-evidence/<version>.json`，引用的报告和日志也必须是仓库内普通文件，并且每个文件必须已被 Git 跟踪、与 HEAD blob 一致，便于审计、复现和后续退休。仅存在于工作树、被 `.gitignore` 忽略或未提交的证据不能通过。
+机器正典是 [`assets/policies/release-acceptance-policy.json`](../assets/policies/release-acceptance-policy.json)。发布证据建议保存在目标仓库的 `docs/ai/release-evidence/<version>.json`，引用的报告和日志也必须是仓库内普通文件，并且每个文件必须已被 Git 跟踪、与 HEAD blob 一致，便于审计、复现和后续退休。仅存在于工作树、被 `.gitignore` 忽略或未提交的证据不能通过。
 
 `docs/ai/release-acceptance-policy.json` 是由 `aicg sync` 更新的受管基线快照；漂移或落后于当前 CLI 时，发布检查会提前要求审阅并同步。项目要收紧标准时，新增完整的 `docs/ai/release-acceptance-override.json`：可以增加风险信号、证据或提高人数/分数，但不能删除内置维度、降低分数、减少参与者、移除证据、改写基线语义或放宽风险升级；这种弱化会被 `release-check` 直接拒绝。override 不由生成器覆盖，并由最终证据的 policy hash 绑定。
 

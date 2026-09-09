@@ -129,5 +129,5 @@ Linux: CLI/gate <status>; generated adapter <status>; hook probe <status>
 
 “代码看起来可移植”不是验证证据。平台未运行不代表失败，但必须保持可见。
 
-本工具仓库自身的 CLI CI 证据与未验证边界记录在 `assets/capability-pack-registry.json`；该证据不能自动
+本工具仓库自身的 CLI CI 证据与未验证边界记录在 `assets/registries/capability-pack-registry.json`；该证据不能自动
 提升任意目标项目、真实 Agent 或 hook 的状态。

@@ -15,7 +15,7 @@
 
 ## 当前 CLI 的可验证实现边界
 
-当前确定式 CLI 使用 `assets/technical-standard-registry.json` 保存经过审阅的离线来源快照，而不是在每次 `init`/`sync` 时隐式联网。它会：
+当前确定式 CLI 使用 `assets/registries/technical-standard-registry.json` 保存经过审阅的离线来源快照，而不是在每次 `init`/`sync` 时隐式联网。它会：
 
 - 从所有受扫描 `package.json` 的直接依赖识别精确技术；新项目也可在确认配置中声明 `technologyPackages`；
 - 生成 `docs/ai/technical-standards.json`，其中记录适用依据、来源 URL、检索日期、刷新周期、生成路径、验证清单与明确边界；
