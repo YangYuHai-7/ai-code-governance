@@ -1,5 +1,6 @@
 import { classifyProject } from '../repository/index.mjs';
 import { readText } from '../../utils.mjs';
+import { isArchitectureNonSourcePath } from './source-classification.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift']);
 const GOVERNANCE_PREFIXES = ['AGENTS.md', 'CLAUDE.md', '.cursor/', '.claude/', '.agents/', 'docs/ai/', '.ai-governance/'];
@@ -16,7 +17,7 @@ function isBuildConfiguration(relative) {
 
 function sourceFiles(scan) {
   return scan.files.filter((file) => {
-    if (file.type !== 'file' || isGovernancePath(file.relative) || isBuildConfiguration(file.relative)) return false;
+    if (file.type !== 'file' || isGovernancePath(file.relative) || isBuildConfiguration(file.relative) || isArchitectureNonSourcePath(file.relative)) return false;
     const extension = file.relative.slice(file.relative.lastIndexOf('.'));
     return SOURCE_EXTENSIONS.has(extension);
   });

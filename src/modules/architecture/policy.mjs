@@ -2,6 +2,7 @@ import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { classifyProject, isImplementationSourcePath, projectSourcePaths } from '../repository/index.mjs';
 import { isSafeRelative, readJson, sha256, stableJson, usageError } from '../../utils.mjs';
+import { isArchitectureNonSourcePath } from './source-classification.mjs';
 
 export const ARCHITECTURE_PROFILE_ID = 'module-boundaries-v1';
 export const ARCHITECTURE_MODES = ['module-first-new-code', 'preserve-current', 'staged-migration-pending', 'legacy-unconfigured'];
@@ -10,6 +11,7 @@ const TOPOLOGY_BINDINGS = new Set(['single-repo', 'monorepo']);
 const NON_SOURCE_LINK_ROOTS = new Set([
   'docs', 'public', 'assets', 'static', 'scripts', 'script', 'tools', 'tooling', 'migrations', 'migration',
   'infra', 'infrastructure', 'terraform', '.github', '.ai-governance', '.cursor', '.claude', '.agents',
+  '.runtime',
 ]);
 const NON_SOURCE_ROOT_LINK_DOCUMENT = /^(?:README|LICENSE|NOTICE|CHANGELOG|CONTRIBUTING)(?:\.[^/]+)?$/i;
 const NON_SOURCE_ROOT_LINK_NAMES = new Set(['.gitignore', '.gitattributes', '.editorconfig']);
@@ -49,7 +51,7 @@ function sameStringArray(left, right) {
 
 function sourceBaseline(scan) {
   return projectSourcePaths(scan)
-    .filter((relative) => !isTestPath(relative))
+    .filter((relative) => !isTestPath(relative) && !isArchitectureNonSourcePath(relative))
     .sort((left, right) => left.localeCompare(right));
 }
 
@@ -311,7 +313,7 @@ export function architecturePlacementIssues(scan, config) {
   const { profile } = registry();
   const baseline = new Set(decision.scope.baselineSourcePaths);
   const sourceIssues = projectSourcePaths(scan)
-    .filter((relative) => !isTestPath(relative) && !baseline.has(relative))
+    .filter((relative) => !isTestPath(relative) && !baseline.has(relative) && !isArchitectureNonSourcePath(relative))
     .filter((relative) => !relative.startsWith('src/') || (!entryFileAllowed(relative, profile.placement) && !modulePathAllowed(relative, profile.placement)))
     .sort((left, right) => left.localeCompare(right))
     .map((relative) => `${relative}: new implementation source is outside the active ${decision.profileId} src placement policy; place it in a named module directory or an approved entrypoint.`);
