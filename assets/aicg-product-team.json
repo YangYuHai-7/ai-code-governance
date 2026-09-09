@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "teamId": "aicg-product-team",
+  "teamName": "AICG Product Team",
+  "membershipPolicy": {
+    "membershipStatus": "approved-available",
+    "activationMode": "on-demand",
+    "assignmentStrategy": "minimum-sufficient-set",
+    "newRolePolicy": "propose-then-product-owner-approve",
+    "unapprovedRolesMayActivate": false,
+    "implementationMaySelfApprove": false
+  },
+  "roles": [
+    {
+      "id": "product-owner",
+      "title": "Founder / Product Owner",
+      "phase": "core",
+      "responsibilities": [
+        "Own product direction, business boundaries, risk tolerance, and final acceptance decisions.",
+        "Approve or reject team membership changes and material scope changes."
+      ],
+      "outOfScope": [
+        "Inventing technical evidence or replacing independent technical review."
+      ],
+      "capabilities": [
+        "product-strategy-decision",
+        "role-membership-approval",
+        "scope-and-risk-approval"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "principal-governance-architect",
+      "title": "Principal Governance Architect",
+      "phase": "core",
+      "responsibilities": [
+        "Own governance topology, canonical sources, module boundaries, and evolution policy.",
+        "Translate product constraints into staged architecture without inventing business rules."
+      ],
+      "outOfScope": [
+        "Approving their own architecture or silently changing product scope."
+      ],
+      "capabilities": [
+        "governance-architecture",
+        "governance-evolution-policy",
+        "module-boundary-design"
+      ],
+      "requiredCompanionRoleIds": [
+        "product-owner"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "cli-cross-platform-engineer",
+      "title": "CLI / Cross-platform Engineer",
+      "phase": "core",
+      "responsibilities": [
+        "Build deterministic CLI commands, installers, upgrades, rollback, and cross-platform scripts.",
+        "Keep macOS, Windows, and Linux behavior explicit and testable."
+      ],
+      "outOfScope": [
+        "Declaring release readiness without independent evidence."
+      ],
+      "capabilities": [
+        "cli-implementation",
+        "cross-platform-cli-compatibility",
+        "installer-upgrader-rollback"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "agent-integration-engineer",
+      "title": "Agent Integration Engineer",
+      "phase": "core",
+      "responsibilities": [
+        "Own adapters, chat intent routing, hooks, and compatibility for supported coding agents.",
+        "Keep agent-specific behavior behind stable governance contracts."
+      ],
+      "outOfScope": [
+        "Embedding one agent vendor's behavior into the governance core."
+      ],
+      "capabilities": [
+        "agent-adapter-integration",
+        "agent-hook-compatibility",
+        "chat-intent-routing"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "applied-ai-knowledge-engineer",
+      "title": "Applied AI / Knowledge Engineer",
+      "phase": "core",
+      "responsibilities": [
+        "Research authoritative stack standards and compile evidence-bound, reusable skills.",
+        "Extract repository and business knowledge without treating guesses as confirmed facts."
+      ],
+      "outOfScope": [
+        "Promoting unverified advice or project secrets into distributable capability packs."
+      ],
+      "capabilities": [
+        "business-pattern-codification",
+        "project-knowledge-extraction",
+        "skill-compilation",
+        "standards-research"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "adversarial-evaluation-release-engineer",
+      "title": "Adversarial Evaluation & Release Engineer",
+      "phase": "core",
+      "responsibilities": [
+        "Own negative probes, evidence audits, compatibility matrices, and release acceptance.",
+        "Report residual risk independently from the implementation owner."
+      ],
+      "outOfScope": [
+        "Lowering evidence requirements to match a desired release date."
+      ],
+      "capabilities": [
+        "adversarial-evaluation",
+        "evidence-audit",
+        "negative-testing",
+        "release-acceptance"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": [
+        "agent-integration-engineer",
+        "applied-ai-knowledge-engineer",
+        "cli-cross-platform-engineer",
+        "full-stack-control-plane-engineer",
+        "principal-governance-architect",
+        "product-security-engineer",
+        "technology-stack-certification-specialist"
+      ]
+    },
+    {
+      "id": "developer-experience-solutions-engineer",
+      "title": "Developer Experience / Solutions Engineer",
+      "phase": "core",
+      "responsibilities": [
+        "Own onboarding, workflow clarity, requirement facilitation, and adoption in real repositories.",
+        "Convert user friction into bounded product requirements and reproducible acceptance cases."
+      ],
+      "outOfScope": [
+        "Replacing the Product Owner's business decisions or bypassing engineering review."
+      ],
+      "capabilities": [
+        "customer-repository-adoption",
+        "developer-onboarding",
+        "requirements-facilitation",
+        "workflow-design"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "product-security-engineer",
+      "title": "Product Security Engineer",
+      "phase": "specialist",
+      "responsibilities": [
+        "Own threat models, supply-chain controls, secrets boundaries, anti-tamper, and anti-replay requirements.",
+        "Define security checks proportionate to business risk and attack surface."
+      ],
+      "outOfScope": [
+        "Acting as the sole implementer and sole security approver for the same high-risk change."
+      ],
+      "capabilities": [
+        "anti-tamper-and-replay",
+        "product-security",
+        "supply-chain-security",
+        "threat-modeling"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "product-designer",
+      "title": "Product Designer",
+      "phase": "specialist",
+      "responsibilities": [
+        "Own interaction design, information architecture, accessibility, and understandable governance feedback.",
+        "Test whether users can make informed approval and recovery decisions."
+      ],
+      "outOfScope": [
+        "Changing governance semantics only to simplify a screen."
+      ],
+      "capabilities": [
+        "accessibility-design",
+        "information-architecture",
+        "interaction-design",
+        "product-experience-design"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "full-stack-control-plane-engineer",
+      "title": "Full-stack Control Plane Engineer",
+      "phase": "scale",
+      "responsibilities": [
+        "Build the hosted control plane, team registry service, policy distribution, and governance status UI.",
+        "Keep control-plane concerns separated from the local governance runtime."
+      ],
+      "outOfScope": [
+        "Moving customer source code into hosted services without explicit architecture and privacy approval."
+      ],
+      "capabilities": [
+        "control-plane-implementation",
+        "policy-distribution",
+        "team-registry-service",
+        "usage-telemetry-ui"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
+      "id": "platform-sre",
+      "title": "Platform / SRE",
+      "phase": "scale",
+      "responsibilities": [
+        "Own deployment, rollback, observability, service objectives, and incident response.",
+        "Make operational readiness measurable before hosted capabilities are considered production-ready."
+      ],
+      "outOfScope": [
+        "Owning product scope or accepting feature behavior on behalf of users."
+      ],
+      "capabilities": [
+        "deployment-and-rollback",
+        "incident-response",
+        "observability",
+        "service-reliability"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "enterprise-security-compliance-lead",
+      "title": "Enterprise Security & Compliance Lead",
+      "phase": "scale",
+      "responsibilities": [
+        "Own enterprise assurance, privacy governance, auditability, and procurement security requirements.",
+        "Separate product claims from evidence requiring qualified legal or compliance review."
+      ],
+      "outOfScope": [
+        "Providing legal certification or claiming compliance without applicable evidence."
+      ],
+      "capabilities": [
+        "auditability",
+        "enterprise-compliance",
+        "privacy-governance",
+        "procurement-security"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "developer-relations",
+      "title": "Developer Relations",
+      "phase": "scale",
+      "responsibilities": [
+        "Own public technical education, samples, community feedback, and accurate capability communication.",
+        "Feed recurring adoption problems back into product discovery without overstating support."
+      ],
+      "outOfScope": [
+        "Publishing roadmap promises or compatibility claims without release evidence."
+      ],
+      "capabilities": [
+        "community-feedback",
+        "public-education",
+        "sample-projects",
+        "technical-documentation"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "sales-customer-success",
+      "title": "Sales / Customer Success",
+      "phase": "scale",
+      "responsibilities": [
+        "Own customer discovery, adoption success, commercial feedback, and enterprise rollout coordination.",
+        "Keep customer commitments aligned with verified product capabilities."
+      ],
+      "outOfScope": [
+        "Overriding product, security, architecture, or release decisions."
+      ],
+      "capabilities": [
+        "adoption-success",
+        "commercial-feedback",
+        "customer-discovery",
+        "enterprise-rollout"
+      ],
+      "requiredCompanionRoleIds": [],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "technology-stack-certification-specialist",
+      "title": "Technology Stack Certification Specialist",
+      "phase": "specialist-pool",
+      "responsibilities": [
+        "Validate stack-specific capability packs against authoritative standards and real framework versions.",
+        "Maintain explicit compatibility evidence and known gaps for each certified stack."
+      ],
+      "outOfScope": [
+        "Applying generic best practices without repository evidence or claiming universal framework coverage."
+      ],
+      "capabilities": [
+        "capability-pack-validation",
+        "framework-version-compatibility",
+        "stack-specific-best-practice",
+        "technology-stack-certification"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    }
+  ]
+}

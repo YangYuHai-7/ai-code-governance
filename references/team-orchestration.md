@@ -82,4 +82,42 @@
 
 `aicg team` 使用 `assets/team-role-registry.json` 为项目输出确定式的**人类职责覆盖建议**。它只读取精确依赖与用户确认的业务上下文；业务描述本身不进行关键词推断，也不写入、缓存或回显。每个建议必须分别列出 `stackEvidence`、`businessEvidence`、`confidence`、`assumptions` 和 `activationTrigger`，并明确可兼任关系与不能由同一实现者自我验收的责任分离。
 
-该命令及聊天请求“给我团队建议”永远是只读：不得创建人员、Agent、任务、权限、文件、外部消息或招聘记录。它不输出人数、预算、工期或成功保证；技术依赖只说明声明的技术，不能证明生产使用、安全、合规或人员能力。输入必须是仓库内的普通 JSON 文件，不能经过符号链接；缺少明确 `teamScope` 或业务描述时返回 `needs-user-input`。持久化团队画像、创建任务或调用外部分析均是独立的、未来才可经计划和审批启用的能力。
+该命令及聊天请求“给我团队建议”永远是只读：不得创建人员、Agent、任务、权限、文件、外部消息或招聘记录。它不输出人数、预算、工期或成功保证；技术依赖只说明声明的技术，不能证明生产使用、安全、合规或人员能力。输入必须是仓库内的普通 JSON 文件，不能经过符号链接；缺少明确 `teamScope` 或业务描述时返回 `needs-user-input`。
+
+## AICG 产品团队成员池
+
+`assets/aicg-product-team.json` 是 AICG 产品团队的版本化正典，记录 Product Owner、治理架构、CLI、Agent 集成、知识工程、独立评测、DevEx、安全、产品设计、控制平面、SRE、企业合规、DevRel、Sales/Customer Success 和技术栈认证专家池。每个成员都必须记录：
+
+- 明确职责和不负责的边界；
+- 能力标识、阶段和按需激活方式；
+- 必须共同参与的角色；
+- 必须保持独立的设计、实现和验收关系。
+
+“加入团队”只表示进入 `approved-available` 成员池，不表示参与每个需求。没有明确需求能力时，`activeRoles` 必须为空；有需求时，只激活覆盖该需求的最小角色集合和不可省略的独立评测或决策角色。未激活成员不得读取额外上下文、扩大范围或输出意见。
+
+## 动态增减角色协议
+
+自然语言层先把当前需求转换成明确的 `requiredCapabilities`，再调用确定式分配器。若现有成员池不能覆盖某项能力：
+
+1. 输出一个职责有界的 `proposedAdditionalRoles` 建议，写清职责、不负责事项、能力和独立性要求；
+2. 返回 `needs-role-approval`，在对话中询问 Product Owner 是否同意添加；
+3. 未收到明确同意前，不得把建议角色写入团队配置、加入成员池或激活；
+4. 同意后，把相同定义记录为 `approvedAdditionalRoles`，并附 `approval.status=approved`、`approvedBy=product-owner` 和可追溯的 `evidence`；
+5. 已批准扩展角色也仍然按需激活，需求结束后回到可用但未激活状态；长期不再需要时应通过新的 Owner 决策退休，不静默删除。
+
+审批记录属于项目内的决策输入，而不是模型自己生成的授权。`aicg team` 只读取并验证该记录：审批证据不会回显，建议角色不会自动持久化。对话 Agent 在用户明确批准后才可通过独立的、有范围的文件变更记录它，并必须展示验证结果。实现者不能批准自己的角色提案，独立评测角色也不能替 Product Owner 作成员决策。
+
+最小上下文示例：
+
+```json
+{
+  "teamScope": "human",
+  "businessDescription": "A local AI code-governance product.",
+  "confirmedSignals": [],
+  "requiredCapabilities": [
+    "chat-intent-routing"
+  ]
+}
+```
+
+这一请求只会激活 Agent Integration Engineer 与其强制独立评测角色；其他已加入成员保持未激活。新增角色的定义和审批都保存在同一个仓库内普通 JSON 上下文中，因此可以评审、回滚和审计，而不会让只读建议命令暗中改变团队。
