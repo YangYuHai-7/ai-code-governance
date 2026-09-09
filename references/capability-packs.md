@@ -1,8 +1,8 @@
 # 技术栈能力包协议
 
-机器可读注册表在 [../assets/capability-pack-registry.json](../assets/capability-pack-registry.json)。能力包回答“如何识别技术组合、应检索哪些当前标准、应生成哪些编码能力以及如何验证”，但不替用户决定项目架构。
+机器可读注册表在 [../assets/registries/capability-pack-registry.json](../assets/registries/capability-pack-registry.json)。能力包回答“如何识别技术组合、应检索哪些当前标准、应生成哪些编码能力以及如何验证”，但不替用户决定项目架构。
 
-本注册表只描述技术栈与平台能力。OpenSpec、Superpowers 等规格/执行系统属于外部工作流 provider，使用独立的 [工作流集成协议](workflow-integrations.md) 与 [工作流集成注册表](../assets/workflow-integration-registry.json)，避免把“项目用什么技术”与“项目怎样组织变更和执行”混成同一决策。
+本注册表只描述技术栈与平台能力。OpenSpec、Superpowers 等规格/执行系统属于外部工作流 provider，使用独立的 [工作流集成协议](workflow-integrations.md) 与 [工作流集成注册表](../assets/registries/workflow-integration-registry.json)，避免把“项目用什么技术”与“项目怎样组织变更和执行”混成同一决策。
 
 ## 选择优先级
 

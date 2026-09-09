@@ -45,7 +45,7 @@ function commit(root, message) {
 }
 
 function policyDigest() {
-  return createHash('sha256').update(fs.readFileSync(path.resolve('assets/release-acceptance-policy.json'))).digest('hex');
+  return createHash('sha256').update(fs.readFileSync(path.resolve('assets/policies/release-acceptance-policy.json'))).digest('hex');
 }
 
 function fileDigest(file) {

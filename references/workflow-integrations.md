@@ -1,6 +1,6 @@
 # 外部规格与执行工作流集成协议
 
-机器可读注册表在 [../assets/workflow-integration-registry.json](../assets/workflow-integration-registry.json)。本协议用于发现、选择和约束 OpenSpec、Superpowers 或相邻工具；它不要求目标项目安装任何一个，也不授权 Agent 自动安装插件、修改全局配置或采用第三方 bridge。
+机器可读注册表在 [../assets/registries/workflow-integration-registry.json](../assets/registries/workflow-integration-registry.json)。本协议用于发现、选择和约束 OpenSpec、Superpowers 或相邻工具；它不要求目标项目安装任何一个，也不授权 Agent 自动安装插件、修改全局配置或采用第三方 bridge。
 
 ## 为什么需要单独协议
 

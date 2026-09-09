@@ -31,7 +31,7 @@ aicg check .
 适配器只允许两种形态：客户端原生指针/导入，或带 generated 标记与 SHA-256 manifest 的普通文件。
 不得创建 symlink、junction 或其他链接作为适配器；唯一例外是已授权迁移失败时恢复被移除的用户原链接，不能生成新链接。不得让 `--force` 覆盖未知用户文件。状态由
 `.ai-governance/config.json` 与 `.ai-governance/manifest.json` 记录，运行 `aicg sync .` 恢复受管漂移。
-Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-registry.json`，不得散落复制。
+Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/registries/agent-registry.json`，不得散落复制。
 
 ## 短语触发与自动完整模式
 
@@ -61,15 +61,15 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 技术栈能力包提供侦察信号、研究主题、skill 候选和验证发现方法。Agent 必须对已确认的栈检索目标版本官方文档、正式标准与权威安全基线，综合成项目级细粒度 skills；不直接复制文档，不使用无版本、无来源的模型记忆。遗留项目默认在原栈上增量治理；技术现代化是独立、显式选择的评估任务，不与治理落地捆绑。
 
-当前确定式 CLI 将经过审阅的来源快照保存在 `assets/technical-standard-registry.json`。它根据受扫描直接依赖或用户确认的 `technologyPackages` 生成 `docs/ai/technical-standards.json` 和细粒度 `docs/ai/skills/standards/*/SKILL.md`；每项保留适用依据、来源日期、刷新周期、验证清单和 `stated` 边界。`aicg standards . --json` 或聊天请求“生成技术规范预览”只预览、不写入；`init`/`sync` 后必须用 `aicg check .` 验证受管产物。离线快照不等于实时在线标准、项目已强制执行或真实 Agent 加载已验证。
+当前确定式 CLI 将经过审阅的来源快照保存在 `assets/registries/technical-standard-registry.json`。它根据受扫描直接依赖或用户确认的 `technologyPackages` 生成 `docs/ai/technical-standards.json` 和细粒度 `docs/ai/skills/standards/*/SKILL.md`；每项保留适用依据、来源日期、刷新周期、验证清单和 `stated` 边界。`aicg standards . --json` 或聊天请求“生成技术规范预览”只预览、不写入；`init`/`sync` 后必须用 `aicg check .` 验证受管产物。离线快照不等于实时在线标准、项目已强制执行或真实 Agent 加载已验证。
 
-部署或发布前先使用 `aicg release-check . --type <bugfix|feature|major> --evidence <repository-relative-json>` 做完整预检，再以 `--replay --approve <planHash>` 批准并执行精确 command plan。计划必须暴露 candidate npm 脚本文本/hash、预期退出码与输出 digest；任何其他验收错误会阻止执行，执行后必须复查 Git clean/candidate。缺少精确批准时 command/probe 证据不能通过。`init` 会把 [分级发布验收策略](assets/release-acceptance-policy.json) 生成到目标项目 `docs/ai/release-acceptance-policy.json`，`sync` 负责更新这一受管基线；项目只能通过独立的 `release-acceptance-override.json` 收紧要求。检查器把结构化评审与 receipts 绑定到 Git candidate 和实际 policy hash，并按双人声明的风险并集提升人数、测试和证据要求。精确聊天短语“检查发布验收”通过 `--config` 调用同一内核并遵守相同的两阶段批准。机器不能认证 5 名工程师和 3 名架构师的真人身份或生成独立批准，缺证据必须阻断。
+部署或发布前先使用 `aicg release-check . --type <bugfix|feature|major> --evidence <repository-relative-json>` 做完整预检，再以 `--replay --approve <planHash>` 批准并执行精确 command plan。计划必须暴露 candidate npm 脚本文本/hash、预期退出码与输出 digest；任何其他验收错误会阻止执行，执行后必须复查 Git clean/candidate。缺少精确批准时 command/probe 证据不能通过。`init` 会把 [分级发布验收策略](assets/policies/release-acceptance-policy.json) 生成到目标项目 `docs/ai/release-acceptance-policy.json`，`sync` 负责更新这一受管基线；项目只能通过独立的 `release-acceptance-override.json` 收紧要求。检查器把结构化评审与 receipts 绑定到 Git candidate 和实际 policy hash，并按双人声明的风险并集提升人数、测试和证据要求。精确聊天短语“检查发布验收”通过 `--config` 调用同一内核并遵守相同的两阶段批准。机器不能认证 5 名工程师和 3 名架构师的真人身份或生成独立批准，缺证据必须阻断。
 
 `aicg harvest . --dry-run --json` 与聊天请求“提取项目能力”实现了持续升级的确定式 prepare 阶段：只在已安装 `axios` 且真实 import/require 后导出 `axios.create()` Client 时，或在非 TSX/JSX 文件中存在真实权限执行语义的 policy/guard/authorization 边界时，生成带 implementation fingerprint、当前路径、验证引用、owner 和复核日期的候选项目 Skill。候选不猜测 public entrypoint；只有 adopted record 才能声明确认后的入口和绑定当前指纹的 promotion evidence。写入仍要求 `--yes` 或聊天计划批准，并重新运行 `aicg check .`；候选不等于 adopted/enforced，也不能据此自动封禁旁路或宣称项目测试已经运行。adopted capability 漂移只会留下 review 记录，直到 owner 以真实验证完成升级。
 
 `aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 是当前可验证的晋升入口：仅当前检测到、无 review 的 candidate 可晋升；入口必须是该能力当前 implementation path，验证命令必须精确匹配扫描到的安全 npm script，并且该脚本在写入前成功退出。聊天请求“晋升项目能力”走同一内核：以 `--config` 提供 `capabilityId`、`publicEntrypoints`、可选 `consumerPaths` 和 `verificationCommand`，先预览并批准精确 planHash。consumerPaths 只会被记录为操作者声明、未验证的线索，不会写成已确认消费者。它把晋升记录为操作者确认和一次成功命令，不宣称完整产品行为、真实 Agent 加载或旁路门禁已经被证明。
 
-`aicg team . --config team-context.json --json` 与聊天请求“给我团队建议”使用 `assets/team-role-registry.json`，根据精确依赖证据和用户确认的业务信号提出**人类交付与治理职责覆盖**。它是纯只读建议：不创建人员、Agent、任务、权限、文件或外部消息，不输出人数、招聘结论、成本或成功保证；业务原文仅内存处理，结果不回显原文。上下文必须明确 `teamScope: "human"` 与 `businessDescription`，可选的高风险信号和阶段只能由用户确认，不能从关键词、相似 package、本机 Agent 或代码量猜测。每个角色带证据、置信度、可兼任边界、独立复核关系和条件触发器；缺少输入返回 `needs-user-input`，复合的创建/分配请求不匹配此只读 intent。
+`aicg team . --config team-context.json --json` 与聊天请求“给我团队建议”使用 `assets/registries/team-role-registry.json`，根据精确依赖证据和用户确认的业务信号提出**人类交付与治理职责覆盖**。它是纯只读建议：不创建人员、Agent、任务、权限、文件或外部消息，不输出人数、招聘结论、成本或成功保证；业务原文仅内存处理，结果不回显原文。上下文必须明确 `teamScope: "human"` 与 `businessDescription`，可选的高风险信号和阶段只能由用户确认，不能从关键词、相似 package、本机 Agent 或代码量猜测。每个角色带证据、置信度、可兼任边界、独立复核关系和条件触发器；缺少输入返回 `needs-user-input`，复合的创建/分配请求不匹配此只读 intent。
 
 ## 动态技术标准与业务 Skill 工厂
 
@@ -86,7 +86,7 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 ## 外部规格与执行工作流
 
-完整协议见 [references/workflow-integrations.md](references/workflow-integrations.md)，机器可读候选见 [assets/workflow-integration-registry.json](assets/workflow-integration-registry.json)。当仓库或用户提到 OpenSpec、Superpowers、Spec Kit、BMAD 或相邻 change/execution framework 时必须读取该协议。
+完整协议见 [references/workflow-integrations.md](references/workflow-integrations.md)，机器可读候选见 [assets/registries/workflow-integration-registry.json](assets/registries/workflow-integration-registry.json)。当仓库或用户提到 OpenSpec、Superpowers、Spec Kit、BMAD 或相邻 change/execution framework 时必须读取该协议。
 
 1. **先发现，不接管**：记录安装位置、真实版本、官方来源、客户端可达性和重叠能力；检测结果不是采用决定。
 2. **一次只认一个 owner**：当前产品行为、active change、项目 AI 治理、实施任务表、运行时状态和交付证据分别只能有一个正典。
@@ -113,7 +113,7 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/agent-regi
 
 跨系统实现与认证要求见 [references/cross-platform.md](references/cross-platform.md)。当前系统执行通过只能证明当前系统；其余系统必须分别标记为已验证、未验证或不支持。
 
-B → C 的产品结构与能力证据等级见 [references/product-architecture.md](references/product-architecture.md)。技术栈状态以 [assets/capability-pack-registry.json](assets/capability-pack-registry.json) 为准，使用协议见 [references/capability-packs.md](references/capability-packs.md)。
+B → C 的产品结构与能力证据等级见 [references/product-architecture.md](references/product-architecture.md)。技术栈状态以 [assets/registries/capability-pack-registry.json](assets/registries/capability-pack-registry.json) 为准，使用协议见 [references/capability-packs.md](references/capability-packs.md)。
 
 ## 不可协商的工作方式
 
@@ -317,7 +317,7 @@ D2/D3 答不出来时：只建一个 `default` 档案的骨架，并说明档案
 *验收*：决策账本有用户确认的客户端模式；A2 里选的每个客户端都能通过自己的原生入口触达常驻规则，且这些文件里点到的每个路径都真实存在。未选择的客户端明确记为 `not selected / not generated`，不能写成支持；每种目标 OS 分别记录已验证或未验证，不能从当前系统外推。
 
 **阶段 2 — 门禁。** L8 + 按 B4 装 hook。
-*验收*：**证明每类声明都会以正确方式失败**。把 [机器可读验收契约](assets/acceptance-contract.json) 作为版本化快照放进目标正典（默认 `docs/ai/acceptance-contract.json`）；至少覆盖缺失精确路径，凡目标仓库使用 glob、能力层、知识断言、来源 front matter、任务运行时或 hooks，还必须运行其中对应的条件探针。探针必须触发本次声称会阻断的真实入口，记录非零退出与修复动作，恢复后再证明同一入口通过。显式 gate、pre-commit 或 CI 检查器的内部异常和受管输入 schema 错误必须非零；只有后台客户端 hook 可以警告放行并把该声明降级为 `unverified`。**从未失败过的检查器等于未知是否可用。**
+*验收*：**证明每类声明都会以正确方式失败**。把 [机器可读验收契约](assets/contracts/acceptance-contract.json) 作为版本化快照放进目标正典（默认 `docs/ai/acceptance-contract.json`）；至少覆盖缺失精确路径，凡目标仓库使用 glob、能力层、知识断言、来源 front matter、任务运行时或 hooks，还必须运行其中对应的条件探针。探针必须触发本次声称会阻断的真实入口，记录非零退出与修复动作，恢复后再证明同一入口通过。显式 gate、pre-commit 或 CI 检查器的内部异常和受管输入 schema 错误必须非零；只有后台客户端 hook 可以警告放行并把该声明降级为 `unverified`。**从未失败过的检查器等于未知是否可用。**
 
 发布门禁与上述项目治理探针分离：把 [分级发布验收协议](references/release-acceptance.md) 的策略快照写入 `docs/ai/release-acceptance-policy.json`，仅在部署/发布前或操作者手动要求时运行 `aicg release-check`，不得回退为每次对话执行。bugfix、feature、major 共用质量底线，但分别使用 1+1、2+2、5+3 的独立评审下限和逐级扩大的证据集合；风险信号可以提高验收深度，breaking API 或 governance schema 必须提高版本类型。
 

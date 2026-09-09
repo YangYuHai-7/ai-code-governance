@@ -22,6 +22,8 @@
   },
   "scripts": {
     "test": "node --test",
+    "test:architecture": "node --test test/architecture-boundaries.test.mjs",
+    "test:scenarios": "node --test test/real-scenarios/*.test.mjs",
     "validate:skill": "node scripts/validate-skill.mjs && node scripts/validate-skill.mjs --negative-probe",
     "validate": "npm run validate:skill && node bin/aicg.js doctor . --json",
     "smoke": "node scripts/smoke-test.mjs",

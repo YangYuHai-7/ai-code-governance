@@ -35,6 +35,24 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
 | 强制与成长 | 提供门禁、负向探针、知识记忆、任务运行时和规则晋升/退休闭环 |
 
+## 维护架构
+
+AICG 以单一 npm 包交付，但源码采用模块化单体：
+
+```text
+bin → src/cli → src/modules → src/kernel + src/shared
+                           ↘ src/adapters + src/catalogs
+```
+
+- `src/cli/` 只负责参数、命令注册、交互编排和输出。
+- `src/modules/` 按 repository、governance、architecture、standards、capabilities、completion、release、team 和 requests 划分产品能力。
+- `src/kernel/` 与 `src/shared/` 保存稳定契约和纯基础能力。
+- `src/adapters/` 隔离文件系统、进程和 Agent 等外部边界。
+- `src/catalogs/` 提供包内注册表读取入口；`assets/` 按 registries、policies、contracts 分类。
+- 根级 `src/*.mjs` 是过渡期兼容 facade；新内部代码必须通过模块 `index.mjs` 依赖其他模块。
+
+依赖边界由 `npm run test:architecture` 检查。打包后的 greenfield 与 brownfield 验收由 `npm run test:scenarios` 执行；详细 reference 职责见 [reference map](references/README.md)。
+
 ## 工作方式
 
 ```mermaid
@@ -101,7 +119,7 @@ memory 同步、L9 gate generation/freshness、complete 唯一入口、真实工
 | v4 | .NET/C#、Android、iOS、混合 App、桌面、C/C++ 与嵌入式 | roadmap | unverified |
 | 通用适配 | 注册表未覆盖的语言或框架 | active | unverified |
 
-`supported` 不等于 `certified`。认证要求固定样例、负向探针、多个真实项目和声明平台的验证证据。机器可读状态以 [能力包注册表](assets/capability-pack-registry.json) 为准。
+`supported` 不等于 `certified`。认证要求固定样例、负向探针、多个真实项目和声明平台的验证证据。机器可读状态以 [能力包注册表](assets/registries/capability-pack-registry.json) 为准。
 
 ### 操作系统
 
@@ -130,7 +148,7 @@ OpenSpec 和 Superpowers 是可选 provider，不是安装本 Skill 后自动启
 - 哪些执行能力已在真实客户端中证明可调用；
 - 外部版本、官方来源、许可证、刷新日期和剩余冲突边界。
 
-OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers 被选中时适合提供 TDD、系统调试、worktree、实施、评审和完成验证。已有批准 design/task 时不得生成第二份 Superpowers design/plan。详细协议见 [外部工作流集成](references/workflow-integrations.md)，机器可读候选见 [工作流集成注册表](assets/workflow-integration-registry.json)。
+OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers 被选中时适合提供 TDD、系统调试、worktree、实施、评审和完成验证。已有批准 design/task 时不得生成第二份 Superpowers design/plan。详细协议见 [外部工作流集成](references/workflow-integrations.md)，机器可读候选见 [工作流集成注册表](assets/registries/workflow-integration-registry.json)。
 
 ## 安装与运行
 
@@ -192,7 +210,7 @@ aicg hook install . --yes
 
 提交完成门禁和部署验收是两件事：`complete` 证明本次工作达到项目交付边界；`release-check` 在真正部署或发布前检查版本分类、候选提交与策略哈希、发布单元、双人风险评估、结构化独立评分、P0/P1 缺陷和必选 receipt。第一次调用只做完整预检并返回 `replayPlan`：其中包含 preflight HEAD、candidate `package.json` 的精确脚本文本、hash、预期退出码和输出 digest。只有再次同时传入 `--replay --approve <planHash>` 才执行；任一其他验收错误都会阻止执行，执行后还会复查 HEAD、所有 evidence hash、candidate 与工作树，并在 npm 发布模式重算包指纹。它拒绝 install/publish 生命周期、隐式 pre/post hook、伪 package JSON 以及未进入 Git 的证据。不提供精确批准时 command/probe receipt 不能通过。bugfix 对应 patch，feature 对应 minor，major 对应 major；被实现者与独立评审者任一方声明为权限、租户、支付、敏感数据、迁移、外部副作用或公共契约的改动，即使仍发 patch，也至少执行 feature 级验收。破坏公共 API 或治理 schema 必须走 major。工具不会自行理解所有 diff 语义；两名评估者同时漏报仍属于明确边界。
 
-详细规则和 5 名全栈工程师 + 3 名架构师的对抗分工见 [分级发布验收协议](references/release-acceptance.md)，机器规则见 [发布验收策略](assets/release-acceptance-policy.json)。`aicg init` 会生成目标项目的 `docs/ai/release-acceptance-policy.json`，后续由 `sync` 更新受管基线；项目只能用 `release-acceptance-override.json` 收紧要求。机器只校验证据契约、候选/策略绑定和仓库内结构化 receipts，不会认证真人身份或替代独立评审判断。
+详细规则和 5 名全栈工程师 + 3 名架构师的对抗分工见 [分级发布验收协议](references/release-acceptance.md)，机器规则见 [发布验收策略](assets/policies/release-acceptance-policy.json)。`aicg init` 会生成目标项目的 `docs/ai/release-acceptance-policy.json`，后续由 `sync` 更新受管基线；项目只能用 `release-acceptance-override.json` 收紧要求。机器只校验证据契约、候选/策略绑定和仓库内结构化 receipts，不会认证真人身份或替代独立评审判断。
 
 维护 AICG 自身时，npm 的 `prepublishOnly` 会先跑完整测试、Skill 验证、源码 smoke、安装包 smoke，再要求同一份分级证据：
 
@@ -299,15 +317,21 @@ Skill 会始终先侦察仓库并使规则追溯到真实证据。短语默认�
 ai-code-governance/
 ├── bin/aicg.js
 ├── src/
+│   ├── cli/
+│   ├── modules/
+│   ├── kernel/
+│   ├── shared/
+│   ├── adapters/
+│   └── catalogs/
 ├── test/
+│   └── real-scenarios/
 ├── package.json
 ├── SKILL.md
 ├── README.md
 ├── assets/
-│   ├── capability-pack-registry.json
-│   ├── agent-registry.json
-│   ├── workflow-integration-registry.json
-│   └── acceptance-contract.json
+│   ├── registries/
+│   ├── policies/
+│   └── contracts/
 ├── references/
 │   ├── initializer.md
 │   ├── principles.md

@@ -2,6 +2,19 @@
 
 本 skill 先服务于团队内部标准化（B），再把经过真实项目验证的部分发布为可分发产品（C）。两者使用同一个治理内核；区别在于证据、兼容性承诺和发布纪律，不是再复制一套模板。
 
+## 源码模块边界
+
+AICG 继续作为单一 npm 包发布，内部采用模块化单体。稳定依赖方向为：
+
+```text
+bin → cli → modules → kernel/shared
+                 └→ adapters/catalogs
+```
+
+`cli` 只做参数适配、命令注册、交互和输出；`modules` 按产品能力组织；`kernel/shared` 不依赖 CLI 或产品模块；`adapters` 隔离文件系统、Git、npm、进程与 Agent 边界。模块间只能通过对方 `index.mjs` 公开入口协作。根级 `src/*.mjs` 在兼容周期内只做 re-export，不承载新实现。
+
+本阶段不拆成 `@aicg/core`、`@aicg/cli` 或 `@aicg/catalog`。只有出现独立 API 消费者、独立版本周期或已验证插件契约时，才重新评估物理拆包。
+
 ## 产品形态
 
 ```text
