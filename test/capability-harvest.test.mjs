@@ -101,6 +101,34 @@ test('harvest recognizes a default-exported Axios client only when it has an exe
   assert.deepEqual(prepared.harvest.candidateIds, ['project-http-client']);
 });
 
+test('harvest excludes runtime releases from detection and fingerprints without trusting Git ignored roots', (context) => {
+  const root = fixture('runtime-release-artifacts');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitignore'), '.runtime/\nunknown-output/\n');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { axios: '1.7.0' } }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.mkdirSync(path.join(root, 'unknown-output'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/http-client.ts'), "import axios from 'axios';\nexport const sourceClient = axios.create({});\n");
+  fs.writeFileSync(path.join(root, 'unknown-output/http-client.js'), "import axios from 'axios';\nexport const ignoredButUnknown = axios.create({});\n");
+  const config = initialize(root);
+  const beforeRuntime = prepareCapabilityHarvest(config, scanProject(root));
+  const beforeClient = beforeRuntime.config.projectCapabilities.find((capability) => capability.id === 'project-http-client');
+
+  const runtimeOutput = path.join(root, '.runtime', 'releases', '2026-09-09', 'dist');
+  fs.mkdirSync(runtimeOutput, { recursive: true });
+  fs.writeFileSync(path.join(runtimeOutput, 'main.js'), "import axios from 'axios';\nexport const deployedClient = axios.create({});\n");
+  const afterRuntime = prepareCapabilityHarvest(config, scanProject(root));
+  const afterClient = afterRuntime.config.projectCapabilities.find((capability) => capability.id === 'project-http-client');
+  assert.deepEqual(afterClient.implementationPaths, ['src/http-client.ts', 'unknown-output/http-client.js']);
+  assert.equal(afterClient.implementationFingerprint, beforeClient.implementationFingerprint);
+  assert.equal(afterRuntime.harvest.productChangeFingerprint, beforeRuntime.harvest.productChangeFingerprint);
+
+  const cliPreview = run(['harvest', root, '--dry-run', '--json']);
+  assert.equal(cliPreview.status, 0, cliPreview.stderr);
+  const plannedClient = JSON.parse(cliPreview.stdout).harvest.plannedCapabilities.find((capability) => capability.id === 'project-http-client');
+  assert.deepEqual(plannedClient.implementationPaths, ['src/http-client.ts', 'unknown-output/http-client.js']);
+});
+
 test('harvest command has a zero-write preview and chat requires the exact approved plan before writing', (context) => {
   const root = fixture('chat');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

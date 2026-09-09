@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { isSafeRelative, readText, sha256, stableJson } from '../../utils.mjs';
+import { isArchitectureNonSourcePath } from '../architecture/index.mjs';
 import { sourceTokens } from './source-tokenizer.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
@@ -103,6 +104,7 @@ function hasAuthorizationSyntax(content) {
 export function sourceFiles(scan, { includeTests = false } = {}) {
   return scan.files.filter((file) => {
     if (file.type !== 'file' || /^(?:docs\/ai\/|\.ai-governance\/|\.agents\/|\.claude\/|\.cursor\/)/.test(file.relative)) return false;
+    if (isArchitectureNonSourcePath(file.relative)) return false;
     if (!isSafeCapabilityPath(file.relative)) return false;
     if (!SOURCE_EXTENSIONS.has(path.extname(file.relative))) return false;
     if (!includeTests && /(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[^/]+$/.test(file.relative)) return false;
