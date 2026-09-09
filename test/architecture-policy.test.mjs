@@ -193,6 +193,28 @@ test('active placement excludes tooling, migrations, and infrastructure from app
   assert.equal(run(['check', root, '--json']).status, 0);
 });
 
+test('active placement excludes runtime release artifacts but still checks source under unknown roots', (context) => {
+  const root = fixture('runtime-release-artifacts');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitignore'), '.runtime/\nunknown-output/\n');
+  assert.equal(run(['init', root, '--yes', '--no-assist']).status, 0);
+
+  const runtimeOutput = path.join(root, '.runtime', 'releases', '2026-09-09', 'dist');
+  fs.mkdirSync(runtimeOutput, { recursive: true });
+  fs.writeFileSync(path.join(runtimeOutput, 'main.js'), 'export const deployed = true;\n');
+  const runtimeAccepted = run(['check', root, '--json']);
+  assert.equal(runtimeAccepted.status, 0, runtimeAccepted.stderr);
+  assert.doesNotMatch(runtimeAccepted.stdout, /\.runtime\/releases\/2026-09-09\/dist\/main\.js/);
+
+  const unknownOutput = path.join(root, 'unknown-output', 'releases', '2026-09-09', 'dist');
+  fs.mkdirSync(unknownOutput, { recursive: true });
+  fs.writeFileSync(path.join(unknownOutput, 'main.js'), 'export const unknown = true;\n');
+  const unknownRejected = run(['check', root, '--json']);
+  assert.equal(unknownRejected.status, 1);
+  assert.match(unknownRejected.stdout, /architecture placement: unknown-output\/releases\/2026-09-09\/dist\/main\.js/);
+  assert.doesNotMatch(unknownRejected.stdout, /architecture placement: \.runtime\/releases\/2026-09-09\/dist\/main\.js/);
+});
+
 test('existing new-code-standard preserves its source baseline and only detects later flat source', (context) => {
   const root = fixture('existing-new-code');
   const decision = writeDecision(root, 'existing-new-code', { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard' });
