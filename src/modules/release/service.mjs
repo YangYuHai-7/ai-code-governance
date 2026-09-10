@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { readJson } from '../../adapters/filesystem/files.mjs';
+import { runNpm } from '../../adapters/process/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/paths.mjs';
 import { loadProjectReleaseAcceptancePolicy, requirementFor } from './policy.mjs';
 import {
@@ -369,8 +369,7 @@ function validateEvidenceEntries(root, policy, policyInfo, evidence, requirement
 }
 
 function validatePackageArtifact(root, evidence, errors) {
-  const executable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(executable, ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+  const result = runNpm(['pack', '--dry-run', '--ignore-scripts', '--json'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 120000,

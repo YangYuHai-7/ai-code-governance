@@ -59,36 +59,125 @@ export function writeAtomicFile(target, content, mode = null) {
 }
 
 export function walkFiles(root, options = {}) {
+  return walkFilesDetailed(root, options).files;
+}
+
+export function walkFilesDetailed(root, options = {}) {
   const maxDepth = options.maxDepth ?? 4;
+  const maxFiles = options.maxFiles ?? Infinity;
+  const maxFileBytes = options.maxFileBytes ?? Infinity;
+  const maxDirectories = options.maxDirectories ?? Infinity;
+  const maxEntries = options.maxEntries ?? Infinity;
   const caseInsensitiveIgnored = options.caseInsensitiveIgnored === true;
   const normalizeIgnored = (name) => caseInsensitiveIgnored ? name.toLowerCase() : name;
   const ignored = new Set((options.ignored ?? ['.git', 'node_modules', 'dist', 'build', 'target', '.next']).map(normalizeIgnored));
   const ignoredAtAnyDepth = new Set([...((options.ignoredAtAnyDepth ?? ignored))].map(normalizeIgnored));
   const result = [];
+  const truncatedDirectories = [];
+  const directoryBudgetPaths = [];
+  const oversizedFiles = [];
+  const readErrors = [];
+  let fileLimitReached = false;
+  let directoryLimitReached = false;
+  let entryLimitReached = false;
+  let observedDirectories = 0;
+  let observedEntries = 0;
+
+  function stopped() {
+    return fileLimitReached || directoryLimitReached || entryLimitReached;
+  }
 
   function visit(current, depth) {
-    if (depth > maxDepth) return;
-    let entries;
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
+    if (stopped()) return;
+    const currentRelative = normalizeRelative(path.relative(root, current)) || '.';
+    if (observedDirectories >= maxDirectories) {
+      directoryLimitReached = true;
+      directoryBudgetPaths.push(currentRelative);
       return;
     }
-    for (const entry of entries) {
-      const ignoredName = normalizeIgnored(entry.name);
-      if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignored.has(ignoredName))) continue;
-      const absolute = path.join(current, entry.name);
-      const relative = normalizeRelative(path.relative(root, absolute));
-      if (entry.isSymbolicLink()) {
-        result.push({ absolute, relative, type: 'link' });
-      } else if (entry.isDirectory()) {
-        visit(absolute, depth + 1);
-      } else if (entry.isFile()) {
-        result.push({ absolute, relative, type: 'file' });
+    observedDirectories += 1;
+    let directory;
+    try {
+      directory = fs.opendirSync(current);
+    } catch (error) {
+      readErrors.push({ path: currentRelative, operation: 'readdir', code: error.code ?? 'UNKNOWN' });
+      return;
+    }
+    try {
+      while (!stopped()) {
+        const entry = directory.readSync();
+        if (!entry) break;
+        if (observedEntries >= maxEntries) {
+          entryLimitReached = true;
+          break;
+        }
+        observedEntries += 1;
+        const ignoredName = normalizeIgnored(entry.name);
+        if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignored.has(ignoredName))) continue;
+        const absolute = path.join(current, entry.name);
+        const relative = normalizeRelative(path.relative(root, absolute));
+        if (entry.isSymbolicLink()) {
+          if (result.length >= maxFiles) {
+            fileLimitReached = true;
+            break;
+          }
+          result.push({ absolute, relative, type: 'link', contentScannable: false });
+        } else if (entry.isDirectory()) {
+          if (depth >= maxDepth) truncatedDirectories.push(relative);
+          else if (observedDirectories >= maxDirectories) {
+            directoryLimitReached = true;
+            directoryBudgetPaths.push(relative);
+          } else visit(absolute, depth + 1);
+        } else if (entry.isFile()) {
+          if (result.length >= maxFiles) {
+            fileLimitReached = true;
+            break;
+          }
+          let size = null;
+          try {
+            size = fs.statSync(absolute).size;
+          } catch (error) {
+            readErrors.push({ path: relative, operation: 'stat', code: error.code ?? 'UNKNOWN' });
+          }
+          const contentScannable = size !== null && size <= maxFileBytes;
+          if (size !== null && size > maxFileBytes) oversizedFiles.push({ path: relative, bytes: size });
+          result.push({ absolute, relative, type: 'file', size, contentScannable });
+        }
+      }
+    } catch (error) {
+      readErrors.push({ path: currentRelative, operation: 'readdir', code: error.code ?? 'UNKNOWN' });
+    } finally {
+      try {
+        directory.closeSync();
+      } catch (error) {
+        if (error.code !== 'ERR_DIR_CLOSED') readErrors.push({ path: currentRelative, operation: 'closedir', code: error.code ?? 'UNKNOWN' });
       }
     }
   }
 
   visit(root, 0);
-  return result;
+  const byPath = (left, right) => left.path.localeCompare(right.path) || left.operation?.localeCompare(right.operation ?? '') || 0;
+  return {
+    files: result,
+    budget: {
+      maxDepth,
+      maxFiles,
+      maxFileBytes,
+      maxDirectories,
+      maxEntries,
+      observedFiles: result.length,
+      observedDirectories,
+      observedEntries,
+      complete: !fileLimitReached && !directoryLimitReached && !entryLimitReached && truncatedDirectories.length === 0 && directoryBudgetPaths.length === 0 && oversizedFiles.length === 0 && readErrors.length === 0,
+      truncation: {
+        fileLimitReached,
+        directoryLimitReached,
+        entryLimitReached,
+        directories: [...truncatedDirectories].sort((left, right) => left.localeCompare(right)).slice(0, 20),
+        directoryBudgetPaths: [...directoryBudgetPaths].sort((left, right) => left.localeCompare(right)).slice(0, 20),
+        oversizedFiles: [...oversizedFiles].sort(byPath).slice(0, 20),
+        readErrors: [...readErrors].sort(byPath).slice(0, 20),
+      },
+    },
+  };
 }

@@ -1,6 +1,6 @@
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { readJson } from '../../adapters/filesystem/files.mjs';
+import { runNpmScript } from '../../adapters/process/index.mjs';
 import { sha256, stableJson } from '../../shared/hashing.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/paths.mjs';
 import {
@@ -159,16 +159,10 @@ export function replayPlanFor(root, candidate, preflightHead, replayState) {
 }
 
 export function executeReplayPlan(root, replayPlan, errors) {
-  const executable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const executed = [];
   for (const command of replayPlan.commands) {
     const startedAt = new Date().toISOString();
-    const result = spawnSync(executable, ['run', command.script], {
-      cwd: path.dirname(path.join(root, command.packagePath)),
-      encoding: 'utf8',
-      timeout: 300000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
+    const result = runNpmScript(path.dirname(path.join(root, command.packagePath)), command.script, { maxBuffer: 8 * 1024 * 1024 });
     const finishedAt = new Date().toISOString();
     const actual = {
       packagePath: command.packagePath,

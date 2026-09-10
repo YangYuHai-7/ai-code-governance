@@ -28,12 +28,26 @@ AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端�
 | 外部工作流编排 | 发现并有选择地整合 OpenSpec、Superpowers 等规格/执行 provider，以单一权威矩阵防止重复 design、plan 与 completion state |
 | 标准 Skill 工厂 | 用可审计的一手来源快照按已安装或用户确认的精确技术生成组件、接口、授权、数据访问、事务、事件等细粒度编码 Skill，并标记刷新边界 |
 | 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
-| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后显式 harvest，优先升级已有 Skill，并阻止后续绕过正典封装 |
+| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后显式 harvest，优先升级已有 Skill，并把已登记范围内的正典绕过变成可检查问题 |
 | 分级发布验收 | 按 bugfix、feature、major 使用不同人数、证据和回归深度；双人声明的风险信号触发更高验收级别 |
 | UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
 | 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
 | 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
-| 强制与成长 | 提供门禁、负向探针、知识记忆、任务运行时和规则晋升/退休闭环 |
+| 强制与成长 | 提供门禁、负向探针、知识记忆、任务运行时，并检测已登记范围内的正典绕过与规则演进需求 |
+
+当前三个版本轴彼此独立：`toolVersion` 是 npm SemVer（本源码候选为 `0.2.0`），`capabilityTrack` 是能力覆盖路线（如 `v3.0`），`evidenceLevel` 是具体组合的证据等级（`certified/supported/unverified/unsupported`）。能力路线不等于已发布软件版本，也不等于认证。
+
+## 第一次成功
+
+公开 npm 稳定版固定为当前实际可得的 `0.1.2`：
+
+```bash
+npm exec --yes --package=ai-code-governance@0.1.2 -- aicg doctor .
+npm exec --yes --package=ai-code-governance@0.1.2 -- aicg init .
+npm exec --yes --package=ai-code-governance@0.1.2 -- aicg check .
+```
+
+本仓库维护者验证尚未发布的 `0.2.0` candidate 时使用 `node bin/aicg.js ...` 或候选 tarball；不要把 candidate 命令归因给 npm `latest`。初始化必须显式选择全部内建客户端或指定客户端，`--yes` 不会替你作这个决定。
 
 ## 维护架构
 
@@ -114,7 +128,7 @@ memory 同步、L9 gate generation/freshness、complete 唯一入口、真实工
 
 | 产品线 | 范围 | 生命周期 | 当前证据 |
 | --- | --- | --- | --- |
-| v3.0 | React、Vue、Angular、Node.js、Java | active | supported |
+| v3.0 | React、Vue、Angular、Node.js、Java | active | unverified；检测可用，专项标准与真实项目证据仍有缺口 |
 | v3.1 | Svelte、Python、Go、PHP | planned | unverified |
 | v4 | .NET/C#、Android、iOS、混合 App、桌面、C/C++ 与嵌入式 | roadmap | unverified |
 | 通用适配 | 注册表未覆盖的语言或框架 | active | unverified |
@@ -123,13 +137,13 @@ memory 同步、L9 gate generation/freshness、complete 唯一入口、真实工
 
 ### 操作系统
 
-| 系统 | 当前状态 |
-| --- | --- |
-| macOS | skill 结构验证已通过 |
-| Windows | 设计已覆盖，尚未实机执行 |
-| Linux | 设计已覆盖，尚未实机执行 |
+| 系统 | CLI/package candidate | 真实 Agent 加载 | 目标项目 hook |
+| --- | --- | --- | --- |
+| macOS | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
+| Windows | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
+| Linux | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
 
-WSL 验证不等于原生 Windows 验证。详细约束见 [跨平台协议](references/cross-platform.md)。
+状态由 [能力包注册表](assets/registries/capability-pack-registry.json) 统一维护。WSL 验证不等于原生 Windows 验证；历史 CI 通过也不代表当前工作树、真实客户端或目标项目 hook 已验证。详细约束见 [跨平台协议](references/cross-platform.md)。
 
 ### 项目模式
 
@@ -152,20 +166,21 @@ OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers
 
 ## 安装与运行
 
-需要 Node.js 22+。无需全局安装即可直接从 npm 运行：
+需要 Node.js 22+。截至 2026-09-10，npm `latest` 是 `0.1.2`，稳定版只包含 `init/check/sync/doctor`。固定版本运行，避免一次初始化后执行入口漂移：
 
 ```bash
-npm exec --yes --package=ai-code-governance -- aicg init .
+npm exec --yes --package=ai-code-governance@0.1.2 -- aicg init .
+npm exec --yes --package=ai-code-governance@0.1.2 -- aicg check .
 ```
 
-也可以全局安装后使用短命令：
+也可以固定稳定版全局安装后使用短命令：
 
 ```bash
-npm install --global ai-code-governance
+npm install --global ai-code-governance@0.1.2
 aicg init .
 ```
 
-维护本仓库时也可使用：
+本仓库 `0.2.0` 是尚未发布的 source candidate；下面的完整命令集只保证从源码或本次候选 tarball 可用，不能归因给 npm `latest`：
 
 ```bash
 git clone https://github.com/YangYuHai-7/ai-code-governance.git
@@ -179,23 +194,23 @@ CLI 不创建 symlink、junction 或其他链接。Codex 与 Cursor 直接读取
 `docs/ai` 在首次初始化时播种，之后是人和 AI 共同维护的正典；`sync --force` 只恢复 manifest 拥有的
 配置、入口区块和客户端副本，不会把正典回滚成内置模板。
 
-## 快速使用
+## Source candidate 快速使用
 
 ```bash
-aicg doctor .
-aicg init .
-aicg check .
-aicg sync .
-aicg assess . --json
-aicg architecture . --json
-aicg standards . --json
-aicg team . --config team-context.json --json
-aicg harvest . --dry-run --json
-aicg complete . --verify "npm run test" --json
-aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --json
+node bin/aicg.js doctor .
+node bin/aicg.js init .
+node bin/aicg.js check .
+node bin/aicg.js sync .
+node bin/aicg.js assess . --json
+node bin/aicg.js architecture . --json
+node bin/aicg.js standards . --json
+node bin/aicg.js team . --config team-context.json --json
+node bin/aicg.js harvest . --dry-run --json
+node bin/aicg.js complete . --verify "npm run test" --json
+node bin/aicg.js release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --json
 # Inspect replayPlan, then approve that exact hash:
-aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --replay --approve <planHash>
-aicg hook install . --yes
+node bin/aicg.js release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --replay --approve <planHash>
+node bin/aicg.js hook install . --yes
 ```
 
 ### 完成门禁的触发时机
@@ -208,7 +223,7 @@ aicg hook install . --yes
 
 ### 部署与发布验收
 
-提交完成门禁和部署验收是两件事：`complete` 证明本次工作达到项目交付边界；`release-check` 在真正部署或发布前检查版本分类、候选提交与策略哈希、发布单元、双人风险评估、结构化独立评分、P0/P1 缺陷和必选 receipt。第一次调用只做完整预检并返回 `replayPlan`：其中包含 preflight HEAD、candidate `package.json` 的精确脚本文本、hash、预期退出码和输出 digest。只有再次同时传入 `--replay --approve <planHash>` 才执行；任一其他验收错误都会阻止执行，执行后还会复查 HEAD、所有 evidence hash、candidate 与工作树，并在 npm 发布模式重算包指纹。它拒绝 install/publish 生命周期、隐式 pre/post hook、伪 package JSON 以及未进入 Git 的证据。不提供精确批准时 command/probe receipt 不能通过。bugfix 对应 patch，feature 对应 minor，major 对应 major；被实现者与独立评审者任一方声明为权限、租户、支付、敏感数据、迁移、外部副作用或公共契约的改动，即使仍发 patch，也至少执行 feature 级验收。破坏公共 API 或治理 schema 必须走 major。工具不会自行理解所有 diff 语义；两名评估者同时漏报仍属于明确边界。
+提交完成门禁和组织发布认证是两个 scope：`complete` 证明本次工作达到项目配置的交付边界，不要求单人用户虚构独立评审者，也不产生发布认证；`release-check` 只在组织部署、发布审批或产品认证声明时检查版本分类、候选提交与策略哈希、发布单元、双人风险评估、结构化独立评分、P0/P1 缺陷和必选 receipt。第一次调用只做完整预检并返回 `replayPlan`：其中包含 preflight HEAD、candidate `package.json` 的精确脚本文本、hash、预期退出码和输出 digest。只有再次同时传入 `--replay --approve <planHash>` 才执行；任一其他验收错误都会阻止执行，执行后还会复查 HEAD、所有 evidence hash、candidate 与工作树，并在 npm 发布模式重算包指纹。它拒绝 install/publish 生命周期、隐式 pre/post hook、伪 package JSON 以及未进入 Git 的证据。不提供精确批准时 command/probe receipt 不能通过。bugfix 对应 patch，feature 对应 minor，major 对应 major；被实现者与独立评审者任一方声明为权限、租户、支付、敏感数据、迁移、外部副作用或公共契约的改动，即使仍发 patch，也至少执行 feature 级验收。破坏公共 API 或治理 schema 必须走 major。工具不会自行理解所有 diff 语义；两名评估者同时漏报仍属于明确边界。
 
 详细规则和 5 名全栈工程师 + 3 名架构师的对抗分工见 [分级发布验收协议](references/release-acceptance.md)，机器规则见 [发布验收策略](assets/policies/release-acceptance-policy.json)。`aicg init` 会生成目标项目的 `docs/ai/release-acceptance-policy.json`，后续由 `sync` 更新受管基线；项目只能用 `release-acceptance-override.json` 收紧要求。机器只校验证据契约、候选/策略绑定和仓库内结构化 receipts，不会认证真人身份或替代独立评审判断。
 
@@ -221,7 +236,7 @@ AICG_RELEASE_APPROVAL=<exact-replay-plan-hash> \
 npm publish
 ```
 
-缺少这两个变量或证据不达标时，发布会在访问 registry 前失败。手动预检可运行 `npm run release:check -- --type feature --evidence <path>`。本地 `prepublishOnly` 是防误操作边界，不是不可绕过的组织权限；正式强制仍应放在受保护的 CI release job、受限 npm token 和 registry provenance 上，`--ignore-scripts` 会绕过本地生命周期脚本。
+缺少这三个变量或证据不达标时，发布会在访问 registry 前失败。手动预检可运行 `npm run release:check -- --type feature --evidence <path>`。本地 `prepublishOnly` 是防误操作边界，不是不可绕过的组织权限；正式强制仍应放在受保护的 CI release job、受限 npm token 和 registry provenance 上，`--ignore-scripts` 会绕过本地生命周期脚本。
 
 也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
 
@@ -363,11 +378,9 @@ node scripts/validate-skill.mjs --negative-probe
 npm pack --dry-run
 ```
 
-第一条检查 front matter、本地链接、技术栈生成、持续升级与外部工作流协议、两个注册表、验收契约 v2、版本状态和 OS 证据。第二条在内存中注入重复能力包/工作流集成、缺失高风险探针、不完整协议、缺失 failure policy 与断链，证明检查器确实能够拦截错误。
+`npm test` 运行自动化测试；`smoke` 与 `smoke:package` 分别检查源码形态和安装后的 tarball；`validate-skill.mjs` 检查 front matter、本地链接、技术栈生成、持续升级、外部工作流协议、注册表、验收契约、版本状态和 OS 证据；`--negative-probe` 在内存中注入错误，证明校验器确实能够拦截它们。
 
-GitHub Actions 已在 macOS、Windows、Linux 上使用 Node.js 22/24 跑通测试、Skill 校验、smoke、打包检查
-和安装 tarball 后的 smoke。机器证据记录在能力包注册表；真实 Agent 加载、目标项目 hooks 和项目行为仍
-需独立回放，不能由 CLI CI 代替。
+历史 GitHub Actions 曾在 macOS、Windows、Linux 上使用 Node.js 22/24 跑通测试、Skill 校验、smoke、打包检查和安装 tarball 后的 smoke；该记录当前标为 `stale`，因为它尚未绑定当前 candidate。真实 Agent 加载、目标项目 hooks 和项目行为仍需独立回放，不能由 CLI CI 代替。
 
 ## 设计原则
 
@@ -385,12 +398,16 @@ GitHub Actions 已在 macOS、Windows、Linux 上使用 Node.js 22/24 跑通测�
 
 完整论证见 [十二条核心原则](references/principles.md)。
 
-## 路线图
+## 产品边界与路线图
 
-- v3.0：完成 Web 主流栈的团队内部试运行与证据收集。
-- v3.1：建立 Svelte、Python、Go、PHP 能力包及样例矩阵。
-- v3.x：补齐三平台真实 Agent 加载、目标项目 hooks、安装与升级协议。
-- v4：扩展 .NET、移动端、桌面端和系统/嵌入式平台家族。
+首要采用对象是**使用 AI 编码助手、但缺少生产工程经验的单人构建者**。首个可测成果是：用户无需理解 Git、SemVer、manifest 或 probe 术语，也能在明确选择客户端范围后完成初始化、一个可运行业务主流程、至少一条成功测试与两条失败测试，并能根据失败提示恢复到 `aicg check` 通过。试点同时记录安装清晰度、下一步清晰度、恢复能力、信心和人工干预次数。
+
+本地 CLI、治理内核和基础能力包继续采用 Apache-2.0。组织控制面、集中审计、认证服务、企业 rollout/support 是否形成商业层仍是待决策事项；当前仓库不承诺价格、SLA、真人认证或生产结果。
+
+- capabilityTrack v3.0：完成 Web 主流栈的团队内部试运行与证据收集。
+- capabilityTrack v3.1：建立 Svelte、Python、Go、PHP 能力包及样例矩阵。
+- capabilityTrack v3.x：补齐三平台真实 Agent 加载、目标项目 hooks、安装与升级协议。
+- capabilityTrack v4：扩展 .NET、移动端、桌面端和系统/嵌入式平台家族。
 - 产品 C：只有通过真实项目和声明平台认证的组合才对外标记 `certified`。
 
 ## 贡献约束

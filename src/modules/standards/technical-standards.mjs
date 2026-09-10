@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
-import { readJson, stableJson, unique, usageError } from '../../utils.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { stableJson, unique } from '../../shared/index.mjs';
 
 const REGISTRY_PATH = 'assets/registries/technical-standard-registry.json';
 const STANDARD_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

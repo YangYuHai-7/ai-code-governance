@@ -1,11 +1,11 @@
-import { spawnSync } from 'node:child_process';
+import { runNpmScript } from '../../adapters/process/index.mjs';
 import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from '../../capability-harvest.mjs';
 import { checkProject } from '../../checker.mjs';
 import { buildArtifacts } from '../../generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
 import { confirmPlan } from '../prompts.mjs';
 import { scanProject } from '../../scanner.mjs';
-import { usageError } from '../../utils.mjs';
+import { usageError } from '../../kernel/index.mjs';
 import { loadConfiguredGovernance } from '../shared.mjs';
 
 export function promotionInputFromOptions(options) {
@@ -25,13 +25,7 @@ export function runPromotionVerification(scan, command) {
   if (!selected || selected.source !== 'package.json' || !/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(selected.name)) {
     throw usageError('Capability promotion currently executes only an exact, safely named npm script discovered from package.json.');
   }
-  const executable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(executable, ['run', selected.name], {
-    cwd: scan.root,
-    encoding: 'utf8',
-    timeout: 300000,
-    maxBuffer: 4 * 1024 * 1024,
-  });
+  const result = runNpmScript(scan.root, selected.name);
   if (result.error || result.status !== 0) {
     const error = new Error(`Capability promotion verification failed for ${command}; no governance files were written.`);
     error.exitCode = 1;

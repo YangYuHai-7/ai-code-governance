@@ -193,7 +193,7 @@ function greenfieldScenario(cli, packed, root) {
   assert.equal(parseJsonOutput(doctor, 'greenfield doctor').ok, true);
   const assessment = parseJsonOutput(runAicg(evidence, cli, ['assess', project]), 'greenfield assess');
   assert.equal(assessment.classification.codebase.lifecycle.value, 'greenfield');
-  runAicg(evidence, cli, ['init', project, '--yes', '--no-assist']);
+  runAicg(evidence, cli, ['init', project, '--clients', 'all', '--yes', '--no-assist']);
   runAicg(evidence, cli, ['check', project, '--json']);
   assert.equal(fs.existsSync(path.join(project, 'src')), false, 'governance init must not create product source directories');
   evidence.snapshots.afterInitialization = listTree(project);
@@ -206,7 +206,7 @@ function greenfieldScenario(cli, packed, root) {
     'commit', '--quiet', '-m', 'Initialize governance',
   ]);
 
-  const secondInit = runAicg(evidence, cli, ['init', project, '--yes', '--no-assist']);
+  const secondInit = runAicg(evidence, cli, ['init', project, '--clients', 'all', '--yes', '--no-assist']);
   assert.match(secondInit.stdout, /changed_files=0/u);
   const firstSync = runAicg(evidence, cli, ['sync', project]);
   assert.match(firstSync.stdout, /"changed": \[\]/u);
@@ -259,7 +259,7 @@ function brownfieldScenario(cli, packed, root) {
   fs.writeFileSync(path.join(project, 'AGENTS.md'), userAgents);
   fs.writeFileSync(path.join(project, 'src', 'math.js'), legacySource);
   fs.writeFileSync(path.join(project, 'test', 'math.test.js'), legacyTest);
-  writeJson(config, { initialization: { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard' } });
+  writeJson(config, { clients: ['codex'], initialization: { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard' } });
 
   const evidence = baseEvidence('brownfield-new-code-standard', packed);
   initializeGitRepository(evidence, project);

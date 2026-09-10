@@ -1,12 +1,14 @@
 import { inspectCommitHook, installCommitHook, prepareCommitHookInstall, runCompletion } from '../../commit-completion.mjs';
 import { runReleaseAcceptance } from '../../release-acceptance.mjs';
-import { usageError } from '../../utils.mjs';
+import { usageError } from '../../kernel/index.mjs';
 
 function printCompletion(result, json) {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  console.log(`PRODUCTION_READINESS=${result.productionReadiness.state} constraint_evidence=${result.productionReadiness.constraintEvidence.status}`);
+  console.log(`CLAIM_BOUNDARY: ${result.claimBoundary}`);
   console.log(`completion_gate=${result.ok ? 'pass' : 'fail'} mode=${result.mode}`);
   if (result.stagedFiles.length > 0) console.log(`staged_files=${result.stagedFiles.join(',')}`);
   console.log(`governance=${result.governance.ok ? 'pass' : 'fail'} project_verification=${result.projectVerification.status}`);

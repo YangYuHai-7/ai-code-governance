@@ -83,6 +83,23 @@ test('parses the risk-tiered release acceptance command', () => {
   assert.throws(() => parseArgs(['release-check', '--yes']), (error) => error.exitCode === 2);
 });
 
+test('parses evidence actions and keeps recording explicitly authorized', () => {
+  assert.deepEqual(parseArgs(['evidence', 'record', 'project', '--config', 'docs/ai/receipt.json', '--yes', '--json']), {
+    command: 'evidence',
+    action: 'record',
+    target: 'project',
+    options: { config: 'docs/ai/receipt.json', yes: true, json: true },
+  });
+  assert.deepEqual(parseArgs(['evidence', 'status', 'project', '--json']), {
+    command: 'evidence',
+    action: 'status',
+    target: 'project',
+    options: { json: true },
+  });
+  assert.throws(() => parseArgs(['evidence', 'certify']), (error) => error.exitCode === 2);
+  assert.throws(() => parseArgs(['evidence', 'status', '--force']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');

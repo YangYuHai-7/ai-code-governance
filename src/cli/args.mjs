@@ -1,4 +1,4 @@
-import { usageError } from '../utils.mjs';
+import { usageError } from '../kernel/index.mjs';
 import { BOOLEAN_FLAGS, COMMAND_FLAGS, COMMAND_NAMES, VALUE_FLAGS } from './command-specs.mjs';
 
 export { HELP } from './help.mjs';
@@ -16,6 +16,9 @@ export function parseArgs(argv) {
   if (command === 'hook') {
     action = args.shift() ?? null;
     if (!['install', 'status'].includes(action)) throw usageError('hook requires an action: install or status.');
+  } else if (command === 'evidence') {
+    action = args.shift() ?? null;
+    if (!['record', 'status', 'export'].includes(action)) throw usageError('evidence requires an action: record, status, or export.');
   }
 
   let target = '.';

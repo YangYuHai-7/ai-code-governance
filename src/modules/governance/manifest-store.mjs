@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { MANIFEST_PATH } from '../../constants.mjs';
-import { readJson } from '../../utils.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
 
 export function loadManifest(root) {
   try {

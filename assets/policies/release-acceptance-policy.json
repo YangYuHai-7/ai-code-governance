@@ -1,6 +1,18 @@
 {
   "schemaVersion": 1,
   "policyId": "aicg-release-acceptance-v1",
+  "scopes": {
+    "projectCompletion": {
+      "command": "aicg complete",
+      "independentParticipantsRequired": false,
+      "claimBoundary": "Proves the configured project completion checks only; it is not an organizational release certification."
+    },
+    "organizationalReleaseCertification": {
+      "command": "aicg release-check",
+      "independentParticipantsRequired": true,
+      "claimBoundary": "Applies the risk-tiered independent evidence policy for deployment, publication, or product certification claims."
+    }
+  },
   "changeTypes": ["bugfix", "feature", "major"],
   "scorecard": {
     "minimumWeightedScore": 85,

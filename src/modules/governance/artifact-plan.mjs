@@ -6,7 +6,8 @@ import {
   MANIFEST_SCHEMA_VERSION,
 } from '../../constants.mjs';
 import { snapshotPath } from '../../preconditions.mjs';
-import { isSafeRelative, lstatSafe, normalizeRelative, readText, stableJson } from '../../utils.mjs';
+import { lstatSafe, readText } from '../../adapters/filesystem/index.mjs';
+import { isSafeRelative, normalizeRelative, stableJson } from '../../shared/index.mjs';
 import { linkAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
 import { loadManifest } from './manifest-store.mjs';

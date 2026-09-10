@@ -1,4 +1,4 @@
-import { sha256, stableJson } from '../../utils.mjs';
+import { sha256, stableJson } from '../../shared/index.mjs';
 
 const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
@@ -283,8 +283,8 @@ export function buildDecisionLedger(scan, config = null) {
       {
         id: 'agent-selection',
         value: config?.clients ?? null,
-        source: configured ? 'governance-config' : 'needs-user-input',
-        status: configured ? 'recorded' : 'pending',
+        source: config?.clientSupport?.source ?? (configured ? 'legacy-governance-config' : 'needs-user-input'),
+        status: config?.clientSupport ? 'confirmed' : configured ? 'legacy-recorded' : 'pending',
       },
       {
         id: 'technology-stack-selection',
@@ -331,6 +331,14 @@ export function buildDecisionLedger(scan, config = null) {
         source: config?.architecture?.source ?? 'needs-initialization-decision',
         status: config?.architecture ? 'recorded' : 'legacy-unconfigured',
       },
+      {
+        id: 'architecture-assessment-selection',
+        value: config?.architectureApproval
+          ? { planId: config.architectureApproval.planId, planHash: config.architectureApproval.planHash, optionId: config.architectureApproval.optionId }
+          : null,
+        source: config?.architectureApproval?.source ?? 'needs-user-input',
+        status: config?.architectureApproval ? 'confirmed' : 'not-adopted',
+      },
     ],
     pendingDecisions,
   };
@@ -346,6 +354,8 @@ export function assessmentSummary(scan) {
   const assessment = classifyProject(scan);
   return {
     target: scan.root,
+    assessmentStatus: scan.scanBudget?.complete === false ? 'incomplete' : 'complete',
+    scanBudget: scan.scanBudget ?? null,
     classification: assessment,
     decisionLedger: buildDecisionLedger(scan),
   };

@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { loadAgentRegistry, loadCapabilityRegistry } from '../../catalogs/index.mjs';
-import { commandExists, commandVersion, exists, matchSimpleGlob, normalizeRelative, readJson, readText, walkFiles } from '../../utils.mjs';
+import { commandExists, commandVersion, resolveGitRoot } from '../../adapters/process/index.mjs';
+import { exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
+import { matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
 
 const GOVERNANCE_PATHS = [
   'AGENTS.md',
@@ -15,12 +16,25 @@ const GOVERNANCE_PATHS = [
   '.ai-governance/config.json',
 ];
 
-function gitRoot(target) {
-  const result = spawnSync('git', ['-C', target, 'rev-parse', '--show-toplevel'], {
-    encoding: 'utf8',
-    timeout: 5000,
-  });
-  return result.status === 0 ? result.stdout.trim() : null;
+const DEFAULT_SCAN_BUDGET = Object.freeze({
+  maxDepth: 32,
+  maxFiles: 50000,
+  maxFileBytes: 2 * 1024 * 1024,
+  maxDirectories: 20000,
+  maxEntries: 100000,
+});
+
+const NPM_VERIFICATION_SCRIPT = /^(?:test|verify|check|lint|typecheck|type-check|build)(?::|$)/i;
+
+export function verificationNpmCommands(commands) {
+  const npmCommands = commands.filter((candidate) => candidate.source === 'package.json');
+  const names = new Set(npmCommands.map((candidate) => candidate.name));
+  return npmCommands.filter((candidate) => (
+    /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(candidate.name)
+    && NPM_VERIFICATION_SCRIPT.test(candidate.name)
+    && !names.has(`pre${candidate.name}`)
+    && !names.has(`post${candidate.name}`)
+  ));
 }
 
 function detectProjectMode(root, files) {
@@ -48,7 +62,7 @@ function detectProjectMode(root, files) {
 
 function manifestText(files, patterns) {
   const matched = files.filter(
-    (file) => file.type === 'file' && patterns.some((pattern) => matchSimpleGlob(file.relative, pattern)),
+    (file) => file.type === 'file' && file.contentScannable !== false && patterns.some((pattern) => matchSimpleGlob(file.relative, pattern)),
   );
   const text = matched
     .map((file) => {
@@ -112,7 +126,7 @@ function detectCommands(root) {
 function detectPackageDependencies(files) {
   const packages = new Map();
   for (const file of files) {
-    if (file.type !== 'file' || path.basename(file.relative) !== 'package.json') continue;
+    if (file.type !== 'file' || file.contentScannable === false || path.basename(file.relative) !== 'package.json') continue;
     try {
       const manifest = readJson(file.absolute);
       const sections = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
@@ -154,9 +168,17 @@ export function scanProject(target, options = {}) {
   // Governance decisions and placement gates must see the complete product tree.
   // `walkFiles` records links but never follows them. Build outputs are ignored only at
   // the repository root so a nested directory cannot become an unscanned escape hatch.
-  const files = walkFiles(root, { maxDepth: Infinity, ignoredAtAnyDepth: ['.git', 'node_modules'], caseInsensitiveIgnored: true });
+  const scanBudget = { ...DEFAULT_SCAN_BUDGET, ...(options.scanBudget ?? {}) };
+  const walked = walkFilesDetailed(root, {
+    ...scanBudget,
+    ignoredAtAnyDepth: ['.git', 'node_modules'],
+    caseInsensitiveIgnored: true,
+  });
+  const files = walked.files;
   const capabilityRegistry = loadCapabilityRegistry();
   const agentRegistry = loadAgentRegistry();
+  const gitCommand = probeEnvironment && commandExists('git');
+  const detectedGitRoot = gitCommand ? resolveGitRoot(root) : null;
   const agents = agentRegistry.agents.map((agent) => {
     const command = probeEnvironment ? agent.detect_commands.find((candidate) => commandExists(candidate)) ?? null : null;
     return {
@@ -181,13 +203,19 @@ export function scanProject(target, options = {}) {
 
   return {
     root,
-    gitRoot: probeEnvironment ? gitRoot(root) : null,
+    gitRoot: detectedGitRoot,
+    git: {
+      availability: probeEnvironment ? (gitCommand ? 'detected' : 'not-found') : 'not-probed',
+      version: gitCommand ? commandVersion('git') : null,
+      root: detectedGitRoot,
+    },
     environmentProbe: probeEnvironment ? 'executed' : 'not-probed',
     projectName: path.basename(root),
     projectMode: detectProjectMode(root, files),
     currentOs: platformId(),
     architecture: os.arch(),
     files,
+    scanBudget: walked.budget,
     stacks: detectStacks(files, capabilityRegistry),
     packageDependencies: detectPackageDependencies(files),
     commands: detectCommands(root),
@@ -201,6 +229,7 @@ export function scanSummary(scan) {
   return {
     target: scan.root,
     git_root: scan.gitRoot,
+    git: scan.git,
     project_mode: scan.projectMode,
     current_os: scan.currentOs,
     detected_stacks: scan.stacks,
@@ -209,6 +238,7 @@ export function scanSummary(scan) {
     agents: scan.agents,
     existing_governance: scan.existingGovernance,
     links: scan.links,
+    scan_budget: scan.scanBudget,
     external_workflows: scan.externalWorkflows,
   };
 }

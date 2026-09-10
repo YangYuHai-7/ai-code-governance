@@ -1,22 +1,37 @@
 import path from 'node:path';
 import { deriveArchitectureDecision } from '../../architecture-policy.mjs';
+import { initializationForArchitectureOption, resolveArchitectureApproval } from '../../architecture-assessment.mjs';
 import { runAssist, assistCandidates } from '../../assist.mjs';
 import { checkProject, printCheck } from '../../checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../../generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptConfig } from '../prompts.mjs';
 import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../../project-assessment.mjs';
+import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
+import { TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
-import { readJson, usageError } from '../../utils.mjs';
-import { assertManagedArchitectureConfigTrusted, loadExistingConfig, mergeConfig, printScan } from '../shared.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
 
 const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/ai/', 'docs/memory/', '.cursor/', '.claude/', '.agents/'];
 const GOVERNANCE_WRITE_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
 
 function requireConfiguredChoices(supplied) {
-  for (const key of ['clients', 'stacks', 'governanceDepth', 'artifactLanguage']) {
+  for (const key of ['stacks', 'governanceDepth', 'artifactLanguage']) {
     if (supplied[key] === undefined) throw usageError(`--config must provide ${key} unless --yes is also used.`);
   }
+}
+
+function clientsFromOption(value) {
+  if (value === 'all') return ['codex', 'claude-code', 'cursor'];
+  const clients = [...new Set(String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean))];
+  if (clients.length === 0) throw usageError('--clients requires all or a comma-separated client list.');
+  return clients;
+}
+
+function initIntent() {
+  return { id: 'governance.initialize', handler: 'init', mode: 'write' };
 }
 
 function sameInitialization(left, right) {
@@ -39,7 +54,8 @@ function assertInitializationWriteBoundary(plan) {
 export async function prepareInit(target, options, { allowDefaults = false } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
   const scan = scanProject(target, { probeEnvironment: false });
-  const existing = loadExistingConfig(scan.root);
+  const rawExisting = loadExistingConfig(scan.root);
+  const existing = rawExisting ? normalizeClientSupport(rawExisting, { source: 'legacy-config' }) : null;
   assertManagedArchitectureConfigTrusted(scan.root, existing);
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
   let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
@@ -48,18 +64,34 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
     const supplied = readJson(path.resolve(options.config));
     if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
     const { initialClassification: _ignoredClassification, architecture: _ignoredArchitecture, projectMode: _ignoredProjectMode, ...safeSupplied } = supplied;
-    config = mergeConfig(config, safeSupplied);
+    const normalizedSupplied = safeSupplied.clientSupport
+      ? { ...safeSupplied, clients: safeSupplied.clientSupport.selectedClients }
+      : Array.isArray(safeSupplied.clients) && safeSupplied.clients.length > 0
+        ? normalizeClientSupport(safeSupplied, { source: 'config' })
+        : safeSupplied;
+    config = mergeConfig(config, normalizedSupplied);
     if (safeSupplied.initialization?.lifecycle !== undefined && !sameInitialization(existing?.initialization, safeSupplied.initialization)) {
       decisionSource = 'config';
     }
   }
+  if (options.clients) {
+    const clients = clientsFromOption(options.clients);
+    config = { ...config, clients, clientSupport: clientSupportFromClients(clients, 'cli') };
+  }
   if (!options.yes && !options.config && !allowDefaults) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Interactive init requires a TTY. Use --yes or --config <json>.');
-    config = await promptConfig(scan, config);
+    config = await promptConfig(scan, config, { locale: options.locale });
     prompted = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   }
-  config = { ...config, projectMode: scan.projectMode, projectName: scan.projectName };
+  if (options.locale) config.interactionLanguage = options.locale;
+  if (!config.clientSupport) {
+    const locale = config.interactionLanguage === 'zh-CN' || options.locale === 'zh-CN';
+    throw usageError(locale
+      ? '必须显式选择客户端支持范围。使用 --clients all、--clients codex,cursor，或在 --config 中提供 clientSupport。'
+      : 'Client support scope must be explicit. Use --clients all, --clients codex,cursor, or provide clientSupport in --config.');
+  }
+  config = { ...config, projectMode: scan.projectMode, projectName: scan.projectName, toolVersion: TOOL_VERSION, invocationMode: config.invocationMode ?? 'npm-exec-pinned' };
   if (options['no-assist']) config.features.aiAssist = false;
   if (options.assist) config.features.aiAssist = true;
   if (options.assist && !config.clients.includes(options.assist)) {
@@ -67,6 +99,16 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   }
   const currentAssessment = classifyProject(scan);
   try {
+    if (config.architectureApproval) {
+      const approval = resolveArchitectureApproval(scan, config.architectureApproval);
+      const approvedInitialization = initializationForArchitectureOption(approval.optionId);
+      if (config.initialization?.lifecycle && (
+        config.initialization.lifecycle !== approvedInitialization.lifecycle
+        || (config.initialization.existingCodeStrategy ?? null) !== approvedInitialization.existingCodeStrategy
+      )) throw new Error('architectureApproval conflicts with initialization lifecycle or existing-code strategy.');
+      config = { ...config, architectureApproval: approval, initialization: { ...approvedInitialization } };
+      decisionSource = 'config';
+    }
     config = {
       ...config,
       initialization: resolveInitializationDecision(scan, config, {
@@ -94,6 +136,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
 
 export async function initCommand(target, options) {
   const { scan, config, plan } = await prepareInit(target, options);
+  const executionPlan = buildExecutionPlan({ intent: initIntent(), scan, artifactPlan: plan, config });
   printScan(scan);
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely initialize:\n- ${plan.conflicts.join('\n- ')}`);
@@ -115,13 +158,24 @@ export async function initCommand(target, options) {
       implementationBoundary: ledger.decisions.find((decision) => decision.id === 'implementation-boundary')?.value ?? null,
       files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })),
       linksToMigrate: plan.links.map((link) => path.relative(scan.root, link)),
+      planHash: executionPlan.planHash,
     }, null, 2));
     return;
+  }
+
+  if (options.approve) {
+    if (options.approve !== executionPlan.planHash) throw usageError(`Approval does not match the current plan hash ${executionPlan.planHash}. Re-run init --dry-run and approve the displayed hash.`);
+    assertPlanFresh(executionPlan);
+    assertArtifactPlanMatches(executionPlan, scan.root, plan);
   }
 
   const applied = applyArtifactPlan(scan.root, plan, {
     migrateLinks: options['migrate-links'],
     transactional: true,
+    beforeApply: options.approve ? () => {
+      assertPlanFresh(executionPlan);
+      assertArtifactPlanMatches(executionPlan, scan.root, plan);
+    } : undefined,
     verify: () => checkProject(scanProject(scan.root)),
   });
   console.log(`initialized=${scan.root} changed_files=${applied.changed.length}`);

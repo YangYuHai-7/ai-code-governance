@@ -6,20 +6,34 @@ import { assessmentSummary } from '../../project-assessment.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { technicalStandardsSummary } from '../../technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from '../../team-recommendation.mjs';
-import { configForStandards } from '../shared.mjs';
+import { addReadOnlyGuidance } from '../read-only-guidance.mjs';
+import { configForStandards, loadExistingConfig } from '../shared.mjs';
+
+function existingConfigForGuidance(scan) {
+  try {
+    return loadExistingConfig(scan.root);
+  } catch {
+    return null;
+  }
+}
 
 export function doctorCommand(target, options) {
-  const result = doctor(scanProject(target, { probeEnvironment: false }));
+  const scan = scanProject(target, { probeEnvironment: true });
+  const result = addReadOnlyGuidance('doctor', doctor(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
   printDoctor(result, Boolean(options.json));
   if (!result.ok) process.exitCode = 1;
 }
 
-export function assessCommand(target) {
-  console.log(JSON.stringify(assessmentSummary(scanProject(target)), null, 2));
+export function assessCommand(target, options) {
+  const scan = scanProject(target);
+  const result = addReadOnlyGuidance('assess', assessmentSummary(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
+  console.log(JSON.stringify(result, null, 2));
 }
 
-export function architectureCommand(target) {
-  console.log(JSON.stringify(assessArchitecture(scanProject(target)), null, 2));
+export function architectureCommand(target, options) {
+  const scan = scanProject(target);
+  const result = addReadOnlyGuidance('architecture', assessArchitecture(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
+  console.log(JSON.stringify(result, null, 2));
 }
 
 export function standardsCommand(target) {

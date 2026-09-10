@@ -7,7 +7,7 @@ import test from 'node:test';
 import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
-import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../src/project-assessment.mjs';
+import { assessmentSummary, buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../src/project-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
 
 const cli = path.resolve('bin/aicg.js');
@@ -43,6 +43,16 @@ test('an empty project remains greenfield after governance generation', (context
   const result = checkProject(grown);
   assert.equal(result.ok, true);
   assert.ok(result.warnings.some((warning) => warning.includes('legacy-unconfirmed initialization decision')));
+});
+
+test('assessment summary exposes incomplete repository scans', (context) => {
+  const root = fixture('incomplete-summary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'first.ts'), 'export const first = true;\n');
+  fs.writeFileSync(path.join(root, 'second.ts'), 'export const second = true;\n');
+  const result = assessmentSummary(scanProject(root, { scanBudget: { maxFiles: 1 } }));
+  assert.equal(result.assessmentStatus, 'incomplete');
+  assert.equal(result.scanBudget.complete, false);
 });
 
 test('an existing codebase requires an explicit existing-code strategy', (context) => {
@@ -209,7 +219,7 @@ test('configured project identity survives a copy to a checkout with a different
     fs.rmSync(cloneParent, { recursive: true, force: true });
   });
 
-  const initialized = run(['init', root, '--yes', '--no-assist']);
+  const initialized = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
   assert.equal(initialized.status, 0, initialized.stderr);
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   const originalLedger = fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8');

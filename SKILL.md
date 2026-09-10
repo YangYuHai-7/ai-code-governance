@@ -54,7 +54,7 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/registries
 
 本 skill 的交付路线是：先作为**团队内部标准化治理工具（B）**积累证据，再演进为**可分发到不同项目的治理产品（C）**。版本号表示能力包覆盖范围，不改变下文的十二条原则和十二层架构：
 
-- **v3.0**：首批支持 React、Vue、Angular、Node.js、Java；支持中文、英文、双语访谈与治理产物，并把 macOS、Windows、Linux 纳入验证矩阵。
+- **capabilityTrack v3.0**：首批覆盖 React、Vue、Angular、Node.js、Java 的检测与候选治理；当前各包必须按注册表分别报告专项标准、真实项目和平台证据，不得把路线覆盖写成 `supported`。中文、英文、双语访谈与治理产物属于候选能力，macOS、Windows、Linux 分别进入验证矩阵。
 - **v3.1**：增加 Svelte、Python、Go、PHP 的认证能力包。
 - **v4**：沿用同一治理内核，增加 `.NET/C#`、原生移动端（Android、iOS）、混合 App、桌面端、嵌入式与 `C/C++` 平台家族包。
 - **其他技术栈**：允许通过通用适配流程治理，但必须标记为 `unverified`，不得暗示已经达到认证能力包的证据等级。
@@ -113,7 +113,9 @@ Agent 能力、原生入口与 AI 补全命令统一登记在 `assets/registries
 
 跨系统实现与认证要求见 [references/cross-platform.md](references/cross-platform.md)。当前系统执行通过只能证明当前系统；其余系统必须分别标记为已验证、未验证或不支持。
 
-B → C 的产品结构与能力证据等级见 [references/product-architecture.md](references/product-architecture.md)。技术栈状态以 [assets/registries/capability-pack-registry.json](assets/registries/capability-pack-registry.json) 为准，使用协议见 [references/capability-packs.md](references/capability-packs.md)。
+B → C 的产品结构、`toolVersion` / `capabilityTrack` / `evidenceLevel` 三个版本轴与能力证据等级见 [references/product-architecture.md](references/product-architecture.md)。技术栈状态以 [assets/registries/capability-pack-registry.json](assets/registries/capability-pack-registry.json) 为准，使用协议见 [references/capability-packs.md](references/capability-packs.md)。
+
+试点与真实项目证据使用 `aicg evidence record/status/export` 的本地台账，协议见 [references/certification-evidence.md](references/certification-evidence.md)。模拟 persona 永远不计作真实项目；结构通过、双 reviewer 声明或 receipt 汇总也不会自动产生 `certified` 结论。
 
 ## 不可协商的工作方式
 
