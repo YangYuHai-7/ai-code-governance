@@ -7,6 +7,7 @@ import { validateTechnicalStandardRegistry } from '../src/technical-standards.mj
 import { validateTeamRoleRegistry } from '../src/team-recommendation.mjs';
 import { validateArchitectureProfileRegistry } from '../src/architecture-policy.mjs';
 import { validateReleaseAcceptancePolicy } from '../src/release-acceptance.mjs';
+import { validateSurfaceVerificationContract } from '../src/modules/repository/index.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -91,6 +92,8 @@ function validateMarkdownLinks() {
     path.join(root, 'SKILL.md'),
     path.join(root, 'README.md'),
     ...markdownFiles(path.join(root, 'references')),
+    ...markdownFiles(path.join(root, 'docs', 'validation')),
+    path.join(root, 'docs', 'pilots', '2026-09-10', 'post-fix-execution-matrix.md'),
   ];
   for (const file of files) {
     const text = markdownOutsideFences(fs.readFileSync(file, 'utf8'));
@@ -103,6 +106,73 @@ function validateMarkdownLinks() {
     }
   }
   return files.length;
+}
+
+function templateInvariant(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+function validateBlankExternalReceipt(receipt) {
+  templateInvariant(receipt?.schemaVersion === 1 && receipt.template === true && receipt.templateStatus === 'blank-not-evidence', 'External receipt must remain a schemaVersion 1 blank-not-evidence template.');
+  templateInvariant(receipt.workPackageStatus === 'externally-blocked', 'External receipt work package must remain externally-blocked while blank.');
+  templateInvariant(receipt.candidate?.sha256 === null, 'Blank external receipt must not claim a candidate digest.');
+  templateInvariant(receipt.execution?.status === 'not-run' && receipt.execution.outcome === null, 'Blank external receipt execution must remain not-run with no outcome.');
+  templateInvariant(receipt.qualification === 'not-evidence', 'Blank external receipt qualification must remain not-evidence.');
+  templateInvariant(Array.isArray(receipt.reviewers) && receipt.reviewers.length === 0, 'Blank external receipt must not invent reviewers.');
+  templateInvariant(receipt.claims?.claimState === 'unverified' && receipt.claims.realUserObserved === 'unverified' && receipt.claims.realProjectEvidence === 'unverified' && receipt.claims.realClientVerified === 'unverified' && receipt.claims.crossOsVerified === 'unverified', 'Blank external receipt claims must remain unverified.');
+  templateInvariant(receipt.claims?.productionReady === false && receipt.claims.certified === false, 'Blank external receipt cannot claim production readiness or certification.');
+  return true;
+}
+
+function validateBlankClientOsMatrix(matrix) {
+  templateInvariant(matrix?.schemaVersion === 1 && matrix.template === true && matrix.templateStatus === 'blank-not-evidence', 'Client/OS matrix must remain a schemaVersion 1 blank-not-evidence template.');
+  templateInvariant(matrix.workPackage === 'L2' && matrix.status === 'externally-blocked' && matrix.claimState === 'unverified', 'Blank client/OS matrix must remain externally-blocked and unverified.');
+  templateInvariant(matrix.candidate?.sha256 === null, 'Blank client/OS matrix must not claim a candidate digest.');
+  const expectedCells = new Set(['macos-codex', 'macos-claude-code', 'macos-cursor', 'windows-codex', 'windows-claude-code', 'windows-cursor', 'linux-codex', 'linux-claude-code', 'linux-cursor']);
+  templateInvariant(Array.isArray(matrix.cells) && matrix.cells.length === expectedCells.size, 'Blank client/OS matrix must contain exactly nine declared cells.');
+  templateInvariant(new Set(matrix.cells.map((cell) => cell.id)).size === expectedCells.size && matrix.cells.every((cell) => expectedCells.has(cell.id)), 'Blank client/OS matrix cells must be the unique macOS, Windows, and Linux combinations for Codex, Claude Code, and Cursor.');
+  templateInvariant(matrix.cells.every((cell) => cell.executionStatus === 'not-run' && cell.evidenceState === 'unverified' && cell.receiptId === null), 'Blank client/OS matrix cells must remain not-run and unverified without receipts.');
+  const summary = matrix.summary ?? {};
+  templateInvariant(summary.declaredCellCount === 9 && summary.executedCellCount === 0 && summary.passedCellCount === 0 && summary.failedCellCount === 0 && summary.blockedCellCount === 0 && summary.unverifiedCellCount === 9 && summary.staleCellCount === 0 && summary.withdrawnCellCount === 0, 'Blank client/OS matrix summary counts are inconsistent.');
+  templateInvariant(summary.realClientVerified === false && summary.crossOsVerified === false && summary.certified === false, 'Blank client/OS matrix cannot claim client, cross-OS, or certification evidence.');
+  return true;
+}
+
+function validateExternalValidationTemplates({ negativeProbe = false } = {}) {
+  let receipt;
+  let matrix;
+  try {
+    receipt = JSON.parse(read('docs/validation/templates/external-evidence-receipt.json'));
+    validateBlankExternalReceipt(receipt);
+  } catch (error) {
+    fail(`External evidence receipt template is invalid: ${error.message}`);
+  }
+  try {
+    matrix = JSON.parse(read('docs/validation/templates/client-os-matrix.json'));
+    validateBlankClientOsMatrix(matrix);
+  } catch (error) {
+    fail(`Client/OS matrix template is invalid: ${error.message}`);
+  }
+  if (!negativeProbe || !receipt || !matrix) return;
+  let receiptCaught = false;
+  try {
+    const unsafeReceipt = structuredClone(receipt);
+    unsafeReceipt.claims.certified = true;
+    validateBlankExternalReceipt(unsafeReceipt);
+  } catch {
+    receiptCaught = true;
+  }
+  let matrixCaught = false;
+  try {
+    const unsafeMatrix = structuredClone(matrix);
+    unsafeMatrix.cells[0].executionStatus = 'passed';
+    unsafeMatrix.cells[0].evidenceState = 'verified';
+    validateBlankClientOsMatrix(unsafeMatrix);
+  } catch {
+    matrixCaught = true;
+  }
+  if (!receiptCaught) fail('Negative probe did not catch a certified blank external receipt.');
+  if (!matrixCaught) fail('Negative probe did not catch a fabricated blank client/OS result.');
 }
 
 function validateEntryPoint() {
@@ -652,6 +722,7 @@ function runNegativeProbe(
   technicalRegistry,
   teamRegistry,
   releasePolicy,
+  surfaceVerificationContract,
 ) {
   const before = failures.length;
   const broken = structuredClone(registry);
@@ -794,6 +865,15 @@ function runNegativeProbe(
     releasePolicyCaught = /weights must total 100/.test(error.message);
   }
 
+  let surfaceVerificationContractCaught = false;
+  try {
+    const brokenSurfaceContract = structuredClone(surfaceVerificationContract);
+    brokenSurfaceContract.evidenceLevels = ['certified'];
+    validateSurfaceVerificationContract(brokenSurfaceContract);
+  } catch (error) {
+    surfaceVerificationContractCaught = /detected-unverified/.test(error.message);
+  }
+
   if (!acceptanceCaught) fail('Negative probe did not catch an incomplete acceptance contract.');
   if (!failurePolicyCaught) fail('Negative probe did not catch a missing failure policy.');
   if (!resultManifestCaught) fail('Negative probe did not catch an incomplete project result manifest contract.');
@@ -806,8 +886,9 @@ function runNegativeProbe(
   if (!technicalRegistryCaught) fail('Negative probe did not catch a duplicate technical-standard source.');
   if (!teamRegistryCaught) fail('Negative probe did not catch an unsafe team role registry.');
   if (!releasePolicyCaught) fail('Negative probe did not catch an invalid release acceptance scorecard.');
-  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught && releasePolicyCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught release_acceptance_policy=caught');
+  if (!surfaceVerificationContractCaught) fail('Negative probe did not catch an unsafe surface verification evidence level.');
+  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught && releasePolicyCaught && surfaceVerificationContractCaught) {
+    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught release_acceptance_policy=caught surface_verification_contract=caught');
   }
 }
 
@@ -884,9 +965,18 @@ try {
   fail(`Release acceptance policy is not valid JSON: ${error.message}`);
 }
 
-validateArchitectureProfiles();
+let surfaceVerificationContract;
+try {
+  surfaceVerificationContract = JSON.parse(read('assets/contracts/surface-verification-contract.json'));
+  validateSurfaceVerificationContract(surfaceVerificationContract);
+} catch (error) {
+  fail(`Surface verification contract is invalid: ${error.message}`);
+}
 
-if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry && releasePolicy) {
+validateArchitectureProfiles();
+validateExternalValidationTemplates({ negativeProbe: process.argv.includes('--negative-probe') });
+
+if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry && releasePolicy && surfaceVerificationContract) {
   runNegativeProbe(
     registry,
     agentRegistry,
@@ -898,6 +988,7 @@ if (process.argv.includes('--negative-probe') && registry && agentRegistry && wo
     technicalRegistry,
     teamRegistry,
     releasePolicy,
+    surfaceVerificationContract,
   );
 }
 

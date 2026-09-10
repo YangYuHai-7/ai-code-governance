@@ -10,6 +10,7 @@ import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { evaluateProductionReadiness } from './production-readiness.mjs';
+import { evaluateSurfaceVerification } from './surface-verification.mjs';
 
 export const PRE_COMMIT_HOOK_MARKER = 'ai-code-governance:pre-commit-v1';
 
@@ -169,7 +170,8 @@ function completionResult(scan, { mode, stagedFiles = [], verificationCommand = 
   } else if (selectedVerification) {
     projectVerification = { status: 'skipped-after-governance-failure', command: selectedVerification.command };
   }
-  const ok = governance.ok && ['not-requested', 'passed'].includes(projectVerification.status);
+  const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
+  const ok = governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
@@ -179,6 +181,7 @@ function completionResult(scan, { mode, stagedFiles = [], verificationCommand = 
     stagedFiles,
     ok,
     productionReadiness,
+    surfaceVerification,
     claimBoundary,
     governance,
     projectVerification,

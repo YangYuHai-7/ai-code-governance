@@ -8,8 +8,79 @@ import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { resolveInitializationDecision } from '../src/project-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { evaluateModuleGraph, moduleGraphDeclaration } from '../src/modules/architecture/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+const ACTIVE_GRAPH_CONFIG = { architecture: { status: 'active', verification: { dependencyDirection: 'aicg-check-js-ts-module-graph' } } };
+
+function writeSource(root, relative, content) {
+  const absolute = path.join(root, relative);
+  fs.mkdirSync(path.dirname(absolute), { recursive: true });
+  fs.writeFileSync(absolute, content);
+}
+
+test('JS/TS module graph permits app to public modules to shared and rejects reverse direction', (context) => {
+  const root = fixture('module-graph-direction');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/app/index.ts', "import { orders } from '../modules/orders/index.ts';\nexport { orders };\n");
+  writeSource(root, 'src/modules/orders/index.ts', "export { shared } from '../../shared/index.ts';\nexport const orders = true;\n");
+  writeSource(root, 'src/shared/index.ts', "// import { orders } from '../modules/orders/index.ts';\nexport const shared = true;\n");
+  const declaration = moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG);
+  assert.equal(evaluateModuleGraph(scanProject(root), declaration).status, 'passed');
+
+  writeSource(root, 'src/shared/unsafe.ts', "import { orders } from '../modules/orders/index.ts';\nexport { orders };\n");
+  const rejected = evaluateModuleGraph(scanProject(root), declaration);
+  assert.equal(rejected.status, 'failed');
+  assert.deepEqual(rejected.issues[0], {
+    source: 'src/shared/unsafe.ts',
+    target: 'src/modules/orders/index.ts',
+    rule: 'dependency-direction: shared may not depend on modules',
+  });
+});
+
+test('JS/TS module graph rejects cross-module private imports but accepts public index exports', (context) => {
+  const root = fixture('module-graph-public-api');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/modules/orders/index.ts', "import { billing } from '../billing/index.ts';\nexport { billing };\n");
+  writeSource(root, 'src/modules/billing/index.ts', "export { privateBilling } from './private.ts';\n");
+  writeSource(root, 'src/modules/billing/private.ts', 'export const privateBilling = true;\n');
+  const declaration = moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG);
+  assert.equal(evaluateModuleGraph(scanProject(root), declaration).status, 'passed');
+
+  writeSource(root, 'src/modules/orders/consumer.ts', "import { privateBilling } from '../billing/private.ts';\nexport { privateBilling };\n");
+  const rejected = evaluateModuleGraph(scanProject(root), declaration);
+  assert.equal(rejected.status, 'failed');
+  assert.ok(rejected.issues.some((issue) => (
+    issue.source === 'src/modules/orders/consumer.ts'
+    && issue.target === 'src/modules/billing/private.ts'
+    && issue.rule === 'public-api: cross-module imports must target the module public entrypoint'
+  )));
+});
+
+test('module graph stays stated-only without a declaration or with unsupported dynamic imports', (context) => {
+  const root = fixture('module-graph-stated-only');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/modules/orders/index.ts', "export async function load() { return import('../billing/index.ts'); }\n");
+  writeSource(root, 'src/modules/billing/index.ts', 'export const billing = true;\n');
+  assert.equal(evaluateModuleGraph(scanProject(root), null).status, 'stated-only');
+  assert.equal(moduleGraphDeclaration({ architecture: { status: 'active', verification: { dependencyDirection: 'stated-only' } } }), null);
+  const result = evaluateModuleGraph(scanProject(root), moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG));
+  assert.equal(result.status, 'stated-only');
+  assert.deepEqual(result.unsupportedFiles, ['src/modules/orders/index.ts']);
+});
+
+test('aicg check binds active module graph violations into architecture evidence', (context) => {
+  const root = fixture('module-graph-check');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(run(['init', root, '--yes', '--no-assist']).status, 0);
+  writeSource(root, 'src/modules/orders/index.ts', 'export const orders = true;\n');
+  writeSource(root, 'src/shared/unsafe.ts', "import { orders } from '../modules/orders/index.ts';\nexport { orders };\n");
+  const rejected = run(['check', root, '--json']);
+  assert.equal(rejected.status, 1, rejected.stderr);
+  const payload = JSON.parse(rejected.stdout);
+  assert.equal(payload.architecture.moduleGraph.status, 'failed');
+  assert.ok(payload.errors.includes('architecture module graph: src/shared/unsafe.ts -> src/modules/orders/index.ts: dependency-direction: shared may not depend on modules'));
+});
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-architecture-policy-${name}-`));
@@ -47,7 +118,7 @@ test('greenfield initialization records an active module boundary without creati
     scope: { roots: ['src'], appliesTo: 'future-code', baselineSourcePaths: [] },
     verification: {
       newFilePlacement: 'aicg-check-detects-current-tree',
-      dependencyDirection: 'stated-only',
+      dependencyDirection: 'aicg-check-js-ts-module-graph',
       cohesion: 'stated-only',
       singleResponsibility: 'stated-only',
     },
@@ -58,9 +129,12 @@ test('greenfield initialization records an active module boundary without creati
   const profile = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/architecture-profile.json'), 'utf8'));
   assert.equal(profile.status, 'active');
   assert.equal(profile.verification.newFilePlacement, 'aicg-check-detects-current-tree');
-  assert.equal(profile.verification.dependencyDirection, 'stated-only');
+  assert.equal(profile.verification.dependencyDirection, 'aicg-check-js-ts-module-graph');
+  const moduleGraph = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/module-graph.json'), 'utf8'));
+  assert.equal(moduleGraph.status, 'active');
+  assert.deepEqual(moduleGraph.layers.map((layer) => layer.id), ['app', 'modules', 'shared']);
   assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /does not prove dependency direction/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /enforces current-tree placement plus statically analyzable relative JS\/TS dependency directions/);
 });
 
 test('check detects new flat source placement but accepts a named module without claiming semantic enforcement', (context) => {

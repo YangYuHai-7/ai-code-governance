@@ -4,6 +4,7 @@ import { sha256, stableJson } from '../../shared/index.mjs';
 export const BUSINESS_CONSTRAINTS_PATH = 'docs/ai/business-constraints.json';
 export const BUSINESS_CONSTRAINT_SKILL_PATH = 'docs/ai/skills/business-constraints/SKILL.md';
 export const BUSINESS_ACCEPTANCE_RESULTS_PATH = 'docs/ai/business-acceptance-results.json';
+export const BUSINESS_RISK_EVIDENCE_PATH = 'docs/ai/risk-evidence.json';
 
 const RISK_CHECKLISTS = Object.freeze({
   authentication: [
@@ -64,6 +65,7 @@ export function businessConstraintRegistry(config) {
     confirmedRiskSignals: [...(config.confirmedRiskSignals ?? [])],
     constraints: businessConstraintRecords(config),
     acceptanceResultsPath: BUSINESS_ACCEPTANCE_RESULTS_PATH,
+    riskEvidencePath: BUSINESS_RISK_EVIDENCE_PATH,
     boundary: 'Constraint text and risk signals come only from explicit owner-confirmed configuration. No keyword-based risk inference is performed.',
   };
 }
@@ -94,7 +96,8 @@ This Skill is routed from explicit owner-confirmed configuration. Do not infer a
 3. Define and run at least one success case for each affected constraint.
 4. Define and run at least one negative or boundary case for each affected constraint.
 5. Record evidence in \`${BUSINESS_ACCEPTANCE_RESULTS_PATH}\`; a passing item binds \`id\`, \`constraint\`, and \`constraintHash\` and includes non-empty \`successEvidence\` and \`failureOrBoundaryEvidence\`.
-6. Report production readiness as blocked while evidence is missing, incomplete, or mismatched. Even after every item is recorded against the current id, text, and hash, report only unverified and eligible-for-review; a completion command does not replay or certify arbitrary business evidence.
+6. For every owner-confirmed risk signal, record explicit applicability plus negative diagnostic and recovery evidence in \`${BUSINESS_RISK_EVIDENCE_PATH}\`, bound to the current source/config fingerprint. Simulation or project-local records must never claim certification.
+7. Report production readiness as blocked while business or risk evidence is missing, incomplete, or mismatched. Even after every item is recorded, report only unverified and eligible-for-review; a completion command does not replay or certify arbitrary business evidence.
 
 ## Constraints
 

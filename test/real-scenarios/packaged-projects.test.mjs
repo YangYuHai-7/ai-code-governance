@@ -191,7 +191,7 @@ function greenfieldScenario(cli, packed, root) {
 
   const doctor = runAicg(evidence, cli, ['doctor', project, '--json']);
   assert.equal(parseJsonOutput(doctor, 'greenfield doctor').ok, true);
-  const assessment = parseJsonOutput(runAicg(evidence, cli, ['assess', project]), 'greenfield assess');
+  const assessment = parseJsonOutput(runAicg(evidence, cli, ['assess', project, '--json']), 'greenfield assess');
   assert.equal(assessment.classification.codebase.lifecycle.value, 'greenfield');
   runAicg(evidence, cli, ['init', project, '--clients', 'all', '--yes', '--no-assist']);
   runAicg(evidence, cli, ['check', project, '--json']);
@@ -274,7 +274,7 @@ function brownfieldScenario(cli, packed, root) {
 
   const doctor = runAicg(evidence, cli, ['doctor', project, '--json']);
   assert.equal(parseJsonOutput(doctor, 'brownfield doctor').ok, true);
-  const assessment = parseJsonOutput(runAicg(evidence, cli, ['assess', project]), 'brownfield assess');
+  const assessment = parseJsonOutput(runAicg(evidence, cli, ['assess', project, '--json']), 'brownfield assess');
   assert.equal(assessment.classification.codebase.lifecycle.value, 'existing');
   runAicg(evidence, cli, ['init', project, '--config', config, '--yes', '--no-assist']);
   runAicg(evidence, cli, ['check', project, '--json']);

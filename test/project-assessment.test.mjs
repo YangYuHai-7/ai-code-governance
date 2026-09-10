@@ -9,6 +9,7 @@ import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { assessmentSummary, buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../src/project-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { detectSurfaceSignals, validateSurfaceVerificationContract } from '../src/modules/repository/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -53,6 +54,70 @@ test('assessment summary exposes incomplete repository scans', (context) => {
   const result = assessmentSummary(scanProject(root, { scanBudget: { maxFiles: 1 } }));
   assert.equal(result.assessmentStatus, 'incomplete');
   assert.equal(result.scanBudget.complete, false);
+});
+
+test('surface signals classify native browser, node HTTP, and file persistence without claiming support', (context) => {
+  const browserRoot = fixture('surface-browser');
+  const httpRoot = fixture('surface-http');
+  const fileRoot = fixture('surface-file');
+  const mixedRoot = fixture('surface-mixed');
+  const emptyRoot = fixture('surface-empty');
+  context.after(() => {
+    for (const root of [browserRoot, httpRoot, fileRoot, mixedRoot, emptyRoot]) fs.rmSync(root, { recursive: true, force: true });
+  });
+  fs.writeFileSync(path.join(browserRoot, 'index.html'), '<button id="save">Save</button>\n');
+  fs.writeFileSync(path.join(httpRoot, 'server.mjs'), "import { createServer } from 'node:http';\nexport const server = createServer();\n");
+  fs.writeFileSync(path.join(fileRoot, 'store.mjs'), "import { writeFileSync } from 'node:fs';\nexport const save = writeFileSync;\n");
+  fs.writeFileSync(path.join(mixedRoot, 'index.html'), '<main>App</main>\n');
+  fs.writeFileSync(path.join(mixedRoot, 'server.mjs'), "import http from 'node:http';\nimport fs from 'node:fs';\nexport { http, fs };\n");
+
+  assert.deepEqual(detectSurfaceSignals(scanProject(browserRoot)).map((signal) => signal.kind), ['browser-ui']);
+  assert.deepEqual(detectSurfaceSignals(scanProject(httpRoot)).map((signal) => signal.kind), ['node-http']);
+  assert.deepEqual(detectSurfaceSignals(scanProject(fileRoot)).map((signal) => signal.kind), ['file-persistence']);
+  assert.deepEqual(detectSurfaceSignals(scanProject(mixedRoot)).map((signal) => signal.kind), ['browser-ui', 'node-http', 'file-persistence']);
+  assert.deepEqual(detectSurfaceSignals(scanProject(emptyRoot)), []);
+
+  const summary = assessmentSummary(scanProject(mixedRoot));
+  assert.equal(summary.surfaceSignals.length, 3);
+  for (const signal of summary.surfaceSignals) {
+    assert.match(signal.id, /^surface-/);
+    assert.equal(signal.source.type, 'static-repository-evidence');
+    assert.ok(signal.source.paths.length > 0);
+    assert.ok(['high', 'medium'].includes(signal.confidence));
+    assert.equal(signal.evidenceLevel, 'detected-unverified');
+    assert.ok(signal.gaps.length > 0);
+    assert.ok(signal.suggestedVerificationProfile);
+  }
+});
+
+test('surface verification contract rejects malformed kinds and evidence levels', () => {
+  const valid = {
+    schemaVersion: 1,
+    signalKinds: ['browser-ui', 'node-http', 'file-persistence'],
+    requiredSignalFields: ['id', 'kind', 'source', 'confidence', 'evidenceLevel', 'gaps'],
+    confidenceLevels: ['high', 'medium', 'low'],
+    evidenceLevels: ['detected-unverified'],
+    verificationProfiles: ['http-contract', 'dom-smoke', 'browser-smoke', 'file-recovery'],
+  };
+  assert.equal(validateSurfaceVerificationContract(valid), true);
+  assert.throws(() => validateSurfaceVerificationContract({ ...valid, signalKinds: ['browser-ui'] }), /signalKinds/);
+  assert.throws(() => validateSurfaceVerificationContract({ ...valid, evidenceLevels: ['certified'] }), /evidenceLevels/);
+});
+
+test('zh-CN read-only guidance exposes detected surface boundaries and a declaration CTA', (context) => {
+  const root = fixture('surface-guidance-zh');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'server.mjs'), "import { createServer } from 'node:http';\nexport const server = createServer();\n");
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --test' } }));
+  const assessed = run(['assess', root, '--locale', 'zh-CN', '--json']);
+  assert.equal(assessed.status, 0, assessed.stderr);
+  const payload = JSON.parse(assessed.stdout);
+  assert.equal(payload.actionGuide.surfaceVerification.state, 'detected-unverified');
+  assert.deepEqual(payload.actionGuide.surfaceVerification.signals.map((signal) => signal.id), ['surface-node-http']);
+  const action = payload.nextSteps.find((step) => step.id === 'declare-surface-verification');
+  assert.ok(action);
+  assert.match(action.description, /尚未验证/);
+  assert.match(action.description, /surface-verification\.json/);
 });
 
 test('an existing codebase requires an explicit existing-code strategy', (context) => {

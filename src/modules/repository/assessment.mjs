@@ -1,4 +1,5 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
+import { detectSurfaceSignals } from './surface-signals.mjs';
 
 const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
@@ -356,6 +357,7 @@ export function assessmentSummary(scan) {
     target: scan.root,
     assessmentStatus: scan.scanBudget?.complete === false ? 'incomplete' : 'complete',
     scanBudget: scan.scanBudget ?? null,
+    surfaceSignals: detectSurfaceSignals(scan),
     classification: assessment,
     decisionLedger: buildDecisionLedger(scan),
   };

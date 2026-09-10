@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
 import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
-import { architectureProfileDocument, architectureRule, validateArchitectureDecision } from '../architecture/index.mjs';
+import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
-import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES } from '../repository/index.mjs';
+import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
 import { buildTechnicalStandardArtifacts } from '../standards/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -493,6 +493,7 @@ export function buildArtifacts(config, scan) {
     { path: 'docs/ai/context-map.yaml', content: contextMap(config), ownership: 'seed', kind: 'canonical', source: 'template:context-map' },
     { path: 'docs/ai/rules/00_always.mdc', content: alwaysRule(config), ownership: 'seed', kind: 'canonical', source: 'template:always-rule' },
     { path: 'docs/ai/verification-profiles.yaml', content: verificationProfiles(config), ownership: 'seed', kind: 'canonical', source: 'template:runtime-verification' },
+    { path: 'docs/ai/surface-verification-profiles.json', content: stableJson(surfaceVerificationProfiles()), ownership: 'full', kind: 'surface-verification-profiles', source: 'asset:surface-verification-contract' },
     { path: 'docs/ai/anti-patterns.md', content: antiPatterns(config), ownership: 'seed', kind: 'canonical', source: 'template:anti-patterns' },
     { path: 'docs/ai/stack-profile.json', content: stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), ownership: 'full', kind: 'canonical', source: 'capability-pack-registry' },
     { path: 'docs/ai/architecture-profile.json', content: stableJson(architectureProfileDocument(config)), ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision' },
@@ -502,6 +503,15 @@ export function buildArtifacts(config, scan) {
     { path: 'docs/ai/acceptance-contract.json', content: readText(path.join(PACKAGE_ROOT, 'assets/contracts/acceptance-contract.json')), ownership: 'seed', kind: 'canonical', source: 'asset:acceptance-contract' },
     { path: 'docs/ai/release-acceptance-policy.json', content: readText(path.join(PACKAGE_ROOT, 'assets/policies/release-acceptance-policy.json')), ownership: 'full', kind: 'release-policy', source: 'asset:release-acceptance-policy' },
   ];
+
+  const moduleGraph = moduleGraphDeclaration(config);
+  if (moduleGraph) artifacts.push({
+    path: 'docs/ai/module-graph.json',
+    content: stableJson(moduleGraph),
+    ownership: 'full',
+    kind: 'architecture-module-graph',
+    source: 'architecture-profile-registry-and-initialization-decision',
+  });
 
   if (config.domainConstraints.length > 0) {
     artifacts.push({ path: BUSINESS_CONSTRAINTS_PATH, content: businessConstraintRegistryContent(config), ownership: 'full', kind: 'business-constraint-registry', source: 'owner-confirmed-config' });

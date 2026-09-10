@@ -2,6 +2,7 @@ import path from 'node:path';
 import { CONFIG_PATH } from '../../constants.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson } from '../../adapters/filesystem/index.mjs';
 import { BUSINESS_ACCEPTANCE_RESULTS_PATH, businessConstraintRecords, validateConfig } from '../governance/index.mjs';
+import { evaluateRiskEvidence } from './risk-evidence.mjs';
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -72,18 +73,22 @@ function constraintEvidence(scan) {
 
 export function evaluateProductionReadiness(scan) {
   const evidence = constraintEvidence(scan);
+  const riskEvidence = evaluateRiskEvidence(scan);
   const hasConfirmedRisk = evidence.confirmedRiskSignals.length > 0;
   const hasDeclaredConstraints = evidence.declared > 0;
   const recorded = evidence.status === 'recorded-unverified';
-  const blocked = (hasDeclaredConstraints || hasConfirmedRisk) && !recorded;
+  const riskRecorded = !hasConfirmedRisk || riskEvidence.status === 'recorded-unverified';
+  const blocked = ((hasDeclaredConstraints || hasConfirmedRisk) && !recorded) || !riskRecorded;
+  const eligible = recorded && riskRecorded;
   return {
     state: blocked ? 'blocked' : 'unverified',
-    reviewEligibility: recorded ? 'eligible-for-review' : 'not-eligible',
+    reviewEligibility: eligible ? 'eligible-for-review' : 'not-eligible',
     constraintEvidence: evidence,
-    reason: recorded
-      ? 'Business acceptance evidence is recorded, but completion does not replay or certify arbitrary project evidence, deployment safety, or production operation.'
+    riskEvidence,
+    reason: eligible
+      ? 'Business acceptance plus negative and recovery evidence are recorded, but completion does not replay or certify arbitrary project evidence, deployment safety, or production operation.'
       : blocked
-        ? 'Production readiness is blocked because owner-confirmed business constraints or risk signals lack complete evidence bound to the current constraint text and hash.'
+        ? 'Production readiness is blocked because owner-confirmed business constraints or risk signals lack complete business, negative, or recovery evidence bound to current source and configuration.'
         : 'Production readiness remains unverified because owner-confirmed business acceptance evidence is absent, incomplete, invalid, or not independently certified.',
   };
 }

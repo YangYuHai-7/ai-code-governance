@@ -2,10 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
-import { architecturePlacementIssues } from '../architecture/index.mjs';
+import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
 import { buildArtifacts, validateConfig } from './compiler.mjs';
 import { extractManagedBlock, loadManifest, renderManagedBlock } from './managed-files.mjs';
-import { readJson, readText } from '../../adapters/filesystem/index.mjs';
+import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256 } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH } from './business-constraints.mjs';
 
@@ -170,6 +170,7 @@ export function checkProject(scan) {
   const reachabilityErrors = [];
   const evidenceErrors = [];
   const warnings = [];
+  let moduleGraph = { status: 'stated-only', issues: [], inspectedFiles: [], unsupportedFiles: [] };
   if (scan.scanBudget?.complete === false) {
     const truncation = scan.scanBudget.truncation ?? {};
     const details = [
@@ -284,6 +285,26 @@ export function checkProject(scan) {
       structureErrors.push(`architecture policy: ${error.message}`);
     }
 
+    try {
+      const declarationPath = path.join(scan.root, 'docs/ai/module-graph.json');
+      const declarationStat = lstatSafe(declarationPath);
+      let declaration = null;
+      if (declarationStat) {
+        assertNoLinkAncestor(scan.root, 'docs/ai/module-graph.json');
+        if (!declarationStat.isFile() || declarationStat.isSymbolicLink()) throw new Error('docs/ai/module-graph.json must be a regular repository-local file.');
+        declaration = readJson(declarationPath);
+      }
+      moduleGraph = evaluateModuleGraph(scan, declaration);
+      for (const issue of moduleGraph.issues) {
+        structureErrors.push(`architecture module graph: ${issue.source} -> ${issue.target}: ${issue.rule}`);
+      }
+      if (moduleGraph.status === 'stated-only' && moduleGraph.unsupportedFiles.length > 0) {
+        warnings.push(`architecture module graph: unsupported dynamic relative module loading in ${moduleGraph.unsupportedFiles.join(', ')}; dependency direction remains stated-only for those files.`);
+      }
+    } catch (error) {
+      structureErrors.push(`architecture module graph: ${error.message}`);
+    }
+
     const agentsContent = readText(path.join(scan.root, 'AGENTS.md'), '');
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
     if (!managedAgentsContent) {
@@ -339,12 +360,13 @@ export function checkProject(scan) {
     architecture: {
       status: config?.architecture?.status ?? 'legacy-unconfigured',
       newFilePlacement: config?.architecture?.verification?.newFilePlacement ?? 'not-enabled',
+      moduleGraph,
       semanticDesign: 'stated-only',
     },
     boundaries: [
       'aicg check proves structure, ownership, hashes, and configured entrypoint reachability.',
       'acceptance-results.json is validated for exact contract coverage, mandatory applicability, and negative/recovery receipt fields; aicg check keeps enforcement unverified because it does not replay those entrypoints.',
-      'A passing architecture placement check detects only current-tree source placement; it does not prove dependency direction, cohesion, or single responsibility.',
+      'A declared active module graph checks statically analyzable relative JS/TS import and export directions plus cross-module public entrypoints; dynamic imports, aliases, cohesion, and single responsibility remain unverified.',
       'Real agent loading, project behavior, hooks, and operating-system execution require separate replay evidence.',
     ],
   };

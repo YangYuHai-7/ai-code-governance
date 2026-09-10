@@ -86,7 +86,7 @@ function statusFor(mode, scope) {
 function verificationFor(status) {
   return {
     newFilePlacement: status === 'active' ? 'aicg-check-detects-current-tree' : 'not-enabled',
-    dependencyDirection: 'stated-only',
+    dependencyDirection: status === 'active' ? 'aicg-check-js-ts-module-graph' : 'stated-only',
     cohesion: 'stated-only',
     singleResponsibility: 'stated-only',
   };
@@ -181,7 +181,10 @@ export function validateArchitectureDecision(architecture, initialization = null
   }
   if (!architecture.verification || typeof architecture.verification !== 'object') throw usageError('architecture.verification is required.');
   for (const [key, value] of Object.entries(verificationFor(architecture.status))) {
-    if (architecture.verification[key] !== value) throw usageError(`architecture.verification.${key} is invalid for its status.`);
+    const legacyDependencyDirection = key === 'dependencyDirection'
+      && architecture.status === 'active'
+      && architecture.verification[key] === 'stated-only';
+    if (architecture.verification[key] !== value && !legacyDependencyDirection) throw usageError(`architecture.verification.${key} is invalid for its status.`);
   }
 
   if (architecture.mode === 'legacy-unconfigured') {
@@ -251,8 +254,10 @@ export function architectureProfileDocument(config) {
     verification: decision.verification,
     boundaries: [
       'This profile does not create product directories, generate business code, move files, or approve a migration.',
-      'A passing aicg check verifies managed governance artifacts and detects current-tree placement violations only.',
-      'Dependency direction, cohesion, and single responsibility remain stated guidance until the project adds dedicated verifiers.',
+      decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
+        ? 'A passing aicg check verifies managed governance artifacts, current-tree placement, statically analyzable relative JS/TS dependency directions, and cross-module public entrypoints.'
+        : 'A passing aicg check verifies managed governance artifacts; architecture dependency direction remains stated-only while this profile is not active.',
+      'Dynamic imports, aliases, unsupported languages, cohesion, and single responsibility remain stated guidance until the project adds dedicated verifiers.',
     ],
     generationBinding: {
       architectureDigest: architectureDigest(decision),
@@ -264,7 +269,10 @@ export function architectureProfileDocument(config) {
 export function architectureRule(config) {
   const decision = config.architecture ?? legacyArchitectureDecision({ initialization: config.initialization ?? null });
   const title = decision.status === 'active' ? 'Active future-code module boundary' : decision.status === 'advisory' ? 'Advisory architecture boundary' : 'Legacy-unconfigured architecture boundary';
-  return `---\nalwaysApply: false\nprofiles: [implementation]\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${title}\n\nThe sole current architecture policy is [architecture-profile.json](../architecture-profile.json). Its status is \`${decision.status}\` and mode is \`${decision.mode}\`.\n\n- Use the profile for new implementation only when it is active; do not infer approval to migrate or rewrite existing code.\n- \`aicg check .\` can detect current-tree source placement against an active profile. It does not prove dependency direction, cohesion, or single responsibility.\n- If the profile is advisory or legacy-unconfigured, preserve the current product structure and request a separately approved architecture decision before changing it.\n`;
+  const graphGuidance = decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
+    ? '- `aicg check .` enforces current-tree placement plus statically analyzable relative JS/TS dependency directions and cross-module public entrypoints declared in `docs/ai/module-graph.json`. Dynamic imports, aliases, unsupported languages, cohesion, and single responsibility remain unverified.'
+    : '- `aicg check .` does not enforce dependency direction while the architecture profile is not active; those boundaries remain stated-only.';
+  return `---\nalwaysApply: false\nprofiles: [implementation]\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${title}\n\nThe sole current architecture policy is [architecture-profile.json](../architecture-profile.json). Its status is \`${decision.status}\` and mode is \`${decision.mode}\`.\n\n- Use the profile for new implementation only when it is active; do not infer approval to migrate or rewrite existing code.\n${graphGuidance}\n- If the profile is advisory or legacy-unconfigured, preserve the current product structure and request a separately approved architecture decision before changing it.\n`;
 }
 
 function entryFileAllowed(relative, placement) {
