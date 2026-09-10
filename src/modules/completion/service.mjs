@@ -5,7 +5,7 @@ import { checkProject } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
-import { scanProject, verificationNpmCommands } from '../repository/index.mjs';
+import { scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
 import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
@@ -152,12 +152,40 @@ function discoveredVerification(scan, requestedCommand) {
   return selected;
 }
 
+function surfaceMarkers(stdout) {
+  const markers = [];
+  for (const line of String(stdout ?? '').split(/\r?\n/)) {
+    if (!line.startsWith(SURFACE_EVIDENCE_MARKER_PREFIX) || line.length > 8192 || markers.length >= 16) continue;
+    try {
+      const value = JSON.parse(line.slice(SURFACE_EVIDENCE_MARKER_PREFIX.length));
+      if (
+        value?.schemaVersion !== 1
+        || !['storyId', 'signalId', 'profileId', 'entrypoint'].every((field) => typeof value[field] === 'string' && value[field].length > 0 && value[field].length <= 1000)
+        || value.outcome !== 'passed'
+      ) continue;
+      markers.push({
+        schemaVersion: 1,
+        storyId: value.storyId,
+        signalId: value.signalId,
+        profileId: value.profileId,
+        entrypoint: value.entrypoint,
+        outcome: value.outcome,
+      });
+    } catch {
+      // Malformed output is not evidence and is never returned verbatim.
+    }
+  }
+  return markers;
+}
+
 function runVerification(scan, selected) {
   const result = runNpmScript(scan.root, selected.name);
   return {
     command: selected.command,
     status: result.error || result.status !== 0 ? 'failed' : 'passed',
     exitCode: result.status ?? 1,
+    markers: surfaceMarkers(result.stdout),
+    outputDigest: sha256(`${result.stdout ?? ''}\0${result.stderr ?? ''}`),
   };
 }
 

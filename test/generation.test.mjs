@@ -39,6 +39,8 @@ test('generates regular adapters for all selected agents and passes check', (con
   assert.deepEqual(surfaceProfiles.profiles.map((profile) => profile.id), ['http-contract', 'dom-smoke', 'browser-smoke', 'file-recovery']);
   assert.deepEqual(surfaceProfiles.profiles.find((profile) => profile.id === 'http-contract').signalIds, ['surface-node-http']);
   assert.deepEqual(surfaceProfiles.profiles.find((profile) => profile.id === 'browser-smoke').signalIds, ['surface-browser-ui']);
+  assert.equal(surfaceProfiles.markerContract.prefix, 'AICG_SURFACE_EVIDENCE ');
+  assert.deepEqual(surfaceProfiles.markerContract.requiredFields, ['storyId', 'signalId', 'profileId', 'entrypoint', 'outcome']);
   assert.equal(scanProject(root).links.length, 0);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

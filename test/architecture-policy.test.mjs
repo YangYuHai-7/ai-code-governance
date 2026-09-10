@@ -57,6 +57,24 @@ test('JS/TS module graph rejects cross-module private imports but accepts public
   )));
 });
 
+test('module graph parses same-line static declarations without treating comments or strings as imports', (context) => {
+  const root = fixture('module-graph-tokenization');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/modules/orders/index.ts', 'export const orders = true;\n');
+  writeSource(root, 'src/shared/unsafe.ts', `const quoted = "import { orders } from '../modules/orders/index.ts'";
+// export { orders } from '../modules/orders/index.ts';
+/* import { orders } from '../modules/orders/index.ts'; */
+const before = true; import { orders } from '../modules/orders/index.ts'; export { orders };
+`);
+  const result = evaluateModuleGraph(scanProject(root), moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG));
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.issues, [{
+    source: 'src/shared/unsafe.ts',
+    target: 'src/modules/orders/index.ts',
+    rule: 'dependency-direction: shared may not depend on modules',
+  }]);
+});
+
 test('module graph stays stated-only without a declaration or with unsupported dynamic imports', (context) => {
   const root = fixture('module-graph-stated-only');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -64,6 +82,15 @@ test('module graph stays stated-only without a declaration or with unsupported d
   writeSource(root, 'src/modules/billing/index.ts', 'export const billing = true;\n');
   assert.equal(evaluateModuleGraph(scanProject(root), null).status, 'stated-only');
   assert.equal(moduleGraphDeclaration({ architecture: { status: 'active', verification: { dependencyDirection: 'stated-only' } } }), null);
+  const result = evaluateModuleGraph(scanProject(root), moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG));
+  assert.equal(result.status, 'stated-only');
+  assert.deepEqual(result.unsupportedFiles, ['src/modules/orders/index.ts']);
+});
+
+test('module graph leaves recognized project path aliases stated-only', (context) => {
+  const root = fixture('module-graph-alias');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/modules/orders/index.ts', "import { billing } from '@/modules/billing/index';\nexport { billing };\n");
   const result = evaluateModuleGraph(scanProject(root), moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG));
   assert.equal(result.status, 'stated-only');
   assert.deepEqual(result.unsupportedFiles, ['src/modules/orders/index.ts']);
@@ -320,6 +347,30 @@ test('existing new-code-standard preserves its source baseline and only detects 
   fs.mkdirSync(path.join(root, 'src', 'modules', 'new'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'new', 'index.ts'), 'export const fresh = true;\n');
   assert.equal(run(['check', root, '--json']).status, 0);
+});
+
+test('existing new-code-standard module graph skips baseline dependency debt but checks new sources', (context) => {
+  const root = fixture('existing-module-graph-baseline');
+  const decision = writeDecision(root, 'existing-module-graph-baseline', { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard' });
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(decision.configRoot, { recursive: true, force: true });
+  });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'existing-module-graph' }));
+  writeSource(root, 'src/modules/orders/index.ts', 'export const orders = true;\n');
+  writeSource(root, 'src/shared/legacy.ts', "import { orders } from '../modules/orders/index.ts';\nexport { orders };\n");
+  const initialized = run(['init', root, '--config', decision.config, '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, `${initialized.stderr}\n${initialized.stdout}`);
+  const graph = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/module-graph.json'), 'utf8'));
+  assert.equal(graph.scope.appliesTo, 'new-modules-only');
+  assert.ok(graph.scope.baselineSourcePaths.includes('src/shared/legacy.ts'));
+  assert.equal(run(['check', root, '--json']).status, 0);
+
+  writeSource(root, 'src/shared/new.ts', "export { orders } from '../modules/orders/index.ts';\n");
+  const rejected = run(['check', root, '--json']);
+  assert.equal(rejected.status, 1, rejected.stderr);
+  assert.match(rejected.stdout, /src\/shared\/new\.ts -> src\/modules\/orders\/index\.ts/);
+  assert.doesNotMatch(rejected.stdout, /src\/shared\/legacy\.ts ->/);
 });
 
 test('keep-existing and staged-migration remain advisory and do not block existing-style source', (context) => {

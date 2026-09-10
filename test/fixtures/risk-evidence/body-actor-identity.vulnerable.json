@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "body-actor-identity",
   "variant": "vulnerable",
-  "entrypoint": "project-owned-test",
-  "expected": "Request body controls actor identity."
+  "entrypoint": "node toy-probe.mjs body-actor-identity vulnerable",
+  "expectedExitCode": 1
 }

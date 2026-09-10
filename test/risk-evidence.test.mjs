@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
@@ -19,6 +20,20 @@ const FIXTURE_ROOT = path.resolve('test/fixtures/risk-evidence');
 
 function evidenceFixture(riskId, variant) {
   return JSON.parse(fs.readFileSync(path.join(FIXTURE_ROOT, `${riskId}.${variant}.json`), 'utf8'));
+}
+
+function runEvidenceFixture(riskId, variant) {
+  const fixture = evidenceFixture(riskId, variant);
+  const [runtime, script, fixtureRiskId, fixtureVariant, ...extra] = fixture.entrypoint.split(' ');
+  assert.deepEqual({ runtime, fixtureRiskId, fixtureVariant, extra }, { runtime: 'node', fixtureRiskId: riskId, fixtureVariant: variant, extra: [] });
+  const result = spawnSync(process.execPath, [path.join(FIXTURE_ROOT, script), fixtureRiskId, fixtureVariant], { encoding: 'utf8' });
+  assert.equal(result.status, fixture.expectedExitCode, `${result.stdout}\n${result.stderr}`);
+  const line = result.stdout.split(/\r?\n/).find((candidate) => candidate.startsWith('AICG_RISK_PROBE '));
+  assert.ok(line, `Missing risk probe marker:\n${result.stdout}\n${result.stderr}`);
+  const marker = JSON.parse(line.slice('AICG_RISK_PROBE '.length));
+  assert.equal(marker.riskId, riskId);
+  assert.equal(marker.variant, variant);
+  return { fixture, result, marker };
 }
 
 function fixture(name) {
@@ -45,8 +60,13 @@ for (const [signal, riskId] of CASES) {
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const { config, scan } = configure(root, signal);
     const fingerprint = riskEvidenceFingerprint(scan, config);
-    const vulnerableFixture = evidenceFixture(riskId, 'vulnerable');
-    const repairedFixture = evidenceFixture(riskId, 'repaired');
+    const vulnerableProbe = runEvidenceFixture(riskId, 'vulnerable');
+    const repairedProbe = runEvidenceFixture(riskId, 'repaired');
+    assert.equal(vulnerableProbe.marker.outcome, 'blocked');
+    assert.equal(repairedProbe.marker.outcome, 'passed');
+    assert.ok(vulnerableProbe.marker.diagnostic);
+    assert.ok(repairedProbe.marker.negativeDiagnostic);
+    assert.ok(repairedProbe.marker.recoveryEvidence);
     const evidencePath = path.join(root, 'docs', 'ai', 'risk-evidence.json');
     fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
     const base = {
@@ -57,9 +77,10 @@ for (const [signal, riskId] of CASES) {
           riskId,
           applicability: 'applicable',
           reason: `${riskId} applies to the confirmed ${signal} boundary.`,
-          status: 'passed',
-          entrypoint: 'npm run test:risk',
-          negativeDiagnostic: vulnerableFixture.expected,
+          status: 'blocked',
+          entrypoint: vulnerableProbe.fixture.entrypoint,
+          negativeDiagnostic: `exitCode=${vulnerableProbe.result.status}; ${vulnerableProbe.marker.diagnostic}`,
+          recoveryEvidence: `Recovery did not run because the vulnerable probe exited ${vulnerableProbe.result.status}.`,
           sourceFingerprint: fingerprint,
           evidenceLevel: 'project-local-unverified',
         } : {
@@ -73,10 +94,13 @@ for (const [signal, riskId] of CASES) {
     };
     fs.writeFileSync(evidencePath, JSON.stringify(base));
     const vulnerable = evaluateRiskEvidence(scanProject(root));
-    assert.equal(vulnerable.status, 'invalid');
-    assert.match(vulnerable.issues.join('\n'), /recoveryEvidence/);
+    assert.equal(vulnerable.status, 'incomplete');
 
-    base.risks.find((record) => record.riskId === riskId).recoveryEvidence = repairedFixture.expected;
+    const repairedRecord = base.risks.find((record) => record.riskId === riskId);
+    repairedRecord.status = 'passed';
+    repairedRecord.entrypoint = repairedProbe.fixture.entrypoint;
+    repairedRecord.negativeDiagnostic = `exitCode=${repairedProbe.result.status}; ${repairedProbe.marker.negativeDiagnostic}`;
+    repairedRecord.recoveryEvidence = repairedProbe.marker.recoveryEvidence;
     fs.writeFileSync(evidencePath, JSON.stringify(base));
     const repaired = evaluateRiskEvidence(scanProject(root));
     assert.equal(repaired.status, 'recorded-unverified');
