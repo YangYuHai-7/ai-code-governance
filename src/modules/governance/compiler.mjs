@@ -210,6 +210,8 @@ ${technicalStandards}
 - Code and tests override stale documentation; update the affected governance evidence in the same change.
 - Do not run completion gates after ordinary conversation turns. When a change is ready, run \`${completeCommand}\` once; after \`${hookCommand}\`, Git also validates the exact staged snapshot before commit.
 - A completion gate is validation only: it never stages files or invents semantic memory, capability Skills, or documentation. Use separately approved \`${syncCommand}\`, \`${harvestCommand}\`, or \`${promoteCommand}\` commands for those changes.
+- Store temporary review notes under \`reviews/\`. Store generated task and diagnostic reports under \`reports/\`. Both directories are local working areas and their contents are ignored by Git.
+- Auditable release evidence under \`${config.canonicalRoot}/release-evidence/\` must remain tracked. Do not move formal governance records into ignored working directories.
 - Before deployment or publication, classify the release as \`bugfix\`, \`feature\`, or \`major\`, read \`${config.canonicalRoot}/release-acceptance-policy.json\`, and preview \`${releaseCommand}\`. Execute receipt-bound npm scripts only with \`--replay --approve <planHash>\` for the exact returned plan; do not fabricate human review evidence.
 
 ### ${languageTitle(config, '运行时验证入口', 'Runtime verification entrypoints')}
@@ -487,6 +489,27 @@ export function buildArtifacts(config, scan) {
   const agents = resolveAgents(config.clients);
   const packs = resolvePacks(config.stacks);
   const artifacts = [
+    {
+      path: '.gitignore',
+      content: '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep',
+      ownership: 'gitignore-block',
+      kind: 'local-output-ignore',
+      source: 'template:local-output-layout',
+    },
+    {
+      path: 'reviews/.gitkeep',
+      content: `# ${GENERATED_MARKER}\n`,
+      ownership: 'seed',
+      kind: 'local-output-directory',
+      source: 'template:local-output-layout',
+    },
+    {
+      path: 'reports/.gitkeep',
+      content: `# ${GENERATED_MARKER}\n`,
+      ownership: 'seed',
+      kind: 'local-output-directory',
+      source: 'template:local-output-layout',
+    },
     { path: CONFIG_PATH, content: stableJson(config), ownership: 'full', kind: 'configuration', source: 'confirmed-decisions' },
     { path: 'AGENTS.md', content: rootInstructions(config, scan), ownership: 'managed-block', kind: 'entrypoint', source: 'template:agents' },
     { path: 'docs/ai/README.md', content: governanceReadme(config, scan, packs), ownership: 'seed', kind: 'canonical', source: 'template:canon-readme' },

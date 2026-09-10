@@ -2,13 +2,17 @@ import fs from 'node:fs';
 import { applyArtifactPlanCore } from './artifact-apply.mjs';
 
 export {
+  extractGitignoreBlock,
   extractManagedBlock,
   generatedHeader,
+  mergeGitignoreBlock,
   mergeManagedBlock,
+  removeGitignoreBlock,
   removeManagedBlock,
+  renderGitignoreBlock,
   renderManagedBlock,
 } from './managed-block.mjs';
-export { buildManifest } from './manifest.mjs';
+export { buildManifest, managedContentHash } from './manifest.mjs';
 export { loadManifest } from './manifest-store.mjs';
 export { planArtifacts } from './artifact-plan.mjs';
 

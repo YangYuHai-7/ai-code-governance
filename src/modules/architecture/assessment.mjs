@@ -1,11 +1,12 @@
 import { classifyProject } from '../repository/index.mjs';
+import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { isArchitectureNonSourcePath } from './source-classification.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php', '.rs', '.cs', '.swift']);
-const GOVERNANCE_PREFIXES = ['AGENTS.md', 'CLAUDE.md', '.cursor/', '.claude/', '.agents/', 'docs/ai/', '.ai-governance/'];
+const GOVERNANCE_PREFIXES = ['AGENTS.md', 'CLAUDE.md', '.cursor/', '.claude/', '.agents/', 'docs/ai/', '.ai-governance/', ...LOCAL_OUTPUT_PREFIXES];
 
 function isGovernancePath(relative) {
   return GOVERNANCE_PREFIXES.some((prefix) => relative === prefix || relative.startsWith(prefix));

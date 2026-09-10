@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadAgentRegistry, loadCapabilityRegistry } from '../../catalogs/index.mjs';
+import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { commandExists, commandVersion, resolveGitRoot } from '../../adapters/process/index.mjs';
 import { exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 import { matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
@@ -172,9 +173,11 @@ export function scanProject(target, options = {}) {
   const walked = walkFilesDetailed(root, {
     ...scanBudget,
     ignoredAtAnyDepth: ['.git', 'node_modules'],
+    ignoredAtRoot: LOCAL_OUTPUT_PREFIXES.map((prefix) => prefix.replace(/\/$/, '')),
     caseInsensitiveIgnored: true,
   });
   const files = walked.files;
+  const factFiles = files.filter((file) => !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix)));
   const capabilityRegistry = loadCapabilityRegistry();
   const agentRegistry = loadAgentRegistry();
   const gitCommand = probeEnvironment && commandExists('git');
@@ -211,13 +214,13 @@ export function scanProject(target, options = {}) {
     },
     environmentProbe: probeEnvironment ? 'executed' : 'not-probed',
     projectName: path.basename(root),
-    projectMode: detectProjectMode(root, files),
+    projectMode: detectProjectMode(root, factFiles),
     currentOs: platformId(),
     architecture: os.arch(),
     files,
     scanBudget: walked.budget,
-    stacks: detectStacks(files, capabilityRegistry),
-    packageDependencies: detectPackageDependencies(files),
+    stacks: detectStacks(factFiles, capabilityRegistry),
+    packageDependencies: detectPackageDependencies(factFiles),
     commands: detectCommands(root),
     agents,
     existingGovernance,

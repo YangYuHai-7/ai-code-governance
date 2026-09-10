@@ -9,7 +9,7 @@ function operationAction(operation, before) {
   if (!operation.changed) return 'keep';
   if (operation.remove) return operation.deleteWhenEmpty ? 'remove-owned' : 'update-managed-block';
   if (before.kind === 'missing') return 'create';
-  return operation.ownership === 'managed-block' ? 'update-managed-block' : 'replace-owned';
+  return ['managed-block', 'gitignore-block'].includes(operation.ownership) ? 'update-managed-block' : 'replace-owned';
 }
 
 function actionOperation(root, operation) {

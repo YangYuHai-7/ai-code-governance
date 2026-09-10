@@ -4,7 +4,13 @@ import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
 import { buildArtifacts, validateConfig } from './compiler.mjs';
-import { extractManagedBlock, loadManifest, renderManagedBlock } from './managed-files.mjs';
+import {
+  extractManagedBlock,
+  loadManifest,
+  managedContentHash,
+  renderGitignoreBlock,
+  renderManagedBlock,
+} from './managed-files.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256 } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH } from './business-constraints.mjs';
@@ -22,6 +28,16 @@ const BASELINE_APPLICABLE_PROBES = new Set([
   'unmanaged-file-preservation',
   'noninteractive-required-input',
 ]);
+
+function expectedManagedHash(artifact) {
+  if (artifact.ownership === 'managed-block') return sha256(renderManagedBlock(artifact.content));
+  if (artifact.ownership === 'gitignore-block') return sha256(renderGitignoreBlock(artifact.content));
+  return sha256(artifact.content);
+}
+
+function actualManagedHash(content, ownership) {
+  return managedContentHash(content, ownership) ?? sha256('');
+}
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -235,7 +251,7 @@ export function checkProject(scan) {
     for (const artifact of managedExpected) {
       const entry = manifestFiles.find((candidate) => candidate?.path === artifact.path);
       if (!entry) continue;
-      const expectedHash = artifact.ownership === 'managed-block' ? sha256(renderManagedBlock(artifact.content)) : sha256(artifact.content);
+      const expectedHash = expectedManagedHash(artifact);
       if (entry.sha256 !== expectedHash) structureErrors.push(`${artifact.path}: manifest source is stale; run aicg sync .`);
     }
     for (const entry of manifestFiles) {
@@ -243,7 +259,7 @@ export function checkProject(scan) {
         structureErrors.push(`${MANIFEST_PATH}: every managed entry must contain a string path`);
         continue;
       }
-      if (!['full', 'managed-block'].includes(entry.ownership)) {
+      if (!['full', 'managed-block', 'gitignore-block'].includes(entry.ownership)) {
         structureErrors.push(`${entry.path}: manifest contains unsupported ownership ${entry.ownership}`);
         continue;
       }
@@ -269,7 +285,7 @@ export function checkProject(scan) {
         continue;
       }
       try {
-        const actual = entry.ownership === 'managed-block' ? sha256(extractManagedBlock(content) ?? '') : sha256(content);
+        const actual = actualManagedHash(content, entry.ownership);
         if (actual !== entry.sha256) structureErrors.push(`${entry.path}: managed content drifted; run aicg sync .`);
       } catch (error) {
         structureErrors.push(`${entry.path}: ${error.message}`);

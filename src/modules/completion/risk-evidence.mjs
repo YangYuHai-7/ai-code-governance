@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { CONFIG_PATH } from '../../constants.mjs';
+import { CONFIG_PATH, LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_RISK_EVIDENCE_PATH, validateConfig } from '../governance/index.mjs';
@@ -37,6 +37,7 @@ export function riskEvidenceFingerprint(scan, config) {
       && file.contentScannable !== false
       && !file.relative.startsWith('docs/ai/')
       && !file.relative.startsWith('.ai-governance/')
+      && !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix))
       && FINGERPRINT_EXTENSIONS.has(path.extname(file.relative).toLowerCase())
     ))
     .sort((left, right) => left.relative.localeCompare(right.relative))

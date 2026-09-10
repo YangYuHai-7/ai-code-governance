@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { initCommand } from '../src/cli/commands/init.mjs';
 import { checkProject } from '../src/checker.mjs';
@@ -18,6 +19,10 @@ function initialize(root, customize = (config) => config, options = {}) {
   const config = customize(defaultConfig(scan));
   const plan = planArtifacts(root, buildArtifacts(config, scan), options);
   return { scan, config, plan, applied: applyArtifactPlan(root, plan, options) };
+}
+
+function git(root, args) {
+  return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
 }
 
 async function legacyBusinessUpgradeFixture(root, mutateLegacy = () => {}) {
@@ -81,6 +86,222 @@ test('generates regular adapters for all selected agents and passes check', (con
   assert.deepEqual(surfaceProfiles.markerContract.requiredFields, ['storyId', 'signalId', 'profileId', 'entrypoint', 'outcome']);
   assert.equal(scanProject(root).links.length, 0);
   assert.equal(checkProject(scanProject(root)).ok, true);
+});
+
+test('initialization creates local review and report workspaces without ignoring auditable governance evidence', (context) => {
+  const root = fixture('local-review-report-output');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n.env\nreviews/\nreports/\n');
+  assert.equal(git(root, ['init', '--quiet']).status, 0);
+
+  const first = initialize(root);
+  const ignoreContent = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.match(ignoreContent, /^node_modules\/$/m);
+  assert.match(ignoreContent, /^\.env$/m);
+  assert.match(ignoreContent, /^reviews\/$/m);
+  assert.match(ignoreContent, /^reports\/$/m);
+  assert.match(ignoreContent, /^# ai-code-governance:local-output:start$/m);
+  assert.match(ignoreContent, /^!\/reviews\/$/m);
+  assert.match(ignoreContent, /^\/reviews\/\*$/m);
+  assert.match(ignoreContent, /^!\/reviews\/\.gitkeep$/m);
+  assert.match(ignoreContent, /^\/reports\/\*$/m);
+  assert.match(ignoreContent, /^!\/reports\/$/m);
+  assert.match(ignoreContent, /^!\/reports\/\.gitkeep$/m);
+  assert.match(ignoreContent, /^# ai-code-governance:local-output:end$/m);
+  assert.doesNotMatch(ignoreContent, /<!-- ai-code-governance:/);
+  assert.ok(fs.statSync(path.join(root, 'reviews/.gitkeep')).isFile());
+  assert.ok(fs.statSync(path.join(root, 'reports/.gitkeep')).isFile());
+
+  fs.writeFileSync(path.join(root, 'reviews', 'architecture-review.mjs'), 'export const reviewSnippet = "axios.create()";\n');
+  fs.writeFileSync(path.join(root, 'reports', 'task-report.tsx'), 'export const Diagnostic = () => <main>local</main>;\n');
+  fs.mkdirSync(path.join(root, 'docs/ai/release-evidence'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs/ai/release-evidence/0.2.0.json'), '{}\n');
+  assert.equal(git(root, ['check-ignore', '-q', 'reviews/architecture-review.mjs']).status, 0);
+  assert.equal(git(root, ['check-ignore', '-q', 'reports/task-report.tsx']).status, 0);
+  assert.notEqual(git(root, ['check-ignore', '-q', 'reviews/.gitkeep']).status, 0);
+  assert.notEqual(git(root, ['check-ignore', '-q', 'reports/.gitkeep']).status, 0);
+  assert.notEqual(git(root, ['check-ignore', '-q', 'docs/ai/release-evidence/0.2.0.json']).status, 0);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+  assert.equal(manifest.templateVersion, 2);
+  assert.equal(manifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
+  assert.equal(manifest.files.some((entry) => entry.path === 'reviews/.gitkeep'), false);
+  assert.equal(manifest.files.some((entry) => entry.path === 'reports/.gitkeep'), false);
+  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /temporary review notes.*`reviews\/`/i);
+  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /generated task and diagnostic reports.*`reports\/`/i);
+  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /release-evidence.*remain tracked/i);
+  assert.equal(checkProject(scanProject(root)).ok, true);
+
+  const second = initialize(root);
+  assert.deepEqual(second.applied.changed, []);
+  assert.equal(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), ignoreContent);
+  assert.ok(first.applied.changed.includes('.gitignore'));
+});
+
+test('upgrading report output layout preserves existing docs and user gitignore content', (context) => {
+  const root = fixture('local-report-upgrade');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'reviews'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs/existing-report.md'), '# Existing report\n\nKeep in place.\n');
+  fs.writeFileSync(path.join(root, 'reviews/.gitkeep'), '# user review placeholder\n');
+  fs.writeFileSync(path.join(root, 'reports/.gitkeep'), '# user report placeholder\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), 'dist/\n# user-owned rule\n*.local\n');
+
+  initialize(root);
+
+  assert.equal(fs.readFileSync(path.join(root, 'docs/existing-report.md'), 'utf8'), '# Existing report\n\nKeep in place.\n');
+  const ignoreContent = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.match(ignoreContent, /^dist\/$/m);
+  assert.match(ignoreContent, /^# user-owned rule$/m);
+  assert.match(ignoreContent, /^\*\.local$/m);
+  assert.ok(fs.existsSync(path.join(root, 'reviews/.gitkeep')));
+  assert.ok(fs.existsSync(path.join(root, 'reports/.gitkeep')));
+  assert.equal(fs.readFileSync(path.join(root, 'reviews/.gitkeep'), 'utf8'), '# user review placeholder\n');
+  assert.equal(fs.readFileSync(path.join(root, 'reports/.gitkeep'), 'utf8'), '# user report placeholder\n');
+});
+
+test('sync upgrades a v1 manifest to the v2 local output layout without moving docs or replacing user ignores', (context) => {
+  const root = fixture('v1-local-output-sync');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const userIgnore = 'dist/\n# user-owned rule\n*.local\n';
+  fs.mkdirSync(path.join(root, 'docs'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs/existing-report.md'), '# Existing report\n\nKeep in place.\n');
+  fs.writeFileSync(path.join(root, '.gitignore'), userIgnore);
+  initialize(root);
+
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const legacyManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  legacyManifest.templateVersion = 1;
+  legacyManifest.files = legacyManifest.files.filter((entry) => entry.path !== '.gitignore');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`);
+  fs.writeFileSync(path.join(root, '.gitignore'), userIgnore);
+  fs.rmSync(path.join(root, 'reviews'), { recursive: true, force: true });
+  fs.rmSync(path.join(root, 'reports'), { recursive: true, force: true });
+
+  const result = spawnSync(process.execPath, [path.join(process.cwd(), 'bin/aicg.js'), 'sync', root], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.readFileSync(path.join(root, 'docs/existing-report.md'), 'utf8'), '# Existing report\n\nKeep in place.\n');
+  const ignoreContent = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.match(ignoreContent, /^dist\/$/m);
+  assert.match(ignoreContent, /^# user-owned rule$/m);
+  assert.match(ignoreContent, /^\*\.local$/m);
+  assert.match(ignoreContent, /^# ai-code-governance:local-output:start$/m);
+  assert.ok(fs.statSync(path.join(root, 'reviews/.gitkeep')).isFile());
+  assert.ok(fs.statSync(path.join(root, 'reports/.gitkeep')).isFile());
+  const upgradedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(upgradedManifest.templateVersion, 2);
+  assert.equal(upgradedManifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
+});
+
+test('local output directory name conflicts preserve existing root files', (context) => {
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+  for (const name of ['reviews', 'reports']) {
+    const root = fixture(`local-output-file-conflict-${name}`);
+    roots.push(root);
+    fs.writeFileSync(path.join(root, name), `user-owned ${name} file\n`);
+    const scan = scanProject(root);
+    let plan;
+    assert.doesNotThrow(() => {
+      plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan));
+    });
+    assert.ok(plan.conflicts.some((item) => item.includes(`${name}: expected a directory ancestor`)));
+    assert.throws(() => applyArtifactPlan(root, plan), /Cannot safely generate governance/);
+    assert.equal(fs.readFileSync(path.join(root, name), 'utf8'), `user-owned ${name} file\n`);
+    assert.equal(fs.existsSync(path.join(root, '.ai-governance/config.json')), false);
+  }
+});
+
+test('gitignore ownership detects drift and force repairs only the AICG block', (context) => {
+  const root = fixture('local-output-ignore-drift');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitignore'), 'dist/\n# user-owned rule\n');
+  initialize(root);
+
+  const ignorePath = path.join(root, '.gitignore');
+  fs.writeFileSync(ignorePath, fs.readFileSync(ignorePath, 'utf8').replace('/reports/*', '/reports/keep-me.md'));
+  assert.equal(checkProject(scanProject(root)).ok, false);
+
+  const scan = scanProject(root);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const blocked = planArtifacts(root, buildArtifacts(config, scan));
+  assert.ok(blocked.conflicts.some((item) => item.includes('.gitignore: managed content changed')));
+
+  const forced = planArtifacts(root, buildArtifacts(config, scan), { force: true });
+  applyArtifactPlan(root, forced, { force: true });
+  const repaired = fs.readFileSync(ignorePath, 'utf8');
+  assert.match(repaired, /^dist\/$/m);
+  assert.match(repaired, /^# user-owned rule$/m);
+  assert.match(repaired, /^\/reports\/\*$/m);
+  assert.doesNotMatch(repaired, /^\/reports\/keep-me\.md$/m);
+  assert.equal(checkProject(scanProject(root)).ok, true);
+});
+
+test('gitignore ownership rejects incomplete AICG markers without writing', (context) => {
+  const root = fixture('local-output-ignore-incomplete');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const original = 'dist/\n# ai-code-governance:local-output:start\n/reviews/*\n';
+  fs.writeFileSync(path.join(root, '.gitignore'), original);
+
+  const scan = scanProject(root);
+  const plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan));
+  assert.ok(plan.conflicts.some((item) => item.includes('.gitignore: Managed block markers are incomplete')));
+  assert.throws(() => applyArtifactPlan(root, plan), /Cannot safely generate governance/);
+  assert.equal(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), original);
+});
+
+test('gitignore ownership rejects duplicate AICG blocks even with force', (context) => {
+  const root = fixture('local-output-ignore-duplicate');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const ignorePath = path.join(root, '.gitignore');
+  fs.appendFileSync(ignorePath, '\n# ai-code-governance:local-output:start\n!/reviews/leak.txt\n# ai-code-governance:local-output:end\n');
+  const original = fs.readFileSync(ignorePath, 'utf8');
+
+  assert.equal(checkProject(scanProject(root)).ok, false);
+  const scan = scanProject(root);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const plan = planArtifacts(root, buildArtifacts(config, scan), { force: true });
+  assert.ok(plan.conflicts.some((item) => item.includes('.gitignore: Managed block markers must appear exactly once')));
+  assert.throws(() => applyArtifactPlan(root, plan, { force: true }), /Cannot safely generate governance/);
+  assert.equal(fs.readFileSync(ignorePath, 'utf8'), original);
+});
+
+test('gitignore ownership preserves a terminal escaped-space rule byte for byte', (context) => {
+  const root = fixture('local-output-ignore-escaped-space');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(git(root, ['init', '--quiet']).status, 0);
+  fs.writeFileSync(path.join(root, '.gitignore'), 'trailing\\ ');
+  fs.writeFileSync(path.join(root, 'trailing '), 'ignored\n');
+
+  initialize(root);
+
+  assert.match(fs.readFileSync(path.join(root, '.gitignore'), 'utf8'), /^trailing\\ \n/);
+  assert.equal(git(root, ['check-ignore', '-q', 'trailing ']).status, 0);
+});
+
+test('gitignore ownership accepts CRLF checkout content without drift or rewrite', (context) => {
+  const root = fixture('local-output-ignore-crlf');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const ignorePath = path.join(root, '.gitignore');
+  const crlf = fs.readFileSync(ignorePath, 'utf8').replaceAll('\n', '\r\n');
+  fs.writeFileSync(ignorePath, crlf);
+
+  assert.equal(checkProject(scanProject(root)).ok, true);
+  const scan = scanProject(root);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const plan = planArtifacts(root, buildArtifacts(config, scan));
+  assert.deepEqual(plan.conflicts, []);
+  const applied = applyArtifactPlan(root, plan);
+  assert.equal(applied.changed.includes('.gitignore'), false);
+  assert.equal(fs.readFileSync(ignorePath, 'utf8'), crlf);
 });
 
 test('standard and complete governance route owner-confirmed constraints through a fine-grained business skill', (context) => {

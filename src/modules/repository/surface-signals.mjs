@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
+import { GENERATED_MARKER, LOCAL_OUTPUT_PREFIXES, PACKAGE_ROOT } from '../../constants.mjs';
 import { readJson, readText } from '../../adapters/filesystem/index.mjs';
 
 const SIGNAL_KINDS = ['browser-ui', 'node-http', 'file-persistence'];
 const REQUIRED_FIELDS = ['id', 'kind', 'source', 'confidence', 'evidenceLevel', 'gaps'];
 const PROFILE_IDS = ['http-contract', 'dom-smoke', 'browser-smoke', 'file-recovery'];
 const SOURCE_EXTENSIONS = new Set(['.html', '.htm', '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
-const GOVERNANCE_PREFIXES = ['docs/ai/', '.ai-governance/', '.agents/', '.claude/', '.cursor/'];
+const GOVERNANCE_PREFIXES = ['docs/ai/', '.ai-governance/', '.agents/', '.claude/', '.cursor/', ...LOCAL_OUTPUT_PREFIXES];
 
 export const SURFACE_VERIFICATION_PATH = 'docs/ai/surface-verification.json';
 export const SURFACE_EVIDENCE_MARKER_PREFIX = 'AICG_SURFACE_EVIDENCE ';

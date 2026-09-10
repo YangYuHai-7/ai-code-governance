@@ -14,6 +14,18 @@ export function linkAncestor(root, relative) {
   return null;
 }
 
+export function nonDirectoryAncestor(root, relative) {
+  const parts = normalizeRelative(relative).split('/');
+  let current = root;
+  for (const part of parts.slice(0, -1)) {
+    current = path.join(current, part);
+    const stat = lstatSafe(current);
+    if (!stat || stat.isSymbolicLink()) return null;
+    if (!stat.isDirectory()) return current;
+  }
+  return null;
+}
+
 export function plannedLinkAncestor(root, links, relative) {
   const normalized = normalizeRelative(relative);
   const candidates = (links ?? [])
