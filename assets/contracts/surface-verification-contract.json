@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "signalKinds": [
+    "browser-ui",
+    "node-http",
+    "file-persistence"
+  ],
+  "requiredSignalFields": [
+    "id",
+    "kind",
+    "source",
+    "confidence",
+    "evidenceLevel",
+    "gaps"
+  ],
+  "confidenceLevels": [
+    "high",
+    "medium",
+    "low"
+  ],
+  "evidenceLevels": [
+    "detected-unverified"
+  ],
+  "verificationProfiles": [
+    "http-contract",
+    "dom-smoke",
+    "browser-smoke",
+    "file-recovery"
+  ],
+  "boundary": "Static surface detection identifies repository evidence only. It does not prove runtime reachability, platform support, certification, or production readiness."
+}

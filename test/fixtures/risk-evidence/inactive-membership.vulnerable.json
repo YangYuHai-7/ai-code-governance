@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "riskId": "inactive-membership",
+  "variant": "vulnerable",
+  "entrypoint": "project-owned-test",
+  "expected": "Inactive membership is authorized."
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "riskId": "canceled-invoice-settlement",
+  "variant": "vulnerable",
+  "entrypoint": "project-owned-test",
+  "expected": "Canceled invoice can be settled."
+}

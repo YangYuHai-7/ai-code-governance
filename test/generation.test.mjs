@@ -35,6 +35,10 @@ test('generates regular adapters for all selected agents and passes check', (con
   assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /aicg release-check/);
   const releasePolicyManifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8')).files.find((entry) => entry.path === 'docs/ai/release-acceptance-policy.json');
   assert.equal(releasePolicyManifest.ownership, 'full');
+  const surfaceProfiles = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/surface-verification-profiles.json'), 'utf8'));
+  assert.deepEqual(surfaceProfiles.profiles.map((profile) => profile.id), ['http-contract', 'dom-smoke', 'browser-smoke', 'file-recovery']);
+  assert.deepEqual(surfaceProfiles.profiles.find((profile) => profile.id === 'http-contract').signalIds, ['surface-node-http']);
+  assert.deepEqual(surfaceProfiles.profiles.find((profile) => profile.id === 'browser-smoke').signalIds, ['surface-browser-ui']);
   assert.equal(scanProject(root).links.length, 0);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

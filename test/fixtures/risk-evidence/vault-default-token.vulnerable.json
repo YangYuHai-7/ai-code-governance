@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "riskId": "vault-default-token",
+  "variant": "vulnerable",
+  "entrypoint": "project-owned-test",
+  "expected": "Default vault token is accepted."
+}

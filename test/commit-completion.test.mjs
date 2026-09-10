@@ -126,6 +126,85 @@ test('completion exposes only verification scripts and never runs implicit npm l
   assert.equal(JSON.parse(verified.stdout).projectVerification.status, 'passed');
 });
 
+test('surface verification passes a reachable HTTP story through a discovered safe command', (context) => {
+  const root = fixture('surface-http');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --eval "process.exit(0)"' } }));
+  fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
+    schemaVersion: 1,
+    stories: [{
+      id: 'http-health',
+      signalId: 'surface-node-http',
+      profileId: 'http-contract',
+      entrypoint: 'GET /health',
+      reachability: 'reachable',
+      environment: 'available',
+      command: 'npm run test:http',
+    }],
+  }));
+  const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
+  assert.equal(completed.status, 0, completed.stderr);
+  const surface = JSON.parse(completed.stdout).surfaceVerification;
+  assert.equal(surface.status, 'passed');
+  assert.equal(surface.results[0].status, 'passed');
+});
+
+test('surface verification blocks an explicitly internal-only unreachable story', (context) => {
+  const root = fixture('surface-internal-only');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --eval "process.exit(0)"' } }));
+  fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
+    schemaVersion: 1,
+    stories: [{
+      id: 'internal-handler-only',
+      signalId: 'surface-node-http',
+      profileId: 'http-contract',
+      entrypoint: 'unmounted request handler',
+      reachability: 'internal-only',
+      environment: 'available',
+      command: 'npm run test:http',
+    }],
+  }));
+  const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
+  assert.equal(completed.status, 1, completed.stderr);
+  const payload = JSON.parse(completed.stdout);
+  assert.equal(payload.projectVerification.status, 'passed');
+  assert.equal(payload.surfaceVerification.status, 'blocked');
+  assert.match(payload.surfaceVerification.results[0].reason, /internal-only/);
+});
+
+test('unavailable browser verification remains unverified instead of passing or blocking', (context) => {
+  const root = fixture('surface-browser-unavailable');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.writeFileSync(path.join(root, 'index.html'), '<button id="save">Save</button>\n');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:browser': 'node --eval "process.exit(0)"' } }));
+  fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
+    schemaVersion: 1,
+    stories: [{
+      id: 'save-click',
+      signalId: 'surface-browser-ui',
+      profileId: 'browser-smoke',
+      entrypoint: 'click #save',
+      reachability: 'reachable',
+      environment: 'unavailable',
+      command: 'npm run test:browser',
+    }],
+  }));
+  const completed = run(['complete', root, '--json']);
+  assert.equal(completed.status, 0, completed.stderr);
+  const surface = JSON.parse(completed.stdout).surfaceVerification;
+  assert.equal(surface.status, 'unverified');
+  assert.equal(surface.results[0].status, 'unverified');
+  assert.match(surface.results[0].reason, /environment is unavailable/);
+});
+
 test('completion blocks production readiness when confirmed risk signals lack bound acceptance evidence', (context) => {
   const root = fixture('production-readiness-missing');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -165,7 +244,7 @@ test('completion blocks production readiness when owner-confirmed constraints la
 test('business acceptance evidence must bind the current stable constraint id, text, and hash', (context) => {
   const root = fixture('production-readiness-binding');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.']);
+  initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.'], []);
   const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
   const current = registry.constraints[0];
   const evidencePath = path.join(root, 'docs/ai/business-acceptance-results.json');
@@ -207,6 +286,53 @@ test('business acceptance evidence must bind the current stable constraint id, t
   assert.equal(recordedPayload.productionReadiness.constraintEvidence.status, 'recorded-unverified');
   assert.equal(recordedPayload.productionReadiness.constraintEvidence.covered, 1);
   assert.match(recordedPayload.productionReadiness.reason, /does not replay or certify/i);
+});
+
+test('production readiness requires owner-confirmed negative and recovery evidence for confirmed risks', (context) => {
+  const root = fixture('production-readiness-risk-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Only a trusted actor may change the record.'], ['authorization']);
+  const constraint = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8')).constraints[0];
+  fs.writeFileSync(path.join(root, 'docs/ai/business-acceptance-results.json'), JSON.stringify({
+    schemaVersion: 1,
+    constraints: [{
+      id: constraint.id,
+      constraint: constraint.constraint,
+      constraintHash: constraint.constraintHash,
+      status: 'pass',
+      successEvidence: 'trusted actor success path passed',
+      failureOrBoundaryEvidence: 'request-controlled actor was denied',
+    }],
+  }));
+  const missing = run(['complete', root, '--json']);
+  assert.equal(missing.status, 0, missing.stderr);
+  const missingReadiness = JSON.parse(missing.stdout).productionReadiness;
+  assert.equal(missingReadiness.state, 'blocked');
+  assert.equal(missingReadiness.constraintEvidence.status, 'recorded-unverified');
+  assert.equal(missingReadiness.riskEvidence.status, 'missing');
+
+  fs.writeFileSync(path.join(root, 'docs/ai/risk-evidence.json'), JSON.stringify({
+    schemaVersion: 1,
+    owner: 'product-owner',
+    source: 'owner-confirmed',
+    risks: [{
+      riskId: 'body-actor-identity',
+      applicability: 'applicable',
+      reason: 'Authorization depends on binding the actor to trusted authentication.',
+      status: 'passed',
+      entrypoint: 'npm run test:authorization',
+      negativeDiagnostic: 'A request-controlled actor identity was rejected.',
+      recoveryEvidence: 'A trusted authenticated actor completed the operation.',
+      sourceFingerprint: missingReadiness.riskEvidence.sourceFingerprint,
+      evidenceLevel: 'project-local-unverified',
+    }],
+  }));
+  const recorded = run(['complete', root, '--json']);
+  assert.equal(recorded.status, 0, recorded.stderr);
+  const readiness = JSON.parse(recorded.stdout).productionReadiness;
+  assert.equal(readiness.state, 'unverified');
+  assert.equal(readiness.reviewEligibility, 'eligible-for-review');
+  assert.equal(readiness.riskEvidence.status, 'recorded-unverified');
 });
 
 test('business acceptance evidence cannot traverse a symbolic link', (context) => {

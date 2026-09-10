@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "riskId": "multi-instance-lost-update",
+  "variant": "vulnerable",
+  "entrypoint": "project-owned-test",
+  "expected": "Concurrent writers lose a committed update."
+}

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "riskId": "multi-instance-lost-update",
+  "variant": "repaired",
+  "entrypoint": "project-owned-test",
+  "expected": "Concurrent conflict is detected and retry preserves both updates."
+}
