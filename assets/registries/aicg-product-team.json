@@ -31,6 +31,29 @@
       "mustRemainIndependentFrom": []
     },
     {
+      "id": "project-manager",
+      "title": "Project Manager",
+      "phase": "core",
+      "responsibilities": [
+        "Own delivery sequencing, dependency tracking, milestone status, risk registers, and evidence traceability.",
+        "Coordinate implementation and independent review without weakening acceptance or external evidence boundaries."
+      ],
+      "outOfScope": [
+        "Approving product scope, accepting security risk, waiving failed gates, or declaring release and certification readiness."
+      ],
+      "capabilities": [
+        "delivery-coordination",
+        "evidence-traceability",
+        "risk-register-management"
+      ],
+      "requiredCompanionRoleIds": [
+        "adversarial-evaluation-release-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "adversarial-evaluation-release-engineer"
+      ]
+    },
+    {
       "id": "principal-governance-architect",
       "title": "Principal Governance Architect",
       "phase": "core",

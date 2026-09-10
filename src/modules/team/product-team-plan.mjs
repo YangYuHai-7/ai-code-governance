@@ -7,8 +7,14 @@ const PRODUCT_TEAM_PATH = 'assets/registries/aicg-product-team.json';
 const SAFE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_TEXT = /^[^\x00-\x1f\x7f]{1,1000}$/;
 const PHASES = new Set(['core', 'specialist', 'specialist-pool', 'scale', 'dynamic']);
+const PROJECT_MANAGER_CAPABILITIES = [
+  'delivery-coordination',
+  'evidence-traceability',
+  'risk-register-management',
+];
 const REQUIRED_ROLE_IDS = new Set([
   'product-owner',
+  'project-manager',
   'principal-governance-architect',
   'cli-cross-platform-engineer',
   'agent-integration-engineer',
@@ -99,6 +105,15 @@ export function validateAicgProductTeamRegistry(registry) {
   const roles = registry.roles.map((role) => validateRole(role, 'roles'));
   const { ids } = validateRoleGraph(roles, 'roles');
   for (const id of REQUIRED_ROLE_IDS) if (!ids.has(id)) throw usageError(`AICG product team registry is missing required role: ${id}.`);
+  const projectManager = roles.find((role) => role.id === 'project-manager');
+  if (
+    projectManager.phase !== 'core'
+    || projectManager.capabilities.join(',') !== PROJECT_MANAGER_CAPABILITIES.join(',')
+    || projectManager.requiredCompanionRoleIds.join(',') !== 'adversarial-evaluation-release-engineer'
+    || projectManager.mustRemainIndependentFrom.join(',') !== 'adversarial-evaluation-release-engineer'
+  ) {
+    throw usageError('The Project Manager must not own product scope, security risk, or release acceptance; it may only coordinate delivery, risks, and evidence with an independent release reviewer.');
+  }
   return { ...registry, roles };
 }
 

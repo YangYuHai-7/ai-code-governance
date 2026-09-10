@@ -10,6 +10,7 @@ import {
   loadAicgProductTeamRegistry,
   validateAicgProductTeamRegistry,
 } from '../src/dynamic-team.mjs';
+import { loadTeamRoleRegistry } from '../src/team-recommendation.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -54,9 +55,10 @@ function snapshot(root) {
 
 test('the AICG roster records every approved member while activating nobody without a requirement', () => {
   const registry = loadAicgProductTeamRegistry();
-  assert.equal(registry.roles.length, 15);
+  assert.equal(registry.roles.length, 16);
   assert.deepEqual(new Set(registry.roles.map((role) => role.id)), new Set([
     'product-owner',
+    'project-manager',
     'principal-governance-architect',
     'cli-cross-platform-engineer',
     'agent-integration-engineer',
@@ -78,9 +80,51 @@ test('the AICG roster records every approved member while activating nobody with
   }
   const plan = dynamicTeamPlan();
   assert.equal(plan.status, 'no-requirement-provided');
-  assert.equal(plan.availableRoles.length, 15);
+  assert.equal(plan.availableRoles.length, 16);
   assert.deepEqual(plan.assignment.activeRoles, []);
-  assert.equal(plan.assignment.inactiveRoleIds.length, 15);
+  assert.equal(plan.assignment.inactiveRoleIds.length, 16);
+});
+
+test('the internal Project Manager coordinates delivery with an independent reviewer but cannot own acceptance or risk decisions', () => {
+  const plan = dynamicTeamPlan({ requiredCapabilities: [
+    'delivery-coordination',
+    'evidence-traceability',
+    'risk-register-management',
+  ] });
+  assert.equal(plan.status, 'ready');
+  assert.deepEqual(plan.assignment.activeRoles.map((role) => role.id), [
+    'adversarial-evaluation-release-engineer',
+    'project-manager',
+  ]);
+  const projectManager = plan.assignment.activeRoles.find((role) => role.id === 'project-manager');
+  assert.deepEqual(projectManager.matchedCapabilities, [
+    'delivery-coordination',
+    'evidence-traceability',
+    'risk-register-management',
+  ]);
+  assert.ok(plan.assignment.requiredSeparations.some((entry) => entry.roles.join(':') === 'adversarial-evaluation-release-engineer:project-manager'));
+  assert.ok(!projectManager.capabilities.some((capability) => [
+    'product-strategy-decision',
+    'release-acceptance',
+    'scope-and-risk-approval',
+  ].includes(capability)));
+
+  const customerRegistry = loadTeamRoleRegistry();
+  assert.ok(!customerRegistry.roles.some((role) => role.id === 'project-manager'), 'the internal AICG role must not leak into customer-project recommendations');
+});
+
+test('the product-team registry rejects a Project Manager that can approve scope, risk, or release', () => {
+  for (const forbiddenCapability of ['product-strategy-decision', 'release-acceptance', 'scope-and-risk-approval']) {
+    const registry = structuredClone(loadAicgProductTeamRegistry());
+    const projectManager = registry.roles.find((role) => role.id === 'project-manager');
+    projectManager.capabilities = [...projectManager.capabilities, forbiddenCapability];
+    const existingOwner = registry.roles.find((role) => role.id !== 'project-manager' && role.capabilities.includes(forbiddenCapability));
+    existingOwner.capabilities = existingOwner.capabilities.filter((capability) => capability !== forbiddenCapability);
+    assert.throws(
+      () => validateAicgProductTeamRegistry(registry),
+      /Project Manager.*must not own/i,
+    );
+  }
 });
 
 test('a requirement activates only its minimum owner and mandatory independent reviewer', () => {
@@ -92,7 +136,7 @@ test('a requirement activates only its minimum owner and mandatory independent r
   ]);
   assert.deepEqual(plan.assignment.activeRoles.find((role) => role.id === 'cli-cross-platform-engineer').matchedCapabilities, ['cli-implementation']);
   assert.ok(plan.assignment.requiredSeparations.some((entry) => entry.roles.join(':') === 'adversarial-evaluation-release-engineer:cli-cross-platform-engineer'));
-  assert.equal(plan.assignment.inactiveRoleIds.length, 13);
+  assert.equal(plan.assignment.inactiveRoleIds.length, 14);
 });
 
 test('a missing capability remains inactive until a proposed role receives explicit Product Owner approval', () => {
@@ -170,7 +214,7 @@ test('the CLI exposes the dynamic team plan without modifying the repository', (
   const rosterOutput = JSON.parse(rosterOnly.stdout);
   assert.equal(rosterOutput.status, 'needs-user-input');
   assert.equal(rosterOutput.productTeam.status, 'no-requirement-provided');
-  assert.equal(rosterOutput.productTeam.availableRoles.length, 15);
+  assert.equal(rosterOutput.productTeam.availableRoles.length, 16);
   assert.deepEqual(rosterOutput.productTeam.assignment.activeRoles, []);
   assert.deepEqual(snapshot(root), before);
 });
