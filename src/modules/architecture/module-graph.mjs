@@ -4,8 +4,119 @@ import { readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative } from '../../shared/index.mjs';
 
 const JS_TS_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts'];
-const STATIC_MODULE = /^[ \t]*(?:import|export)\s+(?:(?:[\w*$ {},\r\n\t]+?)\s+from\s+)?(['"])([^'"\r\n]+)\1/gm;
-const UNSUPPORTED_RELATIVE_MODULE = /\b(?:import|require)\s*\(\s*['"]\.{1,2}\//;
+
+function tokenizeModules(content) {
+  const tokens = [];
+  let index = 0;
+  let incomplete = false;
+  while (index < content.length) {
+    const char = content[index];
+    const next = content[index + 1];
+    if (/\s/.test(char)) {
+      index += 1;
+      continue;
+    }
+    if (char === '/' && next === '/') {
+      index += 2;
+      while (index < content.length && content[index] !== '\n') index += 1;
+      continue;
+    }
+    if (char === '/' && next === '*') {
+      const end = content.indexOf('*/', index + 2);
+      if (end < 0) {
+        incomplete = true;
+        break;
+      }
+      index = end + 2;
+      continue;
+    }
+    if (char === '`') {
+      index += 1;
+      let closed = false;
+      while (index < content.length) {
+        if (content[index] === '\\') index += 2;
+        else if (content[index] === '`') {
+          index += 1;
+          closed = true;
+          break;
+        } else index += 1;
+      }
+      if (!closed) incomplete = true;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      const quote = char;
+      let value = '';
+      let closed = false;
+      index += 1;
+      while (index < content.length) {
+        if (content[index] === '\\' && index + 1 < content.length) {
+          value += content[index + 1];
+          index += 2;
+        } else if (content[index] === quote) {
+          index += 1;
+          closed = true;
+          break;
+        } else {
+          value += content[index];
+          index += 1;
+        }
+      }
+      if (!closed) incomplete = true;
+      tokens.push({ type: 'string', value });
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(char)) {
+      const start = index;
+      index += 1;
+      while (index < content.length && /[A-Za-z0-9_$]/.test(content[index])) index += 1;
+      tokens.push({ type: 'identifier', value: content.slice(start, index) });
+      continue;
+    }
+    tokens.push({ type: 'punctuation', value: char });
+    index += 1;
+  }
+  return { tokens, incomplete };
+}
+
+function isStatementStart(tokens, index) {
+  if (index === 0) return true;
+  return [';', '}'].includes(tokens[index - 1].value);
+}
+
+function moduleReferences(content) {
+  const { tokens, incomplete } = tokenizeModules(content);
+  const specifiers = [];
+  let unsupported = incomplete;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.type !== 'identifier') continue;
+    if (token.value === 'require' && tokens[index + 1]?.value === '(' && tokens[index + 2]?.type === 'string') {
+      if (tokens[index + 2].value.startsWith('.')) unsupported = true;
+      continue;
+    }
+    if (token.value === 'import' && tokens[index + 1]?.value === '(') {
+      if (tokens[index + 2]?.type === 'string' && tokens[index + 2].value.startsWith('.')) unsupported = true;
+      continue;
+    }
+    if (!['import', 'export'].includes(token.value) || !isStatementStart(tokens, index)) continue;
+    if (token.value === 'import' && tokens[index + 1]?.type === 'string') {
+      specifiers.push(tokens[index + 1].value);
+      continue;
+    }
+    for (let cursor = index + 1; cursor < tokens.length && tokens[cursor].value !== ';'; cursor += 1) {
+      if (tokens[cursor].value === 'from' && tokens[cursor + 1]?.type === 'string') {
+        specifiers.push(tokens[cursor + 1].value);
+        break;
+      }
+    }
+  }
+  return { specifiers, unsupported };
+}
+
+function potentialProjectAlias(specifier) {
+  return /^(?:@\/|~\/|#\/|src\/)/.test(specifier);
+}
 
 export function moduleGraphDeclaration(config) {
   if (config?.architecture?.status !== 'active' || config.architecture.verification?.dependencyDirection !== 'aicg-check-js-ts-module-graph') return null;
@@ -14,6 +125,10 @@ export function moduleGraphDeclaration(config) {
     generatedMarker: GENERATED_MARKER,
     status: 'active',
     language: 'js-ts',
+    scope: {
+      appliesTo: config.architecture.scope?.appliesTo ?? 'future-code',
+      baselineSourcePaths: [...(config.architecture.scope?.baselineSourcePaths ?? [])],
+    },
     layers: [
       { id: 'app', roots: ['src/app'], allowedDependencies: ['modules', 'shared'] },
       { id: 'modules', roots: ['src/modules'], allowedDependencies: ['shared'], publicEntrypoints: ['index'] },
@@ -30,6 +145,12 @@ export function validateModuleGraphDeclaration(declaration) {
     throw new Error('Module graph declaration must be an active js-ts schemaVersion 1 document.');
   }
   const layers = new Map((declaration.layers ?? []).map((layer) => [layer.id, layer]));
+  if (!declaration.scope || !['future-code', 'new-modules-only'].includes(declaration.scope.appliesTo) || !Array.isArray(declaration.scope.baselineSourcePaths)) {
+    throw new Error('Module graph declaration requires a future-code or new-modules-only scope with baselineSourcePaths.');
+  }
+  if (declaration.scope.baselineSourcePaths.some((relative) => !isSafeRelative(relative)) || new Set(declaration.scope.baselineSourcePaths).size !== declaration.scope.baselineSourcePaths.length) {
+    throw new Error('Module graph baselineSourcePaths must be unique safe repository-relative paths.');
+  }
   for (const id of ['app', 'modules', 'shared']) {
     const layer = layers.get(id);
     if (!layer || !Array.isArray(layer.roots) || layer.roots.length === 0 || !Array.isArray(layer.allowedDependencies)) {
@@ -75,8 +196,11 @@ export function evaluateModuleGraph(scan, declaration) {
   if (!declaration) return { status: 'stated-only', issues: [], inspectedFiles: [], unsupportedFiles: [] };
   validateModuleGraphDeclaration(declaration);
   const fileSet = new Set(scan.files.filter((file) => file.type === 'file').map((file) => file.relative));
+  const baseline = declaration.scope.appliesTo === 'new-modules-only'
+    ? new Set(declaration.scope.baselineSourcePaths)
+    : new Set();
   const sourceFiles = scan.files
-    .filter((file) => file.type === 'file' && JS_TS_EXTENSIONS.includes(path.extname(file.relative).toLowerCase()) && boundary(file.relative))
+    .filter((file) => file.type === 'file' && JS_TS_EXTENSIONS.includes(path.extname(file.relative).toLowerCase()) && boundary(file.relative) && !baseline.has(file.relative))
     .sort((left, right) => left.relative.localeCompare(right.relative));
   const layers = new Map(declaration.layers.map((layer) => [layer.id, layer]));
   const issues = [];
@@ -89,10 +213,10 @@ export function evaluateModuleGraph(scan, declaration) {
       unsupportedFiles.push(source.relative);
       continue;
     }
-    if (UNSUPPORTED_RELATIVE_MODULE.test(content)) unsupportedFiles.push(source.relative);
-    STATIC_MODULE.lastIndex = 0;
-    for (const match of content.matchAll(STATIC_MODULE)) {
-      const target = resolveTarget(source.relative, match[2], fileSet);
+    const references = moduleReferences(content);
+    if (references.unsupported || references.specifiers.some(potentialProjectAlias)) unsupportedFiles.push(source.relative);
+    for (const specifier of references.specifiers) {
+      const target = resolveTarget(source.relative, specifier, fileSet);
       if (!target || allowlisted(declaration, source.relative, target)) continue;
       const sourceBoundary = boundary(source.relative);
       const targetBoundary = boundary(target);

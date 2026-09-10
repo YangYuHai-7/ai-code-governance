@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "inactive-membership",
   "variant": "repaired",
-  "entrypoint": "project-owned-test",
-  "expected": "Inactive membership is denied and active membership succeeds."
+  "entrypoint": "node toy-probe.mjs inactive-membership repaired",
+  "expectedExitCode": 0
 }

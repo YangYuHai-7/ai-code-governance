@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "inactive-membership",
   "variant": "vulnerable",
-  "entrypoint": "project-owned-test",
-  "expected": "Inactive membership is authorized."
+  "entrypoint": "node toy-probe.mjs inactive-membership vulnerable",
+  "expectedExitCode": 1
 }

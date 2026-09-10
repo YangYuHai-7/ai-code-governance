@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "canceled-invoice-settlement",
   "variant": "repaired",
-  "entrypoint": "project-owned-test",
-  "expected": "Canceled invoice is rejected and payable invoice succeeds."
+  "entrypoint": "node toy-probe.mjs canceled-invoice-settlement repaired",
+  "expectedExitCode": 0
 }

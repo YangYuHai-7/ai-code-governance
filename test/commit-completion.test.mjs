@@ -145,11 +145,66 @@ test('surface verification passes a reachable HTTP story through a discovered sa
       command: 'npm run test:http',
     }],
   }));
+  const fabricated = run(['complete', root, '--verify', 'npm run test:http', '--json']);
+  assert.equal(fabricated.status, 1, fabricated.stderr);
+  const fabricatedPayload = JSON.parse(fabricated.stdout);
+  assert.equal(fabricatedPayload.projectVerification.status, 'passed');
+  assert.equal(fabricatedPayload.surfaceVerification.status, 'blocked');
+  assert.match(fabricatedPayload.surfaceVerification.results[0].reason, /marker/i);
+  assert.equal('stdout' in fabricatedPayload.projectVerification, false);
+
+  fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'scripts', 'verify-http.mjs'), `import http from 'node:http';
+const server = http.createServer((request, response) => {
+  if (request.method === 'GET' && request.url === '/health') {
+    response.writeHead(200, { 'content-type': 'text/plain' });
+    response.end('healthy');
+    return;
+  }
+  response.writeHead(404);
+  response.end('missing');
+});
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+const address = server.address();
+const response = await fetch(\`http://127.0.0.1:\${address.port}/health\`);
+const body = await response.text();
+await new Promise((resolve) => server.close(resolve));
+if (response.status !== 200 || body !== 'healthy') process.exit(1);
+console.log('AICG_SURFACE_EVIDENCE ' + JSON.stringify({ schemaVersion: 1, storyId: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', outcome: 'passed' }));
+`);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node scripts/verify-http.mjs' } }));
   const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
-  assert.equal(completed.status, 0, completed.stderr);
-  const surface = JSON.parse(completed.stdout).surfaceVerification;
+  assert.equal(completed.status, 0, `${completed.stderr}\n${completed.stdout}`);
+  const completedPayload = JSON.parse(completed.stdout);
+  const surface = completedPayload.surfaceVerification;
   assert.equal(surface.status, 'passed');
   assert.equal(surface.results[0].status, 'passed');
+  assert.match(completedPayload.projectVerification.outputDigest, /^[a-f0-9]{64}$/);
+  assert.deepEqual(completedPayload.projectVerification.markers, [{
+    schemaVersion: 1,
+    storyId: 'http-health',
+    signalId: 'surface-node-http',
+    profileId: 'http-contract',
+    entrypoint: 'GET /health',
+    outcome: 'passed',
+  }]);
+});
+
+test('surface verification rejects a successful command with a marker bound to another entrypoint', (context) => {
+  const root = fixture('surface-wrong-marker');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
+  const marker = JSON.stringify({ schemaVersion: 1, storyId: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /invented', outcome: 'passed' });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': `node --eval "console.log('AICG_SURFACE_EVIDENCE ${marker.replaceAll('"', '\\"')}')"` } }));
+  fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
+    schemaVersion: 1,
+    stories: [{ id: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', reachability: 'reachable', environment: 'available', command: 'npm run test:http' }],
+  }));
+  const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
+  assert.equal(completed.status, 1, completed.stderr);
+  assert.equal(JSON.parse(completed.stdout).surfaceVerification.status, 'blocked');
 });
 
 test('surface verification blocks an explicitly internal-only unreachable story', (context) => {

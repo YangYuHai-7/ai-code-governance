@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "vault-default-token",
   "variant": "repaired",
-  "entrypoint": "project-owned-test",
-  "expected": "Default token is rejected and rotated token succeeds."
+  "entrypoint": "node toy-probe.mjs vault-default-token repaired",
+  "expectedExitCode": 0
 }

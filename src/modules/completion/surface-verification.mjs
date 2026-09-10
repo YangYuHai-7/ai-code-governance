@@ -100,9 +100,27 @@ export function evaluateSurfaceVerification(scan, projectVerification) {
     if (projectVerification.status !== 'passed') return blocked(signal, `The selected surface verification command ended with ${projectVerification.status}.`, {
       storyId: story.id, profileId: profile.id, command: story.command,
     });
+    const emittedMarkers = projectVerification.markers ?? [];
+    const markers = emittedMarkers.filter((marker) => (
+      marker.storyId === story.id
+      && marker.signalId === signal.id
+      && marker.profileId === profile.id
+      && marker.entrypoint === story.entrypoint
+      && marker.outcome === 'passed'
+    ));
+    if (markers.length !== 1 || emittedMarkers.length !== 1) return blocked(signal, markers.length === 0
+      ? 'The successful command did not emit one machine marker exactly bound to this story, signal, profile, entrypoint, and passed outcome.'
+      : 'The successful command emitted duplicate or conflicting surface evidence markers.', {
+      storyId: story.id,
+      profileId: profile.id,
+      command: story.command,
+      outputDigest: projectVerification.outputDigest ?? null,
+    });
     return {
       signalId: signal.id, kind: signal.kind, storyId: story.id, profileId: profile.id, status: 'passed',
       command: story.command,
+      marker: markers[0],
+      outputDigest: projectVerification.outputDigest,
       claimBoundary: 'Only this declared project-owned entrypoint and selected command passed; broader production support remains unverified.',
     };
   });

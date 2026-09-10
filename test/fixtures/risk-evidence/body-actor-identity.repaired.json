@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "riskId": "body-actor-identity",
   "variant": "repaired",
-  "entrypoint": "project-owned-test",
-  "expected": "Body actor is rejected and authenticated principal succeeds."
+  "entrypoint": "node toy-probe.mjs body-actor-identity repaired",
+  "expectedExitCode": 0
 }

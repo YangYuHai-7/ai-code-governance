@@ -9,6 +9,7 @@ const SOURCE_EXTENSIONS = new Set(['.html', '.htm', '.js', '.jsx', '.mjs', '.cjs
 const GOVERNANCE_PREFIXES = ['docs/ai/', '.ai-governance/', '.agents/', '.claude/', '.cursor/'];
 
 export const SURFACE_VERIFICATION_PATH = 'docs/ai/surface-verification.json';
+export const SURFACE_EVIDENCE_MARKER_PREFIX = 'AICG_SURFACE_EVIDENCE ';
 
 const VERIFICATION_PROFILES = Object.freeze([
   { id: 'http-contract', signalIds: ['surface-node-http'], environment: 'node', acceptedScriptPrefixes: ['test:http', 'verify:http', 'test:contract', 'verify:contract'] },
@@ -24,6 +25,13 @@ export function surfaceVerificationProfiles() {
     profiles: VERIFICATION_PROFILES.map((profile) => ({ ...profile })),
     statuses: ['passed', 'blocked', 'unverified', 'not-applicable'],
     declarationPath: SURFACE_VERIFICATION_PATH,
+    markerContract: {
+      prefix: SURFACE_EVIDENCE_MARKER_PREFIX,
+      schemaVersion: 1,
+      requiredFields: ['storyId', 'signalId', 'profileId', 'entrypoint', 'outcome'],
+      requiredOutcome: 'passed',
+      binding: 'Every field must exactly match the selected declared story. A zero exit without one exact marker is not surface evidence.',
+    },
     claimBoundary: 'Profiles identify safe project-owned verification entrypoints. They do not make a detected surface supported or execute undeclared commands.',
   };
 }
