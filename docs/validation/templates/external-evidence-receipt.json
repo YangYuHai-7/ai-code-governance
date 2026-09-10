@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "template": true,
+  "templateStatus": "blank-not-evidence",
+  "workPackageStatus": "externally-blocked",
+  "validationId": null,
+  "validationKind": null,
+  "sessionClassification": null,
+  "candidate": {
+    "packageName": "ai-code-governance",
+    "toolVersion": null,
+    "sha256": null,
+    "sourceCommit": null,
+    "byteSize": null,
+    "frozenAt": null,
+    "digestCommand": null,
+    "digestExitCode": null,
+    "independentlyVerifiedBy": null,
+    "independentlyVerifiedAt": null
+  },
+  "actors": {
+    "participantId": null,
+    "environmentOperatorId": null,
+    "sessionModeratorId": null,
+    "implementationOwnerId": null,
+    "projectManagerId": null
+  },
+  "consent": {
+    "status": "not-collected",
+    "referenceId": null,
+    "artifactSha256": null,
+    "scopes": [],
+    "collectedAt": null,
+    "expiresAt": null,
+    "withdrawalChannelId": null
+  },
+  "privacy": {
+    "reviewStatus": "not-reviewed",
+    "anonymized": null,
+    "sourceCodeIncluded": null,
+    "rawLogsIncluded": null,
+    "secretsIncluded": null,
+    "personalDataIncluded": null,
+    "restrictedArtifactDigests": []
+  },
+  "project": {
+    "projectId": null,
+    "projectMode": null,
+    "authorizationReferenceId": null,
+    "isRealProject": null,
+    "fixtureId": null
+  },
+  "environment": {
+    "os": null,
+    "osVersion": null,
+    "architecture": null,
+    "shellOrLaunchContext": null,
+    "nodeVersion": null,
+    "npmVersion": null,
+    "gitVersion": null,
+    "agent": null,
+    "agentVersion": null,
+    "actualClientEntrypoint": null,
+    "invocationMode": "project-local"
+  },
+  "execution": {
+    "status": "not-run",
+    "observedAt": null,
+    "durationMs": null,
+    "outcome": null,
+    "assistanceLevel": null,
+    "commands": [],
+    "verification": [],
+    "findings": []
+  },
+  "negativeAndRecoveryEvidence": [],
+  "experience": {
+    "installation": null,
+    "clarity": null,
+    "nextStep": null,
+    "recovery": null,
+    "confidence": null
+  },
+  "reviewers": [],
+  "staleness": {
+    "status": "unverified",
+    "observedAt": null,
+    "expiresAt": null,
+    "invalidatedAt": null,
+    "invalidatedBy": []
+  },
+  "withdrawal": {
+    "status": "not-requested",
+    "requestedAt": null,
+    "processedAt": null,
+    "tombstoneRetained": null
+  },
+  "claims": {
+    "claimState": "unverified",
+    "realUserObserved": "unverified",
+    "realProjectEvidence": "unverified",
+    "realClientVerified": "unverified",
+    "crossOsVerified": "unverified",
+    "productionReady": false,
+    "certified": false
+  },
+  "qualification": "not-evidence",
+  "boundaries": [
+    "This blank template is not an evidence receipt.",
+    "Repository tests, simulated personas, and fixture execution do not prove real-user, real-project, real-client, cross-OS, production, or certification claims.",
+    "A syntactically valid candidate digest does not prove that the installed artifact was independently verified."
+  ]
+}

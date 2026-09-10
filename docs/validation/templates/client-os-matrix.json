@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "template": true,
+  "templateStatus": "blank-not-evidence",
+  "workPackage": "L2",
+  "status": "externally-blocked",
+  "claimState": "unverified",
+  "candidate": {
+    "packageName": "ai-code-governance",
+    "toolVersion": null,
+    "sha256": null,
+    "sourceCommit": null,
+    "byteSize": null,
+    "frozenAt": null,
+    "independentDigestReviewerId": null,
+    "independentDigestVerifiedAt": null
+  },
+  "declaredScope": {
+    "approvedBy": null,
+    "approvedAt": null,
+    "nodeMajorVersions": [],
+    "osVersionRanges": [],
+    "clientVersionRanges": [],
+    "claimedEntrypoints": [],
+    "claimedHookModes": [],
+    "expiresAt": null
+  },
+  "cells": [
+    {
+      "id": "macos-codex",
+      "os": "macos",
+      "agent": "codex",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "macos-claude-code",
+      "os": "macos",
+      "agent": "claude-code",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "macos-cursor",
+      "os": "macos",
+      "agent": "cursor",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "windows-codex",
+      "os": "windows",
+      "agent": "codex",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "windows-claude-code",
+      "os": "windows",
+      "agent": "claude-code",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "windows-cursor",
+      "os": "windows",
+      "agent": "cursor",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "linux-codex",
+      "os": "linux",
+      "agent": "codex",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "linux-claude-code",
+      "os": "linux",
+      "agent": "claude-code",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    },
+    {
+      "id": "linux-cursor",
+      "os": "linux",
+      "agent": "cursor",
+      "executionStatus": "not-run",
+      "evidenceState": "unverified",
+      "receiptId": null
+    }
+  ],
+  "summary": {
+    "declaredCellCount": 9,
+    "executedCellCount": 0,
+    "passedCellCount": 0,
+    "failedCellCount": 0,
+    "blockedCellCount": 0,
+    "unverifiedCellCount": 9,
+    "staleCellCount": 0,
+    "withdrawnCellCount": 0,
+    "realClientVerified": false,
+    "crossOsVerified": false,
+    "certified": false
+  },
+  "withdrawals": [],
+  "boundary": "This blank matrix contains target combinations only. No client or operating-system result has been executed, reviewed, or certified."
+}
