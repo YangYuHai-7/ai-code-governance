@@ -5,7 +5,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { assessArchitecture } from '../src/architecture-assessment.mjs';
+import { defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { promptGuidedConfig } from '../src/cli/prompts.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -22,6 +24,95 @@ function writeBrownfield(root) {
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src', 'App.tsx'), 'export const App = () => null;\n');
 }
+
+test('guided preset collects the five novice decisions without a JSON file', async (context) => {
+  const root = fixture('guided-preset');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-only' }));
+  const scan = scanProject(root);
+  const answers = ['1', '1', '1', '1'];
+  const questions = [];
+  const readline = {
+    question: async (question) => {
+      questions.push(question);
+      return answers.shift();
+    },
+    close() {},
+  };
+
+  const config = await promptGuidedConfig(scan, defaultConfig(scan), { locale: 'zh-CN', readline });
+  assert.equal(answers.length, 0);
+  assert.equal(config.interactionLanguage, 'zh-CN');
+  assert.equal(config.artifactLanguage, 'zh-CN');
+  assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex'], source: 'interactive' });
+  assert.deepEqual(config.clients, ['codex']);
+  assert.deepEqual(config.initialization, { lifecycle: 'greenfield', existingCodeStrategy: null, source: null });
+  assert.equal(config.governanceDepth, 'minimal');
+  assert.equal(config.invocationMode, 'project-local');
+  assert.equal(config.features.aiAssist, false);
+  assert.equal(questions.length, 4);
+  assert.doesNotMatch(questions.join('\n'), /Git|manifest|enforcement|negative probe/i);
+});
+
+test('Chinese and English human discovery output gives one plain-language action, reason, boundary, and exact command', (context) => {
+  const root = fixture('human-guidance');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-only' }));
+
+  for (const [locale, labels] of [
+    ['zh-CN', ['建议操作：', '下一条命令：', '原因：', '边界：']],
+    ['en', ['ACTION: ', 'NEXT COMMAND: ', 'REASON: ', 'BOUNDARY: ']],
+  ]) {
+    for (const command of ['doctor', 'assess', 'architecture']) {
+      const result = run([command, root, '--locale', locale]);
+      assert.equal(result.status, 0, `${command}/${locale}: ${result.stderr}`);
+      const lines = result.stdout.trim().split('\n');
+      assert.equal(lines.length, 4, `${command}/${locale}: ${result.stdout}`);
+      labels.forEach((label, index) => assert.ok(lines[index].startsWith(label), `${command}/${locale}: ${result.stdout}`));
+      assert.match(lines[1], new RegExp(`aicg init \\. --guided --locale ${locale}$`));
+    }
+  }
+
+  const chinese = run(['doctor', root, '--locale', 'zh-CN']);
+  assert.doesNotMatch(chinese.stdout, /Git|manifest|enforcement|negative probe/i);
+});
+
+test('guided init stays interactive and prints one exact project-local success command', (context) => {
+  const root = fixture('guided-safety');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const args of [
+    ['init', root, '--guided', '--yes'],
+    ['init', root, '--guided', '--config', path.join(root, 'answers.json')],
+    ['init', root, '--guided'],
+  ]) {
+    const result = run(args);
+    assert.equal(result.status, 2);
+    assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
+  }
+});
+
+test('a managed-link warning exposes one recovery action and claim boundary', (context) => {
+  const root = fixture('warning-recovery');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'adapter-target'));
+  fs.symlinkSync('adapter-target', path.join(root, '.agents'));
+
+  const human = run(['doctor', root, '--locale', 'en']);
+  assert.equal(human.status, 0, human.stderr);
+  assert.match(human.stdout, /^ACTION: .*managed adapter link/m);
+  assert.match(human.stdout, /^NEXT COMMAND: aicg init \. --guided --locale en --migrate-links$/m);
+  assert.match(human.stdout, /^REASON: /m);
+  assert.match(human.stdout, /^BOUNDARY: /m);
+
+  const machine = run(['doctor', root, '--locale', 'en', '--json']);
+  assert.equal(machine.status, 0, machine.stderr);
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.actionGuide.warnings.length, 1);
+  assert.equal(payload.actionGuide.warnings[0].recoveryAction.command, 'aicg init . --guided --locale en --migrate-links');
+  assert.ok(Object.hasOwn(payload, 'nextSteps'));
+  assert.ok(Object.hasOwn(payload.actionGuide, 'projectMode'));
+  assert.ok(Object.hasOwn(payload.actionGuide, 'lifecycle'));
+});
 
 test('non-interactive init requires an explicit client scope and records invocation and language separately', (context) => {
   const root = fixture('scope');
@@ -142,9 +233,9 @@ test('read-only discovery commands expose locale-aware action guides and disting
 
   const humanDoctor = run(['doctor', root, '--locale', 'zh-CN']);
   assert.equal(humanDoctor.status, 0, humanDoctor.stderr);
-  assert.match(humanDoctor.stdout, /^BOUNDARY: projectMode 仅描述扫描到的仓库形态/m);
-  assert.match(humanDoctor.stdout, /^NEXT: 确认这是新脚手架还是已有项目/m);
-  assert.match(humanDoctor.stdout, /aicg assess \. --locale zh-CN --json/);
+  assert.match(humanDoctor.stdout, /^建议操作：请选择“新项目”或“已有项目”/m);
+  assert.match(humanDoctor.stdout, /^下一条命令：aicg init \. --guided --locale zh-CN$/m);
+  assert.match(humanDoctor.stdout, /^边界：本次结果只解释当前仓库证据/m);
 
   const invalid = run(['assess', root, '--locale', 'fr', '--json']);
   assert.equal(invalid.status, 2);

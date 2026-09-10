@@ -5,7 +5,8 @@ import { runAssist, assistCandidates } from '../../assist.mjs';
 import { checkProject, printCheck } from '../../checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../../generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
-import { chooseAssistAgent, confirmPlan, promptConfig } from '../prompts.mjs';
+import { chooseAssistAgent, confirmPlan, promptConfig, promptGuidedConfig } from '../prompts.mjs';
+import { initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../../project-assessment.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
 import { TOOL_VERSION } from '../../constants.mjs';
@@ -53,6 +54,8 @@ function assertInitializationWriteBoundary(plan) {
 
 export async function prepareInit(target, options, { allowDefaults = false } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
+  if (options.guided && options.yes) throw usageError('--guided is interactive and cannot be combined with --yes.');
+  if (options.guided && options.config) throw usageError('--guided cannot be combined with --config; answer the guided choices instead.');
   const scan = scanProject(target, { probeEnvironment: false });
   const rawExisting = loadExistingConfig(scan.root);
   const existing = rawExisting ? normalizeClientSupport(rawExisting, { source: 'legacy-config' }) : null;
@@ -78,7 +81,18 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
     const clients = clientsFromOption(options.clients);
     config = { ...config, clients, clientSupport: clientSupportFromClients(clients, 'cli') };
   }
-  if (!options.yes && !options.config && !allowDefaults) {
+  if (options.guided) {
+    if (allowDefaults) throw usageError('--guided is available only for the interactive init command.');
+    if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Guided init requires a TTY. Run it in an interactive terminal, or use explicit --clients and --config values for automation.');
+    config = await promptGuidedConfig(scan, config, {
+      locale: options.locale,
+      preserveDepth: Boolean(existing),
+      preserveArtifactLanguage: Boolean(existing),
+      preserveInvocation: Boolean(existing),
+    });
+    prompted = true;
+    if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
+  } else if (!options.yes && !options.config && !allowDefaults) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Interactive init requires a TTY. Use --yes or --config <json>.');
     config = await promptConfig(scan, config, { locale: options.locale });
     prompted = true;
@@ -137,7 +151,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
 export async function initCommand(target, options) {
   const { scan, config, plan } = await prepareInit(target, options);
   const executionPlan = buildExecutionPlan({ intent: initIntent(), scan, artifactPlan: plan, config });
-  printScan(scan);
+  if (!options.guided) printScan(scan);
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely initialize:\n- ${plan.conflicts.join('\n- ')}`);
     error.exitCode = 2;
@@ -178,10 +192,10 @@ export async function initCommand(target, options) {
     } : undefined,
     verify: () => checkProject(scanProject(scan.root)),
   });
-  console.log(`initialized=${scan.root} changed_files=${applied.changed.length}`);
+  if (!options.guided) console.log(`initialized=${scan.root} changed_files=${applied.changed.length}`);
   let refreshed = scanProject(scan.root);
   let result = applied.verification;
-  printCheck(result, false);
+  if (!options.guided) printCheck(result, false);
   if (!result.ok) {
     const error = new Error('Initialization wrote files but post-generation validation failed.');
     error.exitCode = 1;
@@ -200,8 +214,9 @@ export async function initCommand(target, options) {
       if (!assist.ok) console.log(`retry=${assist.retry}`);
       refreshed = scanProject(scan.root);
       result = checkProject(refreshed);
-      printCheck(result, false);
+      if (!options.guided) printCheck(result, false);
       if (!result.ok) process.exitCode = 1;
     }
   }
+  if (options.guided) printHumanGuidance(initSuccessGuidance(config));
 }

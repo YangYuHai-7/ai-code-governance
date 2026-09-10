@@ -64,6 +64,25 @@ function configuredAnswers(root, features = {}) {
   };
 }
 
+test('human read-only requests use the same single-step localized guidance while JSON keys stay stable', (context) => {
+  const root = fixture('guided-read-only-request');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-only' }));
+
+  const human = run(['request', root, '--text', '评估项目治理路径', '--locale', 'zh-CN']);
+  assert.equal(human.status, 0, human.stderr);
+  assert.deepEqual(human.stdout.trim().split('\n').map((line) => line.split('：')[0]), ['建议操作', '下一条命令', '原因', '边界']);
+  assert.doesNotMatch(human.stdout, /Git|manifest|enforcement|negative probe/i);
+
+  const machine = run(['request', root, '--text', '评估项目治理路径', '--locale', 'zh-CN', '--json']);
+  assert.equal(machine.status, 0, machine.stderr);
+  const payload = JSON.parse(machine.stdout);
+  assert.equal(payload.result.actionGuide.locale, 'zh-CN');
+  assert.ok(Array.isArray(payload.result.nextSteps));
+  assert.ok(Object.hasOwn(payload.result.actionGuide, 'projectMode'));
+  assert.ok(Object.hasOwn(payload.result.actionGuide, 'lifecycle'));
+});
+
 test('request dry-run emits a deterministic init plan without writing files', (context) => {
   const root = fixture('dry-run');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -383,7 +402,9 @@ test('the exact requested repair phrase routes to read-only doctor without writi
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const result = run(['request', root, '--text', '修复一下治理框架']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /intent=environment\.diagnose mode=read/);
+  assert.match(result.stdout, /^ACTION: /m);
+  assert.match(result.stdout, /^NEXT COMMAND: aicg assess \. --locale en --json$/m);
+  assert.match(result.stdout, /^BOUNDARY: /m);
   assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false);
 });
 

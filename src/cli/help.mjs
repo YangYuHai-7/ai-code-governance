@@ -1,7 +1,7 @@
 export const HELP = `AI Code Governance CLI
 
 Usage:
-  aicg init [path] [--config answers.json | --clients all|client,...] [--locale zh-CN|en]
+  aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--no-assist]
                   [--assist codex|claude-code|cursor] [--migrate-links] [--force]
   aicg check [path] [--json]
@@ -38,12 +38,18 @@ Commands:
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
+
+Novice quick start:
+  aicg doctor . --locale en
+  aicg init . --guided --locale en
+
+--guided asks for the client, project stage, governance depth, language, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
 `;
 
 export const HELP_ZH = `AI 代码治理 CLI
 
 用法：
-  aicg init [路径] [--config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
+  aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--no-assist]
   aicg check [路径] [--json]
   aicg sync [路径] [--dry-run]
@@ -62,6 +68,12 @@ export const HELP_ZH = `AI 代码治理 CLI
   evidence      记录或汇总匿名试点/真实项目证据；不会自动认证。
   check         检查配置、受管文件、漂移和入口可达性。
   sync          从治理正典重新生成客户端适配器。
+
+新手快速开始：
+  aicg doctor . --locale zh-CN
+  aicg init . --guided --locale zh-CN
+
+--guided 会通过选项收集编码工具、项目阶段、治理强度、语言和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
 
 交互语言由 --locale 或 config.interactionLanguage 控制；治理产物语言由 config.artifactLanguage 单独控制。
 `;

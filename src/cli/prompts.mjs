@@ -38,6 +38,108 @@ async function yesNo(rl, label, defaultValue = false) {
   throw usageError(`请输入是或否 / Expected yes or no for: ${label}`);
 }
 
+async function guidedChoice(rl, locale, label, options, defaultIndex = 0) {
+  console.log(`\n${label}`);
+  options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}`));
+  const prompt = locale === 'zh-CN' ? `请选择 [${defaultIndex + 1}]: ` : `Select [${defaultIndex + 1}]: `;
+  const answer = (await rl.question(prompt)).trim();
+  const selected = answer ? Number.parseInt(answer, 10) - 1 : defaultIndex;
+  if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) {
+    throw usageError(locale === 'zh-CN' ? `请为“${label}”选择一个有效编号。` : `Select one valid number for "${label}".`);
+  }
+  return options[selected].value;
+}
+
+export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
+  locale = null,
+  readline = null,
+  preserveDepth = false,
+  preserveArtifactLanguage = false,
+  preserveInvocation = false,
+} = {}) {
+  const rl = readline ?? createInterface({ input, output });
+  const ownsReadline = readline === null;
+  try {
+    const interactionLanguage = locale ?? await guidedChoice(rl, 'en', 'Choose your language / 选择语言', [
+      { label: '中文', value: 'zh-CN' },
+      { label: 'English', value: 'en' },
+    ], seed.interactionLanguage === 'zh-CN' ? 0 : 1);
+    const zh = interactionLanguage === 'zh-CN';
+    const assessment = classifyProject(scan);
+
+    let initialization = seed.initialization?.lifecycle
+      ? { ...seed.initialization }
+      : { lifecycle: null, existingCodeStrategy: null, source: null };
+    if (!initialization.lifecycle) {
+      const detected = assessment.codebase.lifecycle.value;
+      const defaultIndex = detected === 'existing' ? 1 : 0;
+      const lifecycle = await guidedChoice(rl, interactionLanguage, zh ? '这是哪类项目？' : 'What kind of project is this?', [
+        { label: zh ? '新项目或只有初始文件（推荐）' : 'New project or starter files (recommended)', value: 'greenfield' },
+        { label: zh ? '已有可运行代码的项目' : 'Existing project with working code', value: 'existing' },
+      ], defaultIndex);
+      initialization = { lifecycle, existingCodeStrategy: null, source: null };
+    }
+    if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
+      const existingCodeStrategy = await guidedChoice(rl, interactionLanguage, zh ? '新治理如何对待现有代码？' : 'How should new governance treat existing code?', [
+        { label: zh ? '保持现有代码不变（推荐）' : 'Keep existing code unchanged (recommended)', value: 'keep-existing' },
+        { label: zh ? '仅对以后的新代码使用新规则' : 'Apply new rules only to future code', value: 'new-code-standard' },
+        { label: zh ? '只准备一份待单独批准的分阶段计划' : 'Prepare a separately approved staged plan', value: 'staged-migration' },
+      ]);
+      initialization = { ...initialization, existingCodeStrategy };
+    }
+
+    let clients = seed.clients;
+    let clientSupport = seed.clientSupport;
+    if (!clientSupport) {
+      const clientChoice = await guidedChoice(rl, interactionLanguage, zh ? '要支持哪些 AI 编码工具？' : 'Which AI coding tools should this project support?', [
+        { label: zh ? '仅 Codex（推荐）' : 'Codex only (recommended)', value: 'codex' },
+        { label: zh ? '全部内建工具（Codex、Claude Code、Cursor）' : 'All built-in tools (Codex, Claude Code, Cursor)', value: 'all' },
+        { label: zh ? '仅 Claude Code' : 'Claude Code only', value: 'claude-code' },
+        { label: zh ? '仅 Cursor' : 'Cursor only', value: 'cursor' },
+      ]);
+      clients = clientChoice === 'all' ? ['codex', 'claude-code', 'cursor'] : [clientChoice];
+      clientSupport = {
+        mode: clientChoice === 'all' ? 'all-built-in' : 'selected',
+        selectedClients: clients,
+        source: 'interactive',
+      };
+    }
+
+    const governanceDepth = preserveDepth ? seed.governanceDepth : await guidedChoice(rl, interactionLanguage, zh ? '需要多少治理内容？' : 'How much governance do you need?', [
+      { label: zh ? '最小：先获得基本规则和检查（推荐）' : 'Minimal: start with core rules and checks (recommended)', value: 'minimal' },
+      { label: zh ? '标准：加入路由、项目规则和验证指引' : 'Standard: add routing, project rules, and verification guidance', value: 'standard' },
+      { label: zh ? '完整：适合长期、多人协作' : 'Complete: for long-running, multi-person work', value: 'complete' },
+    ]);
+    const invocationMode = preserveInvocation ? seed.invocationMode : await guidedChoice(rl, interactionLanguage, zh ? '以后如何在这个项目里运行 AICG？' : 'How will you run AICG in this project?', [
+      { label: zh ? '使用项目已安装的版本（推荐）' : 'Use the version installed in this project (recommended)', value: 'project-local' },
+      { label: zh ? '每次使用当前固定版本' : 'Use the currently pinned version each time', value: 'npm-exec-pinned' },
+      { label: zh ? '使用电脑上全局安装的版本' : 'Use a globally installed version', value: 'global' },
+    ]);
+
+    return {
+      ...seed,
+      interactionLanguage,
+      artifactLanguage: preserveArtifactLanguage ? seed.artifactLanguage : interactionLanguage,
+      clients,
+      clientSupport,
+      governanceDepth,
+      invocationMode,
+      initialization,
+      features: {
+        ...seed.features,
+        knowledge: false,
+        taskRuntime: false,
+        hooks: false,
+        externalWorkflows: false,
+        ciIntegration: false,
+        aiAssist: false,
+      },
+    };
+  } finally {
+    if (ownsReadline) rl.close();
+  }
+}
+
 export async function promptConfig(scan, seed = defaultConfig(scan), { locale = null } = {}) {
   const rl = createInterface({ input, output });
   try {
@@ -159,7 +261,7 @@ export async function confirmPlan(paths, planHash = null, initialization = null,
       console.log(`Existing-code strategy: ${initialization.existingCodeStrategy ?? 'not-applicable'}`);
       console.log(`Implementation boundary: ${implementationBoundary ?? 'unverified'}`);
     }
-    return yesNo(rl, 'Apply this plan?', false);
+    return await yesNo(rl, 'Apply this plan?', false);
   } finally {
     rl.close();
   }

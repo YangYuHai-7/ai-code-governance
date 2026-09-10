@@ -12,6 +12,15 @@ test('parses init flags and a target with spaces', () => {
   });
 });
 
+test('parses the guided novice preset only for interactive init', () => {
+  assert.deepEqual(parseArgs(['init', 'project', '--guided', '--locale', 'zh-CN']), {
+    command: 'init',
+    target: 'project',
+    options: { guided: true, locale: 'zh-CN' },
+  });
+  assert.throws(() => parseArgs(['request', '.', '--text', '初始化治理框架', '--guided']), (error) => error.exitCode === 2);
+});
+
 test('rejects unknown options with a usage exit code', () => {
   assert.throws(() => parseArgs(['init', '--mystery']), (error) => error.exitCode === 2);
   assert.throws(() => parseArgs(['check', '--force']), (error) => error.exitCode === 2);
