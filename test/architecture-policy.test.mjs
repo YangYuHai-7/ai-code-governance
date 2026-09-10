@@ -75,6 +75,24 @@ const before = true; import { orders } from '../modules/orders/index.ts'; export
   }]);
 });
 
+test('module graph parses semicolon-free static imports after an ASI line break without template false positives', (context) => {
+  const root = fixture('module-graph-asi-tokenization');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/modules/orders/index.ts', 'export const orders = true\n');
+  writeSource(root, 'src/shared/unsafe.ts', `const template = \`import { orders } from '../modules/orders/index.ts'\`
+export const before = true
+import { orders } from '../modules/orders/index.ts'
+export { orders }
+`);
+  const result = evaluateModuleGraph(scanProject(root), moduleGraphDeclaration(ACTIVE_GRAPH_CONFIG));
+  assert.equal(result.status, 'failed');
+  assert.deepEqual(result.issues, [{
+    source: 'src/shared/unsafe.ts',
+    target: 'src/modules/orders/index.ts',
+    rule: 'dependency-direction: shared may not depend on modules',
+  }]);
+});
+
 test('module graph stays stated-only without a declaration or with unsupported dynamic imports', (context) => {
   const root = fixture('module-graph-stated-only');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

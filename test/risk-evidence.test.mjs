@@ -17,6 +17,7 @@ const CASES = [
   ['data-consistency', 'multi-instance-lost-update'],
 ];
 const FIXTURE_ROOT = path.resolve('test/fixtures/risk-evidence');
+const PROBE_PATH = path.resolve('test-support/risk-evidence/toy-probe.mjs');
 
 function evidenceFixture(riskId, variant) {
   return JSON.parse(fs.readFileSync(path.join(FIXTURE_ROOT, `${riskId}.${variant}.json`), 'utf8'));
@@ -26,7 +27,8 @@ function runEvidenceFixture(riskId, variant) {
   const fixture = evidenceFixture(riskId, variant);
   const [runtime, script, fixtureRiskId, fixtureVariant, ...extra] = fixture.entrypoint.split(' ');
   assert.deepEqual({ runtime, fixtureRiskId, fixtureVariant, extra }, { runtime: 'node', fixtureRiskId: riskId, fixtureVariant: variant, extra: [] });
-  const result = spawnSync(process.execPath, [path.join(FIXTURE_ROOT, script), fixtureRiskId, fixtureVariant], { encoding: 'utf8' });
+  assert.equal(script, 'toy-probe.mjs');
+  const result = spawnSync(process.execPath, [PROBE_PATH, fixtureRiskId, fixtureVariant], { encoding: 'utf8' });
   assert.equal(result.status, fixture.expectedExitCode, `${result.stdout}\n${result.stderr}`);
   const line = result.stdout.split(/\r?\n/).find((candidate) => candidate.startsWith('AICG_RISK_PROBE '));
   assert.ok(line, `Missing risk probe marker:\n${result.stdout}\n${result.stderr}`);
