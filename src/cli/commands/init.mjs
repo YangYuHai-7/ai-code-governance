@@ -16,7 +16,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
 
 const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/ai/', 'docs/memory/', '.cursor/', '.claude/', '.agents/'];
-const GOVERNANCE_WRITE_FILES = new Set(['AGENTS.md', 'CLAUDE.md']);
+const GOVERNANCE_WRITE_FILES = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'reports/.gitkeep', 'reviews/.gitkeep']);
 
 function requireConfiguredChoices(supplied) {
   for (const key of ['stacks', 'governanceDepth', 'artifactLanguage']) {

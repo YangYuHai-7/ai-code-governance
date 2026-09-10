@@ -106,6 +106,8 @@ flowchart LR
 默认由 `aicg init` 完成确定式生成，再按用户选择调用本机 Agent 深度补全。客户端适配器是普通生成文件，
 由 `.ai-governance/manifest.json` 的 SHA-256 检查防止分叉。
 
+初始化还会创建根级 `reviews/` 与 `reports/` 本地工作区，并以 AICG 独占的注释块合并项目 `.gitignore`：临时评审记录进入 `reviews/`，任务执行和诊断报告进入 `reports/`，目录本身通过 `.gitkeep` 保留，但内容默认不提交。正式规范、ADR、验收契约以及 `docs/ai/release-evidence/` 仍属于可审计正典，必须保持 Git 跟踪。升级既有项目时，AICG 不猜测并移动 `docs/` 中的历史文件；它只建立未来的输出边界，并保留所有用户自有 `.gitignore` 规则。
+
 ### 5. 验证
 
 不仅证明检查能通过，还通过内存或可逆方式故意注入错误，证明检查器能够失败。最终交付不会把“文件存在”直接写成“已治理”，而是分别报告：

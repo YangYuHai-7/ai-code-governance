@@ -1,14 +1,17 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
+import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { detectSurfaceSignals } from './surface-signals.mjs';
 
 const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
   'CLAUDE.md',
+  '.gitignore',
   '.cursor/',
   '.claude/',
   '.agents/',
   'docs/ai/',
   '.ai-governance/',
+  ...LOCAL_OUTPUT_PREFIXES,
 ];
 
 const PROJECT_MANIFESTS = new Set([

@@ -10,10 +10,27 @@ import {
 import { snapshotPath } from '../../preconditions.mjs';
 import { lstatSafe, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, normalizeRelative, stableJson } from '../../shared/index.mjs';
-import { linkAncestor, plannedLinkAncestor } from './link-paths.mjs';
+import { linkAncestor, nonDirectoryAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
 import { loadManifest } from './manifest-store.mjs';
-import { mergeManagedBlock, removeManagedBlock } from './managed-block.mjs';
+import {
+  mergeGitignoreBlock,
+  mergeManagedBlock,
+  removeGitignoreBlock,
+  removeManagedBlock,
+} from './managed-block.mjs';
+
+function mergeOwnedContent(current, artifact) {
+  if (artifact.ownership === 'managed-block') return mergeManagedBlock(current, artifact.content);
+  if (artifact.ownership === 'gitignore-block') return mergeGitignoreBlock(current, artifact.content);
+  return artifact.content;
+}
+
+function removeOwnedBlock(current, ownership) {
+  if (ownership === 'managed-block') return removeManagedBlock(current);
+  if (ownership === 'gitignore-block') return removeGitignoreBlock(current);
+  return current;
+}
 
 const CONTEXT_MAP_PATH = 'docs/ai/context-map.yaml';
 
@@ -100,6 +117,11 @@ export function planArtifacts(root, artifacts, options = {}) {
       continue;
     }
     const absolute = path.join(root, relative);
+    const invalidAncestor = nonDirectoryAncestor(root, relative);
+    if (invalidAncestor) {
+      conflicts.push(`${normalizeRelative(path.relative(root, invalidAncestor))}: expected a directory ancestor but found another filesystem object`);
+      continue;
+    }
     const ancestor = linkAncestor(root, relative);
     if (ancestor) {
       links.add(ancestor);
@@ -137,7 +159,7 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
     let desired;
     try {
-      desired = artifact.ownership === 'managed-block' ? mergeManagedBlock(current, artifact.content) : artifact.content;
+      desired = mergeOwnedContent(current, artifact);
     } catch (error) {
       conflicts.push(`${relative}: ${error.message}`);
       continue;
@@ -172,6 +194,11 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
     if (expectedPaths.has(relative)) continue;
     const absolute = path.join(root, relative);
+    const invalidAncestor = nonDirectoryAncestor(root, relative);
+    if (invalidAncestor) {
+      conflicts.push(`${normalizeRelative(path.relative(root, invalidAncestor))}: stale managed path requires a directory ancestor but found another filesystem object`);
+      continue;
+    }
     const ancestor = linkAncestor(root, relative);
     if (ancestor) {
       links.add(ancestor);
@@ -186,7 +213,7 @@ export function planArtifacts(root, artifacts, options = {}) {
       conflicts.push(`${relative}: stale managed path is no longer a regular file`);
       continue;
     }
-    if (!['full', 'managed-block'].includes(entry.ownership)) {
+    if (!['full', 'managed-block', 'gitignore-block'].includes(entry.ownership)) {
       conflicts.push(`${relative}: manifest contains unsupported ownership ${entry.ownership}`);
       continue;
     }
@@ -210,10 +237,10 @@ export function planArtifacts(root, artifacts, options = {}) {
       conflicts.push(`${relative}: stale full-file artifact lacks a generated marker and will not be removed`);
       continue;
     }
-    if (entry.ownership === 'managed-block') {
+    if (['managed-block', 'gitignore-block'].includes(entry.ownership)) {
       let desired;
       try {
-        desired = removeManagedBlock(current);
+        desired = removeOwnedBlock(current, entry.ownership);
       } catch (error) {
         conflicts.push(`${relative}: ${error.message}`);
         continue;

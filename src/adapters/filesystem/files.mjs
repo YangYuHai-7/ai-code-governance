@@ -72,6 +72,7 @@ export function walkFilesDetailed(root, options = {}) {
   const normalizeIgnored = (name) => caseInsensitiveIgnored ? name.toLowerCase() : name;
   const ignored = new Set((options.ignored ?? ['.git', 'node_modules', 'dist', 'build', 'target', '.next']).map(normalizeIgnored));
   const ignoredAtAnyDepth = new Set([...((options.ignoredAtAnyDepth ?? ignored))].map(normalizeIgnored));
+  const ignoredAtRoot = new Set([...ignored, ...(options.ignoredAtRoot ?? []).map(normalizeIgnored)]);
   const result = [];
   const truncatedDirectories = [];
   const directoryBudgetPaths = [];
@@ -113,7 +114,7 @@ export function walkFilesDetailed(root, options = {}) {
         }
         observedEntries += 1;
         const ignoredName = normalizeIgnored(entry.name);
-        if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignored.has(ignoredName))) continue;
+        if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignoredAtRoot.has(ignoredName))) continue;
         const absolute = path.join(current, entry.name);
         const relative = normalizeRelative(path.relative(root, absolute));
         if (entry.isSymbolicLink()) {

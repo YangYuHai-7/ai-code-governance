@@ -1,34 +1,77 @@
-import { GENERATED_MARKER, MANAGED_END, MANAGED_START } from '../../constants.mjs';
+import {
+  GENERATED_MARKER,
+  GITIGNORE_MANAGED_END,
+  GITIGNORE_MANAGED_START,
+  MANAGED_END,
+  MANAGED_START,
+} from '../../constants.mjs';
 
-export function renderManagedBlock(body) {
-  return `${MANAGED_START}\n${body.trim()}\n${MANAGED_END}`;
+function renderBlock(body, startMarker, endMarker) {
+  return `${startMarker}\n${body.trim()}\n${endMarker}`;
 }
 
-export function extractManagedBlock(content) {
-  const start = content.indexOf(MANAGED_START);
-  const end = content.indexOf(MANAGED_END);
+function extractBlock(content, startMarker, endMarker) {
+  const start = content.indexOf(startMarker);
+  const end = content.indexOf(endMarker);
   if (start === -1 && end === -1) return null;
   if (start === -1 || end === -1 || end < start) throw new Error('Managed block markers are incomplete or out of order.');
-  const endIndex = end + MANAGED_END.length;
+  if (start !== content.lastIndexOf(startMarker) || end !== content.lastIndexOf(endMarker)) {
+    throw new Error('Managed block markers must appear exactly once.');
+  }
+  const endIndex = end + endMarker.length;
   return content.slice(start, endIndex);
 }
 
-export function mergeManagedBlock(current, body) {
-  const block = renderManagedBlock(body);
-  const existing = extractManagedBlock(current);
-  if (!existing) return current.trim().length === 0 ? `${block}\n` : `${current.replace(/\s+$/, '')}\n\n${block}\n`;
+function mergeBlock(current, body, startMarker, endMarker) {
+  const newline = current.includes('\r\n') ? '\r\n' : '\n';
+  const block = renderBlock(body, startMarker, endMarker).replaceAll('\n', newline);
+  const existing = extractBlock(current, startMarker, endMarker);
+  if (!existing) {
+    if (current.length === 0) return `${block}${newline}`;
+    const separator = current.endsWith(newline)
+      ? current.endsWith(`${newline}${newline}`) ? '' : newline
+      : `${newline}${newline}`;
+    return `${current}${separator}${block}${newline}`;
+  }
   return `${current.slice(0, current.indexOf(existing))}${block}${current.slice(current.indexOf(existing) + existing.length)}`;
 }
 
-export function removeManagedBlock(current) {
-  const existing = extractManagedBlock(current);
+function removeBlock(current, startMarker, endMarker) {
+  const existing = extractBlock(current, startMarker, endMarker);
   if (!existing) return current;
-  const before = current.slice(0, current.indexOf(existing)).replace(/[ \t]+$/gm, '').replace(/\s+$/, '');
-  const after = current.slice(current.indexOf(existing) + existing.length).replace(/^\s+/, '');
-  if (!before && !after) return '';
-  if (!before) return `${after.replace(/\s+$/, '')}\n`;
-  if (!after) return `${before}\n`;
-  return `${before}\n\n${after.replace(/\s+$/, '')}\n`;
+  return `${current.slice(0, current.indexOf(existing))}${current.slice(current.indexOf(existing) + existing.length)}`;
+}
+
+export function renderManagedBlock(body) {
+  return renderBlock(body, MANAGED_START, MANAGED_END);
+}
+
+export function extractManagedBlock(content) {
+  return extractBlock(content, MANAGED_START, MANAGED_END);
+}
+
+export function mergeManagedBlock(current, body) {
+  return mergeBlock(current, body, MANAGED_START, MANAGED_END);
+}
+
+export function removeManagedBlock(current) {
+  return removeBlock(current, MANAGED_START, MANAGED_END);
+}
+
+export function renderGitignoreBlock(body) {
+  return renderBlock(body, GITIGNORE_MANAGED_START, GITIGNORE_MANAGED_END);
+}
+
+export function extractGitignoreBlock(content) {
+  return extractBlock(content, GITIGNORE_MANAGED_START, GITIGNORE_MANAGED_END);
+}
+
+export function mergeGitignoreBlock(current, body) {
+  return mergeBlock(current, body, GITIGNORE_MANAGED_START, GITIGNORE_MANAGED_END);
+}
+
+export function removeGitignoreBlock(current) {
+  return removeBlock(current, GITIGNORE_MANAGED_START, GITIGNORE_MANAGED_END);
 }
 
 export function generatedHeader(comment = '<!--') {

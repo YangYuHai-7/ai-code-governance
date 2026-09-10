@@ -5,7 +5,18 @@ import {
   TOOL_VERSION,
 } from '../../constants.mjs';
 import { sha256 } from '../../shared/index.mjs';
-import { extractManagedBlock, renderManagedBlock } from './managed-block.mjs';
+import {
+  extractGitignoreBlock,
+  extractManagedBlock,
+  renderGitignoreBlock,
+  renderManagedBlock,
+} from './managed-block.mjs';
+
+function renderedManagedContent(content, ownership) {
+  if (ownership === 'managed-block') return renderManagedBlock(content);
+  if (ownership === 'gitignore-block') return renderGitignoreBlock(content);
+  return content;
+}
 
 export function previousManifestEntry(manifest, relative) {
   if (!Array.isArray(manifest?.files)) return null;
@@ -15,7 +26,11 @@ export function previousManifestEntry(manifest, relative) {
 export function managedContentHash(content, ownership) {
   if (ownership === 'managed-block') {
     const block = extractManagedBlock(content);
-    return block ? sha256(block) : null;
+    return block ? sha256(block.replaceAll('\r\n', '\n')) : null;
+  }
+  if (ownership === 'gitignore-block') {
+    const block = extractGitignoreBlock(content);
+    return block ? sha256(block.replaceAll('\r\n', '\n')) : null;
   }
   return sha256(content);
 }
@@ -31,7 +46,7 @@ export function buildManifest(operations, { generatedAt = null } = {}) {
       ownership: operation.ownership,
       kind: operation.kind,
       source: operation.source,
-      sha256: operation.ownership === 'managed-block' ? sha256(renderManagedBlock(operation.content)) : sha256(operation.desired),
+      sha256: sha256(renderedManagedContent(operation.ownership === 'full' ? operation.desired : operation.content, operation.ownership)),
     })),
   };
   if (generatedAt) manifest.generatedAt = generatedAt;

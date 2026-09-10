@@ -52,6 +52,17 @@ CLI 不发布 npm 包、不安装 Agent、不修改全局客户端配置，也�
 
 `aicg hook install . --yes` 仅在明确授权后写入 Git `pre-commit` hook。hook 在每次 `git commit` 前将 Git index 物化到隔离临时目录，并只对该精确暂存快照运行 `aicg complete --from-git-hook` 的结构治理验证：未暂存工作树内容、项目测试和 Agent 对话均不参与。hook 不写项目文件、不自动暂存、不修改 memory/Skill/文档；已有非 aicg hook 保持原样并以安全冲突失败。项目行为测试与 `sync`/`harvest`/`promote` 等生成动作仍是显式手动授权，不能在 pre-commit 中隐式发生。
 
+## 本地评审与报告输出
+
+`init` 和后续 `sync` 创建根级 `reviews/.gitkeep`、`reports/.gitkeep`，并在项目 `.gitignore` 中维护独立的 `# ai-code-governance:local-output:start/end` 块。管理块会重新包含两个根目录本身、忽略其中的工作内容，再反向包含 `.gitkeep`，因此即使用户以前写过 `reviews/` 或 `reports/`，占位文件仍可跟踪；现有用户规则、管理块以外的注释和排序保持不变。块内漂移由 `check` 检出，`sync --force` 只修复该块，不取得整个 `.gitignore` 的所有权；缺失或乱序标记按安全冲突停止。
+
+- `reviews/`：临时架构、代码、安全或产品评审笔记。
+- `reports/`：一次性任务结果、诊断、运行日志和中间报告。
+- `docs/` 与 `docs/ai/`：正式且需要团队审计的规范、决策和治理正典。
+- `docs/ai/release-evidence/`：发布门禁要求的 Git 跟踪证据，绝不被上述规则忽略。
+
+升级不会自动搬移 `docs/` 中已有文件，因为仅凭文件名无法可靠区分正式正典与临时报告。用户可以另行审查和迁移历史内容；初始化本身只规定新产物的去向。
+
 ## 项目分类与决策账本
 
 `assess` 将生命周期与拓扑分开：生命周期是 `greenfield`、`existing` 或 `ambiguous`，拓扑是 `single-repo` 或 `monorepo`。只有源码、测试或迁移等实质证据才建议 `existing`；仅 manifest 的脚手架必须标为 `ambiguous` 并等待用户确认。扫描排除 `.ai-governance`、已生成适配器和 `docs/ai`，因此初始化后的治理文件不会反向改变项目分类。

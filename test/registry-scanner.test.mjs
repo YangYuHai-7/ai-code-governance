@@ -31,6 +31,49 @@ test('uses generic fallback for an empty greenfield repository', (context) => {
   assert.deepEqual(scan.stacks.map((stack) => stack.id), ['generic-unknown']);
 });
 
+test('local review and report manifests cannot change repository facts', (context) => {
+  const root = fixture('local-output-facts');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'reviews'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'reports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'reports/package.json'), JSON.stringify({
+    dependencies: { axios: '1.12.0', express: '5.1.0', react: '19.1.1' },
+  }));
+  fs.writeFileSync(path.join(root, 'reviews/pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
+  fs.mkdirSync(path.join(root, 'reports/a/b/c'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'reports/a/b/c/deep.log'), 'local diagnostic\n');
+
+  const scan = scanProject(root, { scanBudget: { maxDepth: 1 } });
+  assert.equal(scan.projectMode, 'greenfield');
+  assert.deepEqual(scan.stacks.map((stack) => stack.id), ['generic-unknown']);
+  assert.deepEqual(scan.packageDependencies, {});
+  assert.equal(scan.files.some((file) => /^(?:reviews|reports)\//.test(file.relative)), false);
+  assert.equal(scan.scanBudget.complete, true);
+});
+
+test('only root local-output directories are excluded from repository scanning', (context) => {
+  const root = fixture('nested-reports-source');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/reports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/reports/index.mjs'), 'export const report = true;\n');
+
+  const scan = scanProject(root);
+  assert.ok(scan.files.some((file) => file.relative === 'src/reports/index.mjs'));
+});
+
+test('filesystem root-only ignores do not hide nested directories with the same name', (context) => {
+  const root = fixture('root-only-ignore');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'reports'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/reports'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'reports/local.log'), 'local\n');
+  fs.writeFileSync(path.join(root, 'src/reports/index.mjs'), 'export const report = true;\n');
+
+  const walked = walkFilesDetailed(root, { maxDepth: 4, ignoredAtRoot: ['reports'] });
+  assert.equal(walked.files.some((file) => file.relative === 'reports/local.log'), false);
+  assert.equal(walked.files.some((file) => file.relative === 'src/reports/index.mjs'), true);
+});
+
 test('detects Java and monorepo evidence', (context) => {
   const root = fixture('java-monorepo');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
