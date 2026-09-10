@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PACKAGE_ROOT } from '../../constants.mjs';
 import { dynamicTeamPlan, normalizeDynamicTeamContext } from './product-team-plan.mjs';
-import { isSafeRelative, normalizeRelative, readJson, usageError, walkFiles } from '../../utils.mjs';
+import { readJson, walkFiles } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { isSafeRelative, normalizeRelative } from '../../shared/index.mjs';
 
 const REGISTRY_PATH = 'assets/registries/team-role-registry.json';
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
@@ -396,7 +398,14 @@ export function teamRecommendation(root, context = null, registry = loadTeamRole
     target: '.',
     status: 'complete',
     teamScope: verifiedContext.teamScope,
+    resultType: 'responsibility-coverage-matrix',
     businessDescription: { status: 'provided-not-returned' },
+    inputSignals: {
+      confirmedSignals: verifiedContext.confirmedSignals,
+      stage: verifiedContext.stage ?? null,
+      technologyPackages: verifiedContext.technologyPackages,
+      businessDescriptionSemanticsUsed: false,
+    },
     evidence: {
       repositoryFacts: repositoryFacts(repositoryPackages, registry.roles, verifiedContext),
       confirmedInputs: [
@@ -405,6 +414,7 @@ export function teamRecommendation(root, context = null, registry = loadTeamRole
         ...(verifiedContext.stage ? [{ id: `business.stage.${verifiedContext.stage}`, kind: 'user-confirmed-stage', stage: verifiedContext.stage, confidence: 'high' }] : []),
       ],
     },
+    responsibilityCoverageMatrix: recommendations,
     recommendations,
     productTeam,
     variants: [

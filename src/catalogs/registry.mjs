@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { PACKAGE_ROOT, SUPPORTED_CLIENTS } from '../constants.mjs';
-import { readJson, usageError } from '../utils.mjs';
+import { readJson } from '../adapters/filesystem/index.mjs';
+import { usageError } from '../kernel/index.mjs';
 
 export function loadAgentRegistry() {
   const registry = readJson(path.join(PACKAGE_ROOT, 'assets/registries/agent-registry.json'));

@@ -1,6 +1,5 @@
-import { spawnSync } from 'node:child_process';
 import { loadAgentRegistry } from '../../registry.mjs';
-import { commandExists } from '../../utils.mjs';
+import { commandExists, runCommand } from '../process/index.mjs';
 
 export function assistCandidates(config, options = {}) {
   const registry = loadAgentRegistry();
@@ -11,7 +10,7 @@ export function assistCandidates(config, options = {}) {
 export function runAssist(agentId, target, options = {}) {
   const agent = loadAgentRegistry().agents.find((candidate) => candidate.id === agentId);
   const isAvailable = options.commandExists ?? commandExists;
-  const runner = options.spawnSync ?? spawnSync;
+  const runner = options.spawnSync ?? runCommand;
   const retry = `aicg init . --yes --assist ${agentId}`;
   if (!agent?.assist) return { ok: false, status: 'unverified', reason: `${agentId} does not provide an AI completion command.`, retry };
   if (!isAvailable(agent.assist.command)) return { ok: false, status: 'unverified', reason: `${agent.assist.command} is not installed or not on PATH.`, retry };

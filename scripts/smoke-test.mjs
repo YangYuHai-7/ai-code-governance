@@ -20,6 +20,7 @@ try {
   fs.writeFileSync(path.join(fixture, 'src', 'http-client.ts'), "import axios from 'axios';\nexport const httpClient = axios.create({});\n");
   const answers = path.join(fixture, 'answers.json');
   fs.writeFileSync(answers, JSON.stringify({
+    clients: ['codex'],
     initialization: {
       lifecycle: 'existing',
       existingCodeStrategy: 'new-code-standard',

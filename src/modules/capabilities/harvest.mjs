@@ -1,4 +1,5 @@
-import { unique, usageError } from '../../utils.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { unique } from '../../shared/index.mjs';
 import { renderCapabilityArtifacts } from './artifacts.mjs';
 import {
   commandEvidence,

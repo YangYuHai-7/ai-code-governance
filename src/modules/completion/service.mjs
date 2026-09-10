@@ -1,17 +1,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { checkProject } from '../governance/index.mjs';
+import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
+import { sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
-import { sameSnapshot, snapshotPath } from '../../preconditions.mjs';
-import { scanProject } from '../repository/index.mjs';
-import { sha256, stableJson, usageError, writeAtomicFile } from '../../utils.mjs';
+import { scanProject, verificationNpmCommands } from '../repository/index.mjs';
+import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { sha256, stableJson } from '../../shared/index.mjs';
+import { evaluateProductionReadiness } from './production-readiness.mjs';
 
 export const PRE_COMMIT_HOOK_MARKER = 'ai-code-governance:pre-commit-v1';
 
 function git(root, args) {
-  const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+  const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) {
     throw usageError(`Git command failed while preparing the completion gate: git ${args.join(' ')}.`);
   }
@@ -110,7 +113,7 @@ export function installCommitHook(plan) {
 }
 
 function stagedPaths(root) {
-  const result = spawnSync('git', ['-C', root, 'diff', '--cached', '--name-only', '-z'], { encoding: 'utf8', timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+  const result = runGit(root, ['diff', '--cached', '--name-only', '-z'], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw usageError('Cannot read the Git index for the pre-commit completion gate.');
   return result.stdout.split('\0').filter(Boolean).sort((left, right) => left.localeCompare(right));
 }
@@ -119,7 +122,7 @@ function withIndexSnapshot(root, action) {
   const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-index-snapshot-'));
   try {
     const prefix = `${snapshot}${path.sep}`;
-    const result = spawnSync('git', ['-C', root, 'checkout-index', '--all', `--prefix=${prefix}`], { encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
+    const result = runGit(root, ['checkout-index', '--all', `--prefix=${prefix}`], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
     if (result.error || result.status !== 0) throw usageError('Cannot materialize the Git index for the pre-commit completion gate.');
     return action(snapshot);
   } finally {
@@ -127,40 +130,56 @@ function withIndexSnapshot(root, action) {
   }
 }
 
-function discoveredVerification(scan, command) {
-  const selected = scan.commands.find((candidate) => candidate.command === command);
-  if (!selected || selected.source !== 'package.json' || !/^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(selected.name)) {
-    throw usageError('Completion verification must exactly match a safely named npm script discovered from package.json.');
+const NPM_SHORTHANDS = new Map([
+  ['npm test', 'test'],
+]);
+
+function safeNpmVerifications(scan) {
+  return verificationNpmCommands(scan.commands)
+    .sort((left, right) => left.command.localeCompare(right.command));
+}
+
+function discoveredVerification(scan, requestedCommand) {
+  const allowed = safeNpmVerifications(scan);
+  const shorthandName = NPM_SHORTHANDS.get(requestedCommand);
+  const canonicalCommand = shorthandName ? `npm run ${shorthandName}` : requestedCommand;
+  const selected = allowed.find((candidate) => candidate.command === canonicalCommand);
+  if (!selected) {
+    const choices = allowed.length > 0 ? allowed.map((candidate) => candidate.command).join(', ') : '(none discovered)';
+    throw usageError(`Completion verification must match a safely named npm script discovered from package.json. Allowed commands: ${choices}.`);
   }
   return selected;
 }
 
-function runVerification(scan, command) {
-  const selected = discoveredVerification(scan, command);
-  const executable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  const result = spawnSync(executable, ['run', selected.name], { cwd: scan.root, encoding: 'utf8', timeout: 300000, maxBuffer: 4 * 1024 * 1024 });
+function runVerification(scan, selected) {
+  const result = runNpmScript(scan.root, selected.name);
   return {
-    command,
+    command: selected.command,
     status: result.error || result.status !== 0 ? 'failed' : 'passed',
     exitCode: result.status ?? 1,
   };
 }
 
 function completionResult(scan, { mode, stagedFiles = [], verificationCommand = null }) {
+  const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
-  if (verificationCommand && governance.ok) {
-    projectVerification = runVerification(scan, verificationCommand);
-  } else if (verificationCommand) {
-    projectVerification = { status: 'skipped-after-governance-failure', command: verificationCommand };
+  if (selectedVerification && governance.ok) {
+    projectVerification = runVerification(scan, selectedVerification);
+  } else if (selectedVerification) {
+    projectVerification = { status: 'skipped-after-governance-failure', command: selectedVerification.command };
   }
   const ok = governance.ok && ['not-requested', 'passed'].includes(projectVerification.status);
+  const productionReadiness = evaluateProductionReadiness(scan);
+  const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
     schemaVersion: 1,
     mode,
     target: scan.root,
     stagedFiles,
     ok,
+    productionReadiness,
+    claimBoundary,
     governance,
     projectVerification,
     generation: {
@@ -169,7 +188,7 @@ function completionResult(scan, { mode, stagedFiles = [], verificationCommand = 
       boundary: 'Completion validation never invents semantic docs/memory, writes Skills, or stages files. Use an explicit approved generation command for those mutations.',
     },
     boundaries: [
-      'The completion gate proves the selected governance structure and an explicitly requested project command only.',
+      claimBoundary,
       'It does not prove code-review quality, semantic memory accuracy, client loading, or every business behavior.',
     ],
   };

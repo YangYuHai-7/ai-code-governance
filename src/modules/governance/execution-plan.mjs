@@ -2,7 +2,8 @@ import path from 'node:path';
 import { CONFIG_PATH, MANIFEST_PATH, TOOL_VERSION } from '../../constants.mjs';
 import { assertNoLinkAncestor, repositoryFingerprint, sameSnapshot, snapshotPath } from '../../preconditions.mjs';
 import { classifyProject, buildDecisionLedger } from '../repository/index.mjs';
-import { normalizeRelative, sha256, stableJson, usageError } from '../../utils.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 
 function operationAction(operation, before) {
   if (!operation.changed) return 'keep';

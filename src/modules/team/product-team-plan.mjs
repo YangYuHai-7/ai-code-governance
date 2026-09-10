@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { PACKAGE_ROOT } from '../../constants.mjs';
-import { readJson, usageError } from '../../utils.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
 
 const PRODUCT_TEAM_PATH = 'assets/registries/aicg-product-team.json';
 const SAFE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

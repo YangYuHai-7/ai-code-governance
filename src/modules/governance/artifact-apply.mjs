@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MANIFEST_PATH } from '../../constants.mjs';
 import { assertNoLinkAncestor, sameSnapshot, snapshotPath } from '../../preconditions.mjs';
-import { lstatSafe, normalizeRelative, readText, writeAtomicFile } from '../../utils.mjs';
+import { lstatSafe, readText, writeAtomicFile } from '../../adapters/filesystem/index.mjs';
+import { normalizeRelative } from '../../shared/index.mjs';
 import { rollbackSnapshot, restoreRollbackSnapshot } from './artifact-rollback.mjs';
 
 function assertArtifactPlanPreconditions(root, plan) {

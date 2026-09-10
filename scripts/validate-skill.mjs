@@ -302,16 +302,23 @@ function validateRegistryHeader(registry) {
     registry.os_targets?.join(',') === 'macos,windows,linux',
     'Registry os_targets must list macos, windows, linux.',
   );
+  const osEvidenceStates = new Set(registry.os_evidence_states ?? []);
+  check(
+    ['verified-current-candidate', 'stale', 'unverified'].every((state) => osEvidenceStates.has(state)),
+    'Registry must define current, stale, and unverified OS evidence states.',
+  );
   for (const os of ['macos', 'windows', 'linux']) {
     check(
-      registry.current_os_evidence?.[os] === 'cli-ci-verified-node22-node24',
-      `${os} must retain Node.js 22/24 CLI CI evidence.`,
+      osEvidenceStates.has(registry.current_os_evidence?.[os]),
+      `${os} must use a declared OS evidence state.`,
     );
   }
   const source = registry.os_evidence_source ?? {};
   check(source.workflow === '.github/workflows/ci.yml', 'OS evidence must name the CI workflow.');
   check(/^https:\/\/github\.com\/.+\/actions\/runs\/\d+$/.test(source.last_verified_run ?? ''), 'OS evidence must name a successful Actions run.');
   check(/^[a-f0-9]{40}$/.test(source.last_verified_commit ?? ''), 'OS evidence must name a verified commit.');
+  check(osEvidenceStates.has(source.candidate_status), 'OS evidence must declare its relationship to the current candidate.');
+  check(typeof source.candidate_boundary === 'string' && source.candidate_boundary.length > 0, 'OS evidence must explain any candidate freshness boundary.');
   check(Array.isArray(source.scope) && source.scope.includes('installed-tarball-smoke'), 'OS evidence must include installed tarball smoke.');
   check(/remain unverified/i.test(source.boundary ?? ''), 'OS evidence must preserve real-client boundaries.');
 }
@@ -331,6 +338,19 @@ function validatePack(pack, ids, evidence, lifecycles) {
     Array.isArray(pack.validation_sources) && pack.validation_sources.length > 0,
     `${pack.id} must name validation sources.`,
   );
+  if (pack.release === 'v3.0') {
+    const coverage = pack.coverage ?? {};
+    check(coverage.detectionSupport === 'supported', `${pack.id} must state its detection support.`);
+    check(['complete', 'partial', 'unverified'].includes(coverage.standardSkillCoverage), `${pack.id} must state technical-standard Skill coverage.`);
+    check(['real-project', 'synthetic-only', 'none'].includes(coverage.scenarioEvidence), `${pack.id} must state scenario evidence.`);
+    check(Array.isArray(coverage.coveredPackages), `${pack.id} must list covered packages.`);
+    check(Array.isArray(coverage.gaps), `${pack.id} must list coverage gaps.`);
+    if (pack.evidence === 'supported') {
+      check(coverage.standardSkillCoverage === 'complete', `${pack.id} cannot be supported with incomplete technical-standard coverage.`);
+      check(coverage.scenarioEvidence === 'real-project', `${pack.id} cannot be supported without real-project evidence.`);
+      check(coverage.gaps.length === 0, `${pack.id} cannot be supported while coverage gaps remain.`);
+    }
+  }
 }
 
 function expectedPacks() {
@@ -355,8 +375,8 @@ function validateReleaseEvidence(registry, expected) {
   for (const id of expected['v3.0']) {
     const pack = registry.packs.find((candidate) => candidate.id === id);
     check(
-      !pack || (pack.lifecycle === 'active' && pack.evidence === 'supported'),
-      `${id} must be active/supported until certification evidence exists.`,
+      !pack || (pack.lifecycle === 'active' && ['supported', 'unverified'].includes(pack.evidence)),
+      `${id} must stay active while reporting its current evidence honestly.`,
     );
   }
   for (const id of [...expected['v3.1'], ...expected.v4]) {

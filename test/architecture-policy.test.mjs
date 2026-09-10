@@ -16,13 +16,16 @@ function fixture(name) {
 }
 
 function run(args) {
-  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
+  const explicit = args[0] === 'init' && !args.includes('--config') && !args.includes('--clients')
+    ? [args[0], args[1], '--clients', 'all', ...args.slice(2)]
+    : args;
+  return spawnSync(process.execPath, [cli, ...explicit], { encoding: 'utf8' });
 }
 
 function writeDecision(root, name, initialization, extra = {}) {
   const configRoot = fixture(`${name}-config`);
   const config = path.join(configRoot, 'answers.json');
-  fs.writeFileSync(config, JSON.stringify({ initialization, ...extra }));
+  fs.writeFileSync(config, JSON.stringify({ clients: ['codex'], initialization, ...extra }));
   return { configRoot, config };
 }
 

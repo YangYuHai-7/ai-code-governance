@@ -6,6 +6,8 @@
 
 `docs/ai/release-acceptance-policy.json` 是由 `aicg sync` 更新的受管基线快照；漂移或落后于当前 CLI 时，发布检查会提前要求审阅并同步。项目要收紧标准时，新增完整的 `docs/ai/release-acceptance-override.json`：可以增加风险信号、证据或提高人数/分数，但不能删除内置维度、降低分数、减少参与者、移除证据、改写基线语义或放宽风险升级；这种弱化会被 `release-check` 直接拒绝。override 不由生成器覆盖，并由最终证据的 policy hash 绑定。
 
+该策略显式区分两个 scope：`projectCompletion` 由 `aicg complete` 执行，不要求虚构独立参与者，只证明项目配置的完成检查；`organizationalReleaseCertification` 由 `aicg release-check` 执行，才应用下面的独立人数与分级证据要求。单人或 minimal 项目可以诚实完成前者；只有在要作组织发布、部署审批或产品认证声明时才进入后者。高风险项目是否允许单人上线仍由其真实组织和部署权限决定，AICG 不代替该决策。
+
 ## 统一质量评分
 
 所有发布类型都使用同一张 100 分表：

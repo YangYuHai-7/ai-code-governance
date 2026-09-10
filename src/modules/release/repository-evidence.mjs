@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { readJson } from '../../adapters/filesystem/files.mjs';
+import { runGit } from '../../adapters/process/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/paths.mjs';
 
 export function repositoryFile(root, relative, label, errors) {
@@ -83,12 +83,7 @@ export function repositoryJson(root, relative, label, errors, identities = null)
 }
 
 export function git(root, args, label, errors, acceptedStatuses = [0]) {
-  const executable = process.platform === 'win32' ? 'git.exe' : 'git';
-  const result = spawnSync(executable, ['-C', root, ...args], {
-    encoding: 'utf8',
-    timeout: 30000,
-    maxBuffer: 4 * 1024 * 1024,
-  });
+  const result = runGit(root, args);
   if (result.error || !acceptedStatuses.includes(result.status)) {
     errors.push(`${label} could not be verified by Git.`);
     return null;

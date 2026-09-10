@@ -3,7 +3,32 @@ import { CONFIG_PATH } from '../constants.mjs';
 import { defaultConfig, validateConfig } from '../generator.mjs';
 import { loadManifest } from '../managed-files.mjs';
 import { scanSummary } from '../scanner.mjs';
-import { readJson, readText, sha256, usageError } from '../utils.mjs';
+import { readJson, readText } from '../adapters/filesystem/index.mjs';
+import { usageError } from '../kernel/index.mjs';
+import { sha256 } from '../shared/index.mjs';
+
+const BUILT_IN_CLIENTS = ['codex', 'claude-code', 'cursor'];
+
+export function clientSupportFromClients(clients, source) {
+  const selectedClients = [...new Set(clients ?? [])];
+  const allBuiltIn = BUILT_IN_CLIENTS.every((client) => selectedClients.includes(client))
+    && selectedClients.every((client) => BUILT_IN_CLIENTS.includes(client));
+  return {
+    mode: allBuiltIn ? 'all-built-in' : 'selected',
+    selectedClients,
+    source,
+  };
+}
+
+export function normalizeClientSupport(config, { source = 'legacy-config' } = {}) {
+  if (config?.clientSupport) {
+    return { ...config, clients: [...config.clientSupport.selectedClients] };
+  }
+  if (Array.isArray(config?.clients) && config.clients.length > 0) {
+    return { ...config, clientSupport: clientSupportFromClients(config.clients, source) };
+  }
+  return config;
+}
 
 export function mergeConfig(base, supplied) {
   return {

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { assessArchitecture } from '../src/architecture-assessment.mjs';
+import { assessArchitecture, resolveArchitectureApproval } from '../src/architecture-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
 
 const cli = path.resolve('bin/aicg.js');
@@ -65,4 +65,21 @@ test('an ambiguous scaffold must confirm lifecycle before receiving a directory 
   assert.equal(result.migrationOptions[0].writesBusinessCode, false);
   assert.equal(result.recommendedBlueprints.every((blueprint) => blueprint.status === 'conditional'), true);
   assert.equal(result.recommendedBlueprints.every((blueprint) => blueprint.appliesWhen.includes('confirms a greenfield')), true);
+});
+
+test('an incomplete repository scan cannot produce an approvable architecture plan', (context) => {
+  const root = fixture('incomplete-scan');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'first.ts'), 'export const first = true;\n');
+  fs.writeFileSync(path.join(root, 'second.ts'), 'export const second = true;\n');
+  const scan = scanProject(root, { scanBudget: { maxFiles: 1 } });
+  const result = assessArchitecture(scan);
+  assert.equal(result.assessmentStatus, 'incomplete');
+  assert.equal(result.scanBudget.complete, false);
+  assert.equal(result.adoptionPlan, null);
+  assert.equal(result.adoptionConfigShape, null);
+  assert.deepEqual(result.migrationOptions, []);
+  assert.equal(result.recommendedBlueprints.every((blueprint) => blueprint.status === 'blocked'), true);
+  assert.ok(result.findings.some((finding) => finding.id === 'repository-scan-incomplete' && finding.severity === 'blocking'));
+  assert.throws(() => resolveArchitectureApproval(scan, { planId: 'architecture-adoption-v1' }), /scan is incomplete/);
 });

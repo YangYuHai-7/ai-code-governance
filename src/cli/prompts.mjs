@@ -2,7 +2,7 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { defaultConfig } from '../generator.mjs';
 import { classifyProject } from '../project-assessment.mjs';
-import { usageError } from '../utils.mjs';
+import { usageError } from '../kernel/index.mjs';
 
 function indexes(value, size) {
   const result = value.split(',').map((item) => Number.parseInt(item.trim(), 10) - 1).filter((item) => Number.isInteger(item) && item >= 0 && item < size);
@@ -12,20 +12,20 @@ function indexes(value, size) {
 async function chooseOne(rl, label, options, defaultIndex = 0) {
   console.log(`\n${label}`);
   options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}`));
-  const prompt = Number.isInteger(defaultIndex) ? `Select [${defaultIndex + 1}]: ` : 'Select: ';
+  const prompt = Number.isInteger(defaultIndex) ? `请选择 / Select [${defaultIndex + 1}]: ` : '请选择 / Select: ';
   const answer = (await rl.question(prompt)).trim();
   const selected = answer ? Number.parseInt(answer, 10) - 1 : defaultIndex;
-  if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) throw usageError(`An explicit selection is required for ${label}.`);
+  if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) throw usageError(`必须显式选择 / An explicit selection is required for ${label}.`);
   return options[selected].value;
 }
 
 async function chooseMany(rl, label, options, defaultValues) {
   console.log(`\n${label}`);
-  options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}${defaultValues.includes(option.value) ? ' [default]' : ''}`));
-  const answer = (await rl.question('Select comma-separated numbers [defaults]: ')).trim();
+  options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}${defaultValues.includes(option.value) ? ' [默认 / default]' : ''}`));
+  const answer = (await rl.question('请选择编号，多个用逗号分隔 / Select comma-separated numbers [defaults]: ')).trim();
   if (!answer) return [...defaultValues];
   const selected = indexes(answer, options.length);
-  if (selected.length === 0) throw usageError(`Select at least one value for ${label}.`);
+  if (selected.length === 0) throw usageError(`至少选择一项 / Select at least one value for ${label}.`);
   return selected.map((index) => options[index].value);
 }
 
@@ -33,17 +33,22 @@ async function yesNo(rl, label, defaultValue = false) {
   const suffix = defaultValue ? '[Y/n]' : '[y/N]';
   const answer = (await rl.question(`${label} ${suffix}: `)).trim().toLowerCase();
   if (!answer) return defaultValue;
-  if (['y', 'yes'].includes(answer)) return true;
-  if (['n', 'no'].includes(answer)) return false;
-  throw usageError(`Expected yes or no for: ${label}`);
+  if (['y', 'yes', '是'].includes(answer)) return true;
+  if (['n', 'no', '否'].includes(answer)) return false;
+  throw usageError(`请输入是或否 / Expected yes or no for: ${label}`);
 }
 
-export async function promptConfig(scan, seed = defaultConfig(scan)) {
+export async function promptConfig(scan, seed = defaultConfig(scan), { locale = null } = {}) {
   const rl = createInterface({ input, output });
   try {
-    console.log(`Target: ${scan.root}`);
-    console.log(`Detected mode: ${scan.projectMode}`);
-    console.log(`Detected stacks: ${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}`);
+    const interactionLanguage = locale ?? await chooseOne(rl, 'Interaction language / 交互语言', [
+      { label: '中文', value: 'zh-CN' },
+      { label: 'English', value: 'en' },
+    ], seed.interactionLanguage === 'zh-CN' ? 0 : 1);
+    const zh = interactionLanguage === 'zh-CN';
+    console.log(zh ? `目标：${scan.root}` : `Target: ${scan.root}`);
+    console.log(zh ? `检测到的项目模式：${scan.projectMode}` : `Detected mode: ${scan.projectMode}`);
+    console.log(zh ? `检测到的技术栈：${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}` : `Detected stacks: ${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}`);
     const assessment = classifyProject(scan);
     const recordedInitialization = seed.initialization?.lifecycle && seed.initialization?.source ? seed.initialization : null;
     let initialization = recordedInitialization ?? { lifecycle: null, existingCodeStrategy: null, source: null };
@@ -75,18 +80,22 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
       initialization = { ...initialization, existingCodeStrategy: strategy };
     }
 
-    const clients = await chooseMany(
+    const clientMode = await chooseOne(rl, zh ? '客户端支持范围' : 'Client support scope', [
+      { label: zh ? '全部内建客户端（Codex、Claude Code、Cursor）' : 'All built-in clients (Codex, Claude Code, Cursor)', value: 'all-built-in' },
+      { label: zh ? '仅指定客户端' : 'Selected clients only', value: 'selected' },
+    ], null);
+    const clients = clientMode === 'all-built-in' ? ['codex', 'claude-code', 'cursor'] : await chooseMany(
       rl,
-      'AI agents',
+      zh ? 'AI 客户端' : 'AI clients',
       [
         { label: 'Codex', value: 'codex' },
         { label: 'Claude Code', value: 'claude-code' },
         { label: 'Cursor', value: 'cursor' },
         { label: 'Generic AGENTS.md-compatible agent', value: 'generic' },
       ],
-      seed.clients,
+      [],
     );
-    const allPacks = (await import('./registry.mjs')).loadCapabilityRegistry().packs.map((pack) => ({ label: `${pack.id} (${pack.evidence})`, value: pack.id }));
+    const allPacks = (await import('../registry.mjs')).loadCapabilityRegistry().packs.map((pack) => ({ label: `${pack.id} (${pack.evidence})`, value: pack.id }));
     const stacks = await chooseMany(rl, 'Technology stacks', allPacks, seed.stacks);
     const governanceDepth = await chooseOne(rl, 'Governance depth', [
       { label: 'Minimal', value: 'minimal' },
@@ -109,11 +118,23 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
     const externalWorkflows = await yesNo(rl, 'Enable an external workflow provider configuration?', false);
     const ciIntegration = await yesNo(rl, 'Prepare target-project CI integration?', false);
     const constraintAnswer = (await rl.question('Optional project constraints (semicolon separated): ')).trim();
+    const confirmedRiskSignals = !constraintAnswer ? [] : await chooseMany(rl, zh ? '已由负责人确认的风险信号（不从约束文本推断）' : 'Owner-confirmed risk signals (not inferred from constraint text)', [
+      { label: 'Authentication', value: 'authentication' },
+      { label: 'Authorization', value: 'authorization' },
+      { label: 'Payment', value: 'payment' },
+      { label: 'Sensitive data', value: 'sensitive-data' },
+      { label: 'External side effect', value: 'external-side-effect' },
+      { label: 'Multi-tenancy', value: 'multi-tenancy' },
+      { label: 'Data consistency', value: 'data-consistency' },
+      { label: 'Public API', value: 'public-api' },
+    ], seed.confirmedRiskSignals ?? []);
     const aiAssist = await yesNo(rl, 'Run an installed AI agent after deterministic initialization?', false);
 
     return {
       ...seed,
+      interactionLanguage,
       clients,
+      clientSupport: { mode: clientMode, selectedClients: clients, source: 'interactive' },
       stacks,
       governanceDepth,
       artifactLanguage,
@@ -121,6 +142,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan)) {
       initialization,
       features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, aiAssist },
       domainConstraints: constraintAnswer ? constraintAnswer.split(';').map((item) => item.trim()).filter(Boolean) : [],
+      confirmedRiskSignals,
     };
   } finally {
     rl.close();

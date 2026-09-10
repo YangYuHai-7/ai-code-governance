@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MANIFEST_PATH } from '../../constants.mjs';
 import { snapshotPath } from '../../preconditions.mjs';
-import { lstatSafe, normalizeRelative, writeAtomicFile } from '../../utils.mjs';
+import { lstatSafe, writeAtomicFile } from '../../adapters/filesystem/index.mjs';
+import { normalizeRelative } from '../../shared/index.mjs';
 import { plannedLinkAncestor } from './link-paths.mjs';
 
 export function rollbackSnapshot(root, plan) {

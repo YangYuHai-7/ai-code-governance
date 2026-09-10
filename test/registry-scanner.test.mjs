@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { scanProject } from '../src/scanner.mjs';
+import { walkFilesDetailed } from '../src/adapters/filesystem/index.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-${name}-`));
@@ -60,4 +61,60 @@ test('does not expose unsafe package script names as governance commands', (cont
   }));
   const scan = scanProject(root);
   assert.deepEqual(scan.commands.map((command) => command.name), ['test']);
+});
+
+test('scan budgets expose file-count, depth, and oversized-content truncation', (context) => {
+  const root = fixture('scan-budget');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'large.js'), 'x'.repeat(32));
+  fs.writeFileSync(path.join(root, 'first.js'), 'export const first = true;\n');
+  fs.writeFileSync(path.join(root, 'second.js'), 'export const second = true;\n');
+  fs.mkdirSync(path.join(root, 'one', 'two'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'one', 'two', 'deep.js'), 'export const deep = true;\n');
+
+  const sizeLimited = scanProject(root, { scanBudget: { maxDepth: 8, maxFiles: 20, maxFileBytes: 16 } });
+  assert.equal(sizeLimited.scanBudget.complete, false);
+  assert.deepEqual(sizeLimited.scanBudget.truncation.oversizedFiles.map((item) => item.path), ['first.js', 'large.js', 'second.js', 'one/two/deep.js'].sort((left, right) => left.localeCompare(right)));
+  assert.ok(sizeLimited.files.find((file) => file.relative === 'large.js'));
+  assert.equal(sizeLimited.files.find((file) => file.relative === 'large.js').contentScannable, false);
+
+  const depthLimited = scanProject(root, { scanBudget: { maxDepth: 0, maxFiles: 20, maxFileBytes: 1024 } });
+  assert.equal(depthLimited.scanBudget.complete, false);
+  assert.deepEqual(depthLimited.scanBudget.truncation.directories, ['one']);
+  assert.equal(depthLimited.files.some((file) => file.relative === 'one/two/deep.js'), false);
+
+  const fileLimited = scanProject(root, { scanBudget: { maxDepth: 8, maxFiles: 2, maxFileBytes: 1024 } });
+  assert.equal(fileLimited.scanBudget.complete, false);
+  assert.equal(fileLimited.scanBudget.truncation.fileLimitReached, true);
+  assert.equal(fileLimited.files.length, 2);
+});
+
+test('scanner reports directory read failures instead of silently claiming completeness', (context) => {
+  const root = fixture('scan-read-error');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const missing = walkFilesDetailed(path.join(root, 'missing'));
+  assert.equal(missing.budget.complete, false);
+  assert.deepEqual(missing.budget.truncation.readErrors, [{ path: '.', operation: 'readdir', code: 'ENOENT' }]);
+});
+
+test('scanner bounds directories and total entries even when directories contain no files', (context) => {
+  const root = fixture('scan-directory-budget');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const name of ['a', 'b', 'c', 'd']) fs.mkdirSync(path.join(root, name));
+
+  const directoryLimited = scanProject(root, {
+    scanBudget: { maxDepth: 8, maxFiles: 20, maxFileBytes: 1024, maxDirectories: 2, maxEntries: 20 },
+  });
+  assert.equal(directoryLimited.scanBudget.complete, false);
+  assert.equal(directoryLimited.scanBudget.truncation.directoryLimitReached, true);
+  assert.equal(directoryLimited.scanBudget.truncation.directoryBudgetPaths.length, 1);
+  assert.deepEqual(directoryLimited.scanBudget.truncation.directories, []);
+  assert.equal(directoryLimited.scanBudget.observedDirectories, 2);
+
+  const entryLimited = scanProject(root, {
+    scanBudget: { maxDepth: 8, maxFiles: 20, maxFileBytes: 1024, maxDirectories: 20, maxEntries: 2 },
+  });
+  assert.equal(entryLimited.scanBudget.complete, false);
+  assert.equal(entryLimited.scanBudget.truncation.entryLimitReached, true);
+  assert.equal(entryLimited.scanBudget.observedEntries, 2);
 });

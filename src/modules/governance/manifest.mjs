@@ -4,7 +4,7 @@ import {
   TOOL_NAME,
   TOOL_VERSION,
 } from '../../constants.mjs';
-import { sha256 } from '../../utils.mjs';
+import { sha256 } from '../../shared/index.mjs';
 import { extractManagedBlock, renderManagedBlock } from './managed-block.mjs';
 
 export function previousManifestEntry(manifest, relative) {

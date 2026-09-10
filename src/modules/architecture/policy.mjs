@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { classifyProject, isImplementationSourcePath, projectSourcePaths } from '../repository/index.mjs';
-import { isSafeRelative, readJson, sha256, stableJson, usageError } from '../../utils.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
+import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { isArchitectureNonSourcePath } from './source-classification.mjs';
 
 export const ARCHITECTURE_PROFILE_ID = 'module-boundaries-v1';

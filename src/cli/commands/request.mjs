@@ -14,10 +14,20 @@ import { runReleaseAcceptance } from '../../release-acceptance.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { technicalStandardsSummary } from '../../technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from '../../team-recommendation.mjs';
-import { readJson, usageError } from '../../utils.mjs';
+import { readJson } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
 import { runPromotionVerification } from './capabilities.mjs';
 import { prepareInit } from './init.mjs';
-import { assertManagedArchitectureConfigTrusted, configForStandards, loadConfiguredGovernance } from '../shared.mjs';
+import { addReadOnlyGuidance } from '../read-only-guidance.mjs';
+import { assertManagedArchitectureConfigTrusted, configForStandards, loadConfiguredGovernance, loadExistingConfig } from '../shared.mjs';
+
+function existingConfigForGuidance(scan) {
+  try {
+    return loadExistingConfig(scan.root);
+  } catch {
+    return null;
+  }
+}
 
 function promotionInputFromChatConfig(options) {
   if (!options.config) {
@@ -85,7 +95,8 @@ export async function requestCommand(target, options) {
     return;
   }
   if (intent.handler === 'doctor') {
-    const result = doctor(scanProject(target, { probeEnvironment: false }));
+    const scan = scanProject(target, { probeEnvironment: false });
+    const result = addReadOnlyGuidance('doctor', doctor(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     if (!result.ok) process.exitCode = 1;
     return;
@@ -106,12 +117,12 @@ export async function requestCommand(target, options) {
     return;
   }
   if (intent.handler === 'assess') {
-    const result = assessmentSummary(scan);
+    const result = addReadOnlyGuidance('assess', assessmentSummary(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }
   if (intent.handler === 'architecture') {
-    const result = assessArchitecture(scan);
+    const result = addReadOnlyGuidance('architecture', assessArchitecture(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
     return;
   }

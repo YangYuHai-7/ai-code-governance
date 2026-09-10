@@ -18,10 +18,15 @@
     "windows",
     "linux"
   ],
+  "os_evidence_states": [
+    "verified-current-candidate",
+    "stale",
+    "unverified"
+  ],
   "current_os_evidence": {
-    "macos": "cli-ci-verified-node22-node24",
-    "windows": "cli-ci-verified-node22-node24",
-    "linux": "cli-ci-verified-node22-node24"
+    "macos": "stale",
+    "windows": "stale",
+    "linux": "stale"
   },
   "os_evidence_source": {
     "workflow": ".github/workflows/ci.yml",
@@ -35,6 +40,8 @@
       "npm-pack-dry-run",
       "installed-tarball-smoke"
     ],
+    "candidate_status": "stale",
+    "candidate_boundary": "This successful run predates the current candidate. It is retained as historical evidence only and must not be reported as current platform verification.",
     "boundary": "Real Codex, Claude Code, Cursor loading and target-project hooks remain unverified."
   },
   "packs": [
@@ -43,10 +50,17 @@
       "family": "web-frontend",
       "release": "v3.0",
       "lifecycle": "active",
-      "evidence": "supported",
+      "evidence": "unverified",
       "detect": {
         "manifest_any": ["package.json"],
         "dependency_any": ["react", "react-dom", "next", "gatsby"]
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "partial",
+        "scenarioEvidence": "synthetic-only",
+        "coveredPackages": ["react", "react-dom"],
+        "gaps": ["next framework-specific guidance", "gatsby framework-specific guidance", "real-project evidence"]
       },
       "specialists": ["react", "web-build", "accessibility"],
       "validation_sources": ["package.json scripts", "workspace task runner", "existing CI documentation"],
@@ -57,10 +71,17 @@
       "family": "web-frontend",
       "release": "v3.0",
       "lifecycle": "active",
-      "evidence": "supported",
+      "evidence": "unverified",
       "detect": {
         "manifest_any": ["package.json"],
         "dependency_any": ["vue", "nuxt", "@vue/cli-service"]
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "unverified",
+        "scenarioEvidence": "none",
+        "coveredPackages": [],
+        "gaps": ["Vue and Nuxt technical-standard Skills", "real-project evidence"]
       },
       "specialists": ["vue", "web-build", "accessibility"],
       "validation_sources": ["package.json scripts", "workspace task runner", "existing CI documentation"],
@@ -71,10 +92,17 @@
       "family": "web-frontend",
       "release": "v3.0",
       "lifecycle": "active",
-      "evidence": "supported",
+      "evidence": "unverified",
       "detect": {
         "manifest_any": ["angular.json", "package.json"],
         "dependency_any": ["@angular/core", "@angular/cli"]
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "unverified",
+        "scenarioEvidence": "none",
+        "coveredPackages": [],
+        "gaps": ["Angular technical-standard Skills", "real-project evidence"]
       },
       "specialists": ["angular", "web-build", "accessibility"],
       "validation_sources": ["angular.json", "package.json scripts", "workspace task runner"],
@@ -85,10 +113,17 @@
       "family": "web-backend",
       "release": "v3.0",
       "lifecycle": "active",
-      "evidence": "supported",
+      "evidence": "unverified",
       "detect": {
         "manifest_any": ["package.json"],
         "dependency_any": ["express", "@nestjs/core", "fastify", "koa", "hapi"]
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "partial",
+        "scenarioEvidence": "synthetic-only",
+        "coveredPackages": ["@nestjs/core", "fastify"],
+        "gaps": ["Express technical-standard Skills", "Koa technical-standard Skills", "Hapi technical-standard Skills", "real-project evidence"]
       },
       "specialists": ["nodejs", "api-contract", "application-security"],
       "validation_sources": ["package.json scripts", "workspace task runner", "test configuration"],
@@ -99,10 +134,17 @@
       "family": "web-backend",
       "release": "v3.0",
       "lifecycle": "active",
-      "evidence": "supported",
+      "evidence": "unverified",
       "detect": {
         "manifest_any": ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"],
         "dependency_any": ["spring-boot", "quarkus", "micronaut"]
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "unverified",
+        "scenarioEvidence": "none",
+        "coveredPackages": [],
+        "gaps": ["Spring Boot technical-standard Skills", "Quarkus technical-standard Skills", "Micronaut technical-standard Skills", "real-project evidence"]
       },
       "specialists": ["java", "jvm-build", "api-contract", "application-security"],
       "validation_sources": ["Maven lifecycle", "Gradle tasks", "test source sets"],
@@ -257,6 +299,13 @@
       "detect": {
         "manifest_any": [],
         "dependency_any": []
+      },
+      "coverage": {
+        "detectionSupport": "supported",
+        "standardSkillCoverage": "unverified",
+        "scenarioEvidence": "none",
+        "coveredPackages": [],
+        "gaps": ["user-confirmed technology", "current primary sources", "real-project evidence"]
       },
       "specialists": ["governance-architect", "repository-explorer", "user-nominated-domain-expert"],
       "validation_sources": ["repository-defined commands only"],

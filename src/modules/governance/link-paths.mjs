@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { lstatSafe, normalizeRelative } from '../../utils.mjs';
+import { lstatSafe } from '../../adapters/filesystem/index.mjs';
+import { normalizeRelative } from '../../shared/index.mjs';
 
 export function linkAncestor(root, relative) {
   const parts = normalizeRelative(relative).split('/');

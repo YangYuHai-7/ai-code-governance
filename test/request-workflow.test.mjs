@@ -12,7 +12,14 @@ function fixture(name) {
 }
 
 function run(args, options = {}) {
-  return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8', ...options });
+  let explicit = args[0] === 'init' && !args.includes('--clients')
+    ? [args[0], args[1], '--clients', 'all', ...args.slice(2)]
+    : args;
+  const textIndex = explicit.indexOf('--text');
+  if (explicit[0] === 'request' && textIndex >= 0 && explicit[textIndex + 1]?.includes('初始化') && !explicit.includes('--clients')) {
+    explicit = [...explicit, '--clients', 'all'];
+  }
+  return spawnSync(process.execPath, [cli, ...explicit], { encoding: 'utf8', ...options });
 }
 
 function treeSnapshot(root) {
@@ -380,7 +387,18 @@ test('the exact requested repair phrase routes to read-only doctor without writi
   assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false);
 });
 
-test('doctor and the requested repair phrase do not execute PATH probes or permit probe side effects', (context) => {
+test('direct doctor executes read-only Git and Agent environment probes', () => {
+  const result = run(['doctor', path.resolve('.'), '--json']);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.checks.environmentCommandProbe, 'executed');
+  assert.equal(payload.checks.gitCommand, true);
+  assert.equal(payload.checks.gitRepository, true);
+  assert.equal(payload.git.availability, 'detected');
+  assert.ok(payload.agents.every((agent) => agent.availability !== 'not-probed'));
+});
+
+test('the requested repair phrase keeps safe no-probe diagnostics and permits no probe side effects', (context) => {
   const root = fixture('doctor-no-probe');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const bin = path.join(root, 'probe-bin');
@@ -397,17 +415,14 @@ test('doctor and the requested repair phrase do not execute PATH probes or permi
     PATH: `${bin}${path.delimiter}${process.env.PATH}`,
     AICG_DOCTOR_MARKER: marker,
   };
-  for (const args of [
-    ['doctor', root, '--json'],
-    ['request', root, '--text', '修复一下治理框架', '--json'],
-  ]) {
-    const result = run(args, { env });
-    assert.equal(result.status, 0, result.stderr);
-    const payload = JSON.parse(result.stdout);
-    const doctorResult = payload.result ?? payload;
-    assert.equal(doctorResult.checks.environmentCommandProbe, 'not-probed');
-    assert.ok(doctorResult.agents.every((agent) => agent.availability === 'not-probed' || agent.availability === 'built-in'));
-    assert.equal(fs.existsSync(marker), false);
-    assert.deepEqual(treeSnapshot(root), before);
-  }
+  const result = run(['request', root, '--text', '修复一下治理框架', '--json'], { env });
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  const doctorResult = payload.result ?? payload;
+  assert.equal(doctorResult.checks.environmentCommandProbe, 'not-probed');
+  assert.equal(doctorResult.checks.gitCommand, 'not-probed');
+  assert.equal(doctorResult.checks.gitRepository, 'not-probed');
+  assert.ok(doctorResult.agents.every((agent) => agent.availability === 'not-probed' || agent.availability === 'built-in'));
+  assert.equal(fs.existsSync(marker), false);
+  assert.deepEqual(treeSnapshot(root), before);
 });

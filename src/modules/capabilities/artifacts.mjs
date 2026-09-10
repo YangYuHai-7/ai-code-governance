@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { GENERATED_MARKER } from '../../constants.mjs';
-import { normalizeRelative, stableJson, unique } from '../../utils.mjs';
+import { normalizeRelative, stableJson, unique } from '../../shared/index.mjs';
 
 function candidateSkill(capability) {
   const adoptionInstruction = capability.status === 'candidate'

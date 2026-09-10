@@ -21,26 +21,48 @@ function git(root, args) {
 }
 
 function initialize(root) {
-  const result = run(['init', root, '--yes', '--no-assist']);
+  const result = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
   assert.equal(result.status, 0, result.stderr);
+}
+
+function initializeWithConstraints(root, constraints, confirmedRiskSignals = ['authorization']) {
+  const configPath = path.join(os.tmpdir(), `aicg-completion-config-${process.pid}-${Date.now()}-${Math.random()}.json`);
+  fs.writeFileSync(configPath, JSON.stringify({
+    governanceDepth: 'standard',
+    domainConstraints: constraints,
+    confirmedRiskSignals,
+  }));
+  try {
+    const result = run(['init', root, '--clients', 'all', '--config', configPath, '--yes', '--no-assist']);
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    fs.rmSync(configPath, { force: true });
+  }
 }
 
 test('manual completion is read-only and runs only an explicitly discovered npm script', (context) => {
   const root = fixture('manual');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
+  const agentsBefore = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'completion-fixture',
     private: true,
     scripts: {
+      test: 'node --eval "process.exit(0)"',
       verify: 'node --eval "process.exit(0)"',
-      broken: 'node --eval "process.exit(7)"',
+      'verify:broken': 'node --eval "process.exit(7)"',
     },
   }, null, 2));
-  const synced = run(['sync', root]);
-  assert.equal(synced.status, 0, synced.stderr);
   const configPath = path.join(root, '.ai-governance', 'config.json');
   const before = fs.readFileSync(configPath, 'utf8');
+  const checked = run(['check', root, '--json']);
+  assert.equal(checked.status, 0, `${checked.stderr}\n${checked.stdout}`);
+  assert.equal(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), agentsBefore);
+
+  const shorthand = run(['complete', root, '--verify', 'npm test', '--json']);
+  assert.equal(shorthand.status, 0, `${shorthand.stderr}\n${shorthand.stdout}`);
+  assert.equal(JSON.parse(shorthand.stdout).projectVerification.command, 'npm run test');
 
   const passed = run(['complete', root, '--verify', 'npm run verify', '--json']);
   assert.equal(passed.status, 0, `${passed.stderr}\n${passed.stdout}`);
@@ -52,13 +74,172 @@ test('manual completion is read-only and runs only an explicitly discovered npm 
 
   const unknown = run(['complete', root, '--verify', 'npm run missing', '--json']);
   assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /exactly match a safely named npm script/);
+  assert.match(unknown.stderr, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
 
-  const failed = run(['complete', root, '--verify', 'npm run broken', '--json']);
+  const injected = run(['complete', root, '--verify', 'npm test -- --watch', '--json']);
+  assert.equal(injected.status, 2);
+  assert.match(injected.stderr, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
+
+  const failed = run(['complete', root, '--verify', 'npm run verify:broken', '--json']);
   assert.equal(failed.status, 1, failed.stderr);
   assert.equal(JSON.parse(failed.stdout).projectVerification.status, 'failed');
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
+});
+
+test('completion exposes only verification scripts and never runs implicit npm lifecycle hooks', (context) => {
+  const root = fixture('verification-command-boundary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const marker = path.join(root, 'implicit-hook-ran');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    name: 'completion-command-boundary',
+    private: true,
+    scripts: {
+      pretest: 'node --eval "require(\'fs\').writeFileSync(\'implicit-hook-ran\', \'unexpected\')"',
+      test: 'node --eval "process.exit(0)"',
+      'test:unit': 'node --eval "process.exit(0)"',
+      verify: 'node --eval "process.exit(0)"',
+      start: 'node --eval "process.exit(0)"',
+      deploy: 'node --eval "process.exit(0)"',
+    },
+  }, null, 2));
+
+  const assessed = run(['assess', root, '--json']);
+  assert.equal(assessed.status, 0, assessed.stderr);
+  assert.deepEqual(JSON.parse(assessed.stdout).actionGuide.allowedVerificationCommands, [
+    'npm run test:unit',
+    'npm run verify',
+  ]);
+
+  const hooked = run(['complete', root, '--verify', 'npm test', '--json']);
+  assert.equal(hooked.status, 2);
+  assert.match(hooked.stderr, /Allowed commands: npm run test:unit, npm run verify/);
+  assert.equal(fs.existsSync(marker), false, 'implicit pretest hook must not execute');
+
+  const deploy = run(['complete', root, '--verify', 'npm run deploy', '--json']);
+  assert.equal(deploy.status, 2);
+  assert.equal(fs.existsSync(marker), false);
+
+  const verified = run(['complete', root, '--verify', 'npm run verify', '--json']);
+  assert.equal(verified.status, 0, verified.stderr);
+  assert.equal(JSON.parse(verified.stdout).projectVerification.status, 'passed');
+});
+
+test('completion blocks production readiness when confirmed risk signals lack bound acceptance evidence', (context) => {
+  const root = fixture('production-readiness-missing');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Only active members may access tenant issues.']);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node --eval "process.exit(0)"' } }));
+  assert.equal(run(['sync', root]).status, 0);
+
+  const json = run(['complete', root, '--verify', 'npm run verify', '--json']);
+  assert.equal(json.status, 0, json.stderr);
+  const payload = JSON.parse(json.stdout);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.productionReadiness.state, 'blocked');
+  assert.equal(payload.productionReadiness.constraintEvidence.status, 'missing');
+  assert.equal(payload.productionReadiness.constraintEvidence.declared, 1);
+  assert.match(payload.claimBoundary, /does not establish production readiness/i);
+
+  const human = run(['complete', root, '--verify', 'npm run verify']);
+  assert.equal(human.status, 0, human.stderr);
+  assert.match(human.stdout, /^PRODUCTION_READINESS=blocked constraint_evidence=missing/m);
+  assert.equal(human.stdout.trimStart().startsWith('PRODUCTION_READINESS=blocked'), true);
+});
+
+test('completion blocks production readiness when owner-confirmed constraints lack evidence without risk signals', (context) => {
+  const root = fixture('production-readiness-constraint-only');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['A completed reminder must be delivered at its scheduled time.'], []);
+
+  const completed = run(['complete', root, '--json']);
+  assert.equal(completed.status, 0, completed.stderr);
+  const payload = JSON.parse(completed.stdout);
+  assert.equal(payload.productionReadiness.state, 'blocked');
+  assert.equal(payload.productionReadiness.constraintEvidence.status, 'missing');
+  assert.equal(payload.productionReadiness.constraintEvidence.declared, 1);
+  assert.match(payload.productionReadiness.reason, /business constraints or risk signals/i);
+});
+
+test('business acceptance evidence must bind the current stable constraint id, text, and hash', (context) => {
+  const root = fixture('production-readiness-binding');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.']);
+  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
+  const current = registry.constraints[0];
+  const evidencePath = path.join(root, 'docs/ai/business-acceptance-results.json');
+  fs.writeFileSync(evidencePath, JSON.stringify({
+    schemaVersion: 1,
+    constraints: [{
+      id: current.id,
+      constraint: current.constraint,
+      constraintHash: '0'.repeat(64),
+      status: 'pass',
+      successEvidence: 'npm run test: tenant-local path passed',
+      failureOrBoundaryEvidence: 'cross-tenant negative path failed closed',
+    }],
+  }));
+  const stale = run(['complete', root, '--json']);
+  assert.equal(stale.status, 0, stale.stderr);
+  const stalePayload = JSON.parse(stale.stdout);
+  assert.equal(stalePayload.ok, true);
+  assert.equal(stalePayload.productionReadiness.state, 'blocked');
+  assert.equal(stalePayload.productionReadiness.constraintEvidence.status, 'invalid');
+  assert.match(stalePayload.productionReadiness.constraintEvidence.issues.join('\n'), /constraintHash does not match/);
+
+  fs.writeFileSync(evidencePath, JSON.stringify({
+    schemaVersion: 1,
+    constraints: [{
+      id: current.id,
+      constraint: current.constraint,
+      constraintHash: current.constraintHash,
+      status: 'pass',
+      successEvidence: 'npm run test: tenant-local path passed',
+      failureOrBoundaryEvidence: 'cross-tenant negative path failed closed',
+    }],
+  }));
+  const recorded = run(['complete', root, '--json']);
+  assert.equal(recorded.status, 0, recorded.stderr);
+  const recordedPayload = JSON.parse(recorded.stdout);
+  assert.equal(recordedPayload.productionReadiness.state, 'unverified');
+  assert.equal(recordedPayload.productionReadiness.reviewEligibility, 'eligible-for-review');
+  assert.equal(recordedPayload.productionReadiness.constraintEvidence.status, 'recorded-unverified');
+  assert.equal(recordedPayload.productionReadiness.constraintEvidence.covered, 1);
+  assert.match(recordedPayload.productionReadiness.reason, /does not replay or certify/i);
+});
+
+test('business acceptance evidence cannot traverse a symbolic link', (context) => {
+  const root = fixture('production-readiness-symlink');
+  const outside = fixture('production-readiness-outside');
+  context.after(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  });
+  initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.']);
+  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
+  const current = registry.constraints[0];
+  const outsideEvidence = path.join(outside, 'business-acceptance-results.json');
+  fs.writeFileSync(outsideEvidence, JSON.stringify({
+    schemaVersion: 1,
+    constraints: [{
+      id: current.id,
+      constraint: current.constraint,
+      constraintHash: current.constraintHash,
+      status: 'pass',
+      successEvidence: 'success',
+      failureOrBoundaryEvidence: 'boundary',
+    }],
+  }));
+  fs.symlinkSync(outsideEvidence, path.join(root, 'docs/ai/business-acceptance-results.json'));
+
+  const completed = run(['complete', root, '--json']);
+  assert.equal(completed.status, 0, completed.stderr);
+  const readiness = JSON.parse(completed.stdout).productionReadiness;
+  assert.equal(readiness.state, 'blocked');
+  assert.equal(readiness.reviewEligibility, 'not-eligible');
+  assert.equal(readiness.constraintEvidence.status, 'invalid');
+  assert.match(readiness.constraintEvidence.issues.join('\n'), /symbolic link/);
 });
 
 test('chat completion and the managed pre-commit hook validate only when explicitly invoked or committing', (context) => {

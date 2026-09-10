@@ -39,6 +39,237 @@ test('generates regular adapters for all selected agents and passes check', (con
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
+test('standard and complete governance route owner-confirmed constraints through a fine-grained business skill', (context) => {
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+  for (const depth of ['standard', 'complete']) {
+    const root = fixture(`business-constraints-${depth}`);
+    roots.push(root);
+    const { config } = initialize(root, (value) => ({
+      ...value,
+      clients: ['codex', 'claude-code'],
+      governanceDepth: depth,
+      domainConstraints: [
+        'Every issue belongs to exactly one tenant.',
+        'Only active members may access tenant issues.',
+      ],
+      confirmedRiskSignals: ['authorization', 'multi-tenancy'],
+    }));
+    assert.deepEqual(config.confirmedRiskSignals, ['authorization', 'multi-tenancy']);
+    const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
+    assert.deepEqual(registry.constraints.map(({ id, owner, source, constraintHash }) => ({ id, owner, source, constraintHash })), registry.constraints.map(({ constraintHash }) => ({
+      id: `constraint-${constraintHash}`,
+      owner: 'product-owner',
+      source: 'owner-confirmed',
+      constraintHash,
+    })));
+    assert.ok(registry.constraints.every((constraint) => /^[a-f0-9]{64}$/.test(constraint.constraintHash)));
+    const skill = fs.readFileSync(path.join(root, 'docs/ai/skills/business-constraints/SKILL.md'), 'utf8');
+    assert.match(skill, /owner-confirmed/);
+    assert.match(skill, new RegExp(registry.constraints[0].id));
+    assert.match(skill, /success evidence/i);
+    assert.match(skill, /negative or boundary evidence/i);
+    assert.match(skill, /production readiness as blocked/i);
+    assert.match(skill, /unverified and eligible-for-review/i);
+    assert.match(skill, /authorization, multi-tenancy/);
+    assert.match(skill, /untrusted client-supplied identity headers/i);
+    assert.match(skill, /inactive, suspended, or revoked membership/i);
+    assert.match(skill, /cross-tenant read and write attempts/i);
+    assert.equal(fs.readFileSync(path.join(root, '.agents/skills/business-constraints/SKILL.md'), 'utf8'), skill);
+    assert.equal(fs.readFileSync(path.join(root, '.claude/skills/business-constraints/SKILL.md'), 'utf8'), skill);
+    const contextMap = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
+    assert.match(contextMap, /business_constraints:/);
+    assert.match(contextMap, /docs\/ai\/skills\/business-constraints\/SKILL\.md/);
+    assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /business-constraints\/SKILL\.md/);
+    assert.equal(checkProject(scanProject(root)).ok, true);
+  }
+});
+
+test('minimal governance gives a business-constraint CTA without generating a skill', (context) => {
+  const root = fixture('minimal-business-constraints');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({
+    ...value,
+    governanceDepth: 'minimal',
+    domainConstraints: ['A cancellation must be explicit.'],
+  }));
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/business-constraints/SKILL.md')), false);
+  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /standard or complete governance.*business constraint Skill/i);
+  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /production readiness is blocked/i);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /production readiness is blocked/i);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /recorded evidence remains unverified/i);
+});
+
+test('business constraint ids remain stable across reorder and insertion while duplicates are rejected', (context) => {
+  const root = fixture('stable-business-constraint-ids');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const first = { ...defaultConfig(scan), domainConstraints: ['Constraint A.', 'Constraint B.'] };
+  const second = { ...defaultConfig(scan), domainConstraints: ['Constraint C.', 'Constraint B.', 'Constraint A.'] };
+  const registry = (config) => JSON.parse(buildArtifacts(config, scan).find((artifact) => artifact.path === 'docs/ai/business-constraints.json').content);
+  const firstIds = Object.fromEntries(registry(first).constraints.map((item) => [item.constraint, item.id]));
+  const secondIds = Object.fromEntries(registry(second).constraints.map((item) => [item.constraint, item.id]));
+  assert.equal(secondIds['Constraint A.'], firstIds['Constraint A.']);
+  assert.equal(secondIds['Constraint B.'], firstIds['Constraint B.']);
+  assert.throws(
+    () => buildArtifacts({ ...first, domainConstraints: ['Constraint A.', ' Constraint A. '] }, scan),
+    /must not contain duplicate normalized constraints/,
+  );
+});
+
+test('confirmed risk signals are explicit enums and are never inferred from constraint wording', (context) => {
+  const root = fixture('explicit-risk-signals');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), domainConstraints: ['Payment records must be correct.'] };
+  const artifacts = buildArtifacts(config, scan);
+  const persisted = JSON.parse(artifacts.find((artifact) => artifact.path === '.ai-governance/config.json').content);
+  assert.deepEqual(persisted.confirmedRiskSignals, []);
+  assert.doesNotMatch(artifacts.find((artifact) => artifact.path === 'docs/ai/skills/business-constraints/SKILL.md').content, /Payment risk checklist/);
+  assert.throws(
+    () => buildArtifacts({ ...config, confirmedRiskSignals: ['payment-keyword-guess'] }, scan),
+    /confirmedRiskSignals contains an unsupported value/,
+  );
+});
+
+test('owner-confirmed data consistency and public API signals add their minimum negative checklists', (context) => {
+  const root = fixture('structured-risk-checklists');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({
+    ...value,
+    governanceDepth: 'standard',
+    domainConstraints: ['Inventory updates must not lose committed quantities.'],
+    confirmedRiskSignals: ['payment', 'sensitive-data', 'external-side-effect', 'data-consistency', 'public-api'],
+  }));
+  const skill = fs.readFileSync(path.join(root, 'docs/ai/skills/business-constraints/SKILL.md'), 'utf8');
+  assert.match(skill, /amount and currency boundaries/i);
+  assert.match(skill, /never ship a default credential/i);
+  assert.match(skill, /key lifecycle, rotation and revocation/i);
+  assert.match(skill, /persistent idempotency across replay, restart/i);
+  assert.match(skill, /concurrent lost updates/i);
+  assert.match(skill, /unique constraints/i);
+  assert.match(skill, /crash recovery and multi-instance execution/i);
+  assert.match(skill, /request size and rate limits/i);
+  assert.match(skill, /authentication and authorization boundaries/i);
+  assert.match(skill, /stable error contract/i);
+});
+
+test('check rejects a business skill that is present but unreachable from the context map', (context) => {
+  const root = fixture('unreachable-business-skill');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({
+    ...value,
+    governanceDepth: 'standard',
+    domainConstraints: ['Only active members may access tenant issues.'],
+  }));
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  fs.writeFileSync(contextPath, fs.readFileSync(contextPath, 'utf8').replaceAll('docs/ai/skills/business-constraints/SKILL.md', 'docs/ai/rules/00_always.mdc'));
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.equal(result.evidence.present, 'pass');
+  assert.equal(result.evidence.reachable, 'fail');
+  assert.ok(result.errors.some((error) => error.includes('business constraint Skill is not reachable')));
+});
+
+test('business reachability ignores comments, wrong profiles, and malformed profile indentation', (context) => {
+  const variants = [
+    (content) => `${content.replaceAll('docs/ai/skills/business-constraints/SKILL.md', 'docs/ai/rules/00_always.mdc')}\n# docs/ai/skills/business-constraints/SKILL.md\n`,
+    (content) => `${content.replaceAll('docs/ai/skills/business-constraints/SKILL.md', 'docs/ai/rules/00_always.mdc')}\n  decoy_profile:\n    required:\n      - docs/ai/skills/business-constraints/SKILL.md\n`,
+    (content) => content.replace('  business_constraints:', ' business_constraints:'),
+  ];
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+  for (const [index, mutate] of variants.entries()) {
+    const root = fixture(`business-route-negative-${index}`);
+    roots.push(root);
+    initialize(root, (value) => ({ ...value, governanceDepth: 'standard', domainConstraints: ['Only active members may access tenant issues.'] }));
+    const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+    fs.writeFileSync(contextPath, mutate(fs.readFileSync(contextPath, 'utf8')));
+    const result = checkProject(scanProject(root));
+    assert.equal(result.ok, false);
+    assert.equal(result.evidence.reachable, 'fail');
+    assert.ok(result.errors.some((error) => error.includes('business constraint Skill is not reachable')));
+  }
+});
+
+test('check keeps structural and reachability evidence independent from unverified enforcement', (context) => {
+  const root = fixture('evidence-dimensions');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.evidence, {
+    present: 'pass',
+    reachable: 'pass',
+    enforced: 'unverified',
+    realClientVerified: 'unverified',
+  });
+  assert.ok(result.warnings.some((warning) => warning.includes('acceptance-results.json: missing')));
+});
+
+test('check rejects malformed enforcement evidence without erasing structural evidence', (context) => {
+  const root = fixture('invalid-enforcement-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.writeFileSync(path.join(root, 'docs/ai/acceptance-results.json'), JSON.stringify({
+    contract_schema_version: 2,
+    results: [{ id: 'broken-exact-path', status: 'pass', applies: true }],
+  }));
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.equal(result.evidence.present, 'pass');
+  assert.equal(result.evidence.reachable, 'pass');
+  assert.equal(result.evidence.enforced, 'fail');
+  assert.ok(result.errors.some((error) => error.includes('passing probe broken-exact-path requires entrypoint')));
+  assert.ok(result.errors.some((error) => error.includes('missing required result')));
+});
+
+test('check reports reachable independently when a canonical artifact is missing', (context) => {
+  const root = fixture('reachable-independent');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.unlinkSync(path.join(root, 'docs/ai/anti-patterns.md'));
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.equal(result.evidence.present, 'fail');
+  assert.equal(result.evidence.reachable, 'pass');
+  assert.equal(result.evidence.enforced, 'unverified');
+});
+
+test('check fails closed when the repository scan budget truncates evidence', (context) => {
+  const root = fixture('scan-budget-gate');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const result = checkProject(scanProject(root, { scanBudget: { maxDepth: 32, maxFiles: 2, maxFileBytes: 2 * 1024 * 1024 } }));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('repository scan incomplete: file limit 2 reached')));
+});
+
+test('check keeps enforcement unverified when complete receipt fields have not been replayed', (context) => {
+  const root = fixture('verified-enforcement-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const contract = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/acceptance-contract.json'), 'utf8'));
+  const results = contract.required_probe_families.map((family) => ({
+    id: family.id,
+    status: 'pass',
+    applies: true,
+    applicability_reason: 'The complete acceptance campaign selected this probe.',
+    entrypoint: 'node path/to/real-delivery-check.mjs',
+    negative_evidence: `2026-09-10 ${family.id} exited 1 with the expected diagnostic`,
+    recovery_evidence: `2026-09-10 ${family.id} exited 0 after recovery`,
+    remaining_boundary: 'This receipt does not prove a real client loaded the entrypoint.',
+  }));
+  fs.writeFileSync(path.join(root, 'docs/ai/acceptance-results.json'), JSON.stringify({
+    contract_schema_version: contract.schema_version,
+    results,
+  }));
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, true);
+  assert.equal(result.evidence.enforced, 'unverified');
+  assert.ok(result.warnings.some((warning) => warning.includes('does not replay their real entrypoints')));
+});
+
 test('preserves user content outside managed entrypoint blocks', (context) => {
   const root = fixture('preserve');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
