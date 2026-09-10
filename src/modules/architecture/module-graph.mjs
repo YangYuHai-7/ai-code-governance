@@ -9,10 +9,16 @@ function tokenizeModules(content) {
   const tokens = [];
   let index = 0;
   let incomplete = false;
+  let lineBreakBefore = false;
+  const pushToken = (type, value) => {
+    tokens.push({ type, value, lineBreakBefore });
+    lineBreakBefore = false;
+  };
   while (index < content.length) {
     const char = content[index];
     const next = content[index + 1];
     if (/\s/.test(char)) {
+      if (char === '\n' || char === '\r') lineBreakBefore = true;
       index += 1;
       continue;
     }
@@ -27,6 +33,7 @@ function tokenizeModules(content) {
         incomplete = true;
         break;
       }
+      if (/\r|\n/.test(content.slice(index, end + 2))) lineBreakBefore = true;
       index = end + 2;
       continue;
     }
@@ -63,17 +70,17 @@ function tokenizeModules(content) {
         }
       }
       if (!closed) incomplete = true;
-      tokens.push({ type: 'string', value });
+      pushToken('string', value);
       continue;
     }
     if (/[A-Za-z_$]/.test(char)) {
       const start = index;
       index += 1;
       while (index < content.length && /[A-Za-z0-9_$]/.test(content[index])) index += 1;
-      tokens.push({ type: 'identifier', value: content.slice(start, index) });
+      pushToken('identifier', content.slice(start, index));
       continue;
     }
-    tokens.push({ type: 'punctuation', value: char });
+    pushToken('punctuation', char);
     index += 1;
   }
   return { tokens, incomplete };
@@ -81,7 +88,7 @@ function tokenizeModules(content) {
 
 function isStatementStart(tokens, index) {
   if (index === 0) return true;
-  return [';', '}'].includes(tokens[index - 1].value);
+  return tokens[index].lineBreakBefore || [';', '}'].includes(tokens[index - 1].value);
 }
 
 function moduleReferences(content) {
@@ -105,6 +112,12 @@ function moduleReferences(content) {
       continue;
     }
     for (let cursor = index + 1; cursor < tokens.length && tokens[cursor].value !== ';'; cursor += 1) {
+      if (
+        cursor > index + 1
+        && tokens[cursor].lineBreakBefore
+        && tokens[cursor].type === 'identifier'
+        && ['import', 'export'].includes(tokens[cursor].value)
+      ) break;
       if (tokens[cursor].value === 'from' && tokens[cursor + 1]?.type === 'string') {
         specifiers.push(tokens[cursor + 1].value);
         break;
