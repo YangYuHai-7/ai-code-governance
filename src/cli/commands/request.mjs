@@ -18,7 +18,7 @@ import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { runPromotionVerification } from './capabilities.mjs';
 import { prepareInit } from './init.mjs';
-import { addReadOnlyGuidance } from '../read-only-guidance.mjs';
+import { addReadOnlyGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { assertManagedArchitectureConfigTrusted, configForStandards, loadConfiguredGovernance, loadExistingConfig } from '../shared.mjs';
 
 function existingConfigForGuidance(scan) {
@@ -69,6 +69,10 @@ function releaseAcceptanceInputFromChatConfig(options) {
 function printRequest(payload, json) {
   if (json) {
     console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+  if (payload.result?.actionGuide?.recommendedAction) {
+    printHumanGuidance(payload.result);
     return;
   }
   if (payload.result?.mode === 'read-only-advice') {
