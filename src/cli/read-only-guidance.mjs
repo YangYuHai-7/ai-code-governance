@@ -1,4 +1,5 @@
-import { SUPPORTED_INTERACTION_LANGUAGES, TOOL_VERSION } from '../constants.mjs';
+import { SUPPORTED_INTERACTION_LANGUAGES } from '../constants.mjs';
+import { governanceCommand } from '../generator.mjs';
 import { classifyProject, detectSurfaceSignals, projectSourcePaths, verificationNpmCommands } from '../modules/repository/index.mjs';
 import { usageError } from '../kernel/index.mjs';
 
@@ -11,12 +12,7 @@ function resolveLocale(requestedLocale, config) {
 }
 
 function invocationPrefix(config) {
-  if (config?.invocationMode === 'project-local') return 'npm exec -- aicg';
-  if (config?.invocationMode === 'global') return 'aicg';
-  if (config?.invocationMode === 'npm-exec-pinned') {
-    return `npm exec --yes --package=ai-code-governance@${config.toolVersion ?? TOOL_VERSION} -- aicg`;
-  }
-  return 'aicg';
+  return governanceCommand(config ?? {});
 }
 
 function localized(locale, zh, en) {

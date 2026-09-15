@@ -1,3 +1,5 @@
+import { governanceBootstrapCommand } from '../generator.mjs';
+
 export const HELP = `AI Code Governance CLI
 
 Usage:
@@ -43,6 +45,10 @@ Novice quick start:
   aicg doctor . --locale en
   aicg init . --guided --locale en
 
+Bootstrap help (package resolution only at setup):
+  ${governanceBootstrapCommand({})}
+Daily commands require an installed project-local or global AICG. If unavailable, stop and explicitly install it. Pinned bootstrap does not install a persistent CLI.
+
 --guided asks for AI coding tools first and governance artifact language second, followed by project stage, technology stack confirmation or selection, governance depth, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
 
 --locale controls interaction language only. Governance artifacts default to English; choose config.artifactLanguage or answer the separate guided question to change them. Existing bilingual artifact configurations remain supported but are not offered for new guided choices.
@@ -72,6 +78,8 @@ export const HELP_ZH = `AI 代码治理 CLI
   sync          从治理正典重新生成客户端适配器。
 
 新手快速开始：
+  固定版本启动帮助（仅在设置阶段解析包）：${governanceBootstrapCommand({})}
+  日常命令要求已安装项目本地或全局 AICG；缺少时停止并显式安装。固定版本启动不会安装持久 CLI。
   aicg doctor . --locale zh-CN
   aicg init . --guided --locale zh-CN
 

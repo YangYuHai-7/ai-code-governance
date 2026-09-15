@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 3 * * *'
+  release:
+    types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -20,8 +26,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - run: npm test
+      - name: Fast regression on pull requests
+        if: github.event_name == 'pull_request'
+        run: npm run test:fast
+      - name: Full regression
+        if: github.event_name != 'pull_request' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)
+        run: npm run test:full
       - run: npm run validate:skill
       - run: npm run smoke
+        if: github.event_name != 'pull_request' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)
       - run: npm pack --dry-run
+        if: github.event_name != 'pull_request' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)
       - run: npm run smoke:package
+        if: github.event_name != 'pull_request' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)
