@@ -153,7 +153,7 @@ test('initialization creates local review and report workspaces without ignoring
   assert.notEqual(git(root, ['check-ignore', '-q', 'docs/ai/release-evidence/0.2.0.json']).status, 0);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
-  assert.equal(manifest.templateVersion, 2);
+  assert.equal(manifest.templateVersion, 3);
   assert.equal(manifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
   assert.equal(manifest.files.some((entry) => entry.path === 'reviews/.gitkeep'), false);
   assert.equal(manifest.files.some((entry) => entry.path === 'reports/.gitkeep'), false);
@@ -190,7 +190,7 @@ test('upgrading report output layout preserves existing docs and user gitignore 
   assert.equal(fs.readFileSync(path.join(root, 'reports/.gitkeep'), 'utf8'), '# user report placeholder\n');
 });
 
-test('sync upgrades a v1 manifest to the v2 local output layout without moving docs or replacing user ignores', (context) => {
+test('sync upgrades a v1 manifest to the current local output layout without moving docs or replacing user ignores', (context) => {
   const root = fixture('v1-local-output-sync');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const userIgnore = 'dist/\n# user-owned rule\n*.local\n';
@@ -223,7 +223,7 @@ test('sync upgrades a v1 manifest to the v2 local output layout without moving d
   assert.ok(fs.statSync(path.join(root, 'reviews/.gitkeep')).isFile());
   assert.ok(fs.statSync(path.join(root, 'reports/.gitkeep')).isFile());
   const upgradedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  assert.equal(upgradedManifest.templateVersion, 2);
+  assert.equal(upgradedManifest.templateVersion, 3);
   assert.equal(upgradedManifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
 });
 

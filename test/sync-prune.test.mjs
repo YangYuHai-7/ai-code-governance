@@ -5,8 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { GENERATED_MARKER, MANIFEST_SCHEMA_VERSION, TEMPLATE_VERSION, TOOL_NAME } from '../src/constants.mjs';
+import { GENERATED_MARKER, MANIFEST_SCHEMA_VERSION, TEMPLATE_VERSION, TOOL_NAME, TOOL_VERSION } from '../src/constants.mjs';
 import { planArtifacts, validateManifestRemovalAuthority } from '../src/modules/governance/index.mjs';
+import { applyArtifactPlan } from '../src/managed-files.mjs';
+import { managedContentHash } from '../src/modules/governance/manifest.mjs';
+import { renderManagedBlock } from '../src/modules/governance/managed-block.mjs';
+import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
+import { scanProject } from '../src/scanner.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-sync-prune-${name}-`));
@@ -27,6 +32,217 @@ function run(args) {
     encoding: 'utf8',
   });
 }
+
+function snapshotTree(root) {
+  const result = {};
+  function visit(dir) {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const absolute = path.join(dir, name);
+      const stat = fs.lstatSync(absolute);
+      const relative = path.relative(root, absolute);
+      result[relative] = stat.isSymbolicLink() ? { link: fs.readlinkSync(absolute) }
+        : stat.isDirectory() ? { directory: true, mode: stat.mode & 0o777 }
+          : { bytes: fs.readFileSync(absolute).toString('base64'), mode: stat.mode & 0o777 };
+      if (stat.isDirectory()) visit(absolute);
+    }
+  }
+  visit(root);
+  return result;
+}
+
+function legacyFixture(context, version = 2) {
+  const root = fixture(`v${version}`);
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], clientSupport: { mode: 'selected', selectedClients: ['codex'], source: 'user' } };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+  manifest.templateVersion = version;
+  const content = `/* ${GENERATED_MARKER} */\nlegacy adapter\n`;
+  const relative = '.cursor/rules/ai-code-governance.mdc';
+  fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(root, relative), content);
+  manifest.files.push({ path: relative, ownership: 'full', kind: 'adapter', source: 'docs/ai/rules/00_always.mdc', sha256: sha256(content) });
+  writeManifest(root, manifest);
+  return { root, manifest, relative };
+}
+
+for (const version of [1, 2]) {
+  test(`v${version} prune previews without writes and requires exact fresh approval`, (context) => {
+    const { root, relative } = legacyFixture(context, version);
+    const before = snapshotTree(root);
+    const preview = run(['sync', root, '--prune', '--dry-run']);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    const output = JSON.parse(preview.stdout);
+    assert.match(output.planHash, /^[a-f0-9]{64}$/);
+    assert.ok(output.operations.some((item) => item.path === relative && item.action === 'remove-owned'));
+    assert.deepEqual(output.manualCleanupCandidates, []);
+    assert.deepEqual(snapshotTree(root), before);
+    for (const flags of [[], ['--approve', 'wrong'], ['--force'], ['--force', '--approve', 'wrong']]) {
+      assert.equal(run(['sync', root, '--prune', ...flags]).status, 2);
+      assert.deepEqual(snapshotTree(root), before);
+    }
+    assert.equal(run(['sync', root, '--approve', output.planHash]).status, 2);
+    assert.deepEqual(snapshotTree(root), before);
+    const approved = run(['sync', root, '--prune', '--approve', output.planHash]);
+    assert.equal(approved.status, 0, approved.stderr || approved.stdout);
+    assert.equal(fs.existsSync(path.join(root, relative)), false);
+    const updated = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+    assert.equal(updated.schemaVersion, 1);
+    assert.equal(updated.templateVersion, 3);
+  });
+
+  test(`v${version} ordinary sync retains historical provenance with warning`, (context) => {
+    const { root, relative, manifest } = legacyFixture(context, version);
+    const before = fs.readFileSync(path.join(root, relative));
+    const synced = run(['sync', root]);
+    assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+    assert.match(synced.stdout + synced.stderr, /retained.*historical|historical.*retained/i);
+    assert.deepEqual(fs.readFileSync(path.join(root, relative)), before);
+    const updated = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+    assert.deepEqual(updated.files.find((item) => item.path === relative), manifest.files.find((item) => item.path === relative));
+  });
+}
+
+for (const changedInput of ['config', 'manifest', 'managed', 'source', 'mode', 'deep-source']) {
+  test(`prune invalidates approval after ${changedInput} changes without writing`, (context) => {
+    const { root, relative } = legacyFixture(context);
+    const preview = run(['sync', root, '--prune', '--dry-run']);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    const { planHash } = JSON.parse(preview.stdout);
+    if (changedInput === 'config') fs.appendFileSync(path.join(root, '.ai-governance/config.json'), '\n');
+    if (changedInput === 'manifest') fs.appendFileSync(path.join(root, '.ai-governance/manifest.json'), '\n');
+    if (changedInput === 'managed') fs.appendFileSync(path.join(root, relative), 'user edit\n');
+    if (changedInput === 'source') fs.writeFileSync(path.join(root, 'source.js'), 'export const value = 1;\n');
+    if (changedInput === 'mode') fs.chmodSync(path.join(root, relative), 0o600);
+    if (changedInput === 'deep-source') {
+      fs.mkdirSync(path.join(root, 'a/b/c/d/e/f'), { recursive: true });
+      fs.writeFileSync(path.join(root, 'a/b/c/d/e/f/source.js'), 'export const value = 1;\n');
+    }
+    const before = snapshotTree(root);
+    const result = run(['sync', root, '--prune', '--force', '--approve', planHash]);
+    assert.equal(result.status, 2, result.stderr || result.stdout);
+    assert.deepEqual(snapshotTree(root), before);
+  });
+}
+
+test('prune reports stale seed files as manual cleanup candidates and preserves them', (context) => {
+  const { root } = legacyFixture(context);
+  const relative = 'docs/ai/lifecycle.md';
+  fs.writeFileSync(path.join(root, relative), '# User lifecycle notes\n');
+  const before = snapshotTree(root);
+  const preview = run(['sync', root, '--prune', '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const output = JSON.parse(preview.stdout);
+  assert.ok(output.manualCleanupCandidates.some((item) => item.path === relative && item.ownership === 'seed'));
+  assert.equal(output.operations.some((item) => item.path === relative && item.action === 'remove-owned'), false);
+  assert.deepEqual(snapshotTree(root), before);
+  const approved = run(['sync', root, '--prune', '--approve', output.planHash]);
+  assert.equal(approved.status, 0, approved.stderr || approved.stdout);
+  assert.equal(fs.readFileSync(path.join(root, relative), 'utf8'), '# User lifecycle notes\n');
+});
+
+test('prune removes only unchanged managed blocks and retains CRLF user content', (context) => {
+  const { root, manifest } = legacyFixture(context);
+  const block = renderManagedBlock('@AGENTS.md').replaceAll('\n', '\r\n');
+  const current = `# User instructions\r\n\r\n${block}\r\nKeep this footer.\r\n`;
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), current);
+  manifest.files.push({ path: 'CLAUDE.md', ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', sha256: managedContentHash(current, 'managed-block') });
+  writeManifest(root, manifest);
+  const preview = run(['sync', root, '--prune', '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const output = JSON.parse(preview.stdout);
+  assert.ok(output.operations.some((item) => item.path === 'CLAUDE.md' && item.action === 'update-managed-block'));
+  const approved = run(['sync', root, '--prune', '--approve', output.planHash]);
+  assert.equal(approved.status, 0, approved.stderr || approved.stdout);
+  assert.equal(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), '# User instructions\r\n\r\n\r\nKeep this footer.\r\n');
+});
+
+test('checker failure rolls approved removals back including manifest bytes and file modes', (context) => {
+  const { root, relative } = legacyFixture(context);
+  fs.chmodSync(path.join(root, relative), 0o600);
+  const before = snapshotTree(root);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const plan = planArtifacts(root, buildArtifacts(config, scanProject(root)), { allowStaleRemoval: true });
+  assert.ok(plan.operations.some((item) => item.path === relative && item.remove));
+  assert.throws(() => applyArtifactPlan(root, plan, { transactional: true, verify: () => ({ ok: false }) }), /Post-apply verification failed/);
+  assert.deepEqual(snapshotTree(root), before);
+});
+
+for (const untrusted of ['foreign', 'future-template', 'future-tool', 'missing-tool', 'unknown-source', 'prototype-kind', 'wrong-path', 'duplicate-path', 'seed-forgery']) {
+  test(`prune rejects ${untrusted} provenance with zero writes`, (context) => {
+    const { root, manifest, relative } = legacyFixture(context);
+    if (untrusted === 'foreign') manifest.generatedBy = 'foreign';
+    if (untrusted === 'future-template') manifest.templateVersion = 999;
+    if (untrusted === 'future-tool') manifest.toolVersion = '999.0.0';
+    if (untrusted === 'missing-tool') delete manifest.toolVersion;
+    if (untrusted === 'unknown-source') manifest.files.at(-1).source = 'mystery-source';
+    if (untrusted === 'prototype-kind') manifest.files.at(-1).kind = 'toString';
+    if (untrusted === 'duplicate-path') manifest.files.push({ ...manifest.files.at(-1) });
+    if (untrusted === 'wrong-path' || untrusted === 'seed-forgery') {
+      const wrongPath = untrusted === 'wrong-path' ? 'user-notes.md' : 'docs/ai/lifecycle.md';
+      fs.copyFileSync(path.join(root, relative), path.join(root, wrongPath));
+      manifest.files.at(-1).path = wrongPath;
+    }
+    writeManifest(root, manifest);
+    const before = snapshotTree(root);
+    const preview = run(['sync', root, '--prune', '--dry-run', '--force']);
+    assert.equal(preview.status, 2, preview.stderr || preview.stdout);
+    assert.deepEqual(snapshotTree(root), before);
+  });
+}
+
+test('trusted historical JSON full artifacts can be pruned without a comment marker', (context) => {
+  const { root, manifest } = legacyFixture(context);
+  const relative = 'docs/ai/surface-verification-profiles.json';
+  const content = '{"schemaVersion":1,"profiles":[]}\n';
+  fs.writeFileSync(path.join(root, relative), content);
+  manifest.files.push({ path: relative, ownership: 'full', kind: 'surface-verification-profiles', source: 'asset:surface-verification-contract', sha256: sha256(content) });
+  writeManifest(root, manifest);
+  const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+  assert.deepEqual(plan.conflicts, []);
+  assert.ok(plan.operations.some((item) => item.path === relative && item.remove));
+});
+
+test('drifted managed blocks cannot be pruned even with force and retain user text', (context) => {
+  const { root, manifest } = legacyFixture(context);
+  const original = renderManagedBlock('@AGENTS.md');
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), `User text\n${original.replace('@AGENTS.md', 'user edit')}\n`);
+  manifest.files.push({ path: 'CLAUDE.md', ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', sha256: managedContentHash(original, 'managed-block') });
+  writeManifest(root, manifest);
+  const before = snapshotTree(root);
+  const preview = run(['sync', root, '--prune', '--dry-run', '--force']);
+  assert.equal(preview.status, 2, preview.stderr || preview.stdout);
+  assert.match(preview.stderr, /stale managed content changed/);
+  assert.deepEqual(snapshotTree(root), before);
+});
+
+test('prune cannot remove a stale symlink ancestor even with migrate-links', (context) => {
+  const { root, relative } = legacyFixture(context);
+  const originalDirectory = path.join(root, '.cursor/rules');
+  const movedDirectory = path.join(root, 'user-rules');
+  fs.renameSync(originalDirectory, movedDirectory);
+  fs.symlinkSync(movedDirectory, originalDirectory, process.platform === 'win32' ? 'junction' : 'dir');
+  const before = snapshotTree(root);
+  const preview = run(['sync', root, '--prune', '--dry-run', '--migrate-links']);
+  assert.equal(preview.status, 2, preview.stderr || preview.stdout);
+  assert.deepEqual(snapshotTree(root), before);
+  assert.ok(fs.existsSync(path.join(root, relative)));
+});
+
+test('approved CLI prune rolls back when the real checker rejects user-owned context', (context) => {
+  const { root, relative } = legacyFixture(context);
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  fs.writeFileSync(contextPath, fs.readFileSync(contextPath, 'utf8').replace('    extends: base', '    extends: missing_base'));
+  fs.chmodSync(path.join(root, relative), 0o600);
+  const preview = run(['sync', root, '--prune', '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  const before = snapshotTree(root);
+  const approved = run(['sync', root, '--prune', '--approve', JSON.parse(preview.stdout).planHash]);
+  assert.equal(approved.status, 1, approved.stderr || approved.stdout);
+  assert.match(approved.stderr, /Post-apply verification failed/);
+  assert.deepEqual(snapshotTree(root), before);
+});
 
 test('ordinary sync retains stale artifacts and foreign manifests have no removal authority', (context) => {
   const root = fixture('ordinary-retention');
@@ -97,13 +313,14 @@ test('explicit stale removal rejects a foreign manifest before planning deletes'
 test('trusted manifests retain explicit stale removal authority', (context) => {
   const root = fixture('trusted-removal');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const stalePath = 'docs/ai/legacy-generated.md';
+  const stalePath = 'docs/ai/surface-verification-profiles.json';
   const staleContent = `<!-- ${GENERATED_MARKER} -->\n# Legacy generated artifact\n`;
   fs.mkdirSync(path.join(root, 'docs/ai'), { recursive: true });
   fs.writeFileSync(path.join(root, stalePath), staleContent);
   writeManifest(root, {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
+    toolVersion: TOOL_VERSION,
     templateVersion: TEMPLATE_VERSION,
     files: [{
       path: stalePath,
@@ -131,6 +348,7 @@ test('force cannot authorize removal of a drifted stale artifact', (context) => 
   writeManifest(root, {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
+    toolVersion: TOOL_VERSION,
     templateVersion: TEMPLATE_VERSION,
     files: [{
       path: stalePath,
