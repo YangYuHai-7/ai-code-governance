@@ -296,9 +296,14 @@ export function minimumTaskLevelFromPaths(paths, config = {}) {
   const levels = [confirmedRiskLevel(config)];
   const surfaceCandidates = [];
   for (const relative of normalized) {
-    const rule = PATH_RULES.find((candidate) => matchesRule(relative, candidate));
-    levels.push(rule?.level ?? 'L1');
-    if (rule?.id !== 'ordinary-documentation-or-test') surfaceCandidates.push(relative);
+    const matchingRules = PATH_RULES.filter((candidate) => matchesRule(relative, candidate));
+    // Ordinary docs/tests remain excluded unless an explicit machine artifact matched first.
+    if (matchingRules[0]?.id === 'ordinary-documentation-or-test') {
+      levels.push('L1');
+      continue;
+    }
+    levels.push(maxLevel('L1', ...matchingRules.map((rule) => rule.level)));
+    surfaceCandidates.push(relative);
   }
   if (changedSurfaces(surfaceCandidates).size > 1) levels.push('L3');
   return maxLevel(...levels);
@@ -330,6 +335,8 @@ export function taskRoutingPolicy(config) {
     })),
     escalation: {
       levelMerge: 'maximum-of-mutation-scope-risk',
+      pathLevelMerge: 'maximum-of-matching-rules',
+      ordinaryPathExclusion: 'first-matching-rule:ordinary-documentation-or-test',
       clarityEffect: 'adds-gates-only',
       externalAction: 'L3-with-separate-approval',
       deliveryRule: 'declared-level-must-not-be-lower-than-path-minimum',

@@ -164,6 +164,18 @@ test('machine SQL schemas require L2 without lowering SQL migrations or ordinary
   }
 });
 
+for (const relative of [
+  'src/payment.schema.sql',
+  'payment/schema.sql',
+  'db/account.migration.schema.sql',
+  'infra/schema.sql',
+  'scripts/deploy/schema.sql',
+]) {
+  test(`SQL schema matching does not lower L3 risk for ${relative}`, () => {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L3');
+  });
+}
+
 test('sensitive tokens recognize delimited filenames without substring false positives', () => {
   for (const relative of [
     'src/auth.ts',
@@ -251,6 +263,8 @@ test('supported ecosystem dependency manifests and lockfiles require L2', () => 
 
 test('machine policy examples are evaluated by the canonical path rules', () => {
   const policy = taskRoutingPolicy({ artifactLanguage: 'en' });
+  assert.equal(policy.escalation.pathLevelMerge, 'maximum-of-matching-rules');
+  assert.equal(policy.escalation.ordinaryPathExclusion, 'first-matching-rule:ordinary-documentation-or-test');
   for (const rule of policy.pathRules) {
     assert.ok(rule.patterns.length > 0 || (rule.tokens ?? []).length > 0, `${rule.id} needs executable patterns or tokens`);
     assert.ok(rule.examples.length > 0, `${rule.id} needs executable examples`);
