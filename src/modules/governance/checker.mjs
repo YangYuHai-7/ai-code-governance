@@ -65,7 +65,45 @@ function profileRequiredPaths(content, profileName) {
       continue;
     }
     if (!inRequired) continue;
-    const item = line.match(/^      -\s+([A-Za-z0-9._/-]+)\s*$/);
+    const item = line.match(/^      -\s+["']?([A-Za-z0-9._/-]+)["']?\s*$/);
+    if (item) paths.add(item[1]);
+  }
+  return paths;
+}
+
+function profileConditionalPaths(content, profileName, conditionName) {
+  const paths = new Set();
+  let inProfile = false;
+  let inConditional = false;
+  let inCondition = false;
+  for (const line of content.split(/\r?\n/)) {
+    if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue;
+    const profile = line.match(/^  ([A-Za-z0-9_-]+):\s*$/);
+    if (profile) {
+      inProfile = profile[1] === profileName;
+      inConditional = false;
+      inCondition = false;
+      continue;
+    }
+    if (!inProfile) continue;
+    if (/^    conditional:\s*$/.test(line)) {
+      inConditional = true;
+      inCondition = false;
+      continue;
+    }
+    if (/^    [A-Za-z0-9_-]+:\s*/.test(line)) {
+      inConditional = false;
+      inCondition = false;
+      continue;
+    }
+    if (!inConditional) continue;
+    const condition = line.match(/^      ([A-Za-z0-9_-]+):\s*$/);
+    if (condition) {
+      inCondition = condition[1] === conditionName;
+      continue;
+    }
+    if (!inCondition) continue;
+    const item = line.match(/^        -\s+["']?([A-Za-z0-9._/-]+)["']?\s*$/);
     if (item) paths.add(item[1]);
   }
   return paths;
@@ -323,18 +361,24 @@ export function checkProject(scan) {
 
     const agentsContent = readText(path.join(scan.root, 'AGENTS.md'), '');
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
+    const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
     if (!managedAgentsContent) {
       reachabilityErrors.push('AGENTS.md: shared managed entrypoint is not reachable');
     }
-    if (!managedAgentsContent.includes('docs/ai/architecture-profile.json') || !managedAgentsContent.includes('docs/ai/rules/15_architecture.mdc')) {
-      reachabilityErrors.push('AGENTS.md: architecture profile and generated rule are not reachable from the managed entrypoint');
+    const architecturePaths = profileConditionalPaths(contextMap, 'behavior_change', 'architecture');
+    const legacyArchitecturePaths = profileRequiredPaths(contextMap, 'implementation');
+    const architectureRouted = architecturePaths.has('docs/ai/architecture-profile.json')
+      && architecturePaths.has('docs/ai/rules/15_architecture.mdc');
+    if (!managedAgentsContent.includes('docs/ai/context-map.yaml') || (!architectureRouted && !legacyArchitecturePaths.has('docs/ai/rules/15_architecture.mdc'))) {
+      reachabilityErrors.push('docs/ai/context-map.yaml: architecture profile and generated rule are not reachable from the behavior_change route');
     }
     if (config.domainConstraints.length > 0) {
-      const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
-      const businessRequired = profileRequiredPaths(contextMap, 'business_constraints');
-      if (!businessRequired.has(BUSINESS_CONSTRAINTS_PATH)) reachabilityErrors.push(`${BUSINESS_CONSTRAINTS_PATH}: owner-confirmed constraint registry is not reachable from the business_constraints profile`);
-      if (config.governanceDepth !== 'minimal' && (!managedAgentsContent.includes(BUSINESS_CONSTRAINT_SKILL_PATH) || !businessRequired.has(BUSINESS_CONSTRAINT_SKILL_PATH))) {
-        reachabilityErrors.push(`${BUSINESS_CONSTRAINT_SKILL_PATH}: business constraint Skill is not reachable from AGENTS.md and the context map`);
+      const businessPaths = profileConditionalPaths(contextMap, 'behavior_change', 'business');
+      const legacyBusinessPaths = profileRequiredPaths(contextMap, 'business_constraints');
+      const businessRouted = (relative) => businessPaths.has(relative) || legacyBusinessPaths.has(relative);
+      if (!businessRouted(BUSINESS_CONSTRAINTS_PATH)) reachabilityErrors.push(`${BUSINESS_CONSTRAINTS_PATH}: owner-confirmed constraint registry is not reachable from the behavior_change route`);
+      if (config.governanceDepth !== 'minimal' && !businessRouted(BUSINESS_CONSTRAINT_SKILL_PATH)) {
+        reachabilityErrors.push(`${BUSINESS_CONSTRAINT_SKILL_PATH}: business constraint Skill is not reachable from the behavior_change route`);
       }
     }
     if (config.clients.includes('claude-code')) {

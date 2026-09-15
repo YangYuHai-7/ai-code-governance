@@ -70,6 +70,10 @@ test('detects the Labrix technology set and generates traceable standard Skills'
   assert.equal(sourceManifest.status, 'reviewed-offline-snapshot');
   assert.equal(sourceManifest.skills.find((skill) => skill.id === 'bullmq-idempotent-jobs').claimState, 'stated');
   assert.deepEqual(sourceManifest.technologyEvidence.installedPackages.includes('bullmq'), true);
+  const contextMap = artifacts.find((artifact) => artifact.path === 'docs/ai/context-map.yaml').content;
+  assert.match(contextMap, /behavior_change:[\s\S]*conditional:[\s\S]*stack:/);
+  assert.match(contextMap, /docs\/ai\/skills\/standards\/react-component-purity\/SKILL\.md/);
+  assert.doesNotMatch(contextMap.slice(0, contextMap.indexOf('profiles:')), /technical-standards/);
 
   applyArtifactPlan(root, planArtifacts(root, artifacts), {
     transactional: true,

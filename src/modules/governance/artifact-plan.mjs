@@ -53,27 +53,101 @@ function yamlProfileBlock(content, profileName) {
   return lines.slice(start, end).join('\n').trimEnd();
 }
 
+function yamlConditionalBlock(content, profileName, conditionName) {
+  const profile = yamlProfileBlock(content, profileName);
+  if (!profile) return null;
+  const lines = profile.split(/\r?\n/);
+  const escapedName = conditionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const conditionHeader = new RegExp(`^      (?:${escapedName}|["']${escapedName}["'])\\s*:`);
+  const starts = lines.flatMap((line, index) => conditionHeader.test(line) ? [index] : []);
+  if (starts.length === 0) return null;
+  if (starts.length > 1) throw new Error(`${CONTEXT_MAP_PATH}: duplicate ${conditionName} conditions are not safe to merge`);
+  const [start] = starts;
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^      (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^    [A-Za-z0-9_-]+\s*:/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n').trimEnd();
+}
+
+function recognizedLegacyBusinessProfile(profile) {
+  const lines = profile?.split(/\r?\n/) ?? [];
+  const standardPrefix = [
+    '  business_constraints:',
+    '    description: Apply owner-confirmed business invariants without inferring risk from wording.',
+    '    triggers:',
+    '      en: [business rule, invariant, acceptance]',
+    '      zh: [业务规则, 不变量, 验收]',
+    '    required:',
+    '      - docs/ai/business-constraints.json',
+    '      - docs/ai/skills/business-constraints/SKILL.md',
+    '    verify:',
+  ];
+  const isStandard = lines.length === standardPrefix.length + 1
+    && standardPrefix.every((line, index) => lines[index] === line)
+    && /^      - (?:aicg|npm exec -- aicg|npm exec --yes --package=ai-code-governance@\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? -- aicg) check \.$/.test(lines.at(-1));
+  const minimal = [
+    '  business_constraints:',
+    '    description: Production readiness is blocked until every owner-confirmed constraint has complete evidence bound to its current id, text, and hash; recorded evidence remains unverified and only eligible for review.',
+    '    required:',
+    '      - docs/ai/business-constraints.json',
+    '    cta: Select standard or complete governance to generate the routable business constraint Skill, then record success plus negative or boundary evidence.',
+  ];
+  return isStandard || (lines.length === minimal.length && minimal.every((line, index) => lines[index] === line));
+}
+
 function mergeLegacyContextMapSeed(current, desired) {
-  const requiredProfile = yamlProfileBlock(desired, 'business_constraints');
-  if (!requiredProfile) return current;
-  const existingProfile = yamlProfileBlock(current, 'business_constraints');
-  if (existingProfile) {
-    if (existingProfile === requiredProfile) return current;
+  const requiredBusiness = yamlConditionalBlock(desired, 'behavior_change', 'business');
+  if (!requiredBusiness) return current;
+  const legacyProfile = yamlProfileBlock(current, 'business_constraints');
+  if (legacyProfile && !recognizedLegacyBusinessProfile(legacyProfile)) {
     throw new Error(`${CONTEXT_MAP_PATH}: existing business_constraints profile conflicts with the required AICG route`);
+  }
+  const existingBusiness = yamlConditionalBlock(current, 'behavior_change', 'business');
+  if (existingBusiness) {
+    if (existingBusiness === requiredBusiness) return current;
+    throw new Error(`${CONTEXT_MAP_PATH}: existing behavior_change business condition conflicts with the required AICG route`);
   }
   const newline = current.includes('\r\n') ? '\r\n' : '\n';
   const lines = current.split(/\r?\n/);
   const profilesStart = lines.findIndex((line) => line === 'profiles:');
   if (profilesStart === -1) return current;
-  let insertion = lines.length;
-  for (let index = profilesStart + 1; index < lines.length; index += 1) {
-    if (/^[A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
+  const behaviorStart = lines.findIndex((line, index) => index > profilesStart && line === '  behavior_change:');
+  if (behaviorStart === -1) {
+    const requiredProfile = yamlProfileBlock(desired, 'behavior_change');
+    if (!requiredProfile) return current;
+    let insertion = lines.length;
+    for (let index = profilesStart + 1; index < lines.length; index += 1) {
+      if (/^[A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
+        insertion = index;
+        break;
+      }
+    }
+    lines.splice(insertion, 0, ...requiredProfile.split('\n'));
+    return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+  }
+  let behaviorEnd = lines.length;
+  for (let index = behaviorStart + 1; index < lines.length; index += 1) {
+    if (/^  (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^[A-Za-z0-9_-]+\s*:/.test(lines[index])) {
+      behaviorEnd = index;
+      break;
+    }
+  }
+  const conditionalStart = lines.findIndex((line, index) => index > behaviorStart && index < behaviorEnd && line === '    conditional:');
+  if (conditionalStart === -1) {
+    throw new Error(`${CONTEXT_MAP_PATH}: behavior_change profile has no safe conditional block to extend`);
+  }
+  let insertion = behaviorEnd;
+  for (let index = conditionalStart + 1; index < behaviorEnd; index += 1) {
+    if (/^    [A-Za-z0-9_-]+\s*:/.test(lines[index])) {
       insertion = index;
       break;
     }
   }
-  const blockLines = requiredProfile.split('\n');
-  lines.splice(insertion, 0, ...blockLines);
+  lines.splice(insertion, 0, ...requiredBusiness.split('\n'));
   return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
 }
 

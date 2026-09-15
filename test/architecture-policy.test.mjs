@@ -178,7 +178,8 @@ test('greenfield initialization records an active module boundary without creati
   const moduleGraph = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/module-graph.json'), 'utf8'));
   assert.equal(moduleGraph.status, 'active');
   assert.deepEqual(moduleGraph.layers.map((layer) => layer.id), ['app', 'modules', 'shared']);
-  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /behavior_change:[\s\S]*architecture:\n        - docs\/ai\/architecture-profile\.json/);
   assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /enforces current-tree placement plus statically analyzable relative JS\/TS dependency directions/);
 });
 
@@ -568,16 +569,16 @@ test('old greenfield governance with later source stays legacy-unconfigured unti
   assert.equal(run(['check', root, '--json']).status, 0);
 });
 
-test('a stale context-map seed does not block an active profile because the refreshed entrypoint routes it directly', (context) => {
+test('a stale context-map seed fails closed without expanding the refreshed root entrypoint', (context) => {
   const root = fixture('stale-context-map');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.equal(run(['init', root, '--yes', '--no-assist']).status, 0);
   const contextMap = path.join(root, 'docs/ai/context-map.yaml');
-  fs.writeFileSync(contextMap, fs.readFileSync(contextMap, 'utf8').replace('      - "docs/ai/rules/15_architecture.mdc"\n', ''));
+  fs.writeFileSync(contextMap, fs.readFileSync(contextMap, 'utf8').replace('        - docs/ai/rules/15_architecture.mdc\n', ''));
   const result = run(['init', root, '--yes', '--no-assist', '--force']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
-  assert.equal(run(['check', root, '--json']).status, 0);
+  assert.equal(result.status, 1, result.stderr);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
+  assert.equal(run(['check', root, '--json']).status, 1);
 });
 
 test('profile or rule drift is detected and strategy reconfiguration updates the managed policy', (context) => {

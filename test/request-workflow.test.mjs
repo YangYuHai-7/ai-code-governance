@@ -168,7 +168,8 @@ test('existing projects reject --yes and chat initialization until an explicit s
     source: 'config',
   });
   assert.equal(fs.readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8'), 'export const App = () => null;\n');
-  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /Apply the approved project architecture profile to new code only/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture profile|new code only/i);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8'), /new-code-standard/);
 });
 
 test('manifest-only projects require lifecycle confirmation before direct or chat initialization', (context) => {
@@ -195,7 +196,8 @@ test('manifest-only projects require lifecycle confirmation before direct or cha
     existingCodeStrategy: null,
     source: 'config',
   });
-  assert.match(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /repository is confirmed as greenfield/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /greenfield/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8'), /greenfield/);
 });
 
 test('initialization rejects contradictory or incomplete existing-project decisions without writing files', (context) => {
@@ -373,10 +375,10 @@ test('reconfiguring an existing-code strategy updates only managed policy and le
   const ledger = fs.readFileSync(path.join(root, 'docs', 'ai', 'decision-ledger.json'), 'utf8');
   const seedRule = fs.readFileSync(path.join(root, 'docs', 'ai', 'rules', '00_always.mdc'), 'utf8');
   const seedPrompt = fs.readFileSync(path.join(root, 'docs', 'ai', 'bootstrap-prompt.md'), 'utf8');
-  assert.match(agents, /Apply the approved project architecture profile to new code only/);
+  assert.doesNotMatch(agents, /new-code-standard|keep-existing|staged-migration/);
   assert.match(ledger, /new-code-standard/);
   assert.doesNotMatch(agents, /Do not change its architecture or behavior unless a separate request/);
-  assert.match(seedRule, /sole current record of initialization lifecycle/);
+  assert.doesNotMatch(seedRule, /initialization lifecycle|existing-code strategy/);
   assert.match(seedPrompt, /initialization decisions are authoritative/);
   assert.equal(fs.readFileSync(path.join(root, 'src', 'app.ts'), 'utf8'), 'export const app = true;\n');
 });
