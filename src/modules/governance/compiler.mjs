@@ -159,96 +159,34 @@ export function validateConfig(config) {
   return config;
 }
 
-function initializationGuidance(config) {
-  const initialization = config.initialization;
-  if (initialization?.lifecycle === 'greenfield') {
-    return 'The repository is confirmed as greenfield. Establish new code with the approved project architecture profile; do not collapse unrelated layers into a catch-all directory.';
-  }
-  switch (initialization?.existingCodeStrategy) {
-    case 'keep-existing':
-      return 'Existing code is protected. Do not change its architecture or behavior unless a separate request explicitly authorizes that work.';
-    case 'new-code-standard':
-      return 'Existing code is protected. Apply the approved project architecture profile to new code only; do not rewrite legacy code as incidental cleanup.';
-    case 'staged-migration':
-      return 'Existing code is protected until a separate staged-migration plan, compatibility contract, and approval exist. Initialization itself must not rewrite business code.';
-    default:
-      return 'Existing-code handling is not yet confirmed. Preserve existing code and stop before architectural or behavioral changes.';
-  }
-}
-
-function rootInstructions(config, scan) {
-  const assessment = config.initialClassification ?? classifyProject(scan);
-  const technicalStandards = config.governanceDepth === 'minimal'
-    ? ''
-    : `\n- Read \`${config.canonicalRoot}/technical-standards.json\` and \`${config.canonicalRoot}/capability-evolution.json\`; load matching technical and project-capability Skills before implementation.`;
+function rootInstructions(config) {
   const completeCommand = governanceCommand(config, 'complete .');
-  const assessCommand = governanceCommand(config, `assess . --locale ${config.interactionLanguage ?? 'en'} --json`);
-  const hookCommand = governanceCommand(config, 'hook install . --yes');
   const syncCommand = governanceCommand(config, 'sync .');
-  const harvestCommand = governanceCommand(config, 'harvest .');
-  const promoteCommand = governanceCommand(config, 'promote ...');
-  const releaseCommand = governanceCommand(config, 'release-check . --type <type> --evidence <repository-relative-json>');
-  const businessGuidance = config.domainConstraints.length === 0
-    ? ''
-    : config.governanceDepth === 'minimal'
-      ? '\n- Owner-confirmed business constraints exist. Select standard or complete governance to generate a routable business constraint Skill. Production readiness is blocked while evidence is missing, incomplete, or mismatched; complete bound records remain unverified and only eligible for review.'
-      : `\n- Before changing behavior, read \`${BUSINESS_CONSTRAINT_SKILL_PATH}\`; every affected owner-confirmed constraint requires success plus negative/boundary evidence bound to its current id, text, and hash.`;
   return `## ${languageTitle(config, 'AI 编码治理', 'AI coding governance')}
 
 This block is managed by \`aicg\`. Project-specific content outside this block is preserved.
 
 - Canonical governance: \`${config.canonicalRoot}/\`
-- Repository topology: \`${assessment.codebase.topology.value}\`
-- Initial scanner lifecycle evidence: \`${assessment.codebase.lifecycle.value}\` (\`${assessment.codebase.lifecycle.confidence}\` confidence)
-- Governance depth: \`${config.governanceDepth}\`
-- Selected stacks: ${config.stacks.map((item) => `\`${item}\``).join(', ')}
-- Initialization boundary: ${initializationGuidance(config)}
-- Read \`${config.canonicalRoot}/architecture-profile.json\` and \`${config.canonicalRoot}/rules/15_architecture.mdc\` before placing new source. The profile is the sole current architecture policy; it never authorizes migration.
-- Read \`${config.canonicalRoot}/context-map.yaml\` before implementation and load only matching profiles.
-${businessGuidance}
-${technicalStandards}
-- Code and tests override stale documentation; update the affected governance evidence in the same change.
-- Do not run completion gates after ordinary conversation turns. When a change is ready, run \`${completeCommand}\` once; after \`${hookCommand}\`, Git also validates the exact staged snapshot before commit.
-- A completion gate is validation only: it never stages files or invents semantic memory, capability Skills, or documentation. Use separately approved \`${syncCommand}\`, \`${harvestCommand}\`, or \`${promoteCommand}\` commands for those changes.
-- Store temporary review notes under \`reviews/\`. Store generated task and diagnostic reports under \`reports/\`. Both directories are local working areas and their contents are ignored by Git.
-- Auditable release evidence under \`${config.canonicalRoot}/release-evidence/\` must remain tracked. Do not move formal governance records into ignored working directories.
-- Before deployment or publication, classify the release as \`bugfix\`, \`feature\`, or \`major\`, read \`${config.canonicalRoot}/release-acceptance-policy.json\`, and preview \`${releaseCommand}\`. Execute receipt-bound npm scripts only with \`--replay --approve <planHash>\` for the exact returned plan; do not fabricate human review evidence.
-
-### ${languageTitle(config, '运行时验证入口', 'Runtime verification entrypoints')}
-
-${languageTitle(
-    config,
-    `- package scripts 会随项目演进，因此不复制进受管入口。运行 \`${assessCommand}\`，从 \`actionGuide.allowedVerificationCommands\` 选择当前允许命令，再运行 \`${completeCommand} --verify "<允许的命令>"\`。未知命令或附加参数会被拒绝。`,
-    `- Package scripts change as the project evolves, so managed guidance does not copy them. Run \`${assessCommand}\`, select a current command from \`actionGuide.allowedVerificationCommands\`, then run \`${completeCommand} --verify "<allowed command>"\`. Unknown commands and appended arguments are rejected.`,
-  )}`;
+- Start with the \`ordinary\` profile in \`${config.canonicalRoot}/context-map.yaml\`; use a larger profile only when the task requires it.
+- Preserve unrelated user changes and remain within the requested scope.
+- Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
+- Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
+`;
 }
 
 function alwaysRule(config) {
-  const technicalStandards = config.governanceDepth === 'minimal'
-    ? ''
-    : ' and matching entries in `docs/ai/technical-standards.json` plus `docs/ai/capability-evolution.json`';
-  const syncCommand = governanceCommand(config, 'sync .');
-  const harvestPreview = governanceCommand(config, 'harvest . --dry-run');
-  const harvestCommand = governanceCommand(config, 'harvest .');
-  const promoteCommand = governanceCommand(config, 'promote ...');
   const completeCommand = governanceCommand(config, 'complete .');
-  const releaseCommand = governanceCommand(config, 'release-check');
   return `---
 alwaysApply: true
 ---
 
 # ${languageTitle(config, '常驻治理规则', 'Always-on governance')}
 
-1. Read \`AGENTS.md\`, then select the smallest matching profile from \`${config.canonicalRoot}/context-map.yaml\`${technicalStandards}.
-2. Preserve unrelated user changes and keep work inside the requested scope.
-3. Treat code and tests as current behavior evidence; repair stale governance documentation in the same change.
-4. Use only repository commands that exist and report commands that were not run.
-5. Do not edit generated client adapters; edit canonical governance and run \`${syncCommand}\`.
-6. Do not claim a client, platform, hook, or external workflow is enforced without replay evidence.
-7. When product behavior changes are ready for capability evolution, an authorized operator explicitly runs \`${harvestPreview}\`; if it finds a candidate or review item, apply its separately approved harvest before claiming capability evolution is complete.
-8. Do not run completion gates after ordinary conversation turns. Before delivery, run \`${completeCommand}\` with an explicitly selected discovered verification command when needed; an installed Git pre-commit hook validates only the staged snapshot. Completion never stages files or synthesizes semantic memory, Skills, or documentation; use separately approved \`${syncCommand}\`, \`${harvestCommand}\`, or \`${promoteCommand}\` commands for those mutations.
-9. Before architecture or behavior changes, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`. They are the sole current record of initialization lifecycle, existing-code strategy, and implementation boundary; do not infer a migration authorization from this seed file.
-10. Before deployment or publication, run the tiered \`${releaseCommand}\` against repository-local evidence. Bug fixes, features, and major releases have different evidence and independent-review requirements; never synthesize reviewer approval.
+1. Preserve unrelated user changes and keep work inside the requested scope.
+2. Treat code and tests as current behavior evidence; keep affected governance claims accurate.
+3. Report evidence honestly, including commands, clients, platforms, and integrations that were not actually run.
+4. Use only repository commands that exist; do not invent commands or append unapproved arguments.
+5. Before delivery, run \`${completeCommand}\` once with any required discovered verification command.
 `;
 }
 
@@ -272,66 +210,52 @@ ${rows}
 `;
 }
 
-function contextMap(config) {
+function contextMap(config, technicalStandardArtifacts) {
   const hasBusinessSkill = config.domainConstraints.length > 0 && config.governanceDepth !== 'minimal';
-  const rules = config.governanceDepth === 'minimal'
-    ? ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/15_architecture.mdc']
-    : ['docs/ai/rules/00_always.mdc', 'docs/ai/rules/15_architecture.mdc', 'docs/ai/rules/20_stack.mdc'];
-  if (hasBusinessSkill) rules.push(BUSINESS_CONSTRAINT_SKILL_PATH);
-  const reviewRules = ['docs/ai/rules/00_always.mdc'];
-  if (hasBusinessSkill) reviewRules.push(BUSINESS_CONSTRAINT_SKILL_PATH);
-  const technicalStandardStart = config.governanceDepth === 'minimal' ? '' : '  - docs/ai/technical-standards.json\n  - docs/ai/capability-evolution.json\n';
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]');
-  const businessProfile = config.domainConstraints.length === 0 ? '' : hasBusinessSkill
-    ? `  business_constraints:
-    description: Apply owner-confirmed business invariants without inferring risk from wording.
-    triggers:
-      en: [business rule, invariant, acceptance]
-      zh: [业务规则, 不变量, 验收]
-    required:
-      - ${BUSINESS_CONSTRAINTS_PATH}
-      - ${BUSINESS_CONSTRAINT_SKILL_PATH}
-    verify:
-      - ${checkCommand}
-`
-    : `  business_constraints:
-    description: Production readiness is blocked until every owner-confirmed constraint has complete evidence bound to its current id, text, and hash; recorded evidence remains unverified and only eligible for review.
-    required:
-      - ${BUSINESS_CONSTRAINTS_PATH}
-    cta: Select standard or complete governance to generate the routable business constraint Skill, then record success plus negative or boundary evidence.
-`;
+  const conditional = [
+    '      architecture:',
+    '        - docs/ai/architecture-profile.json',
+    '        - docs/ai/rules/15_architecture.mdc',
+  ];
+  if (config.governanceDepth !== 'minimal') {
+    const standardSkills = technicalStandardArtifacts
+      .map((artifact) => artifact.path)
+      .filter((relative) => relative.startsWith('docs/ai/skills/standards/'));
+    conditional.push(
+      '      stack:',
+      '        - docs/ai/stack-profile.json',
+      '        - docs/ai/rules/20_stack.mdc',
+      '        - docs/ai/technical-standards.json',
+      ...standardSkills.map((relative) => `        - ${relative}`),
+    );
+  }
+  if (config.domainConstraints.length > 0) {
+    conditional.push(
+      '      business:',
+      `        - ${BUSINESS_CONSTRAINTS_PATH}`,
+      ...(hasBusinessSkill ? [`        - ${BUSINESS_CONSTRAINT_SKILL_PATH}`] : []),
+    );
+  }
   return `version: 1
-default_start:
-  - AGENTS.md
-  - docs/ai/context-map.yaml
-  - docs/ai/rules/00_always.mdc
-${technicalStandardStart}profiles:
-  implementation:
-    description: Implement or change observable repository behavior.
-    triggers:
-      en: [implement, feature, fix, refactor]
-      zh: [实现, 功能, 修复, 重构]
-    required:
-${yamlList(rules, 6)}
+base:
+  required:
+    - docs/ai/rules/00_always.mdc
+profiles:
+  ordinary:
+    extends: base
+    required: []
+  behavior_change:
+    extends: ordinary
+    conditional:
+${conditional.join('\n')}
     verify:
       - ${checkCommand}
-  review:
-    description: Review changes without taking implementation ownership.
-    triggers:
-      en: [review, audit]
-      zh: [评审, 审计]
-    required:
-${yamlList(reviewRules, 6)}
-    verify:
-      - ${checkCommand}
-${businessProfile}  release:
+  release:
+    extends: ordinary
     description: Validate risk-tiered evidence before deployment or publication.
-    triggers:
-      en: [release, deploy, publish]
-      zh: [发布, 部署, 上线]
     required:
-      - docs/ai/rules/00_always.mdc
       - docs/ai/release-acceptance-policy.json
     commandTemplate: ${releaseCommand}
 `;
@@ -488,6 +412,9 @@ export function buildArtifacts(config, scan) {
   validateConfig(config);
   const agents = resolveAgents(config.clients);
   const packs = resolvePacks(config.stacks);
+  const technicalStandardArtifacts = config.governanceDepth === 'minimal'
+    ? []
+    : buildTechnicalStandardArtifacts(config, scan).artifacts;
   const artifacts = [
     {
       path: '.gitignore',
@@ -511,9 +438,9 @@ export function buildArtifacts(config, scan) {
       source: 'template:local-output-layout',
     },
     { path: CONFIG_PATH, content: stableJson(config), ownership: 'full', kind: 'configuration', source: 'confirmed-decisions' },
-    { path: 'AGENTS.md', content: rootInstructions(config, scan), ownership: 'managed-block', kind: 'entrypoint', source: 'template:agents' },
+    { path: 'AGENTS.md', content: rootInstructions(config), ownership: 'managed-block', kind: 'entrypoint', source: 'template:agents' },
     { path: 'docs/ai/README.md', content: governanceReadme(config, scan, packs), ownership: 'seed', kind: 'canonical', source: 'template:canon-readme' },
-    { path: 'docs/ai/context-map.yaml', content: contextMap(config), ownership: 'seed', kind: 'canonical', source: 'template:context-map' },
+    { path: 'docs/ai/context-map.yaml', content: contextMap(config, technicalStandardArtifacts), ownership: 'seed', kind: 'canonical', source: 'template:context-map' },
     { path: 'docs/ai/rules/00_always.mdc', content: alwaysRule(config), ownership: 'seed', kind: 'canonical', source: 'template:always-rule' },
     { path: 'docs/ai/verification-profiles.yaml', content: verificationProfiles(config), ownership: 'seed', kind: 'canonical', source: 'template:runtime-verification' },
     { path: 'docs/ai/surface-verification-profiles.json', content: stableJson(surfaceVerificationProfiles()), ownership: 'full', kind: 'surface-verification-profiles', source: 'asset:surface-verification-contract' },
@@ -551,7 +478,7 @@ export function buildArtifacts(config, scan) {
 
   if (config.governanceDepth !== 'minimal') {
     artifacts.push({ path: 'docs/ai/rules/20_stack.mdc', content: stackRule(config, packs), ownership: 'seed', kind: 'canonical', source: 'capability-pack-registry' });
-    artifacts.push(...buildTechnicalStandardArtifacts(config, scan).artifacts);
+    artifacts.push(...technicalStandardArtifacts);
     artifacts.push(...buildCapabilityArtifacts(config).artifacts);
   } else if ((config.projectCapabilities?.length ?? 0) > 0 || config.capabilityEvolution) {
     artifacts.push(...buildCapabilityArtifacts(config).artifacts);
