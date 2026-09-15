@@ -71,10 +71,12 @@ function npmRun(root, script) {
 }
 
 function completeEvidence(root, changeType, previousVersion, releaseVersion, riskSignals = [], verifyCommand = 'node -e "process.exit(0)"', fixtureOptions = {}) {
-  const policy = fixtureOptions.policySnapshot ? JSON.parse(fixtureOptions.policySnapshot) : loadReleaseAcceptancePolicy();
+  const policyContent = fixtureOptions.policyOverride ?? fixtureOptions.policySnapshot;
+  const policy = policyContent ? JSON.parse(policyContent) : loadReleaseAcceptancePolicy();
   const requirements = releaseAcceptanceRequirements(changeType, riskSignals, policy);
   git(root, ['init', '--quiet']);
   if (fixtureOptions.policySnapshot) writeFile(root, 'docs/ai/release-acceptance-policy.json', fixtureOptions.policySnapshot);
+  if (fixtureOptions.policyOverride) writeFile(root, 'docs/ai/release-acceptance-override.json', fixtureOptions.policyOverride);
   const packageDocument = (version) => ({
     name: 'release-fixture',
     version,
@@ -95,7 +97,9 @@ function completeEvidence(root, changeType, previousVersion, releaseVersion, ris
   commit(root, 'release candidate');
   const releaseRevision = git(root, ['rev-parse', 'HEAD']);
   const releaseTree = git(root, ['rev-parse', 'HEAD^{tree}']);
-  const digest = fixtureOptions.policySnapshot ? fileDigest(path.join(root, 'docs/ai/release-acceptance-policy.json')) : policyDigest();
+  const digest = fixtureOptions.policyOverride
+    ? fileDigest(path.join(root, 'docs/ai/release-acceptance-override.json'))
+    : fixtureOptions.policySnapshot ? fileDigest(path.join(root, 'docs/ai/release-acceptance-policy.json')) : policyDigest();
   const submittedAt = new Date(Date.now() - 2000).toISOString();
   const consensusAt = new Date(Date.now() - 1000).toISOString();
   const generatedAt = new Date().toISOString();
@@ -255,14 +259,68 @@ test('Chinese release snapshots retain exact-byte drift protection and non-weake
   assert.throws(() => loadProjectReleaseAcceptancePolicy(root), /cannot redefine/);
 });
 
-test('Chinese first-use release policy binds passing evidence and replay to its own digest', (context) => {
+for (const [snapshotLanguage, overrideLanguage] of [['zh-CN', 'en'], ['en', 'zh-CN']]) {
+  test(`strict ${overrideLanguage} overrides survive ${snapshotLanguage} snapshot localization without weakening gates`, (context) => {
+    const root = fixture('cross-language-override');
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const english = fs.readFileSync('assets/policies/release-acceptance-policy.json', 'utf8');
+    const chinese = chinesePolicySnapshot(root);
+    const contentFor = (language) => language === 'en' ? english : chinese;
+    writeFile(root, 'docs/ai/release-acceptance-policy.json', contentFor(snapshotLanguage));
+    const original = JSON.parse(contentFor(overrideLanguage));
+    original.scorecard.minimumWeightedScore = 90;
+    const overridePath = 'docs/ai/release-acceptance-override.json';
+    const overrideContent = JSON.stringify(original, null, 2);
+    writeFile(root, overridePath, overrideContent);
+    git(root, ['init', '--quiet']);
+    commit(root, 'strict cross-language override');
+    const selected = loadProjectReleaseAcceptancePolicy(root);
+    assert.equal(selected.source, 'project-override');
+    assert.equal(selected.policy.scorecard.minimumWeightedScore, 90);
+    assert.deepEqual(selected.policy, original, 'normalization is comparison-only, not a rewrite of returned policy');
+    assert.equal(selected.digest, fileDigest(path.join(root, overridePath)));
+    assert.equal(fs.readFileSync(path.join(root, overridePath), 'utf8'), overrideContent);
+
+    for (const [name, mutate, expected] of [
+      ['custom evidence prose', (policy) => { policy.evidenceCatalog['scope-boundary'].description = 'Arbitrary evidence meaning'; }, /cannot redefine baseline evidence/],
+      ['wrong evidence translation', (policy) => { policy.evidenceCatalog['scope-boundary'].description = JSON.parse(contentFor(snapshotLanguage)).evidenceCatalog['defect-reproduction'].description; }, /cannot redefine baseline evidence/],
+      ['custom risk prose', (policy) => { policy.riskSignals.authorization.reason = 'Arbitrary risk meaning'; }, /cannot redefine.*risk meaning/],
+      ['wrong risk translation', (policy) => { policy.riskSignals.authorization.reason = JSON.parse(contentFor(snapshotLanguage)).riskSignals.payment.reason; }, /cannot redefine.*risk meaning/],
+      ['lower score threshold', (policy) => { policy.scorecard.minimumWeightedScore = 84; }, /cannot weaken/],
+      ['lower dimension threshold', (policy) => { policy.scorecard.dimensions[0].minimumScore = 79; }, /cannot lower/],
+      ['reweight dimensions', (policy) => { policy.scorecard.dimensions[0].weight -= 1; policy.scorecard.dimensions[1].weight += 1; }, /cannot reweight/],
+      ['remove critical dimension', (policy) => { policy.scorecard.dimensions[0].critical = false; }, /non-critical/],
+      ['fewer reviewers', (policy) => { policy.tiers.feature.minimumParticipants.architects = 1; policy.tiers.feature.requiredArchitectLenses.pop(); }, /cannot require fewer/],
+      ['older evidence', (policy) => { policy.tiers.bugfix.maximumEvidenceAgeDays = 15; }, /cannot allow older/],
+      ['remove scenario', (policy) => { policy.tiers.feature.requiredEngineerScenarios.pop(); }, /cannot remove engineer scenario/],
+      ['remove evidence', (policy) => { policy.tiers.bugfix.requiredEvidence.pop(); }, /cannot remove required evidence/],
+      ['weaken evidence mode', (policy) => { policy.evidenceCatalog['defect-reproduction'].verificationModes = ['review']; }, /cannot redefine baseline evidence/],
+      ['lower risk tier', (policy) => { policy.riskSignals.authorization.minimumTier = 'bugfix'; }, /cannot lower/],
+      ['remove required release type', (policy) => { delete policy.riskSignals['breaking-public-api'].requiresChangeType; }, /cannot remove.*required change type/],
+    ]) {
+      const changed = structuredClone(original);
+      mutate(changed);
+      writeFile(root, overridePath, JSON.stringify(changed));
+      commit(root, name);
+      assert.throws(() => loadProjectReleaseAcceptancePolicy(root), expected, name);
+    }
+  });
+}
+
+for (const withEnglishOverride of [false, true]) test(`Chinese first-use release policy binds passing evidence and replay to its own digest (English override: ${withEnglishOverride})`, (context) => {
   const root = fixture('chinese-acceptance');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const prepared = completeEvidence(root, 'bugfix', '1.2.3', '1.2.4', [], undefined, { policySnapshot: chinesePolicySnapshot(root) });
+  const englishOverride = loadReleaseAcceptancePolicy();
+  englishOverride.scorecard.minimumWeightedScore = 90;
+  const prepared = completeEvidence(root, 'bugfix', '1.2.3', '1.2.4', [], undefined, {
+    policySnapshot: chinesePolicySnapshot(root),
+    ...(withEnglishOverride ? { policyOverride: JSON.stringify(englishOverride, null, 2) } : {}),
+  });
   const result = runReleaseAcceptance(root, { changeType: 'bugfix', evidencePath: prepared.evidencePath });
   assert.equal(result.ok, true, result.errors.join('\n'));
   assert.deepEqual(result.evidenceCoverage, { passed: 7, required: 7 });
   assert.equal(result.commandReplays.length, 3);
+  if (withEnglishOverride) assert.equal(prepared.payload.policy.sha256, fileDigest(path.join(root, 'docs/ai/release-acceptance-override.json')));
   assert.notEqual(prepared.payload.policy.sha256, policyDigest());
   prepared.payload.policy.sha256 = policyDigest();
   writeFile(root, prepared.evidencePath, JSON.stringify(prepared.payload));
