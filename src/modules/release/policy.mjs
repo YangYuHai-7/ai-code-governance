@@ -69,6 +69,21 @@ export function loadReleaseAcceptancePolicy(policyPath = POLICY_PATH) {
   return validateReleaseAcceptancePolicy(readJson(policyPath));
 }
 
+function normalizeBuiltInPolicyProse(policy, baseline) {
+  const localized = loadReleaseAcceptancePolicy(CHINESE_POLICY_PATH);
+  const normalized = structuredClone(policy);
+  // Compare only exact, same-ID built-in translations as aliases. Preserve
+  // arbitrary prose and every machine field so existing rejection rules apply.
+  for (const [section, field] of [['evidenceCatalog', 'description'], ['riskSignals', 'reason']]) {
+    for (const [id, canonicalEntry] of Object.entries(baseline[section])) {
+      const entry = normalized[section]?.[id];
+      const translated = localized[section]?.[id]?.[field];
+      if (entry && typeof translated === 'string' && entry[field] === translated) entry[field] = canonicalEntry[field];
+    }
+  }
+  return normalized;
+}
+
 function assertPolicyNotWeaker(projectPolicy, baseline) {
   assertPolicy(projectPolicy.scorecard.minimumWeightedScore >= baseline.scorecard.minimumWeightedScore, 'project minimumWeightedScore cannot weaken the built-in policy.');
   const projectDimensions = new Map(projectPolicy.scorecard.dimensions.map((dimension) => [dimension.id, dimension]));
@@ -135,7 +150,7 @@ export function loadProjectReleaseAcceptancePolicy(root) {
   const safeOverride = repositoryFile(root, 'docs/ai/release-acceptance-override.json', 'release acceptance override', errors);
   if (!safeOverride) throw usageError(errors.join(' '));
   const override = loadReleaseAcceptancePolicy(safeOverride);
-  assertPolicyNotWeaker(override, selected.policy);
+  assertPolicyNotWeaker(normalizeBuiltInPolicyProse(override, baseline), baseline);
   return { policy: override, source: 'project-override', absolutePath: safeOverride, digest: sha256File(safeOverride) };
 }
 
