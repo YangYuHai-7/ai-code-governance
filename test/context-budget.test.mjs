@@ -88,6 +88,7 @@ test('ordinary behavior and release profiles form an incremental context map', (
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
   const scan = scanProject(root);
+  scan.governanceUsage = ['release'];
   const artifacts = buildArtifacts({
     ...defaultConfig(scan),
     governanceDepth: 'standard',
@@ -101,7 +102,7 @@ test('ordinary behavior and release profiles form an incremental context map', (
   assert.match(contextMap, /^base:\n  required:\n    - docs\/ai\/rules\/00_always\.mdc$/m);
   assert.match(ordinary, /^  ordinary:\n    extends: base\n    required: \[\]$/m);
   assert.match(behavior, /conditional:/);
-  assert.match(behavior, /architecture:\n        - docs\/ai\/architecture-profile\.json\n        - docs\/ai\/rules\/15_architecture\.mdc/);
+  assert.doesNotMatch(behavior, /architecture-profile/, 'unconfirmed architecture does not enter a route');
   assert.match(behavior, /stack:\n        - docs\/ai\/stack-profile\.json\n        - docs\/ai\/rules\/20_stack\.mdc\n        - docs\/ai\/technical-standards\.json/);
   assert.match(behavior, /docs\/ai\/skills\/standards\/react-component-purity\/SKILL\.md/);
   assert.match(behavior, /business:\n        - docs\/ai\/business-constraints\.json\n        - docs\/ai\/skills\/business-constraints\/SKILL\.md/);
@@ -116,16 +117,18 @@ test('ordinary behavior and release profiles form an incremental context map', (
   assert.equal(contextClosure(artifacts, 'release').length, 4);
 });
 
-test('context slimming keeps dormant governance artifacts available', (context) => {
+test('explicitly selected capabilities remain available outside ordinary context', (context) => {
   const root = fixture('retained');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
+  scan.governanceUsage = ['release'];
   const artifacts = buildArtifacts({
     ...defaultConfig(scan),
     governanceDepth: 'complete',
     features: {
       ...defaultConfig(scan).features,
       hooks: true,
+      knowledge: true,
     },
   }, scan);
   const paths = new Set(artifacts.map((artifact) => artifact.path));

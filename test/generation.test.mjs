@@ -15,7 +15,7 @@ function fixture(name) {
 }
 
 function initialize(root, customize = (config) => config, options = {}) {
-  const scan = scanProject(root);
+  const scan = { ...scanProject(root), governanceUsage: options.governanceUsage ?? [] };
   const config = customize(defaultConfig(scan));
   const plan = planArtifacts(root, buildArtifacts(config, scan), options);
   return { scan, config, plan, applied: applyArtifactPlan(root, plan, options) };
@@ -96,7 +96,7 @@ test('generates regular adapters for all selected agents and passes check', (con
   const root = fixture('all-agents');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
-  const { config } = initialize(root, (value) => ({ ...value, governanceDepth: 'complete' }));
+  const { config } = initialize(root, (value) => ({ ...value, governanceDepth: 'complete' }), { governanceUsage: ['release', 'surface'] });
   assert.deepEqual(config.clients, ['codex', 'claude-code', 'cursor']);
   assert.match(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), /@AGENTS\.md/);
   assert.ok(fs.statSync(path.join(root, '.cursor/rules/ai-code-governance.mdc')).isFile());
@@ -378,7 +378,7 @@ test('standard and complete governance route owner-confirmed constraints through
   }
 });
 
-test('minimal governance conditionally routes the business registry without generating a skill', (context) => {
+test('minimal governance keeps owner constraints in configuration without materializing policy artifacts', (context) => {
   const root = fixture('minimal-business-constraints');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root, (value) => ({
@@ -390,7 +390,8 @@ test('minimal governance conditionally routes the business registry without gene
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   const contextMap = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
   assert.doesNotMatch(agents, /business constraint|business-constraints/i);
-  assert.match(contextMap, /behavior_change:[\s\S]*conditional:[\s\S]*business:\n        - docs\/ai\/business-constraints\.json/);
+  assert.doesNotMatch(contextMap, /business-constraints/);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/business-constraints.json')), false);
   assert.doesNotMatch(contextMap, /docs\/ai\/skills\/business-constraints\/SKILL\.md/);
 });
 
@@ -489,7 +490,7 @@ test('business reachability ignores comments, wrong profiles, and malformed prof
 test('check keeps structural and reachability evidence independent from unverified enforcement', (context) => {
   const root = fixture('evidence-dimensions');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initialize(root);
+  initialize(root, (value) => value, { governanceUsage: ['acceptance'] });
   const result = checkProject(scanProject(root));
   assert.equal(result.ok, true);
   assert.deepEqual(result.evidence, {
@@ -504,7 +505,7 @@ test('check keeps structural and reachability evidence independent from unverifi
 test('check rejects malformed enforcement evidence without erasing structural evidence', (context) => {
   const root = fixture('invalid-enforcement-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initialize(root);
+  initialize(root, (value) => value, { governanceUsage: ['acceptance'] });
   fs.writeFileSync(path.join(root, 'docs/ai/acceptance-results.json'), JSON.stringify({
     contract_schema_version: 2,
     results: [{ id: 'broken-exact-path', status: 'pass', applies: true }],
@@ -542,7 +543,7 @@ test('check fails closed when the repository scan budget truncates evidence', (c
 test('check keeps enforcement unverified when complete receipt fields have not been replayed', (context) => {
   const root = fixture('verified-enforcement-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initialize(root);
+  initialize(root, (value) => value, { governanceUsage: ['acceptance'] });
   const contract = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/acceptance-contract.json'), 'utf8'));
   const results = contract.required_probe_families.map((family) => ({
     id: family.id,

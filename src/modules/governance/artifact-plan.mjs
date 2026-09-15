@@ -183,6 +183,13 @@ function mergeLegacyContextMapSeed(current, desired) {
     return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
   }
 
+  const desiredRelease = yamlProfileBlock(desired, 'release');
+  if (desiredRelease?.includes('      - docs/ai/release-acceptance-policy.json')
+    && /^    required: \[\]$/m.test(currentRelease)) {
+    const newline = current.includes('\r\n') ? '\r\n' : '\n';
+    const expanded = currentRelease.replace(/^    required: \[\]$/m, '    required:\n      - docs/ai/release-acceptance-policy.json');
+    current = current.replace(currentRelease.replaceAll('\n', newline), expanded.replaceAll('\n', newline));
+  }
   if (!requiredBusiness) return current;
   const existingBusiness = yamlConditionalBlock(current, 'behavior_change', 'business');
   if (existingBusiness) {

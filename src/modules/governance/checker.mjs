@@ -3,7 +3,7 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
-import { buildArtifacts, validateConfig } from './compiler.mjs';
+import { selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
 import {
   extractManagedBlock,
   loadManifest,
@@ -165,7 +165,7 @@ function profileExtends(profile) {
   return values.length === 1 ? values[0] : null;
 }
 
-function contextMapStructureIssues(structure) {
+function contextMapStructureIssues(structure, gateAssertions) {
   const issues = [...structure.issues];
   if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has('docs/ai/rules/00_always.mdc')) {
     issues.push('base profile must require docs/ai/rules/00_always.mdc');
@@ -205,7 +205,7 @@ function contextMapStructureIssues(structure) {
     else if (parent !== expectedParent) issues.push(`profile ${name} must extend ${expectedParent}, not ${parent}`);
   }
   const release = structure.profiles.get('release');
-  if (release && !blockRequiredPaths(release, 4, 6).has('docs/ai/release-acceptance-policy.json')) {
+  if (gateAssertions.has('release-route') && release && !blockRequiredPaths(release, 4, 6).has('docs/ai/release-acceptance-policy.json')) {
     issues.push('release profile must require docs/ai/release-acceptance-policy.json');
   }
 
@@ -366,6 +366,7 @@ export function checkProject(scan) {
   }
   let config;
   let manifest;
+  const gateAssertions = new Set();
 
   try {
     config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
@@ -389,7 +390,9 @@ export function checkProject(scan) {
     }
     let expected = [];
     try {
-      expected = buildArtifacts(config, scan);
+      const selected = selectedArtifactDefinitions(config, scan);
+      for (const assertion of selected.flatMap((definition) => definition.gateAssertions)) gateAssertions.add(assertion);
+      expected = selected.map((definition) => definition.build(selected));
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
     }
@@ -461,7 +464,7 @@ export function checkProject(scan) {
     }
 
     try {
-      for (const issue of architecturePlacementIssues(scan, config)) structureErrors.push(`architecture placement: ${issue}`);
+      if (gateAssertions.has('architecture-placement')) for (const issue of architecturePlacementIssues(scan, config)) structureErrors.push(`architecture placement: ${issue}`);
     } catch (error) {
       structureErrors.push(`architecture policy: ${error.message}`);
     }
@@ -470,7 +473,7 @@ export function checkProject(scan) {
       const declarationPath = path.join(scan.root, 'docs/ai/module-graph.json');
       const declarationStat = lstatSafe(declarationPath);
       let declaration = null;
-      if (declarationStat) {
+      if (gateAssertions.has('module-graph') && declarationStat) {
         assertNoLinkAncestor(scan.root, 'docs/ai/module-graph.json');
         if (!declarationStat.isFile() || declarationStat.isSymbolicLink()) throw new Error('docs/ai/module-graph.json must be a regular repository-local file.');
         declaration = readJson(declarationPath);
@@ -490,7 +493,7 @@ export function checkProject(scan) {
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
     const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
     const contextMapRouting = contextMapStructure(contextMap);
-    for (const issue of contextMapStructureIssues(contextMapRouting)) {
+    for (const issue of contextMapStructureIssues(contextMapRouting, gateAssertions)) {
       structureErrors.push(`docs/ai/context-map.yaml: ${issue}`);
     }
     if (!managedAgentsContent) {
@@ -499,22 +502,25 @@ export function checkProject(scan) {
     const architecturePaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'architecture');
     const architectureRouted = architecturePaths.has('docs/ai/architecture-profile.json')
       && architecturePaths.has('docs/ai/rules/15_architecture.mdc');
-    if (!managedAgentsContent.includes('docs/ai/context-map.yaml') || !architectureRouted) {
+    if (gateAssertions.has('context-map') && !managedAgentsContent.includes('docs/ai/context-map.yaml')) {
+      reachabilityErrors.push('AGENTS.md: context map is not reachable from the shared entrypoint');
+    }
+    if (gateAssertions.has('architecture-route') && !architectureRouted) {
       reachabilityErrors.push('docs/ai/context-map.yaml: architecture profile and generated rule are not reachable from the behavior_change route');
     }
-    if (config.domainConstraints.length > 0) {
+    if (gateAssertions.has('business-route')) {
       const businessPaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'business');
       const businessRouted = (relative) => businessPaths.has(relative);
       if (!businessRouted(BUSINESS_CONSTRAINTS_PATH)) reachabilityErrors.push(`${BUSINESS_CONSTRAINTS_PATH}: owner-confirmed constraint registry is not reachable from the behavior_change route`);
-      if (config.governanceDepth !== 'minimal' && !businessRouted(BUSINESS_CONSTRAINT_SKILL_PATH)) {
+      if (gateAssertions.has('business-skill-route') && !businessRouted(BUSINESS_CONSTRAINT_SKILL_PATH)) {
         reachabilityErrors.push(`${BUSINESS_CONSTRAINT_SKILL_PATH}: business constraint Skill is not reachable from the behavior_change route`);
       }
     }
-    if (config.clients.includes('claude-code')) {
+    if (gateAssertions.has('claude-adapter')) {
       const claude = readText(path.join(scan.root, 'CLAUDE.md'), '');
       if (!claude.includes('@AGENTS.md')) reachabilityErrors.push('CLAUDE.md: native @AGENTS.md import is missing');
     }
-    if (config.clients.includes('cursor') && !manifestPaths.has('.cursor/rules/ai-code-governance.mdc')) {
+    if (gateAssertions.has('cursor-adapter') && !manifestPaths.has('.cursor/rules/ai-code-governance.mdc')) {
       reachabilityErrors.push('.cursor/rules/ai-code-governance.mdc: selected Cursor adapter is missing');
     }
 
@@ -529,7 +535,7 @@ export function checkProject(scan) {
     }
   }
 
-  const acceptance = config && manifest ? acceptanceEvidence(scan.root) : { status: 'unverified', issues: [] };
+  const acceptance = config && manifest && gateAssertions.has('acceptance-evidence') ? acceptanceEvidence(scan.root) : { status: 'unverified', issues: [] };
   evidenceErrors.push(...acceptance.issues);
   if (acceptance.warning) warnings.push(acceptance.warning);
   const errors = [...structureErrors, ...reachabilityErrors, ...evidenceErrors];

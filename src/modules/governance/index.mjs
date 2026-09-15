@@ -1,4 +1,5 @@
 export * from './checker.mjs';
+export * from './artifact-selection.mjs';
 export * from './business-constraints.mjs';
 export * from './compiler.mjs';
 export * from './execution-plan.mjs';
