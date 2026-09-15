@@ -14,6 +14,7 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'full\0project-capability-skill\0project-capability-harvest',
   'full\0release-policy\0asset:release-acceptance-policy',
   'full\0surface-verification-profiles\0asset:surface-verification-contract',
+  'full\0task-routing-policy\0template:task-routing-policy',
   'full\0technical-standard-manifest\0technical-standard-registry',
   'full\0technical-standard-skill\0technical-standard-registry',
   'gitignore-block\0local-output-ignore\0template:local-output-layout',

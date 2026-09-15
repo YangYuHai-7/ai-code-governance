@@ -10,6 +10,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
+import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
 
 function yamlList(values, indent = 0) {
   const prefix = ' '.repeat(indent);
@@ -210,6 +211,7 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Canonical governance: \`${config.canonicalRoot}/\`
 - Start with the \`ordinary\` profile in \`${config.canonicalRoot}/context-map.yaml\`; use a larger profile only when the task requires it.
 - Preserve unrelated user changes and remain within the requested scope.
+- ${taskRoutingSummary(config)}
 - Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
 - Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
 `;
@@ -437,6 +439,7 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/context-map.yaml', 'core', (selected) => contextMap(config, selected), { ...core, source: 'template:context-map', gateAssertions: ['context-map'] });
   add('docs/ai/rules/00_always.mdc', 'core', () => alwaysRule(config), { ...core, source: 'template:always-rule' });
   add('docs/ai/verification-profiles.yaml', 'routing', () => verificationProfiles(config), { source: 'template:runtime-verification' });
+  add('docs/ai/task-routing-policy.json', 'routing', () => stableJson(taskRoutingPolicy(config)), { ownership: 'full', kind: 'task-routing-policy', source: 'template:task-routing-policy' });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
