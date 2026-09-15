@@ -696,6 +696,32 @@ test('check rejects inheritance declared by the top-level base profile', (contex
   }
 });
 
+test('check rejects an explicit YAML mapping key that defines base inheritance', (context) => {
+  const root = fixture('context-map-base-explicit-extends');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const content = fs.readFileSync(contextPath, 'utf8');
+  fs.writeFileSync(contextPath, content.replace('base:\n', 'base:\n  ? extends\n  : ordinary\n'));
+
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('base profile contains unsupported mapping syntax')), result.errors.join('; '));
+});
+
+test('check rejects an escaped YAML mapping key that defines base inheritance', (context) => {
+  const root = fixture('context-map-base-escaped-extends');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const content = fs.readFileSync(contextPath, 'utf8');
+  fs.writeFileSync(contextPath, content.replace('base:\n', 'base:\n  "\\u0065xtends": missing_base\n'));
+
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('base profile contains unsupported mapping syntax')), result.errors.join('; '));
+});
+
 test('init upgrades legacy seed routing when owner-confirmed business governance is added', async (context) => {
   const root = fixture('legacy-business-upgrade');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

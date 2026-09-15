@@ -170,10 +170,24 @@ function contextMapStructureIssues(structure) {
   if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has('docs/ai/rules/00_always.mdc')) {
     issues.push('base profile must require docs/ai/rules/00_always.mdc');
   }
-  for (const line of structure.base?.lines ?? []) {
-    if (!/^  (?:extends|["']extends["'])\s*:/.test(line)) continue;
-    const parent = line.match(/^  (?:extends|["']extends["'])\s*:\s*["']?([A-Za-z0-9_-]+)["']?\s*$/)?.[1];
-    issues.push(parent ? `base profile must not extend ${parent}` : 'base profile must not declare extends');
+  let baseRequiredSeen = false;
+  let inBaseRequired = false;
+  for (const line of structure.base?.lines.slice(1) ?? []) {
+    if (/^\s*$/.test(line) || /^\s*#/.test(line)) continue;
+    if (/^  (?:extends|["']extends["'])\s*:/.test(line)) {
+      const parent = line.match(/^  (?:extends|["']extends["'])\s*:\s*["']?([A-Za-z0-9_-]+)["']?\s*$/)?.[1];
+      issues.push(parent ? `base profile must not extend ${parent}` : 'base profile must not declare extends');
+      inBaseRequired = false;
+      continue;
+    }
+    if (line === '  required:' && !baseRequiredSeen) {
+      baseRequiredSeen = true;
+      inBaseRequired = true;
+      continue;
+    }
+    if (inBaseRequired && /^    -\s+(?:[A-Za-z0-9._/-]+|"[A-Za-z0-9._/-]+"|'[A-Za-z0-9._/-]+')\s*$/.test(line)) continue;
+    issues.push('base profile contains unsupported mapping syntax');
+    inBaseRequired = false;
   }
   const requiredParents = new Map([
     ['ordinary', 'base'],
