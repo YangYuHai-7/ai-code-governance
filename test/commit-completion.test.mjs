@@ -185,6 +185,42 @@ test('completion fails closed on missing HEAD corrupt index and invalid routing 
   assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /symbolic link/.test(error.message));
 });
 
+test('manual and hook completion require a commit HEAD on initial and orphan branches', (context) => {
+  const root = fixture('unborn-hook-head');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(git(root, ['init']).status, 0);
+  const initialized = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  assert.equal(git(root, ['add', '--all']).status, 0);
+
+  const assertMissingCommitFails = () => {
+    const indexBefore = fs.readFileSync(path.join(root, '.git/index'));
+    const configBefore = fs.readFileSync(path.join(root, '.ai-governance/config.json'));
+    const manifestBefore = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
+    const statusBefore = git(root, ['status', '--porcelain=v1', '-z']).stdout;
+    for (const fromGitHook of [true, false]) {
+      assert.throws(() => runCompletion(root, { fromGitHook, taskLevel: 'L3' }), (error) => error.code === 'AICG_USAGE');
+      const result = run(['complete', root, '--task-level', 'L3', '--json', ...(fromGitHook ? ['--from-git-hook'] : [])]);
+      assert.equal(result.status, 2, `${result.stderr}\n${result.stdout}`);
+    }
+    assert.deepEqual(fs.readFileSync(path.join(root, '.git/index')), indexBefore);
+    assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/config.json')), configBefore);
+    assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/manifest.json')), manifestBefore);
+    assert.equal(git(root, ['status', '--porcelain=v1', '-z']).stdout, statusBefore);
+  };
+
+  assertMissingCommitFails();
+  baseline(root);
+  const valid = runCompletion(root, { fromGitHook: true, taskLevel: 'L3' });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.taskRoute.status, 'verified');
+  const tree = git(root, ['rev-parse', 'HEAD^{tree}']).stdout.trim();
+  assert.equal(git(root, ['checkout', '--orphan', 'orphan-completion']).status, 0);
+  assertMissingCommitFails();
+  write(root, '.git/HEAD', `${tree}\n`);
+  assert.throws(() => runCompletion(root, { fromGitHook: true, taskLevel: 'L3' }), (error) => error.code === 'AICG_USAGE');
+});
+
 test('completion rejects invalid declarations and unreadable repository evidence fail closed', (context) => {
   const root = fixture('route-errors');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

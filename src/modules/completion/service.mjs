@@ -264,6 +264,7 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
   const root = resolveGitRepository(target);
+  git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
   const paths = stagedPaths(root);
   return withIndexSnapshot(root, (snapshot) => completionResult(scanProject(snapshot, { probeEnvironment: false }), {
     mode: 'git-pre-commit',
