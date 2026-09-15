@@ -75,3 +75,15 @@ test('execution plans reject a symlink inserted after planning', (context) => {
   assert.throws(() => assertPlanFresh(plan), (error) => error.exitCode === 2 && /repository inputs changed/.test(error.message));
   assert.equal(fs.readdirSync(outside).length, 0);
 });
+
+test('execution plans bind the exact user content remaining after managed block removal', (context) => {
+  const root = fixture('block-removal-output');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# User content\n');
+  const scan = scanProject(root);
+  const artifactPlan = planArtifacts(root, []);
+  artifactPlan.operations.push({ path: 'CLAUDE.md', ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', changed: true, remove: true, deleteWhenEmpty: false, desired: '# User content\n' });
+  const plan = buildExecutionPlan({ intent: { id: 'governance.prune', handler: 'sync', mode: 'write' }, scan, artifactPlan });
+  artifactPlan.operations[0].desired = '# Lost user content\n';
+  assert.throws(() => assertArtifactPlanMatches(plan, root, artifactPlan), (error) => error.exitCode === 2 && /approved artifact plan/.test(error.message));
+});

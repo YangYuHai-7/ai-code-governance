@@ -1,9 +1,21 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { CONFIG_PATH, MANIFEST_PATH, TOOL_VERSION } from '../../constants.mjs';
 import { assertNoLinkAncestor, repositoryFingerprint, sameSnapshot, snapshotPath } from '../../preconditions.mjs';
 import { classifyProject, buildDecisionLedger } from '../repository/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
+
+function executionFingerprint(root, intent) {
+  if (intent !== 'governance.prune') return repositoryFingerprint(root);
+  // Destructive approvals cover every repository file, including deep and ignored build inputs.
+  const snapshot = walkFilesDetailed(root, { maxDepth: Infinity, ignored: ['.git'] });
+  if (!snapshot.budget.complete) throw usageError('Cannot completely scan repository inputs for pruning.');
+  const files = snapshot.files.map((file) => ({ path: file.relative, snapshot: snapshotPath(file.absolute) }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  return sha256(stableJson({ root: fs.realpathSync(root), files }));
+}
 
 function operationAction(operation, before) {
   if (!operation.changed) return 'keep';
@@ -22,7 +34,7 @@ function actionOperation(root, operation) {
     kind: operation.kind ?? null,
     source: operation.source ?? null,
     before,
-    afterSha256: operation.remove || operation.ownership === 'seed' ? null : sha256(operation.desired),
+    afterSha256: operation.remove && operation.deleteWhenEmpty ? null : sha256(operation.desired),
   };
 }
 
@@ -73,11 +85,12 @@ export function buildExecutionPlan({ intent, scan, artifactPlan = null, config =
     configSha256: config ? sha256(stableJson(config)) : null,
     configFile: snapshotPath(path.join(root, CONFIG_PATH)),
     manifestFile: snapshotPath(path.join(root, MANIFEST_PATH)),
-    repositoryFingerprint: repositoryFingerprint(root),
+    repositoryFingerprint: executionFingerprint(root, intent.id),
     projectAssessment: classifyProject(scan),
     decisionLedger: buildDecisionLedger(scan, config),
     operations,
     conflicts: artifactPlan?.conflicts ?? [],
+    manualCleanupCandidates: artifactPlan?.manualCleanupCandidates ?? [],
     linksToMigrate,
     requiredPermissions,
     verification: intent.mode === 'write' ? 'governance.validate' : intent.id,
@@ -94,7 +107,7 @@ export function assertPlanFresh(plan) {
   }
   const root = plan.targetRoot;
   try {
-    if (repositoryFingerprint(root) !== plan.repositoryFingerprint) {
+    if (executionFingerprint(root, plan.intent) !== plan.repositoryFingerprint) {
       throw usageError('Execution plan is stale because repository inputs changed; generate a new plan.');
     }
   } catch (error) {
