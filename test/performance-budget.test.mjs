@@ -42,6 +42,18 @@ test('repeated CLI check and fast-suite samples stay inside absolute performance
   const report = JSON.parse(result.stdout);
   assert.equal(report.warmups, 3);
   assert.equal(report.samples, 20);
+  assert.equal(report.platform, process.platform);
+  assert.equal(report.node, process.version);
+  assert.deepEqual(report.violations, []);
+  assert.ok(report.routing.p95Ms <= 20);
+  assert.equal(report.routing.samplesMs.length, 20);
+  assert.deepEqual(report.fixtures.map(({ name, files }) => [name, files]), [['small', 32], ['10k', 10000], ['50k', 50000]]);
+  for (const fixture of report.fixtures) {
+    assert.equal(fixture.check.processesPerSample, 1);
+    assert.equal(fixture.context.files, 3);
+    assert.deepEqual(fixture.context.paths, ['AGENTS.md', 'docs/ai/context-map.yaml', 'docs/ai/rules/00_always.mdc']);
+    assert.ok(fixture.context.bytes <= 3600);
+  }
   for (const [name, limit] of [['small', 250], ['10k', 1000]]) {
     const fixture = report.fixtures.find((entry) => entry.name === name);
     assert.ok(fixture.check.p95Ms <= limit, `${name}: ${fixture.check.p95Ms}ms > ${limit}ms`);

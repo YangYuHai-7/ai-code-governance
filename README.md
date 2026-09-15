@@ -1,431 +1,124 @@
 # AI Code Governance
 
-面向新建与遗留项目的跨技术栈、跨平台 AI 代码治理 CLI 与 Agent Skill。
+A repository governance CLI and Agent Skill for Node.js 22+. AICG keeps one canonical rule source, routes tasks to small context profiles, and checks managed artifacts for drift. Governance grows with confirmed project needs and verified implementation evidence.
 
-AI Code Governance inspects a real repository, researches current stack standards, generates project-specific coding and business skills, and continuously upgrades those skills when verified reusable capabilities are implemented.
+This checkout is the `0.2.0` source candidate. The commands below describe this source or its candidate tarball; they do not establish which version is currently published on npm. `toolVersion`, capability coverage track, and certification evidence are separate axes.
 
-## 为什么需要它
+## Start from this candidate
 
-AI 编码治理经常退化成一组很快过时的 Markdown：多个客户端各维护一份规则、文档与代码逐渐脱节、助手自己宣布“完成”，但没有任何检查可以证明结果。
+```bash
+node bin/aicg.js doctor /path/to/project
+node bin/aicg.js init /path/to/project --guided
+node bin/aicg.js check /path/to/project
+```
 
-本 Skill 把治理实现为三个相互约束的部分：
+For installed usage, pin the version you have chosen. Recommend project-local execution only when the executable and package identity are present and usable. Generated daily project-local commands use `npm exec -- aicg check .` with that installation; a global installation uses `aicg check .`. Pinned `npm exec --yes --package=ai-code-governance@<version> -- aicg init .` is an explicit bootstrap that can require package resolution. It does not install the daily CLI: install a chosen version locally or globally before using the corresponding daily commands. Source execution with `node bin/aicg.js` needs neither a package download nor an Agent login.
 
-1. **唯一正典源**：规则只维护一次，Claude Code、Codex、Cursor 等客户端通过适配器读取。
-2. **最小上下文路由**：根据任务类型加载必要规则，而不是把整个知识库塞进每次对话。
-3. **机器门禁**：检查引用、适配器、知识漂移和完成证据；能机器判断的规则不只写成散文。
+## Installation contract
 
-它来自真实多仓项目的治理实践，但不携带一份冻结的“万能最佳实践”。框架惯用法来自目标版本的官方文档、正式标准和权威安全基线；业务写法来自目标项目的需求、代码、测试、事故、ADR 和用户决策。两类证据分别记录，再转换为项目可直接加载的细粒度 Skill。
+Read-only repository scanning precedes the questions. The first visible decisions are **Agent-first**, then **artifact-language-second**:
 
-## 核心能力
+1. Select supported Agents: Codex, Claude Code, Cursor, generic, or a combination. Existing adapters and the current chat client are evidence, not the owner's selection. `--clients all` selects the three built-in clients; `--yes` alone cannot select the client scope.
+2. Choose `artifactLanguage: en` (default/recommended) or `zh-CN`. `--locale` controls interaction independently. Chinese conversation does not silently select Chinese artifacts; choosing `zh-CN` explicitly generates Chinese governance prose. Existing `bilingual` configuration remains readable. IDs, commands, paths, and schema keys stay English.
+3. Confirm lifecycle. Existing projects confirm or correct the detected stack; greenfield projects select their target stack. A scaffold with only a manifest can be ambiguous. Greenfield architecture remains `not-established` until actual implementation and owner confirmation establish it.
+4. For existing code, choose `keep-existing`, `new-code-standard`, or `staged-migration`. The latter records a future migration boundary; initialization does not migrate product code.
+5. Recommend Minimal or Standard from scan evidence and the owner's needs; select Complete only for an explicit need. Guided onboarding defaults to Minimal; advanced onboarding and `defaultConfig()` retain Standard. Neither defaults to Complete. Select optional capabilities separately.
+6. Choose an available invocation mode, preview the plan, and approve the write.
 
-| 能力 | 说明 |
+`codeDocumentationPolicy` defaults to `inherit-existing` for existing projects and `en` for greenfield. This tool's own repository documentation and code comments are English under its repository instructions; that convention does not remove the product's Chinese governance option.
+
+Noninteractive initialization needs explicit client scope and confirmed lifecycle/strategy where required, plus `--yes` for writes. A configuration supplies decisions, not write approval. See the [initializer contract](references/initializer.md) for exact flags and ownership rules.
+
+## Presets select capabilities
+
+The historical twelve-layer model is a capability catalog, not a mandatory installation or task sequence. Preset depth and task level are independent.
+
+| Preset | Fresh default selection |
 | --- | --- |
-| `aicg` CLI | 通过 `init/check/sync/doctor` 初始化、校验和维护项目治理，不使用文件系统链接 |
-| 仓库侦察 | 识别单仓、monorepo、仓库族、语言、框架、命令、文档、历史约束和现有 AI 配置 |
-| 多轮访谈 | 区分仓库事实与用户决策，通过决策账本支持跨会话恢复 |
-| 分层治理 | 提供 12 条核心原则和 L0–L11 十二层参考架构 |
-| 技术栈能力包 | 识别前后端与平台组合，同时明确 `supported`、`unverified` 等证据等级 |
-| 外部工作流编排 | 发现并有选择地整合 OpenSpec、Superpowers 等规格/执行 provider，以单一权威矩阵防止重复 design、plan 与 completion state |
-| 标准 Skill 工厂 | 用可审计的一手来源快照按已安装或用户确认的精确技术生成组件、接口、授权、数据访问、事务、事件等细粒度编码 Skill，并标记刷新边界 |
-| 业务写法 Skill | 从 actor、owner、状态机、租户权限、事务和外部副作用生成使用项目术语的标准实现流程 |
-| 持续能力提取 | 权限、统一 Client、adapter 或业务流程完成后显式 harvest，优先升级已有 Skill，并把已登记范围内的正典绕过变成可检查问题 |
-| 分级发布验收 | 按 bugfix、feature、major 使用不同人数、证据和回归深度；双人声明的风险信号触发更高验收级别 |
-| UI 框架提案 | 基于产品、品牌、无障碍、SSR、许可证和团队约束提出三个候选及无框架方案 |
-| 新旧项目适配 | 新项目提供约束驱动的方案；遗留项目默认保留原栈并增量治理 |
-| 跨平台设计 | 覆盖 macOS、Windows、Linux 的路径、shell、适配器、hooks 和验证矩阵 |
-| 强制与成长 | 提供门禁、负向探针、知识记忆、任务运行时，并检测已登记范围内的正典绕过与规则演进需求 |
+| Minimal | Config, shared entry, canonical overview, context map, always rules, and apply-generated manifest; selected client adapters only |
+| Standard | Minimal plus routing, verification guidance, decision ledger, local report directories, and relevant policy/standard Skills |
+| Complete | Standard plus selected stack Skills; memory, task runtime, hooks, CI, and workflow bridges remain explicit options |
 
-当前三个版本轴彼此独立：`toolVersion` 是 npm SemVer（本源码候选为 `0.2.0`），`capabilityTrack` 是能力覆盖路线（如 `v3.0`），`evidenceLevel` 是具体组合的证据等级（`certified/supported/unverified/unsupported`）。能力路线不等于已发布软件版本，也不等于认证。
+Release, surface, and acceptance policies activate on first use; result receipts appear only when evidence exists. Ordinary context contains the shared entry, the selected context-map slice, and always rules. Architecture, standards, business rules, harvest, hooks, reports, and release policies are loaded only for the relevant task. Adapters use ordinary files or native imports, with manifest hashes; AICG creates no link adapters.
 
-## 第一次成功
+## Dynamic task flow
 
-公开 npm 稳定版固定为当前实际可得的 `0.1.2`：
+| Level | Trigger and work |
+| --- | --- |
+| L0 | Read-only explanation, discovery, review, or status: read relevant evidence and answer; no governance subprocess or harvest |
+| L1 | Local governance/documentation/test or low-risk non-production change: locate, edit, run targeted verification, then one completion check; no formal plan approval |
+| L2 | Product behavior, business rules, public contract, or multiple modules: confirm requirements and approve the implementation plan before implementation and behavior verification |
+| L3 | Multiple surfaces, architecture, migration, external action, or high-consequence risk: approve requirements, design, and plan; perform integrated verification |
+
+Classification combines mutation, scope, risk, and clarity; a short request does not determine the level. Exploratory requirements add clarification/approval without inventing impact. New evidence can only raise the route. Generic production-source diffs conservatively require at least L2 even if a fix appears small; sensitive paths may require L3. An explicit release intent adds the release overlay, but mentioning a release does not authorize one.
 
 ```bash
-npm exec --yes --package=ai-code-governance@0.1.2 -- aicg doctor .
-npm exec --yes --package=ai-code-governance@0.1.2 -- aicg init .
-npm exec --yes --package=ai-code-governance@0.1.2 -- aicg check .
+aicg complete . --task-level L2 --verify "npm run test" --json
 ```
 
-本仓库维护者验证尚未发布的 `0.2.0` candidate 时使用 `node bin/aicg.js ...` 或候选 tarball；不要把 candidate 命令归因给 npm `latest`。初始化必须显式选择全部内建客户端或指定客户端，`--yes` 不会替你作这个决定。
+Completion compares the declaration to the minimum level supported by the current Git diff. An under-declaration blocks verification and completion; an omitted declaration is `unverified-declaration`. Completion is not triggered by every conversation or file write. It does not write governance artifacts. The explicitly selected project verification script can have its own effects. A Git hook, if separately installed, checks only the isolated staged snapshot and never runs product tests or harvest writes.
 
-## 维护架构
+Only verified eligible product changes receive a candidate-only completion harvest summary. No automatic promotion occurs. Read-only, prose/format-only, fixture, temporary-script, and non-reusable changes are skipped. Explicit `aicg harvest . --dry-run --json` remains discovery without claiming tests ran. Applying harvest and promoting a candidate are separate explicit actions; see [capability evolution](references/continuous-skill-evolution.md).
 
-AICG 以单一 npm 包交付，但源码采用模块化单体：
+## Safe maintenance and explicit release
 
-```text
-bin → src/cli → src/modules → src/kernel + src/shared
-                           ↘ src/adapters + src/catalogs
-```
-
-- `src/cli/` 只负责参数、命令注册、交互编排和输出。
-- `src/modules/` 按 repository、governance、architecture、standards、capabilities、completion、release、team 和 requests 划分产品能力。
-- `src/kernel/` 与 `src/shared/` 保存稳定契约和纯基础能力。
-- `src/adapters/` 隔离文件系统、进程和 Agent 等外部边界。
-- `src/catalogs/` 提供包内注册表读取入口；`assets/` 按 registries、policies、contracts 分类。
-- 根级 `src/*.mjs` 是过渡期兼容 facade；新内部代码必须通过模块 `index.mjs` 依赖其他模块。
-
-依赖边界由 `npm run test:architecture` 检查。打包后的 greenfield 与 brownfield 验收由 `npm run test:scenarios` 执行；详细 reference 职责见 [reference map](references/README.md)。
-
-## 工作方式
-
-```mermaid
-flowchart LR
-    A[仓库侦察] --> B[多轮访谈]
-    B --> C[确认决策账本与工作流权威]
-    C --> D[检索当前标准与外部版本边界]
-    D --> E[生成栈 质量 业务 Skills]
-    E --> F[分阶段生成治理框架]
-    F --> G[正向门禁与负向探针]
-    G --> H[真实任务试运行]
-    H --> I[收割已验证的项目能力]
-    I --> J[升级或创建 Skills]
-    J --> G
-    I --> K[反馈进入成长闭环]
-```
-
-### 1. 侦察
-
-读取项目拓扑、技术栈及版本、构建工具、真实命令、现有文档、AI 入口和历史反模式。Greenfield 使用用户确认的技术选型作为事实；brownfield 优先使用 lockfile、配置和实际 import。
-
-### 2. 访谈
-
-确认治理深度、AI 客户端、强制力、知识层、技术栈、UI、产物语言、目标 OS 和硬边界。客户端范围必须由用户选择“全部内建客户端”或“仅指定客户端”，不能从当前会话或已安装工具推断。复杂任务会把选择记录到可恢复的决策账本。
-
-### 3. 计划
-
-在写文件前列出产物、规则来源、标准检索主题、版本边界、Skill 矩阵、上下文档案、门禁链、能力包等级、平台状态和明确不做的事项。引导模式等待确认；自动完整模式在不需要新授权时继续。
-
-### 4. 分阶段构建
-
-1. 入口、常驻规则和上下文路由。
-2. 结构检查器、门禁与客户端适配器。
-3. 当前技术标准来源、栈基础 Skills、横切质量 Skills、有证据的业务写法 Skills、项目规则、反模式、commands、agents 和验证档案。
-4. 知识记忆、任务运行时、capability harvest、实现—Skill 漂移检查、hooks 和成长闭环。
-
-默认由 `aicg init` 完成确定式生成，再按用户选择调用本机 Agent 深度补全。客户端适配器是普通生成文件，
-由 `.ai-governance/manifest.json` 的 SHA-256 检查防止分叉。
-
-初始化还会创建根级 `reviews/` 与 `reports/` 本地工作区，并以 AICG 独占的注释块合并项目 `.gitignore`：临时评审记录进入 `reviews/`，任务执行和诊断报告进入 `reports/`，目录本身通过 `.gitkeep` 保留，但内容默认不提交。正式规范、ADR、验收契约以及 `docs/ai/release-evidence/` 仍属于可审计正典，必须保持 Git 跟踪。升级既有项目时，AICG 不猜测并移动 `docs/` 中的历史文件；它只建立未来的输出边界，并保留所有用户自有 `.gitignore` 规则。
-
-### 5. 验证
-
-不仅证明检查能通过，还通过内存或可逆方式故意注入错误，证明检查器能够失败。最终交付不会把“文件存在”直接写成“已治理”，而是分别报告：
-
-- `present`：产物存在且引用可解析；
-- `reachable`：默认入口、路由、能力目录或适配器能找到它；
-- `enforced`：机器检查会非零退出，且定向负向探针已证明；
-- `real-client-verified`：真实客户端或平台执行过实际接线；
-- `stated` / `unverified`：只有文字约束，或仍缺上述某类证据。
-
-warn-only 诊断、只有可选严格环境变量才失败、或只跑过合成 handler 的能力，不会标成 `enforced` / `real-client-verified`。
-
-验收契约 v2 还要求高风险闭环：路由样例无意外碰撞、delivery checker 异常非零、对应 owner 的
-memory 同步、L9 gate generation/freshness、complete 唯一入口、真实工具载荷分类、Stop 正常
-`write → block → verify → allow` 路径、能力收割 freshness、正典能力复用，以及绑定入口/改动指纹的原子单次 ack。
-
-## 支持范围
-
-### 技术栈
-
-| 产品线 | 范围 | 生命周期 | 当前证据 |
-| --- | --- | --- | --- |
-| v3.0 | React、Vue、Angular、Node.js、Java | active | unverified；检测可用，专项标准与真实项目证据仍有缺口 |
-| v3.1 | Svelte、Python、Go、PHP | planned | unverified |
-| v4 | .NET/C#、Android、iOS、混合 App、桌面、C/C++ 与嵌入式 | roadmap | unverified |
-| 通用适配 | 注册表未覆盖的语言或框架 | active | unverified |
-
-`supported` 不等于 `certified`。认证要求固定样例、负向探针、多个真实项目和声明平台的验证证据。机器可读状态以 [能力包注册表](assets/registries/capability-pack-registry.json) 为准。
-
-### 操作系统
-
-| 系统 | CLI/package candidate | 真实 Agent 加载 | 目标项目 hook |
-| --- | --- | --- | --- |
-| macOS | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
-| Windows | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
-| Linux | stale：历史 CI 曾通过，未绑定当前 candidate | unverified | unverified |
-
-状态由 [能力包注册表](assets/registries/capability-pack-registry.json) 统一维护。WSL 验证不等于原生 Windows 验证；历史 CI 通过也不代表当前工作树、真实客户端或目标项目 hook 已验证。详细约束见 [跨平台协议](references/cross-platform.md)。
-
-### 项目模式
-
-- `greenfield`：先确认业务与团队约束，再提出技术栈与 UI 候选。
-- `brownfield`：保留现有栈，先增量建立治理。
-- `monorepo`：判断根治理与包级自治的边界。
-- `repository-family`：根层只负责编排、契约和跨仓知识。
-- `modernization-assessment`：技术迁移独立评估，不与治理安装捆绑。
-
-### 外部工作流
-
-OpenSpec 和 Superpowers 是可选 provider，不是安装本 Skill 后自动启用的依赖。检测到它们时，框架会先要求确定：
-
-- `project-native`、`external-primary`、`coordinated` 或 `external-bridge` 模式；
-- 当前产品行为、active change、正式 design、task list、runtime state 和 delivery evidence 的唯一 owner；
-- 哪些执行能力已在真实客户端中证明可调用；
-- 外部版本、官方来源、许可证、刷新日期和剩余冲突边界。
-
-OpenSpec 被选中时适合拥有正式 specs 与 change artifacts；Superpowers 被选中时适合提供 TDD、系统调试、worktree、实施、评审和完成验证。已有批准 design/task 时不得生成第二份 Superpowers design/plan。详细协议见 [外部工作流集成](references/workflow-integrations.md)，机器可读候选见 [工作流集成注册表](assets/registries/workflow-integration-registry.json)。
-
-## 安装与运行
-
-需要 Node.js 22+。截至 2026-09-10，npm `latest` 是 `0.1.2`，稳定版只包含 `init/check/sync/doctor`。固定版本运行，避免一次初始化后执行入口漂移：
+Ordinary `aicg sync .` is zero-delete, including preset downgrade and template upgrades. It retains historical, seed, unknown, edited, and dormant evidence content. Inspect retained legacy artifacts before requesting physical pruning:
 
 ```bash
-npm exec --yes --package=ai-code-governance@0.1.2 -- aicg init .
-npm exec --yes --package=ai-code-governance@0.1.2 -- aicg check .
+aicg sync . --prune --dry-run
+# Review the entire plan; substitute its exact hash below.
+aicg sync . --prune --approve <planHash>
 ```
 
-也可以固定稳定版全局安装后使用短命令：
+Only trusted, unchanged, fully managed current/historical artifacts are eligible. A changed input invalidates approval; `--force` cannot replace it. Failed application/checking restores the prior tree transactionally. Ordinary sync is not an approval to remove unused adapters.
+
+Release checks are a separate workflow, loaded only for explicit release work:
 
 ```bash
-npm install --global ai-code-governance@0.1.2
-aicg init .
+aicg release-check . --type feature --evidence docs/ai/release-evidence/candidate.json --json
+# Review replayPlan before explicitly approving command execution.
+aicg release-check . --type feature --evidence docs/ai/release-evidence/candidate.json --replay --approve <planHash>
 ```
 
-本仓库 `0.2.0` 是尚未发布的 source candidate；下面的完整命令集只保证从源码或本次候选 tarball 可用，不能归因给 npm `latest`：
+The replay plan binds the candidate, script text/hash, expected exit and output digest. Required independent review and product evidence cannot be fabricated by AICG. See [release acceptance](references/release-acceptance.md). Publishing, pushing, deployment, hooks, and CI changes require their own authorization.
+
+## Evidence and budgets
+
+| Evidence state | Meaning |
+| --- | --- |
+| `stated` | Guidance exists; its behavior has not been established |
+| `reachable` | A checked entry/profile can resolve the canonical artifact; this is structural evidence |
+| `enforced` | A specific machine check and its negative probe reject a broken assertion |
+| `verified` | A named command, candidate, scope, platform, and outcome have actual execution evidence |
+
+Structural tests do not prove a real Codex, Claude Code, or Cursor session loaded the rules. Local macOS results cannot establish Linux/Windows results. For the current candidate those platforms and real-client loading are **not yet verified** unless separate current receipts establish them. Stack detection for React, Vue, Angular, Node.js, and Java does not certify project behavior; future Android/iOS or other capability coverage remains subject to the [registry](assets/registries/capability-pack-registry.json).
+
+The deterministic Codex-only fixtures enforce exact path sets and file counts, including the manifest, plus independent byte caps: Minimal <=10 files/24 KiB, Standard <=20 files/64 KiB, Complete <=26 files/96 KiB. These are fixture budgets, not universal counts for all client/stack/feature combinations. Ordinary context is exactly three unique files, <=3,600 bytes and <=900 estimated tokens (characters/4, not a model tokenizer).
+
+Performance sampling uses three warmups and 20 measured samples: small (32-file) check p95 <=250 ms, 10k check <=1,000 ms, routing <=20 ms, and fast-suite <=5,000 ms. The 50k case is informational. Each sampled CLI check uses one launched process; this is not a measurement of a real Agent's process usage. Relative regression limits require a supplied same-runner baseline; absolute caps always remain active. Broader design targets such as a separate 1k fixture, behavior/release client context budgets, cumulative context, and end-to-end Agent subprocess budgets require additional evidence.
+
+## Contributor validation
 
 ```bash
-git clone https://github.com/YangYuHai-7/ai-code-governance.git
-cd ai-code-governance
-node bin/aicg.js doctor .
-node bin/aicg.js init /path/to/project
-```
-
-CLI 不创建 symlink、junction 或其他链接。Codex 与 Cursor 直接读取 `AGENTS.md`；Claude Code 通过普通
-`CLAUDE.md` 的 `@AGENTS.md` 原生导入；客户端专属 rules/skills 是带生成标记和内容哈希的普通文件。
-`docs/ai` 在首次初始化时播种，之后是人和 AI 共同维护的正典；`sync --force` 只恢复 manifest 拥有的
-配置、入口区块和客户端副本，不会把正典回滚成内置模板。
-
-## Source candidate 快速使用
-
-```bash
-node bin/aicg.js doctor .
-node bin/aicg.js init .
-node bin/aicg.js check .
-node bin/aicg.js sync .
-node bin/aicg.js assess . --json
-node bin/aicg.js architecture . --json
-node bin/aicg.js standards . --json
-node bin/aicg.js team . --config team-context.json --json
-node bin/aicg.js harvest . --dry-run --json
-node bin/aicg.js complete . --verify "npm run test" --json
-node bin/aicg.js release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --json
-# Inspect replayPlan, then approve that exact hash:
-node bin/aicg.js release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.json --replay --approve <planHash>
-node bin/aicg.js hook install . --yes
-```
-
-### 完成门禁的触发时机
-
-治理不会在每一次普通对话或每个文件编辑后运行昂贵检查。准备交付时可手动运行一次 `aicg complete .`；需要项目行为验证时，操作者必须显式选择扫描到的 npm script，例如 `aicg complete . --verify "npm run test"`。它不会推断或执行任意 shell 命令。
-
-需要在提交时自动验证时，先执行 `aicg hook status .` 检查目标，再执行 `aicg hook install . --yes`。安装的 Git `pre-commit` hook 只对**精确的暂存区快照**运行治理结构检查；它不会在普通对话中运行、不会修改业务文件、不会 `git add`，也不会执行项目测试（后者可能读取未暂存的工作树）。已有非 aicg 管理的 `pre-commit` hook 会被拒绝覆盖。
-
-`complete` 和提交钩子都不会凭空生成语义化 memory、项目 Skill 或文档。能力提取和治理材料变更仍需明确执行并确认 `aicg harvest`、`aicg promote` 或 `aicg sync`，避免把未经证据支持的内容写进长期知识层。
-
-### 部署与发布验收
-
-提交完成门禁和组织发布认证是两个 scope：`complete` 证明本次工作达到项目配置的交付边界，不要求单人用户虚构独立评审者，也不产生发布认证；`release-check` 只在组织部署、发布审批或产品认证声明时检查版本分类、候选提交与策略哈希、发布单元、双人风险评估、结构化独立评分、P0/P1 缺陷和必选 receipt。第一次调用只做完整预检并返回 `replayPlan`：其中包含 preflight HEAD、candidate `package.json` 的精确脚本文本、hash、预期退出码和输出 digest。只有再次同时传入 `--replay --approve <planHash>` 才执行；任一其他验收错误都会阻止执行，执行后还会复查 HEAD、所有 evidence hash、candidate 与工作树，并在 npm 发布模式重算包指纹。它拒绝 install/publish 生命周期、隐式 pre/post hook、伪 package JSON 以及未进入 Git 的证据。不提供精确批准时 command/probe receipt 不能通过。bugfix 对应 patch，feature 对应 minor，major 对应 major；被实现者与独立评审者任一方声明为权限、租户、支付、敏感数据、迁移、外部副作用或公共契约的改动，即使仍发 patch，也至少执行 feature 级验收。破坏公共 API 或治理 schema 必须走 major。工具不会自行理解所有 diff 语义；两名评估者同时漏报仍属于明确边界。
-
-详细规则和 5 名全栈工程师 + 3 名架构师的对抗分工见 [分级发布验收协议](references/release-acceptance.md)，机器规则见 [发布验收策略](assets/policies/release-acceptance-policy.json)。`aicg init` 会生成目标项目的 `docs/ai/release-acceptance-policy.json`，后续由 `sync` 更新受管基线；项目只能用 `release-acceptance-override.json` 收紧要求。机器只校验证据契约、候选/策略绑定和仓库内结构化 receipts，不会认证真人身份或替代独立评审判断。
-
-维护 AICG 自身时，npm 的 `prepublishOnly` 会先跑完整测试、Skill 验证、源码 smoke、安装包 smoke，再要求同一份分级证据：
-
-```bash
-AICG_RELEASE_TYPE=feature \
-AICG_RELEASE_EVIDENCE=docs/ai/release-evidence/0.2.0.json \
-AICG_RELEASE_APPROVAL=<exact-replay-plan-hash> \
-npm publish
-```
-
-缺少这三个变量或证据不达标时，发布会在访问 registry 前失败。手动预检可运行 `npm run release:check -- --type feature --evidence <path>`。本地 `prepublishOnly` 是防误操作边界，不是不可绕过的组织权限；正式强制仍应放在受保护的 CI release job、受限 npm token 和 registry provenance 上，`--ignore-scripts` 会绕过本地生命周期脚本。
-
-也可以通过严格、可审计的聊天式请求入口触发同一套 CLI 内核。请求只接受已登记的精确中文或英文表达；模糊的“修复”“升级”“优化”不会自动写入仓库：
-
-```bash
-aicg request . --text "帮我初始化项目 AI 治理框架" --dry-run --json
-aicg request . --text "初始化治理框架" --approve <planHash>
-aicg request . --text "检查治理框架" --json
-aicg request . --text "给我团队建议" --config team-context.json --json
-aicg request . --text "运行完成门禁" --json
-aicg request . --text "检查发布验收" --config release-context.json --json
-aicg request . --text "安装 Git 提交门禁" --dry-run --json
-aicg request . --text "查看提交门禁状态" --json
-```
-
-写入请求先生成带 `planHash` 的计划，显示精确文件操作和权限；只有 `--approve <planHash>` 与当前计划完全一致时才会写入，并在写后重新运行结构检查。安装 Git 提交门禁也走该两步批准流程；它不批准迁移链接、覆盖漂移内容、调用 Agent、联网、安装依赖、修改 CI 或迁移业务代码。
-
-每个可执行治理处理器都有至少一个精确聊天短语。为兼容日常表达，“修复一下治理框架”精确映射到只读 `doctor` 诊断，**不会**修改任何文件或执行 PATH 中的 Git/Agent 命令；这意味着它将环境命令标为 `not-probed`，而不会把未执行的命令说成不可用。需要同步受管适配器时必须明确说“同步治理适配器”。
-
-聊天短语“运行完成门禁”默认只运行结构门禁；若要同样显式选择项目验证，可在 `--config` 文件提供 `{"verificationCommand":"npm run test"}`。这仍只接受扫描到的 npm script，不会读取自然语言并执行任意命令。
-
-`init` 会依次扫描仓库、确认项目生命周期、选择 Agent、确认技术栈、选择治理深度与产物语言、预览文件，再生成基础框架。
-高置信度新项目可由 `--yes` 确认；既有代码项目必须明确选择“保持现有代码”“仅新代码采用标准”或“分阶段迁移”，仅有 manifest 或未知产品文件的
-证据不足项目也必须先确认是新脚手架还是已有项目。`--yes`、聊天预览和缺失配置都不能绕过这两个确认；所有选择只约束未来
-开发，不会在初始化时改写业务代码；这类仓库的初始化也会拒绝 AI 深度补全。初始化与聊天预览不会执行 Git、Agent CLI 或 PATH
-中的可执行文件。hooks、CI、外部 workflow provider 和 AI 深度补全是显式可选项。无交互环境可用
-`--config <json>` 提供可复现决策，但实际写入仍需显式 `--yes`；先预览可使用 `--dry-run`。
-
-完整接口、安全覆盖与退出码见 [初始化协议](references/initializer.md)。
-
-`assess` 不写入仓库。它将生命周期（新项目、既有代码或证据不足）与拓扑（单仓库/monorepo）分开报告，并输出只含相对路径证据的决策账本草案。既有代码默认只建立治理边界，不会自动重构；初始化时必须明确选择“保持现有代码”“仅新代码采用标准”或“分阶段迁移”。
-
-`architecture` 同样只读：为新项目提出按领域模块化的目录蓝图；为既有项目报告可验证的扁平目录、混合职责或过大文件信号。它不会移动文件；`staged-migration` 是单独的现代化计划，必须再次批准。已确认生命周期的 `init` 会生成唯一的 `docs/ai/architecture-profile.json`：新项目、或选择“仅新代码采用标准”的单仓项目，会启用“模块边界”未来代码放置策略；`aicg check .` 能发现之后绕过 `src/` 结构的应用源文件，以及直接堆在 `src/` 根目录的业务源文件。它不创建空 `src`、不生成组件/Controller/Repository，也不把依赖方向、高内聚或单一职责虚称为已机器证明。选择“保持现有代码”或“分阶段迁移”时，profile 保持 advisory，不拦截既有布局；monorepo 没有明确包级 scope 时同样不会猜测并强制根目录模板。旧版已确认 greenfield 的治理配置若在此策略引入前已长出源码，会保持 `legacy-unconfigured`，直到用户另行确认新的架构决策。
-
-`standards` 也是只读：它根据受扫描依赖和已确认的 `technologyPackages` 展示将生成的技术 Skill、官方或标准来源快照、刷新时间与每项验证清单。`init` 与 `sync` 在标准/完整深度生成这些受管 Skills，随后由 `aicg check .` 验证完整性；这不替代项目的测试，也不把来源快照说成在线实时标准。
-
-`team` 是确定式、只读的“人类交付与治理职责覆盖建议器”。它不会创建人员、Agent、任务、权限、文件或外部消息，也不会输出人数、成本、工期或招聘结论。它要求一个位于目标仓库内、普通文件形式的 `--config`：其中包含 `teamScope: "human"`、1–4000 字符的 `businessDescription`，以及可选的用户确认 `confirmedSignals`（`authorization`、`multi-tenancy`、`payment`、`sensitive-data`、`regulated-data`、`realtime-media`）、`stage` 与精确 `technologyPackages`。业务原文只在内存处理，结果只标记“已提供但不返回”；自由文本中的关键词不会被升级为业务事实。仓库包证据只读取根 `package.json`，或根 `package.json#workspaces` / `pnpm-workspace.yaml` 显式列出的成员；只支持根锚定的安全 `*`/`**` 模式，忽略 fixtures、未声明成员、符号链接、排除项和不受支持的通配符。每个建议均引用精确包证据或用户确认信号、置信度、可兼任边界和独立复核要求；未确认的角色保持条件化，不会被说成已组建或已强制执行。聊天短语“给我团队建议”走同一只读内核；缺少上下文会返回 `needs-user-input`，而“给我团队建议并创建任务”等复合写入请求不会被匹配。
-
-```json
-{
-  "teamScope": "human",
-  "businessDescription": "A multi-tenant collaboration product with realtime meetings.",
-  "confirmedSignals": ["authorization", "multi-tenancy", "realtime-media"],
-  "stage": "production-build",
-  "technologyPackages": ["react", "@nestjs/core", "socket.io"]
-}
-```
-
-`harvest` 让治理框架从当前代码中提取可复用能力候选。预览不写文件；应用必须使用 `--yes`，或通过聊天请求“提取项目能力”先取得并批准精确 `planHash`。目前它只把已安装 `axios` 的真实 import/require 后、导出的 `axios.create()` Client，以及非 TSX/JSX 文件中带真实 guard/policy/authorization 执行语义的边界作为候选，并生成连接当前实现路径的候选 Skill。候选并不等于 adopted/enforced：实际测试、owner、公共入口和受管消费者仍须验证后才能升级为强制复用规则。
-
-候选可通过 `aicg promote . --id <capability> --entrypoint <path> --verify "npm run <script>" --yes` 晋升为 adopted。该命令只执行扫描到的安全 npm script；脚本成功前不会写入治理文件。当前入口必须就是该能力的实现路径，尚不接受未经验证的 barrel/export 路径；聊天入口“晋升项目能力”同样使用精确计划批准，但需经 `--config` 提供 `capabilityId`、`publicEntrypoints` 和 `verificationCommand`。可选 consumer 路径仅标记为操作者声明、未验证的线索，不构成复用证据。晋升后的 Skill 记录当前入口、指纹、操作者确认和实际执行的验证命令；它仍不会自动封禁旁路调用。
-
-### 作为 Agent Skill 使用
-
-安装后可以直接用短语触发：
-
-```text
-AI 编码治理框架
-```
-
-```text
-编码治理框架
-```
-
-在代码仓库、AGENTS.md、skills、门禁或 hooks 语境下，只说“治理框架”也会触发。未指定深度时默认为**自动完整模式**：先侦察、简短回读计划，再连续完成 L0–L11；只在产物存在实质分歧或需要安装 hook、修改 CI/CD、发布等新授权时询问。
-
-也可以显式指定深度或引导方式：
-
-```text
-为这个遗留 Java + Angular 项目建立标准深度的 AI 治理框架，保留现有技术栈。
-```
-
-```text
-为一个新的 React + Node.js 项目设计完整治理框架，UI 框架先给我三个提案。
-```
-
-```text
-参考另一个仓库的 AI 框架，只迁移通用思想，不复制它的项目特有规则。
-```
-
-Skill 会始终先侦察仓库并使规则追溯到真实证据。短语默认使用自动完整模式；用户说“先出方案”、“分步确认”或指定其他深度时，切换为引导模式。单独的产品 AI 安全、模型风险、隐私或监管治理不属于本 Skill。
-
-## 治理深度
-
-| 深度 | 组成 | 适用场景 |
-| --- | --- | --- |
-| 最小 | L0 入口 + L1 常驻规则 + L8 检查器 | 单人项目、先验证价值 |
-| 标准 | 最小 + 上下文路由 + 项目规则 + 反模式 + 验证档案 | 多人团队默认选择 |
-| 完整 | 标准 + 能力层 + 知识记忆 + 任务运行时 + 成长闭环；客户端支持时加 hooks | 跨会话、多客户端、高风险任务 |
-
-## 目录结构
-
-```text
-ai-code-governance/
-├── bin/aicg.js
-├── src/
-│   ├── cli/
-│   ├── modules/
-│   ├── kernel/
-│   ├── shared/
-│   ├── adapters/
-│   └── catalogs/
-├── test/
-│   └── real-scenarios/
-├── package.json
-├── SKILL.md
-├── README.md
-├── assets/
-│   ├── registries/
-│   ├── policies/
-│   └── contracts/
-├── references/
-│   ├── initializer.md
-│   ├── principles.md
-│   ├── layers.md
-│   ├── templates.md
-│   ├── capability-packs.md
-│   ├── stack-skill-generation.md
-│   ├── continuous-skill-evolution.md
-│   ├── workflow-integrations.md
-│   ├── interview-protocol.md
-│   ├── ui-selection.md
-│   ├── cross-platform.md
-│   └── ...
-└── scripts/
-    ├── validate-skill.mjs
-    └── smoke-test.mjs
-```
-
-## 自验证
-
-CLI 需要 Node.js 22+。Skill 文档可以直接阅读，但初始化、同步和机器检查都应使用同一 CLI。
-
-```bash
-npm test
+npm run test:fast
+npm run test:full
+npm run validate
 npm run smoke
 npm run smoke:package
-node scripts/validate-skill.mjs
-node scripts/validate-skill.mjs --negative-probe
+node scripts/prepublish-check.mjs
 npm pack --dry-run
 ```
 
-`npm test` 运行自动化测试；`smoke` 与 `smoke:package` 分别检查源码形态和安装后的 tarball；`validate-skill.mjs` 检查 front matter、本地链接、技术栈生成、持续升级、外部工作流协议、注册表、验收契约、版本状态和 OS 证据；`--negative-probe` 在内存中注入错误，证明校验器确实能够拦截它们。
+`test:full` preserves `npm test` (`node --test`) and includes the performance sampler; `test:perf` runs it separately. Package smoke installs a temporary tarball and cleans up; inspect dry-run contents for `bin/`, `src/`, `assets/`, `references/`, validation/release scripts, README, SKILL, and LICENSE. Tests, local reports, `.superpowers`, worktrees, and credentials must not ship.
 
-历史 GitHub Actions 曾在 macOS、Windows、Linux 上使用 Node.js 22/24 跑通测试、Skill 校验、smoke、打包检查和安装 tarball 后的 smoke；该记录当前标为 `stale`，因为它尚未绑定当前 candidate。真实 Agent 加载、目标项目 hooks 和项目行为仍需独立回放，不能由 CLI CI 代替。
+`prepublish-check` intentionally fails without real `AICG_RELEASE_TYPE`, repository-relative `AICG_RELEASE_EVIDENCE`, and exact `AICG_RELEASE_APPROVAL`. Local regression success is not a substitute for that release gate. Running `npm pack --dry-run` neither publishes nor manufactures release approval.
 
-## 设计原则
+## Maintenance architecture and references
 
-- 项目代码和测试决定当前业务事实；当前官方标准决定目标版本的框架惯用写法。
-- 先侦察、再访谈、最后构建。
-- 技术标准必须有来源、版本与采用理由；业务 Skill 必须有项目证据和 owner。
-- 高内聚、低耦合、单一职责、幂等、安全和不过度设计要成为可路由、可验证的横切质量能力。
-- 每个产品行为 change set 都要评估是否产生可复用能力；优先升级已有 Skill，没有才创建，证据不足则进入候选。
-- adopted capability 的实现入口、Skill、profile、路由和验证指纹必须一起演进。
-- 每条机器禁令都要解释为什么，并尽量由检查器执行。
-- 客户端目录只是 manifest 管理的普通文件适配器，不能成为第二正典；禁止链接式适配。
-- 遗留项目默认不换栈，现代化评估单独立项。
-- 外部规格和执行框架只有在用户选择、唯一权威明确且真实接线通过后才能标记已集成。
-- 没有实际验证的命令、平台和客户端必须保持可见。
+`bin → src/cli → src/modules → src/kernel + src/shared`; adapters isolate external effects and catalogs load versioned assets. Root `src/*.mjs` files are compatibility facades. `test:architecture` checks import boundaries; `test:scenarios` covers packaged synthetic project scenarios.
 
-完整论证见 [十二条核心原则](references/principles.md)。
-
-## 产品边界与路线图
-
-首要采用对象是**使用 AI 编码助手、但缺少生产工程经验的单人构建者**。首个可测成果是：用户无需理解 Git、SemVer、manifest 或 probe 术语，也能在明确选择客户端范围后完成初始化、一个可运行业务主流程、至少一条成功测试与两条失败测试，并能根据失败提示恢复到 `aicg check` 通过。试点同时记录安装清晰度、下一步清晰度、恢复能力、信心和人工干预次数。
-
-本地 CLI、治理内核和基础能力包继续采用 Apache-2.0。组织控制面、集中审计、认证服务、企业 rollout/support 是否形成商业层仍是待决策事项；当前仓库不承诺价格、SLA、真人认证或生产结果。
-
-- capabilityTrack v3.0：完成 Web 主流栈的团队内部试运行与证据收集。
-- capabilityTrack v3.1：建立 Svelte、Python、Go、PHP 能力包及样例矩阵。
-- capabilityTrack v3.x：补齐三平台真实 Agent 加载、目标项目 hooks、安装与升级协议。
-- capabilityTrack v4：扩展 .NET、移动端、桌面端和系统/嵌入式平台家族。
-- 产品 C：只有通过真实项目和声明平台认证的组合才对外标记 `certified`。
-
-## 贡献约束
-
-1. 不从无版本、无来源的模型记忆生成“最佳实践”；采用的技术标准必须可追溯到当前权威来源。
-2. 不根据技术栈猜业务规则；业务 Skill 必须来自需求、代码、测试、ADR、事故或用户确认的不变量。
-3. 不用一个巨型框架 Skill 代替可直接路由的细粒度编码任务。
-4. 不为每个局部实现无脑新增 Skill；自动 harvest 必须查重，并允许 candidate / no-skill-with-reason。
-5. 项目声明正典 Client、adapter 或权限 service 后，新代码不得绕过；迁移例外必须有 owner、理由和到期时间。
-6. 新能力包先进入 `unverified`，取得可复现证据后再晋级。
-7. 修改能力包状态时同步注册表与说明文档。
-8. 新检查必须带负向探针，证明它真的会失败。
-9. 不把客户代码、内部 API、密钥或原始业务数据提交到本仓库。
+Start with [SKILL.md](SKILL.md) or the [reference map](references/README.md). Use [workflow integrations](references/workflow-integrations.md) only for a selected provider: one owner per spec, design, plan, task list, and completion state. No external provider is an implicit dependency.
 
 ## License
 
-本项目采用 [Apache License 2.0](LICENSE)。它允许商业使用、修改和再分发，并提供明确的专利授权条款。
-
-详细资料从 [SKILL.md](SKILL.md) 的“深入阅读”索引进入。
+[Apache-2.0](LICENSE).

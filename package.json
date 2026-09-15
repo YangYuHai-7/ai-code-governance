@@ -32,7 +32,7 @@
     "smoke": "node scripts/smoke-test.mjs",
     "smoke:package": "node scripts/package-smoke.mjs",
     "release:check": "node bin/aicg.js release-check .",
-    "prepublishOnly": "npm test && npm run validate && npm run smoke && npm run smoke:package && node scripts/prepublish-check.mjs"
+    "prepublishOnly": "npm run test:full && npm run validate && npm run smoke && npm run smoke:package && node scripts/prepublish-check.mjs"
   },
   "keywords": [
     "ai-governance",
