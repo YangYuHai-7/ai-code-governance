@@ -143,12 +143,36 @@ test('migration directories elevate non-document artifacts across supported sour
   }
 });
 
+test('machine SQL schemas require L2 without lowering SQL migrations or ordinary documentation', () => {
+  for (const relative of [
+    'schema.sql',
+    'test/fixtures/schema.sql',
+    'test/fixtures/account.schema.sql',
+    'contract.sql',
+    'test/fixtures/account.contract.sql',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L2', relative);
+  }
+  for (const [relative, expected] of [
+    ['db/migrations/schema.sql', 'L3'],
+    ['docs/schema.md', 'L1'],
+    ['docs/contract.md', 'L1'],
+    ['test/schema.test.sql', 'L1'],
+    ['queries/schematics.sql', 'L1'],
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), expected, relative);
+  }
+});
+
 test('sensitive tokens recognize delimited filenames without substring false positives', () => {
   for (const relative of [
     'src/auth.ts',
     'config/auth.yaml',
     'src/auth-session.mjs',
     'config/auth_policy.yml',
+    'src/check-permission.ts',
+    'scripts/process-payment.mjs',
+    'config/session-authorization.yaml',
   ]) {
     assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L3', relative);
   }
@@ -156,6 +180,10 @@ test('sensitive tokens recognize delimited filenames without substring false pos
     ['src/author.ts', 'L2'],
     ['src/oauth.ts', 'L2'],
     ['config/authorize.yaml', 'L1'],
+    ['src/author-helper.ts', 'L2'],
+    ['src/oauth-session.ts', 'L2'],
+    ['config/authorize-session.yaml', 'L1'],
+    ['src/permissionless.ts', 'L2'],
   ]) {
     assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), expected, relative);
   }
@@ -224,14 +252,18 @@ test('supported ecosystem dependency manifests and lockfiles require L2', () => 
 test('machine policy examples are evaluated by the canonical path rules', () => {
   const policy = taskRoutingPolicy({ artifactLanguage: 'en' });
   for (const rule of policy.pathRules) {
-    assert.ok(rule.patterns.length > 0, `${rule.id} needs executable patterns`);
+    assert.ok(rule.patterns.length > 0 || (rule.tokens ?? []).length > 0, `${rule.id} needs executable patterns or tokens`);
     assert.ok(rule.examples.length > 0, `${rule.id} needs executable examples`);
     for (const relative of rule.examples) {
-      assert.ok(rule.patterns.some((pattern) => matchSimpleGlob(relative.toLowerCase(), pattern)), `${rule.id} owns ${relative}`);
+      const ownsByPattern = rule.patterns.some((pattern) => matchSimpleGlob(relative.toLowerCase(), pattern));
+      assert.ok(ownsByPattern || (rule.tokens ?? []).length > 0, `${rule.id} owns ${relative}`);
       assert.equal(rule.excludePatterns.some((pattern) => matchSimpleGlob(relative.toLowerCase(), pattern)), false, `${rule.id} excludes ${relative}`);
       assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), rule.level, `${rule.id}: ${relative}`);
     }
   }
+  const sensitive = policy.pathRules.find((rule) => rule.id === 'security-and-money');
+  assert.equal(sensitive.tokenBoundary, 'path-segment-or-dot-dash-underscore');
+  assert.ok(sensitive.tokens.includes('permission'));
   assert.ok(policy.pathRules.find((rule) => rule.id === 'deployment-and-publishing').patterns.includes('**/deploy/**'));
   assert.equal(minimumTaskLevelFromPaths(['services/foo/deploy/run.sh'], { confirmedRiskSignals: [] }), 'L3');
   for (const surface of policy.escalation.surfaceGroups) {

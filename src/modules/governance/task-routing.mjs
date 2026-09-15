@@ -37,6 +37,7 @@ const BASE_APPROVALS = {
   L2: ['requirements', 'plan'],
   L3: ['requirements', 'design', 'plan'],
 };
+const TOKEN_BOUNDARY = 'path-segment-or-dot-dash-underscore';
 
 const DOCUMENTATION_OR_TEST_FILE_PATTERNS = [
   '*.md', '**/*.md', '*.mdx', '**/*.mdx', '*.txt', '**/*.txt',
@@ -80,11 +81,15 @@ const PATH_RULES = [
     examples: ['.github/workflows/deploy.yml', 'infra/network.tf'],
   },
   {
-    id: 'migration-fixture',
+    id: 'migration-machine-artifact',
     level: 'L3',
-    patterns: ['fixtures/migration/**', '**/fixtures/migration/**', 'fixtures/migrations/**', '**/fixtures/migrations/**'],
+    patterns: [
+      'fixtures/migration/**', '**/fixtures/migration/**', 'fixtures/migrations/**', '**/fixtures/migrations/**',
+      'migration/*.sql', '**/migration/*.sql', 'migration/**/*.sql', '**/migration/**/*.sql',
+      'migrations/*.sql', '**/migrations/*.sql', 'migrations/**/*.sql', '**/migrations/**/*.sql',
+    ],
     excludePatterns: DOCUMENTATION_OR_TEST_FILE_PATTERNS,
-    examples: ['test/fixtures/migrations/20260915-add-account.sql'],
+    examples: ['test/fixtures/migrations/20260915-add-account.sql', 'db/migrations/schema.sql'],
   },
   {
     id: 'security-fixture',
@@ -127,6 +132,8 @@ const PATH_RULES = [
       'asyncapi.json', '**/asyncapi.json', 'asyncapi.yaml', '**/asyncapi.yaml', 'asyncapi.yml', '**/asyncapi.yml',
       'schema.json', '**/schema.json', 'schema.yaml', '**/schema.yaml', 'schema.yml', '**/schema.yml',
       '*.schema.json', '**/*.schema.json', '*.schema.yaml', '**/*.schema.yaml', '*.schema.yml', '**/*.schema.yml',
+      'schema.sql', '**/schema.sql', '*.schema.sql', '**/*.schema.sql',
+      'contract.sql', '**/contract.sql', '*.contract.sql', '**/*.contract.sql',
       '*.proto', '**/*.proto', '*.graphql', '**/*.graphql', '*.gql', '**/*.gql', '*.prisma', '**/*.prisma',
       '*.avsc', '**/*.avsc', '*.xsd', '**/*.xsd', '*.wsdl', '**/*.wsdl', '*.thrift', '**/*.thrift',
       'contract/*.json', 'contract/**/*.json', 'contracts/*.json', 'contracts/**/*.json',
@@ -135,8 +142,10 @@ const PATH_RULES = [
       'schema/*.json', 'schema/**/*.json', 'schemas/*.json', 'schemas/**/*.json',
       'schema/*.yaml', 'schema/**/*.yaml', 'schemas/*.yaml', 'schemas/**/*.yaml',
       'schema/*.yml', 'schema/**/*.yml', 'schemas/*.yml', 'schemas/**/*.yml',
+      'schema/*.sql', 'schema/**/*.sql', 'schemas/*.sql', 'schemas/**/*.sql',
+      'contract/*.sql', 'contract/**/*.sql', 'contracts/*.sql', 'contracts/**/*.sql',
     ],
-    examples: ['test/fixtures/contracts/openapi.yaml', 'prisma/schema.prisma'],
+    examples: ['test/fixtures/contracts/openapi.yaml', 'prisma/schema.prisma', 'test/fixtures/account.schema.sql'],
   },
   {
     id: 'ordinary-documentation-or-test',
@@ -166,11 +175,11 @@ const PATH_RULES = [
   {
     id: 'security-and-money',
     level: 'L3',
-    patterns: delimitedTokenPatterns([
+    tokens: [
       'auth', 'authentication', 'authorization', 'permission', 'permissions',
       'payment', 'payments', 'billing', 'tenant', 'tenants', 'multi-tenancy',
-    ]),
-    examples: ['src/auth.ts', 'config/auth.yaml', 'src/authorization/policy.mjs', 'src/payments/settle.mjs'],
+    ],
+    examples: ['src/auth.ts', 'config/auth.yaml', 'src/check-permission.ts', 'src/authorization/policy.mjs', 'src/payments/settle.mjs'],
   },
   {
     id: 'public-contract',
@@ -257,12 +266,19 @@ function confirmedRiskLevel(config) {
   return signals.length > 0 ? 'L2' : 'L0';
 }
 
-function matchesPatterns(relative, patterns) {
+function matchesPatterns(relative, patterns = []) {
   return patterns.some((pattern) => matchSimpleGlob(relative, pattern));
 }
 
+function matchesDelimitedToken(relative, tokens = []) {
+  return tokens.some((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(?:^|[/._-])${escaped}(?=$|[/._-])`).test(relative);
+  });
+}
+
 function matchesRule(relative, rule) {
-  return matchesPatterns(relative, rule.patterns)
+  return (matchesPatterns(relative, rule.patterns) || matchesDelimitedToken(relative, rule.tokens))
     && !matchesPatterns(relative, rule.excludePatterns ?? []);
 }
 
@@ -321,10 +337,12 @@ export function taskRoutingPolicy(config) {
       multiSurfaceExamples: [['apps/web/editor.mjs', 'apps/api/editor.mjs']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),
     },
-    pathRules: PATH_RULES.map(({ id, level, patterns, excludePatterns = [], examples }) => ({
+    pathRules: PATH_RULES.map(({ id, level, patterns = [], tokens = [], excludePatterns = [], examples }) => ({
       id,
       level,
       patterns: [...patterns],
+      tokens: [...tokens],
+      tokenBoundary: tokens.length > 0 ? TOKEN_BOUNDARY : null,
       excludePatterns: [...excludePatterns],
       examples: [...examples],
       description: localized(config, `Changed paths matching ${id} require at least ${level}.`, `匹配 ${id} 的变更路径至少需要 ${level}。`),
