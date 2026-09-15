@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { capabilityHarvestSummary, prepareCapabilityHarvest, prepareCapabilityPromotion } from '../src/capability-harvest.mjs';
+import * as harvestModule from '../src/capability-harvest.mjs';
 import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
@@ -26,6 +27,105 @@ function initialize(root, overrides = {}) {
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)), { transactional: true });
   return config;
 }
+
+test('harvest eligibility requires a verified behavior route and production source', () => {
+  assert.equal(typeof harvestModule.assessHarvestEligibility, 'function');
+  const assess = harvestModule.assessHarvestEligibility;
+  const input = { taskRoute: { level: 'L2' }, changedPaths: ['src/http-client.ts'], verification: { status: 'passed' } };
+  assert.deepEqual(assess(input), { eligible: true, reason: 'verified-product-behavior-change' });
+  assert.deepEqual(assess({ taskRoute: { level: 'L0' }, changedPaths: [], verification: { status: 'not-requested' } }), {
+    eligible: false, reason: 'no-verified-product-behavior-change',
+  });
+  for (const level of ['L0', 'L1']) assert.equal(assess({ ...input, taskRoute: { level } }).eligible, false);
+  for (const status of ['upgrade-required', 'unverified-declaration']) {
+    assert.deepEqual(assess({ ...input, taskRoute: { declaredLevel: 'L3', status } }), { eligible: false, reason: `task-route-${status}` });
+  }
+  for (const status of ['not-requested', 'failed', 'skipped-after-governance-failure', 'skipped-after-task-route-failure']) {
+    assert.deepEqual(assess({ ...input, verification: { status } }), { eligible: false, reason: `project-verification-${status}` });
+  }
+  for (const relative of ['docs/guide.md', 'docs/example.ts', 'src/client.test.ts', 'src/fixtures/client.ts', 'packages/demo/test/client.ts', 'src/tmp/client.ts', 'src/temp-helper.ts', 'src/temporary/client.ts', 'scripts/temporary.ts', 'config/auth.yaml', 'src/config/auth.ts', 'db/migrations/001.sql', 'src/migrations/001.ts', '.ai-governance/config.json', 'docs/ai/architecture-profile.json', 'package.json']) {
+    assert.deepEqual(assess({ ...input, changedPaths: [relative] }), { eligible: false, reason: 'no-production-source-change' }, relative);
+  }
+  assert.equal(assess({ ...input, taskRoute: { level: 'L3' }, changedPaths: ['src/auth/policy.ts'] }).eligible, true);
+  assert.equal(assess({ ...input, taskRoute: { level: 'L2', reasonCodes: ['mutation:non-production'] } }).eligible, false);
+});
+
+test('capability change evidence ignores formatting but preserves changed string values', () => {
+  const original = "import axios from 'axios'; export const client = axios.create({ baseURL: '/v1' });\n";
+  assert.equal(harvestModule.capabilitySourceChanged(original, "import axios from \"axios\"\nexport const client = axios.create({baseURL: '/v1'})\n"), false);
+  assert.equal(harvestModule.capabilitySourceChanged(original, original.replace('/v1', '/ v1')), true);
+});
+
+test('harvest deduplicates by id then entrypoint then implementation without merging titles', (context) => {
+  const root = fixture('dedup-order');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { axios: '1.7.0' } }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src/http.ts'), "import axios from 'axios'; export const client = axios.create({});\n");
+  fs.writeFileSync(path.join(root, 'src/other.ts'), 'export const other = true;\n');
+  const config = initialize(root);
+  const scan = scanProject(root);
+  const initial = prepareCapabilityHarvest(config, scan);
+  assert.equal(initial.decisions?.[0]?.outcome, 'create-new');
+  const candidate = initial.config.projectCapabilities[0];
+  const alias = { ...candidate, id: 'owned-http', skill: 'docs/ai/skills/project/owned-http/SKILL.md', owner: 'custom-owner' };
+  const byId = prepareCapabilityHarvest({ ...config, projectCapabilities: [alias, candidate] }, scan);
+  assert.equal(byId.decisions[0].outcome, 'update-existing');
+  assert.equal(byId.decisions[0].existingCapabilityId, candidate.id);
+  const entrypoint = { ...alias, implementationPaths: ['src/other.ts'], publicEntrypoints: ['src/http.ts'] };
+  const byEntry = prepareCapabilityHarvest({ ...config, projectCapabilities: [alias, { ...entrypoint, id: 'entry-http' }] }, scan);
+  assert.equal(byEntry.decisions[0].outcome, 'extend-existing');
+  assert.equal(byEntry.decisions[0].existingCapabilityId, 'entry-http');
+  assert.deepEqual(byEntry.config.projectCapabilities.find((entry) => entry.id === 'entry-http').implementationPaths, ['src/http.ts', 'src/other.ts']);
+  const byPath = prepareCapabilityHarvest({ ...config, projectCapabilities: [alias] }, scan);
+  assert.equal(byPath.decisions[0].outcome, 'extend-existing');
+  assert.deepEqual(byPath.config.projectCapabilities.map((entry) => entry.id), ['owned-http']);
+  assert.equal(byPath.config.projectCapabilities[0].skill, alias.skill);
+  assert.equal(byPath.config.projectCapabilities[0].owner, 'custom-owner');
+  assert.equal(byPath.config.projectCapabilities[0].status, 'candidate');
+  const unrelated = { ...alias, implementationPaths: ['src/other.ts'] };
+  assert.equal(prepareCapabilityHarvest({ ...config, projectCapabilities: [unrelated] }, scan).decisions[0].outcome, 'create-new');
+  const ambiguous = prepareCapabilityHarvest({ ...config, projectCapabilities: [alias, { ...alias, id: 'another-http' }] }, scan);
+  assert.equal(ambiguous.decisions[0].outcome, 'no-skill-with-reason');
+  assert.equal(ambiguous.decisions[0].reason, 'ambiguous-implementation-path-match');
+});
+
+test('completion candidates require a changed exported capability and keep evidence gaps explicit', (context) => {
+  const root = fixture('completion-public-boundary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/auth'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/auth/policy.ts'), 'class Policy { can() { return true; } }\n');
+  const config = initialize(root);
+  const input = { taskRoute: { declaredLevel: 'L3', status: 'verified' }, changedPaths: ['src/auth/policy.ts'], verification: { status: 'passed', command: 'npm run test' } };
+  const summary = () => harvestModule.completionCapabilityHarvestSummary(config, scanProject(root), input);
+  assert.equal(summary().reason, 'no-reusable-public-capability-change');
+  fs.writeFileSync(path.join(root, 'src/auth/policy.ts'), 'export class Policy { can() { return true; } }\n');
+  const candidate = summary().candidates[0].capability;
+  assert.equal(candidate.status, 'candidate');
+  assert.equal(candidate.owner, 'authorization');
+  assert.equal(candidate.review.status, 'required');
+  assert.deepEqual(candidate.publicEntrypoints, []);
+  assert.match(candidate.gaps.join('\n'), /public entrypoint/);
+  assert.match(candidate.implementationFingerprint, /^[a-f0-9]{64}$/);
+  fs.mkdirSync(path.join(root, 'src/fixtures'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/fixtures/policy.ts'), 'export class Policy { can() { return false; } }\n');
+  assert.deepEqual(summary().candidates[0].capability.implementationPaths, ['src/auth/policy.ts']);
+});
+
+test('two detected capabilities cannot overwrite one existing capability through path matches', (context) => {
+  const root = fixture('dedup-collision');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/auth'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { axios: '1.7.0' } }));
+  fs.writeFileSync(path.join(root, 'src/auth/policy.ts'), "import axios from 'axios'; export const client = axios.create({}); export class Policy { can() { return true; } }\n");
+  const config = initialize(root);
+  const scan = scanProject(root);
+  const authorization = prepareCapabilityHarvest(config, scan).config.projectCapabilities.find((entry) => entry.id === 'project-authorization');
+  const byId = prepareCapabilityHarvest({ ...config, projectCapabilities: [authorization] }, scan);
+  assert.deepEqual(byId.config.projectCapabilities.map((entry) => entry.id), ['project-authorization']);
+  assert.equal(byId.decisions.find((entry) => entry.capabilityId === 'project-http-client').outcome, 'no-skill-with-reason');
+  assert.equal(byId.decisions.find((entry) => entry.capabilityId === 'project-authorization').outcome, 'update-existing');
+});
 
 test('harvest extracts Axios and authorization candidates with reuse Skills but does not claim enforcement', (context) => {
   const root = fixture('candidates');

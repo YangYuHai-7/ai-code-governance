@@ -36,10 +36,11 @@ export function runPromotionVerification(scan, command) {
 
 export async function harvestCommand(target, options) {
   const scan = scanProject(target);
-  const prepared = prepareCapabilityHarvest(loadConfiguredGovernance(scan), scan);
+  const config = loadConfiguredGovernance(scan);
+  const prepared = prepareCapabilityHarvest(config, scan);
   const artifacts = buildArtifacts(prepared.config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force });
-  const preview = capabilityHarvestSummary(loadConfiguredGovernance(scan), scan);
+  const preview = capabilityHarvestSummary(config, scan);
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely harvest capabilities:\n- ${plan.conflicts.join('\n- ')}`);
     error.exitCode = 2;

@@ -11,6 +11,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { evaluateProductionReadiness } from './production-readiness.mjs';
 import { evaluateSurfaceVerification } from './surface-verification.mjs';
+import { assessHarvestEligibility, capabilitySourceChanged, completionCapabilityHarvestSummary, isProductionCapabilityPath } from '../capabilities/index.mjs';
 
 export const PRE_COMMIT_HOOK_MARKER = 'ai-code-governance:pre-commit-v1';
 
@@ -141,7 +142,31 @@ function completionTaskRoute(scan, paths, taskLevel) {
   } catch (error) {
     throw usageError(`Cannot read task routing configuration for the completion gate: ${error.message}`);
   }
-  return evaluateCompletionTaskRoute(paths, config, taskLevel);
+  return { config, taskRoute: evaluateCompletionTaskRoute(paths, config, taskLevel) };
+}
+
+function capabilityChangedPaths(scan, paths) {
+  const sources = new Map(scan.files.filter((file) => file.type === 'file' && file.contentScannable !== false).map((file) => [file.relative, file]));
+  const changed = [];
+  const unavailable = { paths: [], reason: 'product-change-evidence-unavailable' };
+  for (const relative of paths) {
+    if (!isProductionCapabilityPath(relative) || !sources.has(relative)) continue;
+    const before = runGit(scan.root, ['show', `HEAD:${relative}`], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    if (before.error) return unavailable;
+    if (before.status !== 0) {
+      // Distinguish an added source from an unreadable tracked blob.
+      const entry = runGit(scan.root, ['ls-tree', '-z', 'HEAD', '--', relative], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+      if (entry.error || entry.status !== 0 || entry.stdout.length > 0) return unavailable;
+    }
+    try {
+      assertNoLinkAncestor(scan.root, relative);
+      const after = fs.readFileSync(sources.get(relative).absolute, 'utf8');
+      if (before.status !== 0 || capabilitySourceChanged(before.stdout, after)) changed.push(relative);
+    } catch {
+      return unavailable;
+    }
+  }
+  return { paths: changed };
 }
 
 function withIndexSnapshot(root, action) {
@@ -215,7 +240,7 @@ function runVerification(scan, selected) {
 }
 
 function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null }) {
-  const taskRoute = completionTaskRoute(scan, paths, taskLevel);
+  const { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
@@ -229,6 +254,11 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
   const ok = taskRoute.status !== 'upgrade-required' && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
+  const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
+  const changeEvidence = assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
+  harvestInput.changedPaths = changeEvidence.paths;
+  const harvest = completionCapabilityHarvestSummary(config, scan, harvestInput);
+  if (changeEvidence.reason) harvest.reason = changeEvidence.reason;
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
     schemaVersion: 1,
@@ -242,6 +272,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     claimBoundary,
     governance,
     projectVerification,
+    harvest,
     generation: {
       status: 'manual-only',
       commands: ['aicg sync .', 'aicg harvest . --dry-run', 'aicg promote ...'],
