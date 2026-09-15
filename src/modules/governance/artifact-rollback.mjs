@@ -20,7 +20,7 @@ export function rollbackSnapshot(root, plan) {
       relative,
       kind: 'file',
       content: fs.readFileSync(absolute),
-      mode: stat.mode & 0o777,
+      mode: stat.mode & 0o7777,
       atimeMs: stat.atimeMs,
       mtimeMs: stat.mtimeMs,
     };

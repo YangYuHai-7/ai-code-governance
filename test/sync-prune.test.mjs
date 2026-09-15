@@ -43,8 +43,8 @@ function snapshotTree(root) {
       const stat = fs.lstatSync(absolute);
       const relative = path.relative(root, absolute);
       result[relative] = stat.isSymbolicLink() ? { link: fs.readlinkSync(absolute) }
-        : stat.isDirectory() ? { directory: true, mode: stat.mode & 0o777 }
-          : { bytes: fs.readFileSync(absolute).toString('base64'), mode: stat.mode & 0o777 };
+        : stat.isDirectory() ? { directory: true, mode: stat.mode & 0o7777 }
+          : { bytes: fs.readFileSync(absolute).toString('base64'), mode: stat.mode & 0o7777 };
       if (stat.isDirectory()) visit(absolute);
     }
   }
@@ -260,6 +260,42 @@ test('checker failure rolls approved removals back including manifest bytes and 
   assert.throws(() => applyArtifactPlan(root, plan, { transactional: true, verify: () => ({ ok: false }) }), /Post-apply verification failed/);
   assert.deepEqual(snapshotTree(root), before);
 });
+
+for (const rollback of [false, true]) for (const [name, bit] of [['sticky', 0o1000], ['setgid', 0o2000], ['setuid', 0o4000]]) {
+  test(`prune ${rollback ? 'rollback restores' : 'writes preserve'} ${name} file permissions`, (context) => {
+    const { root, manifest, relative } = legacyFixture(context);
+    const block = renderManagedBlock('@AGENTS.md');
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), `User notes\n${block}\n`);
+    manifest.files.push({ path: 'CLAUDE.md', ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', sha256: managedContentHash(block, 'managed-block') });
+    writeManifest(root, manifest);
+    const targets = [relative, 'CLAUDE.md', '.ai-governance/config.json', '.ai-governance/manifest.json'];
+    const desiredMode = 0o755 | bit;
+    for (const target of targets) {
+      try { fs.chmodSync(path.join(root, target), desiredMode); } catch (error) {
+        if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EINVAL'].includes(error.code)) throw error;
+        context.skip(`${process.platform} cannot set ${name}: ${error.code}`);
+        return;
+      }
+      if ((fs.lstatSync(path.join(root, target)).mode & 0o7777) !== desiredMode) {
+        context.skip(`${process.platform} filesystem does not preserve ${name} on files`);
+        return;
+      }
+    }
+    const before = snapshotTree(root);
+    const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+    const plan = planArtifacts(root, buildArtifacts({ ...config, artifactLanguage: 'zh-CN' }, scanProject(root)), { allowStaleRemoval: true });
+    const apply = () => applyArtifactPlan(root, plan, { transactional: true, verify: () => ({ ok: !rollback }) });
+    if (rollback) {
+      assert.throws(apply, /Post-apply verification failed/);
+      assert.deepEqual(snapshotTree(root), before);
+    } else {
+      apply();
+      assert.equal(fs.existsSync(path.join(root, relative)), false);
+      assert.equal(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), 'User notes\n\n');
+      for (const target of targets.slice(1)) assert.equal(fs.lstatSync(path.join(root, target)).mode & 0o7777, desiredMode, target);
+    }
+  });
+}
 
 for (const untrusted of ['foreign', 'future-template', 'future-tool', 'missing-tool', 'unknown-source', 'prototype-kind', 'wrong-path', 'duplicate-path', 'seed-forgery']) {
   test(`prune rejects ${untrusted} provenance with zero writes`, async (context) => {

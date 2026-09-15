@@ -8,9 +8,9 @@ export function snapshotPath(absolute) {
   const stat = lstatSafe(absolute);
   if (!stat) return { kind: 'missing' };
   if (stat.isSymbolicLink()) return { kind: 'link', target: fs.readlinkSync(absolute) };
-  if (stat.isDirectory()) return { kind: 'directory', mode: stat.mode & 0o777 };
-  if (!stat.isFile()) return { kind: 'other', mode: stat.mode & 0o777 };
-  return { kind: 'file', sha256: sha256(fs.readFileSync(absolute)), mode: stat.mode & 0o777 };
+  if (stat.isDirectory()) return { kind: 'directory', mode: stat.mode & 0o7777 };
+  if (!stat.isFile()) return { kind: 'other', mode: stat.mode & 0o7777 };
+  return { kind: 'file', sha256: sha256(fs.readFileSync(absolute)), mode: stat.mode & 0o7777 };
 }
 
 export function sameSnapshot(left, right) {

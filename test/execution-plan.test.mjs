@@ -15,6 +15,29 @@ function fixture(name) {
 const initializeIntent = { id: 'governance.initialize', handler: 'init', mode: 'write' };
 const pruneIntent = { id: 'governance.prune', handler: 'sync', mode: 'write' };
 
+for (const object of ['root', 'directory', 'file']) for (const [name, bit] of [['sticky', 0o1000], ['setgid', 0o2000], ['setuid', 0o4000]]) {
+  test(`prune approval binds ${name} on ${object}`, (context) => {
+    const root = fixture(`${object}-${name}`);
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const target = object === 'root' ? root : path.join(root, 'nested');
+    if (object === 'directory') fs.mkdirSync(target);
+    if (object === 'file') fs.writeFileSync(target, 'Inert fixture content.\n');
+    fs.chmodSync(target, 0o755);
+    const plan = buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) });
+    try { fs.chmodSync(target, 0o755 | bit); } catch (error) {
+      if (!['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS', 'EINVAL'].includes(error.code)) throw error;
+      context.skip(`${process.platform} cannot set ${name} on ${object}: ${error.code}`);
+      return;
+    }
+    if ((fs.lstatSync(target).mode & 0o7777) !== (0o755 | bit)) {
+      context.skip(`${process.platform} filesystem does not preserve ${name} on ${object}`);
+      return;
+    }
+    assert.throws(() => assertPlanFresh(plan), (error) => error.exitCode === 2 && /stale/.test(error.message));
+    assert.notEqual(buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) }).planHash, plan.planHash);
+  });
+}
+
 for (const change of ['add-empty-directory', 'remove-empty-directory', 'directory-mode', 'root-mode', 'file-to-directory', 'directory-to-file', 'directory-to-symlink']) {
   test(`prune approval becomes stale after ${change}`, (context) => {
     const root = fixture(change);

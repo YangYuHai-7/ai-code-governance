@@ -61,14 +61,14 @@ export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLin
             changed.push(operation.path);
           }
         } else if (operation.changed) {
-          const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o777 : null;
+          const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o7777 : null;
           writeAtomicFile(operation.absolute, operation.desired, mode);
           changed.push(operation.path);
         }
         continue;
       }
       if (operation.changed) {
-        const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o777 : null;
+        const mode = lstatSafe(operation.absolute)?.isFile() ? lstatSafe(operation.absolute).mode & 0o7777 : null;
         writeAtomicFile(operation.absolute, operation.desired, mode);
         changed.push(operation.path);
       }
@@ -82,7 +82,7 @@ export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLin
     const next = plan.manifest.content;
     if (previous !== next) {
       assertOperationWritePath(root, MANIFEST_PATH);
-      const mode = lstatSafe(manifestPath)?.isFile() ? lstatSafe(manifestPath).mode & 0o777 : null;
+      const mode = lstatSafe(manifestPath)?.isFile() ? lstatSafe(manifestPath).mode & 0o7777 : null;
       writeAtomicFile(manifestPath, next, mode);
       changed.push(MANIFEST_PATH);
     }
