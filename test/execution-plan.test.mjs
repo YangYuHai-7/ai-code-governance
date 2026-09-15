@@ -13,6 +13,38 @@ function fixture(name) {
 }
 
 const initializeIntent = { id: 'governance.initialize', handler: 'init', mode: 'write' };
+const pruneIntent = { id: 'governance.prune', handler: 'sync', mode: 'write' };
+
+for (const change of ['add-empty-directory', 'remove-empty-directory', 'directory-mode', 'root-mode', 'file-to-directory', 'directory-to-file', 'directory-to-symlink']) {
+  test(`prune approval becomes stale after ${change}`, (context) => {
+    const root = fixture(change);
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const entry = path.join(root, 'content');
+    if (change === 'file-to-directory') fs.writeFileSync(entry, 'content');
+    else fs.mkdirSync(entry, { mode: 0o755 });
+    const plan = buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) });
+    if (change === 'add-empty-directory') fs.mkdirSync(path.join(root, 'new-empty'));
+    if (change === 'remove-empty-directory') fs.rmdirSync(entry);
+    if (change === 'directory-mode') fs.chmodSync(entry, 0o700);
+    if (change === 'root-mode') fs.chmodSync(root, 0o755);
+    if (change === 'file-to-directory') { fs.unlinkSync(entry); fs.mkdirSync(entry); }
+    if (change === 'directory-to-file') { fs.rmdirSync(entry); fs.writeFileSync(entry, 'content'); }
+    if (change === 'directory-to-symlink') { fs.rmdirSync(entry); fs.symlinkSync(root, entry, process.platform === 'win32' ? 'junction' : 'dir'); }
+    assert.throws(() => assertPlanFresh(plan), (error) => error.exitCode === 2 && /stale/.test(error.message));
+    assert.notEqual(buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) }).planHash, plan.planHash);
+  });
+}
+
+test('prune approval excludes git metadata and its internal directories', (context) => {
+  const root = fixture('git-metadata');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const plan = buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) });
+  fs.mkdirSync(path.join(root, '.git/objects'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.git/HEAD'), 'ref: refs/heads/main\n');
+  fs.chmodSync(path.join(root, '.git'), 0o700);
+  assert.equal(assertPlanFresh(plan), true);
+  assert.equal(buildExecutionPlan({ intent: pruneIntent, scan: scanProject(root) }).planHash, plan.planHash);
+});
 
 test('execution plans reject stale preimages before apply', (context) => {
   const root = fixture('stale');

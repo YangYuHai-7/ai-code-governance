@@ -12,6 +12,8 @@ import { managedContentHash } from '../src/modules/governance/manifest.mjs';
 import { renderManagedBlock } from '../src/modules/governance/managed-block.mjs';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { buildCapabilityArtifacts, prepareCapabilityHarvest } from '../src/modules/capabilities/index.mjs';
+import { syncCommand } from '../src/cli/commands/governance.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-sync-prune-${name}-`));
@@ -66,6 +68,96 @@ function legacyFixture(context, version = 2) {
   writeManifest(root, manifest);
   return { root, manifest, relative };
 }
+
+function addManifestArtifact(root, manifest, artifact) {
+  fs.mkdirSync(path.dirname(path.join(root, artifact.path)), { recursive: true });
+  fs.writeFileSync(path.join(root, artifact.path), artifact.content);
+  manifest.files = manifest.files.filter((item) => item.path !== artifact.path);
+  manifest.files.push({ path: artifact.path, ownership: artifact.ownership, kind: artifact.kind, source: artifact.source, sha256: sha256(artifact.content) });
+  writeManifest(root, manifest);
+}
+
+test('custom Skill slugs cannot acquire prune authority from matching source and adapter paths', (context) => {
+  const { root, manifest } = legacyFixture(context);
+  const originalFiles = structuredClone(manifest.files);
+  const variants = [
+    { kind: 'adapter-skill', suffix: 'user-notes' },
+    { kind: 'adapter-skill', suffix: 'frontend-react-custom' },
+    { kind: 'technical-standard-adapter-skill', suffix: 'standards/user-notes' },
+    { kind: 'project-capability-adapter-skill', suffix: 'project/user-notes' },
+  ];
+  for (const version of [1, 2, 3]) for (const client of ['.agents', '.claude']) for (const variant of variants) {
+    manifest.templateVersion = version;
+    manifest.files = structuredClone(originalFiles);
+    const source = `docs/ai/skills/${variant.suffix}/SKILL.md`;
+    const relative = `${client}/skills/${variant.suffix}/SKILL.md`;
+    const content = `<!-- ${GENERATED_MARKER} -->\nUser-owned custom guidance.\n`;
+    fs.mkdirSync(path.dirname(path.join(root, source)), { recursive: true });
+    fs.writeFileSync(path.join(root, source), content);
+    addManifestArtifact(root, manifest, { path: relative, ownership: 'full', kind: variant.kind, source, content });
+    const before = snapshotTree(root);
+    const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+    assert.equal(plan.operations.some((item) => item.path === relative && item.remove), false, `${version}: ${relative}`);
+    assert.ok(plan.retained.some((item) => item.path === relative));
+    assert.deepEqual(snapshotTree(root), before);
+  }
+});
+
+test('supported historical pack business and technical adapter definitions retain prune authority', (context) => {
+  const { root, manifest } = legacyFixture(context);
+  const originalFiles = structuredClone(manifest.files);
+  const variants = [
+    { kind: 'adapter-skill', suffix: 'frontend-react' },
+    { kind: 'adapter-skill', suffix: 'business-constraints' },
+    { kind: 'technical-standard-adapter-skill', suffix: 'standards/react-component-purity' },
+  ];
+  for (const version of [1, 2, 3]) for (const client of ['.agents', '.claude']) for (const variant of variants) {
+    manifest.templateVersion = version;
+    manifest.files = structuredClone(originalFiles);
+    const relative = `${client}/skills/${variant.suffix}/SKILL.md`;
+    addManifestArtifact(root, manifest, { path: relative, ownership: 'full', kind: variant.kind, source: `docs/ai/skills/${variant.suffix}/SKILL.md`, content: `<!-- ${GENERATED_MARKER} -->\nHistorical adapter.\n` });
+    const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+    assert.deepEqual(plan.conflicts, [], `${version}: ${relative}`);
+    assert.ok(plan.operations.some((item) => item.path === relative && item.remove));
+  }
+});
+
+test('arbitrary canonical technical and project Skill slugs cannot be pruned', (context) => {
+  for (const [kind, source, suffix] of [
+    ['technical-standard-skill', 'technical-standard-registry', 'standards/custom'],
+    ['project-capability-skill', 'project-capability-harvest', 'project/custom'],
+  ]) {
+    const { root, manifest } = legacyFixture(context);
+    const relative = `docs/ai/skills/${suffix}/SKILL.md`;
+    addManifestArtifact(root, manifest, { path: relative, ownership: 'full', kind, source, content: `<!-- ${GENERATED_MARKER} -->\nUser text.\n` });
+    const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+    assert.equal(plan.operations.some((item) => item.path === relative && item.remove), false, relative);
+    assert.ok(plan.retained.some((item) => item.path === relative));
+  }
+});
+
+test('project capability removal requires a reproducible generated definition from config or trusted historical catalog', (context) => {
+  for (const evidence of ['config', 'catalog', 'forged-content', 'missing', 'drifted-catalog']) {
+    const { root, manifest } = legacyFixture(context);
+    fs.mkdirSync(path.join(root, 'src/auth'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src/auth/permission.service.ts'), 'export class PermissionService { can() { return true; } }\n');
+    const configPath = path.join(root, '.ai-governance/config.json');
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const harvested = prepareCapabilityHarvest(config, scanProject(root)).config;
+    const generated = buildCapabilityArtifacts({ ...harvested, clients: ['codex', 'claude-code'] }).artifacts;
+    const skills = generated.filter((item) => item.kind !== 'capability-evolution-catalog');
+    assert.ok(skills.length >= 3);
+    for (const artifact of skills) addManifestArtifact(root, manifest, evidence === 'forged-content' ? { ...artifact, content: 'User-owned custom content\n' } : artifact);
+    if (evidence === 'config' || evidence === 'forged-content') fs.writeFileSync(configPath, JSON.stringify(harvested));
+    if (evidence === 'catalog' || evidence === 'drifted-catalog') {
+      addManifestArtifact(root, manifest, generated.find((item) => item.kind === 'capability-evolution-catalog'));
+      if (evidence === 'drifted-catalog') fs.appendFileSync(path.join(root, 'docs/ai/capability-evolution.json'), '\n');
+    }
+    const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+    const removable = ['config', 'catalog'].includes(evidence);
+    for (const artifact of skills) assert.equal(plan.operations.some((item) => item.path === artifact.path && item.remove), removable, `${evidence}: ${artifact.path}`);
+  }
+});
 
 for (const version of [1, 2]) {
   test(`v${version} prune previews without writes and requires exact fresh approval`, (context) => {
@@ -170,7 +262,7 @@ test('checker failure rolls approved removals back including manifest bytes and 
 });
 
 for (const untrusted of ['foreign', 'future-template', 'future-tool', 'missing-tool', 'unknown-source', 'prototype-kind', 'wrong-path', 'duplicate-path', 'seed-forgery']) {
-  test(`prune rejects ${untrusted} provenance with zero writes`, (context) => {
+  test(`prune rejects ${untrusted} provenance with zero writes`, async (context) => {
     const { root, manifest, relative } = legacyFixture(context);
     if (untrusted === 'foreign') manifest.generatedBy = 'foreign';
     if (untrusted === 'future-template') manifest.templateVersion = 999;
@@ -186,8 +278,7 @@ for (const untrusted of ['foreign', 'future-template', 'future-tool', 'missing-t
     }
     writeManifest(root, manifest);
     const before = snapshotTree(root);
-    const preview = run(['sync', root, '--prune', '--dry-run', '--force']);
-    assert.equal(preview.status, 2, preview.stderr || preview.stdout);
+    await assert.rejects(() => syncCommand(root, { prune: true, 'dry-run': true, force: true }), (error) => error.exitCode === 2);
     assert.deepEqual(snapshotTree(root), before);
   });
 }

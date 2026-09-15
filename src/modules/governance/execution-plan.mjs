@@ -9,12 +9,12 @@ import { walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 
 function executionFingerprint(root, intent) {
   if (intent !== 'governance.prune') return repositoryFingerprint(root);
-  // Destructive approvals cover every repository file, including deep and ignored build inputs.
-  const snapshot = walkFilesDetailed(root, { maxDepth: Infinity, ignored: ['.git'] });
+  // Bind root and directory state as well as files, but exclude volatile Git metadata.
+  const snapshot = walkFilesDetailed(root, { maxDepth: Infinity, ignored: ['.git'], includeDirectories: true });
   if (!snapshot.budget.complete) throw usageError('Cannot completely scan repository inputs for pruning.');
-  const files = snapshot.files.map((file) => ({ path: file.relative, snapshot: snapshotPath(file.absolute) }))
+  const entries = [...snapshot.directories, ...snapshot.files].map((entry) => ({ path: entry.relative, snapshot: snapshotPath(entry.absolute) }))
     .sort((left, right) => left.path.localeCompare(right.path));
-  return sha256(stableJson({ root: fs.realpathSync(root), files }));
+  return sha256(stableJson({ root: fs.realpathSync(root), entries }));
 }
 
 function operationAction(operation, before) {
