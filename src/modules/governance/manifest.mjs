@@ -35,19 +35,28 @@ export function managedContentHash(content, ownership) {
   return sha256(content);
 }
 
-export function buildManifest(operations, { generatedAt = null } = {}) {
+export function buildManifest(operations, { generatedAt = null, retained = [] } = {}) {
   const manifest = {
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
     toolVersion: TOOL_VERSION,
     templateVersion: TEMPLATE_VERSION,
-    files: operations.filter((operation) => !operation.remove && operation.ownership !== 'seed').map((operation) => ({
-      path: operation.path,
-      ownership: operation.ownership,
-      kind: operation.kind,
-      source: operation.source,
-      sha256: sha256(renderedManagedContent(operation.ownership === 'full' ? operation.desired : operation.content, operation.ownership)),
-    })),
+    files: [
+      ...operations.filter((operation) => !operation.remove && operation.ownership !== 'seed').map((operation) => ({
+        path: operation.path,
+        ownership: operation.ownership,
+        kind: operation.kind,
+        source: operation.source,
+        sha256: sha256(renderedManagedContent(operation.ownership === 'full' ? operation.desired : operation.content, operation.ownership)),
+      })),
+      ...retained.map((entry) => ({
+        path: entry.path,
+        ownership: entry.ownership,
+        kind: entry.kind,
+        source: entry.source,
+        sha256: entry.sha256,
+      })),
+    ],
   };
   if (generatedAt) manifest.generatedAt = generatedAt;
   return manifest;

@@ -108,8 +108,8 @@ test('trusted manifests retain explicit stale removal authority', (context) => {
     files: [{
       path: stalePath,
       ownership: 'full',
-      kind: 'documentation',
-      source: 'template:legacy-generated',
+      kind: 'surface-verification-profiles',
+      source: 'asset:surface-verification-contract',
       sha256: sha256(staleContent),
     }],
   });
@@ -118,6 +118,66 @@ test('trusted manifests retain explicit stale removal authority', (context) => {
   assert.deepEqual(plan.conflicts, []);
   assert.deepEqual(plan.retained, []);
   assert.equal(plan.operations.filter((item) => item.remove).length, 1);
+});
+
+test('force cannot authorize removal of a drifted stale artifact', (context) => {
+  const root = fixture('drifted-removal');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const stalePath = 'docs/ai/surface-verification-profiles.json';
+  const original = `<!-- ${GENERATED_MARKER} -->\noriginal\n`;
+  const drifted = `${original}user change\n`;
+  fs.mkdirSync(path.join(root, 'docs/ai'), { recursive: true });
+  fs.writeFileSync(path.join(root, stalePath), drifted);
+  writeManifest(root, {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    generatedBy: TOOL_NAME,
+    templateVersion: TEMPLATE_VERSION,
+    files: [{
+      path: stalePath,
+      ownership: 'full',
+      kind: 'surface-verification-profiles',
+      source: 'asset:surface-verification-contract',
+      sha256: sha256(original),
+    }],
+  });
+
+  const plan = planArtifacts(root, [], { allowStaleRemoval: true, force: true });
+  assert.equal(plan.operations.some((item) => item.remove), false);
+  assert.deepEqual(plan.retained.map((item) => item.path), [stalePath]);
+  assert.match(plan.conflicts.join('\n'), /stale managed content changed/);
+});
+
+test('unknown or mismatched kind and source relationships have no removal authority', (context) => {
+  const root = fixture('unknown-relation');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const stalePath = 'docs/ai/surface-verification-profiles.json';
+  const staleContent = `<!-- ${GENERATED_MARKER} -->\nunknown relation\n`;
+  fs.mkdirSync(path.join(root, 'docs/ai'), { recursive: true });
+  fs.writeFileSync(path.join(root, stalePath), staleContent);
+  const manifest = {
+    schemaVersion: MANIFEST_SCHEMA_VERSION,
+    generatedBy: TOOL_NAME,
+    templateVersion: TEMPLATE_VERSION,
+    files: [{
+      path: stalePath,
+      ownership: 'full',
+      kind: 'mystery-kind',
+      source: 'mystery-source',
+      sha256: sha256(staleContent),
+    }],
+  };
+  writeManifest(root, manifest);
+
+  const authority = validateManifestRemovalAuthority(root, manifest);
+  assert.equal(authority.trusted, false);
+  assert.match(authority.errors.join('\n'), /kind|source|ownership/);
+  const mismatched = structuredClone(manifest);
+  mismatched.files[0].kind = 'adapter';
+  mismatched.files[0].source = 'confirmed-decisions';
+  assert.equal(validateManifestRemovalAuthority(root, mismatched).trusted, false);
+  const plan = planArtifacts(root, [], { allowStaleRemoval: true });
+  assert.equal(plan.operations.some((item) => item.remove), false);
+  assert.deepEqual(plan.retained.map((item) => item.path), [stalePath]);
 });
 
 test('sync JSON reports retained stale artifacts without removing them', (context) => {
@@ -145,5 +205,71 @@ test('sync JSON reports retained stale artifacts without removing them', (contex
   const output = JSON.parse(synced.stdout);
   assert.ok(Array.isArray(output.changed));
   assert.deepEqual(output.retained, [stalePath]);
+  assert.ok(fs.existsSync(path.join(root, stalePath)));
+});
+
+test('real sync preserves trusted retained provenance for the next sync', (context) => {
+  const root = fixture('persistent-retention');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const initialized = run(['init', root, '--yes', '--no-assist', '--clients', 'codex']);
+  assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
+
+  const stalePath = '.cursor/rules/ai-code-governance.mdc';
+  const staleContent = `/* ${GENERATED_MARKER} */\nretained adapter\n`;
+  fs.mkdirSync(path.dirname(path.join(root, stalePath)), { recursive: true });
+  fs.writeFileSync(path.join(root, stalePath), staleContent);
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.files.push({
+    path: stalePath,
+    ownership: 'full',
+    kind: 'adapter',
+    source: 'docs/ai/rules/00_always.mdc',
+    sha256: sha256(staleContent),
+  });
+  writeManifest(root, manifest);
+
+  const first = run(['sync', root]);
+  assert.equal(first.status, 0, first.stderr || first.stdout);
+  const persisted = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.ok(persisted.files.some((entry) => entry.path === stalePath));
+
+  const second = run(['sync', root]);
+  assert.equal(second.status, 0, second.stderr || second.stdout);
+  const persistedAgain = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.ok(persistedAgain.files.some((entry) => entry.path === stalePath));
+
+  const preview = run(['sync', root, '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+  assert.deepEqual(JSON.parse(preview.stdout).retained, [stalePath]);
+});
+
+test('real sync never launders foreign retained records into its trusted manifest', (context) => {
+  const root = fixture('foreign-persistence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const initialized = run(['init', root, '--yes', '--no-assist', '--clients', 'codex']);
+  assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
+
+  const stalePath = '.cursor/rules/ai-code-governance.mdc';
+  const staleContent = `/* ${GENERATED_MARKER} */\nforeign adapter\n`;
+  fs.mkdirSync(path.dirname(path.join(root, stalePath)), { recursive: true });
+  fs.writeFileSync(path.join(root, stalePath), staleContent);
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.generatedBy = 'Foreign Governance Tool';
+  manifest.files.push({
+    path: stalePath,
+    ownership: 'full',
+    kind: 'adapter',
+    source: 'docs/ai/rules/00_always.mdc',
+    sha256: sha256(staleContent),
+  });
+  writeManifest(root, manifest);
+
+  const synced = run(['sync', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const persisted = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  assert.equal(persisted.generatedBy, TOOL_NAME);
+  assert.equal(persisted.files.some((entry) => entry.path === stalePath), false);
   assert.ok(fs.existsSync(path.join(root, stalePath)));
 });
