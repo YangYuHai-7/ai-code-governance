@@ -67,6 +67,21 @@ function isAuthorizationBoundaryPath(relative) {
     || /(?:permission|authorization|authorize|policy|guard|ability)(?:[._-]|$)/i.test(path.basename(relative));
 }
 
+function completeReturnedObject(model, start, end) {
+  const unparenthesized = (first, last) => {
+    while (tokenIs(model.tokens, first, '(') && model.closes.get(first) === last - 1) { first += 1; last -= 1; }
+    return [first, last];
+  };
+  [start, end] = unparenthesized(start, end);
+  if (['Promise', '.', 'resolve', '('].every((value, offset) => tokenIs(model.tokens, start + offset, value))) {
+    if (model.closes.get(start + 3) !== end - 1) return null;
+    [start, end] = unparenthesized(start + 4, end - 1);
+  }
+  // Exact extent rejects chaining, extra arguments, comma/conditional/binary
+  // expressions, and wrappers whose resulting value cannot be proven here.
+  return tokenIs(model.tokens, start, '{') && model.closes.get(start) === end - 1 ? start : null;
+}
+
 function exportedAuthorizationBoundaries(model) {
   return model.declarations.filter((declaration) => {
     if (declaration.bodyStartIndex === null) return false;
@@ -74,11 +89,10 @@ function exportedAuthorizationBoundaries(model) {
       .map((token, offset) => ({ ...token, index: declaration.bodyStartIndex + 1 + offset }));
     const methodScopes = declaration.kind === 'class' ? [declaration.bodyStartIndex] : own.flatMap((token) => {
       if (token.value !== 'return' || model.depths[token.index] !== 1 || model.tokens[token.index + 1]?.lineBreakBefore) return [];
-      let object = token.index + 1;
-      // Factory evidence is restricted to an actually returned object, not a
-      // private nested declaration or a method inside a returned callback.
-      if (['Promise', '.', 'resolve', '('].every((value, offset) => tokenIs(model.tokens, object + offset, value))) object += 4;
-      return tokenIs(model.tokens, object, '{') && model.closes.has(object) ? [object] : [];
+      let end = token.index + 1;
+      while (end < declaration.endIndex - 1 && !(model.depths[end] === 1 && tokenIs(model.tokens, end, ';'))) end += 1;
+      const object = completeReturnedObject(model, token.index + 1, end);
+      return object === null ? [] : [object];
     });
     const implementedMethod = (token) => {
       if (token.kind !== 'identifier' || !tokenIs(model.tokens, token.index + 1, '(')) return false;

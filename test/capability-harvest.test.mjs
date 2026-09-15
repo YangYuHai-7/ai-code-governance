@@ -93,6 +93,37 @@ for (const [label, separator] of [['CR', '\r'], ['LF', '\n'], ['CRLF', '\r\n'], 
   });
 }
 
+for (const [name, expression, candidate] of [
+  ['direct object', '{ can() { return true; } }', true],
+  ['complete Promise.resolve', 'Promise.resolve({ can() { return true; } })', true],
+  ['parenthesized object', '(({ can() { return true; } }))', true],
+  ['parenthesized Promise.resolve object', '(Promise.resolve(({ can() { return true; } })))', true],
+  ['then chain', 'Promise.resolve({ can() { return true; } }).then(() => unrelated)', false],
+  ['catch chain', 'Promise.resolve({ can() { return true; } }).catch(() => unrelated)', false],
+  ['finally chain', 'Promise.resolve({ can() { return true; } }).finally(() => unrelated)', false],
+  ['comma object', '{ can() { return true; } }, unrelated', false],
+  ['comma promise', 'Promise.resolve({ can() { return true; } }), unrelated', false],
+  ['conditional object', '{ can() { return true; } } ? unrelated : other', false],
+  ['binary object', '{ can() { return true; } } && unrelated', false],
+  ['member object', '{ can() { return true; } }.can', false],
+  ['call object', '{ can() { return true; } }()', false],
+  ['extra Promise.resolve argument', 'Promise.resolve({ can() { return true; } }, unrelated)', false],
+  ['comma inside promise argument', 'Promise.resolve(({ can() { return true; } }, unrelated))', false],
+  ['chain inside parentheses', '(Promise.resolve({ can() { return true; } }).then(() => unrelated))', false],
+  ['newline continuation', 'Promise.resolve({ can() { return true; } })\n.then(() => unrelated)', false],
+  ['arbitrary wrapper', 'wrap({ can() { return true; } })', false],
+]) {
+  test(`factory discovery requires the complete returned ${name} expression`, (context) => {
+    const root = fixture('factory-return');
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.mkdirSync(path.join(root, 'src/auth'), { recursive: true });
+    for (const terminator of [';', '\n', '']) {
+      fs.writeFileSync(path.join(root, 'src/auth/policy.ts'), `export function Policy() { return ${expression}${terminator} }`);
+      assert.deepEqual(harvestModule.detectCapabilityCandidates(scanProject(root)).map((entry) => entry.id), candidate ? ['project-authorization'] : [], JSON.stringify(terminator));
+    }
+  });
+}
+
 for (const [name, source, expectedId, symbol, exportedAs] of [
   ['ambient object return alias', 'declare function Policy(): { can(): boolean }; export { Policy };', null],
   ['ambient object return default', 'declare function Policy(): { can(): boolean }; export default Policy;', null],
