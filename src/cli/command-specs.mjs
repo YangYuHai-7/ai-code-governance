@@ -5,6 +5,7 @@ export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided
 export const COMMAND_FLAGS = Object.freeze({
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'no-assist', 'migrate-links', 'approve', 'clients', 'locale', 'help']),
   check: new Set(['json', 'help']),
+  // Ordinary sync deliberately exposes no stale-removal authorization flag.
   sync: new Set(['dry-run', 'force', 'migrate-links', 'help']),
   doctor: new Set(['json', 'locale', 'help']),
   assess: new Set(['json', 'locale', 'help']),

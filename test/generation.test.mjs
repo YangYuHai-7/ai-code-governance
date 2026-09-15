@@ -785,7 +785,7 @@ for (const scenario of [
   });
 }
 
-test('reconfiguration removes only deselected managed client artifacts', (context) => {
+test('ordinary reconfiguration retains deselected managed client artifacts', (context) => {
   const root = fixture('deselect-agent');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root, (value) => ({ ...value, governanceDepth: 'complete' }));
@@ -795,12 +795,16 @@ test('reconfiguration removes only deselected managed client artifacts', (contex
   const existing = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   const config = { ...existing, clients: ['codex'] };
   const plan = planArtifacts(root, buildArtifacts(config, scan));
+  assert.equal(plan.operations.some((operation) => operation.remove), false);
+  assert.ok(plan.retained.some((entry) => entry.path === 'CLAUDE.md'));
+  assert.ok(plan.retained.some((entry) => entry.path === '.cursor/rules/ai-code-governance.mdc'));
+  assert.ok(plan.retained.some((entry) => entry.path === '.claude/skills/generic-unknown/SKILL.md'));
   applyArtifactPlan(root, plan);
 
-  assert.equal(fs.existsSync(path.join(root, '.cursor/rules/ai-code-governance.mdc')), false);
-  assert.equal(fs.existsSync(path.join(root, '.claude/skills/generic-unknown/SKILL.md')), false);
+  assert.equal(fs.existsSync(path.join(root, '.cursor/rules/ai-code-governance.mdc')), true);
+  assert.equal(fs.existsSync(path.join(root, '.claude/skills/generic-unknown/SKILL.md')), true);
   assert.match(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), /Keep this\./);
-  assert.doesNotMatch(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), /ai-code-governance:start/);
+  assert.match(fs.readFileSync(path.join(root, 'CLAUDE.md'), 'utf8'), /ai-code-governance:start/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
