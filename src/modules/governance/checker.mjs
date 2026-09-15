@@ -43,49 +43,89 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function profileRequiredPaths(content, profileName) {
-  const paths = new Set();
-  let inProfile = false;
-  let inRequired = false;
-  for (const line of content.split(/\r?\n/)) {
-    if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue;
-    const profile = line.match(/^  ([A-Za-z0-9_-]+):\s*$/);
-    if (profile) {
-      inProfile = profile[1] === profileName;
-      inRequired = false;
-      continue;
+function yamlName(line, indent) {
+  const match = line.match(new RegExp(`^ {${indent}}(?:([A-Za-z0-9_-]+)|["']([A-Za-z0-9_-]+)["']):\\s*$`));
+  return match?.[1] ?? match?.[2] ?? null;
+}
+
+function contextMapStructure(content) {
+  const lines = content.split(/\r?\n/);
+  const issues = [];
+  const profilesHeaders = lines.flatMap((line, index) => line === 'profiles:' ? [index] : []);
+  const baseHeaders = lines.flatMap((line, index) => line === 'base:' ? [index] : []);
+  if (profilesHeaders.length !== 1) issues.push(`expected exactly one top-level profiles container; found ${profilesHeaders.length}`);
+  if (baseHeaders.length !== 1) issues.push(`expected exactly one top-level base profile; found ${baseHeaders.length}`);
+
+  let base = null;
+  if (baseHeaders.length === 1) {
+    const start = baseHeaders[0];
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
+        end = index;
+        break;
+      }
     }
-    if (!inProfile) continue;
-    if (/^    required:\s*$/.test(line)) {
+    base = { name: 'base', lines: lines.slice(start, end) };
+  }
+
+  const profiles = new Map();
+  if (profilesHeaders.length === 1) {
+    const start = profilesHeaders[0];
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
+        end = index;
+        break;
+      }
+    }
+    const starts = [];
+    for (let index = start + 1; index < end; index += 1) {
+      const name = yamlName(lines[index], 2);
+      if (name) starts.push({ name, index });
+    }
+    for (let index = 0; index < starts.length; index += 1) {
+      const current = starts[index];
+      if (profiles.has(current.name)) {
+        issues.push(`duplicate profile ${current.name}`);
+        continue;
+      }
+      profiles.set(current.name, {
+        name: current.name,
+        lines: lines.slice(current.index, starts[index + 1]?.index ?? end),
+      });
+    }
+  }
+
+  return { base, profiles, issues };
+}
+
+function blockRequiredPaths(block, requiredIndent, itemIndent) {
+  const paths = new Set();
+  let inRequired = false;
+  for (const line of block?.lines ?? []) {
+    if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue;
+    if (line === `${' '.repeat(requiredIndent)}required:`) {
       inRequired = true;
       continue;
     }
-    if (/^    [A-Za-z0-9_-]+:\s*/.test(line)) {
+    if (new RegExp(`^ {${requiredIndent}}[A-Za-z0-9_-]+:\\s*`).test(line)) {
       inRequired = false;
       continue;
     }
     if (!inRequired) continue;
-    const item = line.match(/^      -\s+["']?([A-Za-z0-9._/-]+)["']?\s*$/);
+    const item = line.match(new RegExp(`^ {${itemIndent}}-\\s+["']?([A-Za-z0-9._/-]+)["']?\\s*$`));
     if (item) paths.add(item[1]);
   }
   return paths;
 }
 
-function profileConditionalPaths(content, profileName, conditionName) {
+function profileConditionalPaths(structure, profileName, conditionName) {
   const paths = new Set();
-  let inProfile = false;
   let inConditional = false;
   let inCondition = false;
-  for (const line of content.split(/\r?\n/)) {
+  for (const line of structure.profiles.get(profileName)?.lines ?? []) {
     if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue;
-    const profile = line.match(/^  ([A-Za-z0-9_-]+):\s*$/);
-    if (profile) {
-      inProfile = profile[1] === profileName;
-      inConditional = false;
-      inCondition = false;
-      continue;
-    }
-    if (!inProfile) continue;
     if (/^    conditional:\s*$/.test(line)) {
       inConditional = true;
       inCondition = false;
@@ -107,6 +147,70 @@ function profileConditionalPaths(content, profileName, conditionName) {
     if (item) paths.add(item[1]);
   }
   return paths;
+}
+
+function profileExtendsValues(profile) {
+  return (profile?.lines ?? []).flatMap((line) => {
+    const match = line.match(/^    extends:\s+["']?([A-Za-z0-9_-]+)["']?\s*$/);
+    return match ? [match[1]] : [];
+  });
+}
+
+function profileExtends(profile) {
+  const values = profileExtendsValues(profile);
+  return values.length === 1 ? values[0] : null;
+}
+
+function contextMapStructureIssues(structure) {
+  const issues = [...structure.issues];
+  if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has('docs/ai/rules/00_always.mdc')) {
+    issues.push('base profile must require docs/ai/rules/00_always.mdc');
+  }
+  const requiredParents = new Map([
+    ['ordinary', 'base'],
+    ['behavior_change', 'ordinary'],
+    ['release', 'ordinary'],
+  ]);
+  for (const [name, expectedParent] of requiredParents) {
+    const profile = structure.profiles.get(name);
+    if (!profile) {
+      issues.push(`missing required profile ${name}`);
+      continue;
+    }
+    const parent = profileExtends(profile);
+    if (!parent) issues.push(`profile ${name} must declare exactly one extends target`);
+    else if (parent !== expectedParent) issues.push(`profile ${name} must extend ${expectedParent}, not ${parent}`);
+  }
+  const release = structure.profiles.get('release');
+  if (release && !blockRequiredPaths(release, 4, 6).has('docs/ai/release-acceptance-policy.json')) {
+    issues.push('release profile must require docs/ai/release-acceptance-policy.json');
+  }
+
+  const known = new Set(['base', ...structure.profiles.keys()]);
+  const parents = new Map();
+  for (const [name, profile] of structure.profiles) {
+    if (profileExtendsValues(profile).length > 1) issues.push(`profile ${name} declares duplicate extends targets`);
+    const parent = profileExtends(profile);
+    if (!parent) continue;
+    parents.set(name, parent);
+    if (!known.has(parent)) issues.push(`profile ${name} extends unknown profile ${parent}`);
+  }
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = (name) => {
+    if (visiting.has(name)) {
+      issues.push(`profile inheritance cycle includes ${name}`);
+      return;
+    }
+    if (visited.has(name) || name === 'base') return;
+    visiting.add(name);
+    const parent = parents.get(name);
+    if (parent && known.has(parent)) visit(parent);
+    visiting.delete(name);
+    visited.add(name);
+  };
+  for (const name of structure.profiles.keys()) visit(name);
+  return [...new Set(issues)];
 }
 
 function acceptanceEvidence(root) {
@@ -362,20 +466,22 @@ export function checkProject(scan) {
     const agentsContent = readText(path.join(scan.root, 'AGENTS.md'), '');
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
     const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
+    const contextMapRouting = contextMapStructure(contextMap);
+    for (const issue of contextMapStructureIssues(contextMapRouting)) {
+      structureErrors.push(`docs/ai/context-map.yaml: ${issue}`);
+    }
     if (!managedAgentsContent) {
       reachabilityErrors.push('AGENTS.md: shared managed entrypoint is not reachable');
     }
-    const architecturePaths = profileConditionalPaths(contextMap, 'behavior_change', 'architecture');
-    const legacyArchitecturePaths = profileRequiredPaths(contextMap, 'implementation');
+    const architecturePaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'architecture');
     const architectureRouted = architecturePaths.has('docs/ai/architecture-profile.json')
       && architecturePaths.has('docs/ai/rules/15_architecture.mdc');
-    if (!managedAgentsContent.includes('docs/ai/context-map.yaml') || (!architectureRouted && !legacyArchitecturePaths.has('docs/ai/rules/15_architecture.mdc'))) {
+    if (!managedAgentsContent.includes('docs/ai/context-map.yaml') || !architectureRouted) {
       reachabilityErrors.push('docs/ai/context-map.yaml: architecture profile and generated rule are not reachable from the behavior_change route');
     }
     if (config.domainConstraints.length > 0) {
-      const businessPaths = profileConditionalPaths(contextMap, 'behavior_change', 'business');
-      const legacyBusinessPaths = profileRequiredPaths(contextMap, 'business_constraints');
-      const businessRouted = (relative) => businessPaths.has(relative) || legacyBusinessPaths.has(relative);
+      const businessPaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'business');
+      const businessRouted = (relative) => businessPaths.has(relative);
       if (!businessRouted(BUSINESS_CONSTRAINTS_PATH)) reachabilityErrors.push(`${BUSINESS_CONSTRAINTS_PATH}: owner-confirmed constraint registry is not reachable from the behavior_change route`);
       if (config.governanceDepth !== 'minimal' && !businessRouted(BUSINESS_CONSTRAINT_SKILL_PATH)) {
         reachabilityErrors.push(`${BUSINESS_CONSTRAINT_SKILL_PATH}: business constraint Skill is not reachable from the behavior_change route`);

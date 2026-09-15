@@ -1,0 +1,37 @@
+version: 1
+default_start:
+  - AGENTS.md
+  - docs/ai/context-map.yaml
+  - docs/ai/rules/00_always.mdc
+  - docs/ai/technical-standards.json
+  - docs/ai/capability-evolution.json
+profiles:
+  implementation:
+    description: Implement or change observable repository behavior.
+    triggers:
+      en: [implement, feature, fix, refactor]
+      zh: [实现, 功能, 修复, 重构]
+    required:
+      - docs/ai/rules/00_always.mdc
+      - docs/ai/rules/15_architecture.mdc
+      - docs/ai/rules/20_stack.mdc
+    verify:
+      - aicg check .
+  review:
+    description: Review changes without taking implementation ownership.
+    triggers:
+      en: [review, audit]
+      zh: [评审, 审计]
+    required:
+      - docs/ai/rules/00_always.mdc
+    verify:
+      - aicg check .
+  release:
+    description: Validate risk-tiered evidence before deployment or publication.
+    triggers:
+      en: [release, deploy, publish]
+      zh: [发布, 部署, 上线]
+    required:
+      - docs/ai/rules/00_always.mdc
+      - docs/ai/release-acceptance-policy.json
+    commandTemplate: aicg release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]

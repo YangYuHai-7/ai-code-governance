@@ -35,17 +35,52 @@ function removeOwnedBlock(current, ownership) {
 
 const CONTEXT_MAP_PATH = 'docs/ai/context-map.yaml';
 
-function yamlProfileBlock(content, profileName) {
+function yamlProfilesBounds(content) {
   const lines = content.split(/\r?\n/);
+  const starts = lines.flatMap((line, index) => line === 'profiles:' ? [index] : []);
+  if (starts.length !== 1) {
+    throw new Error(`${CONTEXT_MAP_PATH}: expected exactly one top-level profiles container; found ${starts.length}`);
+  }
+  const start = starts[0];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return { lines, start, end };
+}
+
+function yamlProfileBlock(content, profileName) {
+  const { lines, start: profilesStart, end: profilesEnd } = yamlProfilesBounds(content);
   const escapedName = profileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const profileHeader = new RegExp(`^  (?:${escapedName}|["']${escapedName}["'])\\s*:`);
-  const starts = lines.flatMap((line, index) => profileHeader.test(line) ? [index] : []);
+  const profileHeader = new RegExp(`^  (?:${escapedName}|["']${escapedName}["'])\\s*:\\s*$`);
+  const starts = lines.flatMap((line, index) => index > profilesStart && index < profilesEnd && profileHeader.test(line) ? [index] : []);
   if (starts.length === 0) return null;
   if (starts.length > 1) throw new Error(`${CONTEXT_MAP_PATH}: duplicate ${profileName} profiles are not safe to merge`);
   const [start] = starts;
+  let end = profilesEnd;
+  for (let index = start + 1; index < profilesEnd; index += 1) {
+    if (/^  (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^[A-Za-z0-9_-]+\s*:/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  return lines.slice(start, end).join('\n').trimEnd();
+}
+
+function yamlTopLevelBlock(content, key) {
+  const lines = content.split(/\r?\n/);
+  const escapedName = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const header = new RegExp(`^${escapedName}:\\s*$`);
+  const starts = lines.flatMap((line, index) => header.test(line) ? [index] : []);
+  if (starts.length === 0) return null;
+  if (starts.length > 1) throw new Error(`${CONTEXT_MAP_PATH}: duplicate top-level ${key} blocks are not safe to merge`);
+  const [start] = starts;
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^  (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^[A-Za-z0-9_-]+\s*:/.test(lines[index])) {
+    if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
       end = index;
       break;
     }
@@ -58,7 +93,7 @@ function yamlConditionalBlock(content, profileName, conditionName) {
   if (!profile) return null;
   const lines = profile.split(/\r?\n/);
   const escapedName = conditionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const conditionHeader = new RegExp(`^      (?:${escapedName}|["']${escapedName}["'])\\s*:`);
+  const conditionHeader = new RegExp(`^      (?:${escapedName}|["']${escapedName}["'])\\s*:\\s*$`);
   const starts = lines.flatMap((line, index) => conditionHeader.test(line) ? [index] : []);
   if (starts.length === 0) return null;
   if (starts.length > 1) throw new Error(`${CONTEXT_MAP_PATH}: duplicate ${conditionName} conditions are not safe to merge`);
@@ -101,11 +136,54 @@ function recognizedLegacyBusinessProfile(profile) {
 
 function mergeLegacyContextMapSeed(current, desired) {
   const requiredBusiness = yamlConditionalBlock(desired, 'behavior_change', 'business');
-  if (!requiredBusiness) return current;
   const legacyProfile = yamlProfileBlock(current, 'business_constraints');
   if (legacyProfile && !recognizedLegacyBusinessProfile(legacyProfile)) {
     throw new Error(`${CONTEXT_MAP_PATH}: existing business_constraints profile conflicts with the required AICG route`);
   }
+  const currentBase = yamlTopLevelBlock(current, 'base');
+  const currentOrdinary = yamlProfileBlock(current, 'ordinary');
+  const currentBehavior = yamlProfileBlock(current, 'behavior_change');
+  const currentRelease = yamlProfileBlock(current, 'release');
+  const hasIncrementalLayout = Boolean(currentBase && currentOrdinary && currentBehavior && currentRelease);
+  const hasAnyIncrementalLayout = Boolean(currentBase || currentOrdinary || currentBehavior);
+
+  if (!hasIncrementalLayout) {
+    if (hasAnyIncrementalLayout) {
+      throw new Error(`${CONTEXT_MAP_PATH}: partial incremental profile layout is not safe to merge`);
+    }
+    const legacyImplementation = yamlProfileBlock(current, 'implementation');
+    const legacyReview = yamlProfileBlock(current, 'review');
+    if (!legacyImplementation || !legacyReview || !currentRelease) {
+      throw new Error(`${CONTEXT_MAP_PATH}: unrecognized legacy profile layout is not safe to merge`);
+    }
+    if (!currentRelease.includes('      - docs/ai/release-acceptance-policy.json')) {
+      throw new Error(`${CONTEXT_MAP_PATH}: legacy release profile does not contain the generated release policy route`);
+    }
+    const releaseExtendsValues = [...currentRelease.matchAll(/^    extends:\s+["']?([A-Za-z0-9_-]+)["']?\s*$/gm)].map((match) => match[1]);
+    if (releaseExtendsValues.length > 1) {
+      throw new Error(`${CONTEXT_MAP_PATH}: legacy release profile declares duplicate extends targets`);
+    }
+    const releaseExtends = releaseExtendsValues[0] ?? null;
+    if (releaseExtends && releaseExtends !== 'ordinary') {
+      throw new Error(`${CONTEXT_MAP_PATH}: legacy release profile extends conflicting profile ${releaseExtends}`);
+    }
+    const requiredBase = yamlTopLevelBlock(desired, 'base');
+    const requiredOrdinary = yamlProfileBlock(desired, 'ordinary');
+    const requiredBehavior = yamlProfileBlock(desired, 'behavior_change');
+    if (!requiredBase || !requiredOrdinary || !requiredBehavior) {
+      throw new Error(`${CONTEXT_MAP_PATH}: generated incremental profile layout is incomplete`);
+    }
+    const newline = current.includes('\r\n') ? '\r\n' : '\n';
+    const { lines, start: profilesStart } = yamlProfilesBounds(current);
+    const releaseStart = lines.findIndex((line, index) => index > profilesStart && line === '  release:');
+    if (releaseStart === -1) throw new Error(`${CONTEXT_MAP_PATH}: legacy release profile header is not safe to merge`);
+    if (!releaseExtends) lines.splice(releaseStart + 1, 0, '    extends: ordinary');
+    lines.splice(profilesStart + 1, 0, ...requiredOrdinary.split('\n'), ...requiredBehavior.split('\n'));
+    lines.splice(profilesStart, 0, ...requiredBase.split('\n'));
+    return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+  }
+
+  if (!requiredBusiness) return current;
   const existingBusiness = yamlConditionalBlock(current, 'behavior_change', 'business');
   if (existingBusiness) {
     if (existingBusiness === requiredBusiness) return current;
