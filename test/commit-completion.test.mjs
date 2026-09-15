@@ -62,6 +62,10 @@ test('completion returns current verified capability candidates without writing 
   assert.equal(result.harvest.candidates[0].capability.status, 'candidate');
   assert.equal(result.harvest.candidates[0].capability.promotion, undefined);
   assert.equal(result.harvest.verification.command, 'npm run test');
+  assert.equal(result.projectVerification.inputEvidence.status, 'unchanged');
+  assert.match(result.projectVerification.inputEvidence.beforeFingerprint, /^[a-f0-9]{64}$/);
+  assert.equal(result.projectVerification.inputEvidence.beforeFingerprint, result.projectVerification.inputEvidence.afterFingerprint);
+  assert.deepEqual(result.harvest.verification.inputEvidence, result.projectVerification.inputEvidence);
   assert.deepEqual(tree(), before);
   assert.equal(git(root, ['ls-files', '--stage']).stdout, index);
   for (const [options, reason] of [
@@ -104,6 +108,34 @@ test('completion skips harvesting when a verified command leaves HEAD source evi
   assert.equal(result.harvest.reason, 'product-change-evidence-unavailable');
   assert.deepEqual(result.harvest.candidates, []);
 });
+
+for (const [mutation, body] of [
+  ['rewrite', "fs.appendFileSync(source, '\\nexport const unverified = true;\\n');"],
+  ['add', "fs.writeFileSync('src/modules/http/added.ts', 'export const unverified = true;');"],
+  ['delete', "fs.unlinkSync('src/modules/http/peer.ts');"],
+  ['type', "fs.unlinkSync(source); fs.symlinkSync('peer.ts', source);"],
+  ['stage', "require('node:child_process').execFileSync('git', ['add', source]);"],
+]) {
+  test(`completion binds verification inputs against source ${mutation}`, (context) => {
+    const root = fixture(`harvest-verification-${mutation}`);
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    initialize(root);
+    const source = 'src/modules/http/index.ts';
+    write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 1000 });\n");
+    write(root, 'src/modules/http/peer.ts', 'export const peer = true;\n');
+    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); const source = ${JSON.stringify(source)}; if (!fs.readFileSync(source, 'utf8').includes('2000')) process.exit(1); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: 'node scripts/verify.cjs' } }));
+    const synced = run(['sync', root]);
+    assert.equal(synced.status, 0, synced.stdout + synced.stderr);
+    baseline(root);
+    write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 2000 });\n");
+    const result = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' });
+    assert.equal(result.projectVerification.status, 'passed');
+    assert.equal(result.harvest.status, 'skipped');
+    assert.equal(result.harvest.reason, 'verification-input-changed');
+    assert.deepEqual(result.harvest.candidates, []);
+  });
+}
 
 test('completion rejects L1 after a production or high-risk diff', (context) => {
   const root = fixture('task-level');

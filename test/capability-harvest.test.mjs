@@ -56,6 +56,62 @@ test('capability change evidence ignores formatting but preserves changed string
   assert.equal(harvestModule.capabilitySourceChanged(original, original.replace('/v1', '/ v1')), true);
 });
 
+for (const [name, before, after, changed] of [
+  ['template value', 'export const url = `/v1`;', 'export const url = `/v2`;', true],
+  ['template expression', 'export const url = `/${one}`;', 'export const url = `/${two}`;', true],
+  ['regex value', 'export const role = /^admin$/;', 'export const role = /^guest$/;', true],
+  ['regex whitespace', 'export const role = /^admin$/;', 'export const role = /^ admin$/;', true],
+  ['ambiguous regex whitespace', 'if (ok) /admin/.test(role);', 'if (ok) / admin/.test(role);', true],
+  ['raw escape', String.raw`export const newline = '\n';`, "export const newline = 'n';", true],
+  ['string whitespace', "export const url = '/v1';", "export const url = '/ v1';", true],
+  ['restricted newline', 'function policy() { return allowed; }', 'function policy() { return\nallowed; }', true],
+  ['operator boundaries', 'export const a = b + +c;', 'export const a = b++ + c;', true],
+  ['control-body terminator', 'if (allowed); enforce();', 'if (allowed) enforce();', true],
+  ['expression continuation terminator', 'export const x = call(); [1].forEach(run);', 'export const x = call() [1].forEach(run);', true],
+  ['ordinary whitespace', 'export const a = call(1, 2);', 'export   const a=call( 1,2 );', false],
+  ['ordinary comments', 'export const a = call(1);', '/* explanation */ export const a = call(/* input */ 1); // end\n', false],
+  ['top-level terminator', 'export const a = call(1);', 'export const a = call(1)\n', false],
+]) {
+  test(`capability source comparison retains ${name} evidence`, () => {
+    assert.equal(harvestModule.capabilitySourceChanged(before, after), changed);
+  });
+}
+
+for (const [name, source, expectedId, symbol, exportedAs] of [
+  ['private policy beside unrelated export', 'export const unrelated = 1; class Policy { can() { return true; } }', null],
+  ['private policy beside unrelated alias', 'const unrelated = 1; class Policy { can() { return true; } } export { unrelated as PolicyApi };', null],
+  ['decision method in a different class', 'export class Policy {} class Helper { can() { return true; } }', null],
+  ['overload signature cannot borrow another body', 'export function Policy(): boolean; class Helper { can() { return true; } }', null],
+  ['private nested policy', 'export function helper() { class Policy { can() { return true; } } return Policy; }', null],
+  ['public policy declaration', 'export class Policy { can() { return true; } }', 'project-authorization', 'Policy', 'Policy'],
+  ['public policy local alias', 'class Policy { can() { return true; } } export { Policy as AccessPolicy };', 'project-authorization', 'Policy', 'AccessPolicy'],
+  ['public policy default', 'class Policy { can() { return true; } } export default Policy;', 'project-authorization', 'Policy', 'default'],
+  ['public guard declaration', 'export class AccessGuard implements CanActivate { canActivate() { return true; } }', 'project-authorization', 'AccessGuard', 'AccessGuard'],
+  ['private guard declaration', 'export const unrelated = 1; class AccessGuard implements CanActivate { canActivate() { return true; } }', null],
+  ['private client beside unrelated alias', "import axios from 'axios'; const client = axios.create({}); const other = {}; export { other as clientApi };", null],
+  ['shadowed private client', "import axios from 'axios'; function hidden() { const client = axios.create({}); } export const client = {};", null],
+  ['external reexport is not a local export', "import axios from 'axios'; const client = axios.create({}); export { client } from './other';", null],
+  ['public client local alias', "import axios from 'axios'; const client = axios.create({}); export { client as publicClient };", 'project-http-client', 'client', 'publicClient'],
+]) {
+  test(`capability discovery binds ${name} to its own exported declaration`, (context) => {
+    const root = fixture('declaration-export');
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { axios: '1.7.0' } }));
+    fs.mkdirSync(path.join(root, 'src/auth'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src/auth/policy.ts'), source);
+    const candidates = harvestModule.detectCapabilityCandidates(scanProject(root));
+    assert.deepEqual(candidates.map((entry) => entry.id), expectedId ? [expectedId] : []);
+    if (expectedId) {
+      const evidence = candidates[0].discoveryEvidence[0];
+      assert.equal(evidence.path, 'src/auth/policy.ts');
+      assert.equal(evidence.symbol, symbol);
+      assert.equal(evidence.exportedAs, exportedAs);
+      assert.ok(source.slice(evidence.declarationRange.start, evidence.declarationRange.end).includes(symbol));
+      assert.ok(source.slice(evidence.exportRange.start, evidence.exportRange.end).startsWith('export'));
+    }
+  });
+}
+
 test('harvest deduplicates by id then entrypoint then implementation without merging titles', (context) => {
   const root = fixture('dedup-order');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

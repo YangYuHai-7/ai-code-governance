@@ -1,9 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 import { matchSimpleGlob, normalizeRelative, unique } from '../../shared/index.mjs';
 import { taskRoutingPolicy } from '../governance/index.mjs';
-import { readText } from '../../adapters/filesystem/index.mjs';
 import { renderCapabilityArtifacts } from './artifacts.mjs';
-import { sourceTokens } from './source-tokenizer.mjs';
 import {
   commandEvidence,
   detectCapabilityCandidates,
@@ -15,6 +13,7 @@ import {
 } from './detector.mjs';
 
 export { detectCapabilityCandidates };
+export { capabilitySourceChanged } from './source-tokenizer.mjs';
 
 export function isProductionCapabilityPath(relative) {
   if (!isSafeCapabilityPath(relative)) return false;
@@ -44,12 +43,6 @@ export function assessHarvestEligibility({ taskRoute, changedPaths = [], verific
   }
   if (!Array.isArray(changedPaths) || !changedPaths.some(isProductionCapabilityPath)) return { eligible: false, reason: 'no-production-source-change' };
   return { eligible: true, reason: 'verified-product-behavior-change' };
-}
-
-export function capabilitySourceChanged(before, after) {
-  // Tokens preserve string values while excluding formatting and comments.
-  const tokens = (source) => sourceTokens(source).filter((token) => token.kind !== 'punctuation' || token.value !== ';');
-  return JSON.stringify(tokens(before)) !== JSON.stringify(tokens(after));
 }
 
 function deduplicateCandidate(candidate, existing) {
@@ -98,8 +91,7 @@ export function completionCapabilityHarvestSummary(config, scan, input) {
   const changed = new Set(input.changedPaths.filter(isProductionCapabilityPath).map(normalizeRelative));
   const productionScan = {
     ...scan,
-    files: sourceFiles(scan).filter((file) => isProductionCapabilityPath(file.relative)
-      && sourceTokens(readText(file.absolute)).some((token) => token.kind === 'identifier' && token.value === 'export')),
+    files: sourceFiles(scan).filter((file) => isProductionCapabilityPath(file.relative)),
   };
   const discovered = detectCapabilityCandidates(productionScan)
     .filter((entry) => entry.implementationPaths.some((relative) => changed.has(relative)));
@@ -109,7 +101,7 @@ export function completionCapabilityHarvestSummary(config, scan, input) {
   return {
     ...base,
     status: 'dry-run',
-    verification: { command: input.verification.command, status: input.verification.status, outputDigest: input.verification.outputDigest },
+    verification: { command: input.verification.command, status: input.verification.status, outputDigest: input.verification.outputDigest, inputEvidence: input.verification.inputEvidence },
     candidates: discovered.map((capability, index) => ({ ...decisions[index], capability })),
   };
 }

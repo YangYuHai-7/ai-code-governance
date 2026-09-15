@@ -3,7 +3,7 @@ import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { isArchitectureNonSourcePath } from '../architecture/index.mjs';
-import { sourceTokens } from './source-tokenizer.mjs';
+import { publicDeclarations } from './public-declarations.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
@@ -22,9 +22,10 @@ function tokenIs(tokens, index, value, kind = null) {
   return token?.value === value && (!kind || token.kind === kind);
 }
 
-function axiosBindings(tokens) {
+function axiosBindings(tokens, depths) {
   const bindings = new Set();
   for (let index = 0; index < tokens.length; index += 1) {
+    if (depths[index] !== 0) continue;
     if (tokenIs(tokens, index, 'import', 'identifier') && tokens[index + 1]?.kind === 'identifier') {
       const binding = tokens[index + 1].value;
       for (let cursor = index + 2; cursor < Math.min(tokens.length - 1, index + 20); cursor += 1) {
@@ -51,38 +52,13 @@ function isAxiosCreateCall(tokens, index, bindings) {
     && tokenIs(tokens, index + 3, '(');
 }
 
-function declaredAxiosClients(tokens, bindings) {
-  const clients = new Set();
-  for (let index = 0; index < tokens.length - 2; index += 1) {
-    if (!['const', 'let', 'var'].includes(tokens[index]?.value) || tokens[index + 1]?.kind !== 'identifier') continue;
-    const name = tokens[index + 1].value;
-    for (let cursor = index + 2; cursor < Math.min(tokens.length, index + 24); cursor += 1) {
-      if (tokenIs(tokens, cursor, ';') || tokenIs(tokens, cursor, ',')) break;
-      if (tokenIs(tokens, cursor, '=') && isAxiosCreateCall(tokens, cursor + 1, bindings)) {
-        clients.add(name);
-        break;
-      }
-    }
-  }
-  return clients;
-}
-
-function exportsAxiosClient(content) {
-  const tokens = sourceTokens(content);
-  const bindings = axiosBindings(tokens);
-  if (bindings.size === 0) return false;
-  const clients = declaredAxiosClients(tokens, bindings);
-  for (let index = 0; index < tokens.length; index += 1) {
-    if (!tokenIs(tokens, index, 'export', 'identifier')) continue;
-    if (tokenIs(tokens, index + 1, 'default', 'identifier') && (isAxiosCreateCall(tokens, index + 2, bindings) || clients.has(tokens[index + 2]?.value))) return true;
-    if (['const', 'let', 'var'].includes(tokens[index + 1]?.value) && clients.has(tokens[index + 2]?.value)) return true;
-    if (tokenIs(tokens, index + 1, '{')) {
-      for (let cursor = index + 2; cursor < tokens.length && !tokenIs(tokens, cursor, '}'); cursor += 1) {
-        if (clients.has(tokens[cursor]?.value)) return true;
-      }
-    }
-  }
-  return false;
+function exportedAxiosClients(model) {
+  const bindings = axiosBindings(model.tokens, model.depths);
+  return [...model.declarations, ...model.defaultExpressions].filter((declaration) => {
+    const start = declaration.initializer;
+    return start !== null && isAxiosCreateCall(model.tokens, start, bindings)
+      && model.closes?.get(start + 3) === declaration.endIndex - 1;
+  });
 }
 
 function isAuthorizationBoundaryPath(relative) {
@@ -91,16 +67,25 @@ function isAuthorizationBoundaryPath(relative) {
     || /(?:permission|authorization|authorize|policy|guard|ability)(?:[._-]|$)/i.test(path.basename(relative));
 }
 
-function hasAuthorizationSyntax(content) {
-  const tokens = sourceTokens(content);
-  const hasGuardSyntax = tokens.some((token, index) => (
-    ['CanActivate', 'canActivate', 'UseGuards', 'SetMetadata'].includes(token.value)
-    || (token.value === '@' && ['Roles', 'Permissions', 'UseGuards', 'SetMetadata'].includes(tokens[index + 1]?.value))
-  ));
-  const hasExplicitBoundary = tokens.some((token, index) => /^(?:Permission|Authorization|Authorize|Policy|Ability)\w*$/.test(token.value)
-    && ['class', 'function', 'const', 'let', 'var'].includes(tokens[index - 1]?.value));
-  const hasDecisionMethod = tokens.some((token) => ['can', 'authorize', 'check', 'enforce', 'permit', 'deny'].includes(token.value));
-  return hasGuardSyntax || (hasExplicitBoundary && hasDecisionMethod);
+function exportedAuthorizationBoundaries(model) {
+  return model.declarations.filter((declaration) => {
+    const own = model.tokens.slice(declaration.startIndex, declaration.endIndex)
+      .map((token, offset) => ({ ...token, index: declaration.startIndex + offset, depth: model.depths[declaration.startIndex + offset] }));
+    const hasDecision = own.some((token) => token.kind === 'identifier' && token.depth === 1
+      && ['can', 'authorize', 'check', 'enforce', 'permit', 'deny'].includes(token.value)
+      && tokenIs(model.tokens, token.index + 1, '('));
+    const hasGuard = declaration.kind === 'class' && own.some((token) => token.kind === 'identifier'
+      && ((token.depth === 0 && token.value === 'CanActivate')
+        || (token.depth === 1 && token.value === 'canActivate' && tokenIs(model.tokens, token.index + 1, '('))));
+    return hasGuard || (/^(?:Permission|Authorization|Authorize|Policy|Ability)\w*$/.test(declaration.symbol) && hasDecision);
+  });
+}
+
+function declarationEvidence(file, declaration) {
+  return {
+    path: file.relative, symbol: declaration.symbol, exportedAs: declaration.exportedAs,
+    declarationRange: declaration.declarationRange, exportRange: declaration.exportRange,
+  };
 }
 
 export function sourceFiles(scan, { includeTests = false } = {}) {
@@ -135,7 +120,7 @@ export function implementationFingerprint(scan, paths) {
     .sort((left, right) => left.path.localeCompare(right.path))));
 }
 
-function candidate({ id, kind, title, skillName, owner, implementationPaths, scan, detection }) {
+function candidate({ id, kind, title, skillName, owner, implementationPaths, discoveryEvidence, scan, detection }) {
   const paths = [...new Set(implementationPaths)].sort((left, right) => left.localeCompare(right));
   return {
     id,
@@ -151,6 +136,7 @@ function candidate({ id, kind, title, skillName, owner, implementationPaths, sca
     implementationFingerprint: implementationFingerprint(scan, paths),
     skill: `docs/ai/skills/project/${skillName}/SKILL.md`,
     detection,
+    discoveryEvidence,
     review: {
       status: 'required',
       dueDate: reviewDueDate(),
@@ -164,35 +150,40 @@ function candidate({ id, kind, title, skillName, owner, implementationPaths, sca
 }
 
 export function detectCapabilityCandidates(scan) {
-  const sources = sourceFiles(scan).map((file) => ({ ...file, content: readText(file.absolute) }));
+  const sources = sourceFiles(scan)
+    .filter((file) => scan.packageDependencies?.axios || isAuthorizationBoundaryPath(file.relative))
+    .sort((left, right) => left.relative.localeCompare(right.relative))
+    .map((file) => ({ ...file, model: publicDeclarations(readText(file.absolute)) }));
   const candidates = [];
-  const axiosWrappers = scan.packageDependencies?.axios
-    ? sources.filter((file) => exportsAxiosClient(file.content)).map((file) => file.relative)
+  const axiosEvidence = scan.packageDependencies?.axios
+    ? sources.flatMap((file) => exportedAxiosClients(file.model).map((declaration) => declarationEvidence(file, declaration)))
     : [];
-  if (axiosWrappers.length > 0) {
+  if (axiosEvidence.length > 0) {
     candidates.push(candidate({
       id: 'project-http-client',
       kind: 'platform-adapter',
       title: 'Use the project HTTP client',
       skillName: 'use-project-http-client',
       owner: 'platform',
-      implementationPaths: axiosWrappers,
+      implementationPaths: axiosEvidence.map((entry) => entry.path),
+      discoveryEvidence: axiosEvidence,
       scan,
       detection: 'exported-axios-create-wrapper-v1',
     }));
   }
 
-  const authorizationPaths = sources
-    .filter((file) => !['.tsx', '.jsx'].includes(path.extname(file.relative)) && isAuthorizationBoundaryPath(file.relative) && hasAuthorizationSyntax(file.content))
-    .map((file) => file.relative);
-  if (authorizationPaths.length > 0) {
+  const authorizationEvidence = sources
+    .filter((file) => !['.tsx', '.jsx'].includes(path.extname(file.relative)) && isAuthorizationBoundaryPath(file.relative))
+    .flatMap((file) => exportedAuthorizationBoundaries(file.model).map((declaration) => declarationEvidence(file, declaration)));
+  if (authorizationEvidence.length > 0) {
     candidates.push(candidate({
       id: 'project-authorization',
       kind: 'security-policy',
       title: 'Authorize project operations',
       skillName: 'authorize-project-operation',
       owner: 'authorization',
-      implementationPaths: authorizationPaths,
+      implementationPaths: authorizationEvidence.map((entry) => entry.path),
+      discoveryEvidence: authorizationEvidence,
       scan,
       detection: 'exported-authorization-boundary-v1',
     }));
