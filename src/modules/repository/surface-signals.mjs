@@ -18,7 +18,7 @@ const VERIFICATION_PROFILES = Object.freeze([
   { id: 'file-recovery', signalIds: ['surface-file-persistence'], environment: 'node', acceptedScriptPrefixes: ['test:recovery', 'verify:recovery', 'test:persistence', 'verify:persistence'] },
 ]);
 
-export function surfaceVerificationProfiles() {
+export function surfaceVerificationProfiles(config = {}) {
   return {
     schemaVersion: 1,
     generatedMarker: GENERATED_MARKER,
@@ -30,9 +30,9 @@ export function surfaceVerificationProfiles() {
       schemaVersion: 1,
       requiredFields: ['storyId', 'signalId', 'profileId', 'entrypoint', 'outcome'],
       requiredOutcome: 'passed',
-      binding: 'Every field must exactly match the selected declared story. A zero exit without one exact marker is not surface evidence.',
+      binding: config.artifactLanguage === 'zh-CN' ? '每个字段必须精确匹配所选已声明用户故事。没有精确匹配的标记时，零退出码不构成端验证证据。' : 'Every field must exactly match the selected declared story. A zero exit without one exact marker is not surface evidence.',
     },
-    claimBoundary: 'Profiles identify safe project-owned verification entrypoints. They do not make a detected surface supported or execute undeclared commands.',
+    claimBoundary: config.artifactLanguage === 'zh-CN' ? '配置仅标识安全且属于项目的验证入口，不会将检测到的端视为已支持，也不会执行未声明的命令。' : 'Profiles identify safe project-owned verification entrypoints. They do not make a detected surface supported or execute undeclared commands.',
   };
 }
 

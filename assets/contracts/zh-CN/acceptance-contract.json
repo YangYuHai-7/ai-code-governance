@@ -1,0 +1,385 @@
+{
+  "schema_version": 2,
+  "claim_states": {
+    "present": "产物存在，且其声明的引用均可解析。",
+    "reachable": "默认启动入口、上下文路由、能力目录或原生适配器提供了通向该产物的具体路径。",
+    "enforced": "真实交付入口针对所声明的违规以非零退出，且针对性负向探针已证明该失败及后续恢复。",
+    "real_client_verified": "声明的客户端或平台已成功执行真实配置入口；仅有合成调用不足以证明。"
+  },
+  "failure_policy": {
+    "delivery_checker_exception": "作为完成、pre-commit 或 CI 证据调用的检查器，遇到内部错误或畸形受管输入时必须以非零退出。",
+    "ambient_hook_exception": "环境客户端钩子可为保持仓库可用性而警告并以零退出，但受影响声明在修复前必须标记为 unverified。",
+    "optional_environment_dependency": "缺少仅本地使用或明确可选的依赖时，只有在检查器指出跳过的断言且不将声明报告为 enforced 的情况下，才可仅发出警告。"
+  },
+  "evidence_required": [
+    "real_entrypoint",
+    "negative_exit_and_diagnostic",
+    "recovery_exit_and_diagnostic",
+    "remaining_boundary"
+  ],
+  "project_result_manifest": {
+    "contract_path": "docs/ai/acceptance-contract.json",
+    "recommended_path": "docs/ai/acceptance-results.json",
+    "allowed_statuses": [
+      "pass",
+      "fail",
+      "not-applicable",
+      "unverified"
+    ],
+    "required_fields": [
+      "id",
+      "status",
+      "applies",
+      "applicability_reason",
+      "entrypoint",
+      "negative_evidence",
+      "recovery_evidence",
+      "remaining_boundary"
+    ],
+    "coverage": "每个 required_probe_families id 必须恰好出现一次。适用探针不得标为 not-applicable；pass 必须具备真实入口、负向与恢复证据；探针要求真实客户端证据而该证据缺失时，应标为 unverified，不得标为 pass。"
+  },
+  "required_probe_families": [
+    {
+      "id": "broken-exact-path",
+      "applies_when": "框架声明了必需文件或精确本地引用。",
+      "negative_case": "保留引用，移除一个必需的精确目标。",
+      "expected_failure": "真实结构门禁以非零退出，并指出缺失目标和修复操作。",
+      "recovery_case": "不修改检查器，恢复该目标。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "缺失的精确引用会被拒绝。"
+    },
+    {
+      "id": "empty-glob",
+      "applies_when": "任意上下文、验证或所有权声明使用了必需的 glob。",
+      "negative_case": "将一个必需 glob 替换为语法有效但匹配数为零的模式。",
+      "expected_failure": "真实结构门禁以非零退出，并区分零匹配和无效模式。",
+      "recovery_case": "恢复至少有一个预期匹配的模式。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "必需 glob 不能无声解析为空集合。"
+    },
+    {
+      "id": "required-profile-set",
+      "applies_when": "交付了上下文映射或验证配置注册表。",
+      "negative_case": "将配置注册表设为 null 或空对象，或移除一个必需配置。",
+      "expected_failure": "真实结构门禁以非零退出，并指出缺失的最小配置契约。",
+      "recovery_case": "恢复有项目证据支持的配置集合及必需字段。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "路由和验证注册表不能语法有效却语义为空。"
+    },
+    {
+      "id": "client-selection-adapter-parity",
+      "applies_when": "框架生成任意客户端启动入口或适配器。",
+      "negative_case": "省略用户确认的 all-versus-selected 决策，移除一个已选客户端的原生启动入口，或声称支持未选客户端。",
+      "expected_failure": "真实结构门禁以非零退出，指出缺失决策、没有可达启动入口的已选客户端，或不受支持的声明。",
+      "recovery_case": "记录用户明确的支持模式和已选客户端集合，恢复每个已选原生入口，并将所有未选客户端标记为未选而非已支持。",
+      "expected_recovery": "同一门禁以零退出，真实客户端验证仍须独立证据。",
+      "proves": "仓库检测不能无声缩小客户端范围，适配器覆盖应匹配用户的明确选择。"
+    },
+    {
+      "id": "routing-disambiguation",
+      "applies_when": "自然语言触发或重叠路径可选择两个或更多配置。",
+      "negative_case": "运行具有代表性的仓库短语和路径，它们应选择唯一配置或明确声明的多配置集合。",
+      "expected_failure": "遇到意外冲突、遗漏，或产品治理与编码治理的歧义匹配时，路由探针以非零退出。",
+      "recovery_case": "收窄触发条件或声明预期多配置结果，再重放相同示例。",
+      "expected_recovery": "每个示例均解析到预期的有序配置集合。",
+      "proves": "对真实项目请求，路由语义本身而不仅是引用文件都可测试且无歧义。"
+    },
+    {
+      "id": "capability-unreachable",
+      "applies_when": "框架包含技能、命令或代理。",
+      "negative_case": "保留能力文件，移除所有通向它的启动入口、路由、目录和原生适配器路径。",
+      "expected_failure": "真实结构门禁以非零退出，并指出不可达能力。",
+      "recovery_case": "恢复一条具体有效的发现路径。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "不能仅因文件存在就将能力计为可达。"
+    },
+    {
+      "id": "stack-standard-source-coverage",
+      "applies_when": "框架生成技术栈编码技能，并声称采用当前外部标准或框架指引。",
+      "negative_case": "移除已采纳来源的稳定 id，删除生成技能的 source_ids 链接，或移除检测版本、获取日期或适用性决策。",
+      "expected_failure": "真实结构或交付门禁以非零退出，并指出技能及其缺失或无法解析的来源 id 或版本证据。",
+      "recovery_case": "恢复当前权威来源记录，包含稳定 id、版本兼容性、明确采纳决策和技能的 source_ids 链接。",
+      "expected_recovery": "同一门禁以零退出，未解决的版本冲突仍明确标记为 unverified。",
+      "proves": "生成的技术规范可追溯到当前证据，而非无来源的模型记忆。"
+    },
+    {
+      "id": "stack-skill-coverage",
+      "applies_when": "用户确认技术栈或仓库侦察检测到技术栈组件，至少一个组件要求采纳，且框架生成能力层。",
+      "negative_case": "移除一个必须采纳组件的必需编码能力，断开所有通向该能力的配置路径，或省略条件启用或延后组件的采纳与阈值元数据。",
+      "expected_failure": "真实结构门禁以非零退出，并指出没有可达实现技能的已选组件。",
+      "recovery_case": "恢复细粒度技能及至少一条声明的配置或目录路径，或恢复明确的 conditional/deferred 状态及 activation_threshold 和 decision_source。",
+      "expected_recovery": "同一门禁以零退出，不强制把条件启用的基础设施加载到每项任务。",
+      "proves": "已选技术由可用的编码指引覆盖，而不只是列在清单中。"
+    },
+    {
+      "id": "business-pattern-routing",
+      "applies_when": "框架依据需求、领域文档、代码、测试、ADR 或用户确认的业务不变量生成一个或多个业务模式技能。",
+      "negative_case": "移除业务技能的证据或负责人，或使代表性请求解析到不相关或空的配置集合。",
+      "expected_failure": "真实结构或路由门禁以非零退出，并指出无支持证据或不可达的业务能力。",
+      "recovery_case": "恢复真实业务证据、明确负责人，以及可解析到预期技能配置的路由示例。",
+      "expected_recovery": "同一门禁和路由重放均以零退出。",
+      "proves": "业务规范编写以项目不变量为依据，且可从真实产品请求触达。"
+    },
+    {
+      "id": "feature-skill-harvest-freshness",
+      "applies_when": "框架声称自动演进技能，且任务变更集合包含产品代码行为变更。",
+      "negative_case": "在缺少收割回执时尝试交付或完成，复用旧 product_change_fingerprint 的回执，在收割后修改产品代码，或在 finalize 后修改收割的治理输出使 governance_output_fingerprint 不再匹配。",
+      "expected_failure": "真实交付或专用完成入口以非零退出，并指出缺失或过期的收割评估。",
+      "recovery_case": "运行机器 prepare，对当前产品变更集合完成 AI 语义提取，再 finalize 并记录唯一当前结果：updated-existing、created-new、candidate-recorded、no-skill-with-reason 或 not-applicable。",
+      "expected_recovery": "回执绑定当前产品及治理输出指纹，且满足所有产生的义务后，同一入口以零退出。",
+      "proves": "每项行为变更在完成前都针对可复用项目知识接受评估。"
+    },
+    {
+      "id": "capability-promotion-evidence",
+      "applies_when": "收割的项目能力被提升为 adopted，并获得新增或升级的技能。",
+      "negative_case": "移除负责人、正典实现路径或公共入口、当前验证证据、稳定能力 id，或消费方证据或明确复用决策。",
+      "expected_failure": "真实结构或交付门禁以非零退出，并指出已采纳能力缺失的提升证据。",
+      "recovery_case": "恢复绑定当前实现指纹的完整提升证据，或将条目降为有负责人、评审日期及明确缺口的候选。",
+      "expected_recovery": "同一门禁以零退出，不将未经验证的候选表示为 adopted。",
+      "proves": "自动演进提升已验证的可复用能力，而非推测性抽象。"
+    },
+    {
+      "id": "skill-implementation-drift",
+      "applies_when": "已采纳能力将其拥有的实现路径或公共入口映射到生成的项目技能。",
+      "negative_case": "修改所属实现、公共导出、调用契约或错误语义，但不更新或重新验证能力指纹和技能。",
+      "expected_failure": "真实漂移或交付门禁以非零退出，并指出过期能力 id 和技能。",
+      "recovery_case": "契约变化时升级既有技能与能力版本，或为当前指纹记录已验证的契约未变更回执。",
+      "expected_recovery": "同一门禁以零退出，技能指向当前正典实现。",
+      "proves": "生成的技能随所属代码演进，不成为过期的平行文档。"
+    },
+    {
+      "id": "canonical-capability-reuse",
+      "applies_when": "项目为特定受管路径声明正典客户端、适配器、权限服务、仓储或其他可复用能力。",
+      "negative_case": "在受管路径内且经审计迁移允许列表之外，添加新的直接依赖、原始客户端实例、重复权限实现或其他绕过。",
+      "expected_failure": "真实架构或交付门禁以非零退出，并指出绕过、正典能力、受管范围和修复操作。",
+      "recovery_case": "使用声明的公共入口，或添加有理由、负责人和到期时间的迁移允许条目。",
+      "expected_recovery": "同一门禁以零退出，既有迁移债务仍可见且不无声扩大。",
+      "proves": "新代码复用项目最新正典能力，不重复构建或绕过它。"
+    },
+    {
+      "id": "endpoint-wrong-method",
+      "applies_when": "记忆断言声明了 HTTP 方法和路径。",
+      "negative_case": "在错误方法下使用正确路径；对复合路由条件，将不同分支的方法与路径交叉配对。",
+      "expected_failure": "真实漂移门禁对简单不匹配和跨分支错误配对均以非零退出。",
+      "recovery_case": "恢复精确支持的方法与路径组合，或明确声明项目的 ANY 方法约定。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "方法与路径成对验证，而不是在相邻源码中分别找到即视为匹配。"
+    },
+    {
+      "id": "source-frontmatter-bad-path",
+      "applies_when": "记忆来源 front matter 声明了 related_memory 或 verified_from 路径。",
+      "negative_case": "使用空列表、缺失路径，或所有权索引中不存在的相关记忆页面。",
+      "expected_failure": "真实漂移门禁以非零退出，并指出无效字段和目标。",
+      "recovery_case": "恢复非空、存在且有所有权记录的路径。",
+      "expected_recovery": "同一门禁以零退出。",
+      "proves": "来源证据路径和记忆所有权经过解析与校验，而非仅检测字段名文本。"
+    },
+    {
+      "id": "memory-owner-mismatch",
+      "applies_when": "核心代码变更要求同步模块记忆页面。",
+      "negative_case": "修改一个核心归属模块，却仅更新不相关的记忆页面。",
+      "expected_failure": "真实漂移或 pre-commit 入口以非零退出，并指出缺失的所属记忆页面。",
+      "recovery_case": "更新每个已变更核心归属模块映射的记忆页面。",
+      "expected_recovery": "同一入口以零退出。",
+      "proves": "不能用任意记忆修改替代对应归属模块的更新。"
+    },
+    {
+      "id": "checker-internal-error",
+      "applies_when": "检查器被用作交付、pre-commit 或 CI 证据。",
+      "negative_case": "提供畸形受管结构，或触发检查器读取或解析异常，但不删除独立要求的哨兵文件。",
+      "expected_failure": "交付入口以非零退出并指出检查器错误；不得将跳过的断言降为成功警告。",
+      "recovery_case": "恢复有效受管输入或修复检查器。",
+      "expected_recovery": "同一交付入口以零退出。",
+      "proves": "即使环境钩子可以故障放行，明确交付证据仍必须故障阻断。"
+    },
+    {
+      "id": "strict-runtime-invalid-task",
+      "applies_when": "交付了长期任务运行时。",
+      "negative_case": "注入无效任务类型、非法历史转换、缺失的条件元数据，或不完整的必需门禁集合。",
+      "expected_failure": "真实交付门禁调用严格 doctor 行为，并以非零退出。",
+      "recovery_case": "恢复符合模式的任务和合法转换历史。",
+      "expected_recovery": "同一交付门禁以零退出。",
+      "proves": "运行时完整性由交付入口强制执行，不依赖可选环境设置。"
+    },
+    {
+      "id": "runtime-completion-freshness",
+      "applies_when": "运行时可从 verifying 返回 implementing，随后再完成。",
+      "negative_case": "通过或确认全部门禁，重新进入 implementing，再回到 verifying，随后尝试不重新运行或确认门禁就完成。",
+      "expected_failure": "完成操作以非零退出，因为回执属于更旧的实现代次。",
+      "recovery_case": "为当前代次重新运行每项机器门禁，并重新确认每项人工门禁。",
+      "expected_recovery": "完成操作成功并记录完成的代次。",
+      "proves": "旧证据不能证明更新的实现。"
+    },
+    {
+      "id": "runtime-complete-single-entry",
+      "applies_when": "运行时同时提供通用状态转换与完成命令。",
+      "negative_case": "尝试用通用转换进入 complete、移除必需门禁，或在缺少证据、检查时间或当前代次时将门禁标为通过。",
+      "expected_failure": "每项绕过尝试均以非零退出；严格 status 或 doctor 仍显示完成证据无效的终态任务。",
+      "recovery_case": "通过专用完成命令，提供精确的必需门禁集合及完整的当前证据。",
+      "expected_recovery": "专用完成命令成功。",
+      "proves": "完成操作只有一个受保护入口，并原子验证结构、证据和新鲜度。"
+    },
+    {
+      "id": "hook-tool-payload-classification",
+      "applies_when": "工具执行后事件会写入写操作账本。",
+      "negative_case": "对携带 file_path 的读取，以及每种写工具形态（包括自由格式 patch 和 shell 写入），重放真实客户端模式。",
+      "expected_failure": "若读取被记录为写入，或真实写入未出现在精确路径或 opaque 标记的账本下界中，探针以非零退出。",
+      "recovery_case": "使用按工具身份匹配的客户端专属适配器，重放相同测试矩阵。",
+      "expected_recovery": "读取不产生写记录；每次写入都产生精确路径或 opaque 标记。",
+      "proves": "账本分类真实客户端操作，不将所有含路径的载荷都假设为写入。"
+    },
+    {
+      "id": "opaque-write-git-cross-check",
+      "applies_when": "Stop 钩子接受 opaque shell 写入标记。",
+      "negative_case": "在临时 Git 检出中修改受管文件，但只记录 opaque 标记。",
+      "expected_failure": "真实 Stop 入口解析出变更路径，并按相称义务阻断。",
+      "recovery_case": "满足当前义务或恢复工作树。",
+      "expected_recovery": "当前义务全部完成后，同一 Stop 入口允许完成。",
+      "proves": "版本控制变更与账本合并；版本控制不可用时，钩子将强制执行状态报告为 unverified。"
+    },
+    {
+      "id": "stop-verification-closure",
+      "applies_when": "Stop 钩子会在门禁或知识同步未满足时阻止完成。",
+      "negative_case": "写入受管代码，并在验证前调用真实 Stop 入口。",
+      "expected_failure": "Stop 以非零退出，并打印精确义务。",
+      "recovery_case": "运行必需门禁，同步所属记忆，持久化绑定当前写入代次或变更指纹的回执，再次调用 Stop。",
+      "expected_recovery": "第二次 Stop 以零退出，无需使用 ack 或关闭开关。",
+      "proves": "钩子具备正常的写入、阻断、验证、放行成功路径，而非无限阻断循环。"
+    },
+    {
+      "id": "ack-atomic-single-consume",
+      "applies_when": "任意强制执行入口支持经审计的 ack。",
+      "negative_case": "创建一个 ack，并针对相同或已变化的变更集合两次调用所属强制执行入口。",
+      "expected_failure": "恰好一次调用可以消费该 ack；第二次被阻断。指纹变化后绝不复用第一个 ack。",
+      "recovery_case": "创建带理由的新 ack，并明确限定到新的强制执行入口和变更指纹。",
+      "expected_recovery": "该入口仅消费一次，并记录理由。",
+      "proves": "single_use 是原子强制的行为，不只是描述性 JSON 字段。"
+    },
+    {
+      "id": "precommit-entrypoint-replay",
+      "applies_when": "仓库声称 pre-commit 钩子已安装或已强制执行。",
+      "negative_case": "在临时 Git 检出中制造确定性治理失败，再调用受版本控制的 pre-commit 入口。",
+      "expected_failure": "钩子入口以非零退出；仅调用底层检查器不能满足该探针。",
+      "recovery_case": "修复条件，再次调用同一个受版本控制的钩子入口。",
+      "expected_recovery": "钩子以零退出，限定范围的 ack 或回执遵循文档规定的生命周期。",
+      "proves": "installed、entrypoint-replayed 和 change-sync-enforced 作为独立证据状态报告。"
+    },
+    {
+      "id": "lifecycle-maintenance-metadata",
+      "applies_when": "完整框架交付 L11 改进候选或周期健康检查。",
+      "negative_case": "移除改进候选负责人或评审日期，省略上次或下次健康检查元数据，或使用未知生命周期状态。",
+      "expected_failure": "真实框架门禁以非零退出，并指出缺失或无效的机器可读生命周期字段；无法复核的事实保持 unverified，不无声标为当前有效。",
+      "recovery_case": "恢复明确负责人、评审日期、允许的状态及上次和下次健康检查元数据，再重放相同门禁。",
+      "expected_recovery": "框架门禁以零退出；候选仍可作为有负责人的队列条目查询，而非仅是文字复选框。",
+      "proves": "L11 具备明确维护责任的状态及定期复验闭环。"
+    },
+    {
+      "id": "workflow-source-freshness",
+      "applies_when": "项目选择外部变更治理、执行纪律或桥接提供方。",
+      "negative_case": "移除其官方来源 id、观测版本、获取日期、复制内容所需许可证，或将未经评审的提供方更新标为当前有效。",
+      "expected_failure": "真实结构或交付门禁以非零退出，并指出提供方以及过期或缺失的来源记录；无法更新时保持 unverified，不标为当前有效。",
+      "recovery_case": "恢复权威来源记录，观测已安装版本，记录兼容性和许可证决策，再重放提供方检查。",
+      "expected_recovery": "同一门禁以零退出，未测试的提供方或平台边界仍然可见。",
+      "proves": "外部工作流行为作为有版本的依赖治理，不依赖记忆中的惯例。"
+    },
+    {
+      "id": "change-authority-single-source",
+      "applies_when": "项目具有产品行为规格、活动变更产物，或存在多个潜在变更治理提供方。",
+      "negative_case": "为当前产品行为或活动变更声明两个负责人，将有归属的 proposal/spec/design 复制到平行正典位置，或省略冲突处理动作。",
+      "expected_failure": "真实结构或交付门禁以非零退出，并指出重复或无归属的权威对象及两条冲突路径。",
+      "recovery_case": "为每个权威对象选择唯一负责人，将非归属副本替换为引用，并恢复遇冲突停止报告的处理。",
+      "expected_recovery": "同一门禁以零退出，每个受管对象恰好有一个可解析的负责人。",
+      "proves": "外部与项目原生变更系统不能创建第二事实来源。"
+    },
+    {
+      "id": "execution-plan-single-authority",
+      "applies_when": "实现可使用项目计划、外部变更任务列表或外部执行计划。",
+      "negative_case": "为同一任务配置或生成两个正式实现任务或计划负责人，或允许执行提供方在没有明确替代决策时创建第二计划。",
+      "expected_failure": "真实路由或交付门禁以非零退出，并指出两个计划权威来源及必需的解决动作。",
+      "recovery_case": "仅保留一个计划权威来源，使每种执行方法引用它；或记录经评审的替代决策并停用旧计划。",
+      "expected_recovery": "同一门禁以零退出，resume 仅报告一个计划权威来源。",
+      "proves": "实现不会在平行任务列表之间漂移。"
+    },
+    {
+      "id": "external-change-runtime-linkage",
+      "applies_when": "L9 任务引用外部活动变更。",
+      "negative_case": "使用缺失的变更 id，混用不同变更的权威路径，将已归档或已替代变更引用为活动变更，或使任务提供方与项目集成注册表不匹配。",
+      "expected_failure": "严格 doctor、resume 或交付以非零退出，并指出无效变更关联。",
+      "recovery_case": "恢复唯一当前变更 id、一致的权威路径、匹配的提供方元数据及观测到的兼容版本。",
+      "expected_recovery": "同一真实入口以零退出，并在恢复包中打印解析出的变更权威来源。",
+      "proves": "外部规格始终是关联真实任务的引用，不成为过期复制的上下文。"
+    },
+    {
+      "id": "external-archive-completion-gate",
+      "applies_when": "选定变更提供方支持同步或归档，且项目提供可调用该操作的封装或工作流。",
+      "negative_case": "在当前代次的项目门禁、变更校验、必需人工批准或能力收割完成前尝试归档。",
+      "expected_failure": "真实项目归档或完成封装在修改变更生命周期前以非零退出，并列出缺失义务。",
+      "recovery_case": "满足当前代次的每项义务，并针对同一活动变更调用同一封装。",
+      "expected_recovery": "封装成功，记录归档证据，且不留下指向已归档变更的活动运行时引用。",
+      "proves": "外部归档不能绕过项目治理或复用过期完成证据。"
+    },
+    {
+      "id": "selective-execution-capability",
+      "applies_when": "集成声称在另一个编排器内仅使用外部执行框架的选定能力。",
+      "negative_case": "从真实运行时发现中移除一项已选能力，或重放会触发未经批准的重复设计、计划、任务运行时或完成产物的调用。",
+      "expected_failure": "真实能力探针或交付门禁以非零退出，或明确将集成降为 unverified，不声称无冲突地选择性使用。",
+      "recovery_case": "恢复可发现且兼容的能力，并在不产生冲突产物的情况下重放；或采纳有来源归属的本地适配器；或选择唯一完整编排器。",
+      "expected_recovery": "同一探针对声明的选择集合以零退出，或配置如实记录非选择性模式。",
+      "proves": "选择性集成是观测到的运行时属性，不只是配置愿望。"
+    },
+    {
+      "id": "generated-adapter-no-links",
+      "applies_when": "aicg init 或 aicg sync 在任意支持平台生成客户端专属适配器。",
+      "negative_case": "将生成的适配器或任意祖先替换为符号链接、junction 或其他链接式文件系统对象。",
+      "expected_failure": "aicg check 以非零退出并指出链接路径；除非已明确授权链接迁移，否则初始化或同步停止。",
+      "recovery_case": "评审计划后运行明确的链接迁移，重新生成普通文件，再重放相同检查。",
+      "expected_recovery": "检查以零退出，全部受管适配器为普通文件，原链接目标仍存在且未改变。",
+      "proves": "跨平台适配器不依赖符号链接或 junction 语义。"
+    },
+    {
+      "id": "managed-adapter-drift",
+      "applies_when": "manifest 记录了生成的完整文件适配器或受管入口区块。",
+      "negative_case": "仅编辑 manifest 拥有的内容，不更新其正典来源。",
+      "expected_failure": "aicg check 以非零退出并指出内容哈希不匹配。",
+      "recovery_case": "评审漂移后运行 aicg sync --force，再重放 aicg check。",
+      "expected_recovery": "仅恢复 manifest 拥有的内容，保留周围用户内容，检查以零退出。",
+      "proves": "生成副本保持同步，不成为第二维护来源。"
+    },
+    {
+      "id": "initializer-idempotence",
+      "applies_when": "相同的已确认配置被多次初始化或同步。",
+      "negative_case": "连续运行两次确定性生成，并检查第二次是否有内容或修改时间变化。",
+      "expected_failure": "幂等性测试失败，并指出每条意外重写路径。",
+      "recovery_case": "使生成内容和 manifest 时间戳稳定，再重复两次执行。",
+      "expected_recovery": "第二次执行报告零变更文件，并保留文件字节和修改时间。",
+      "proves": "重复初始化具有确定性，不产生无意义的仓库变动。"
+    },
+    {
+      "id": "unmanaged-file-preservation",
+      "applies_when": "计划输出的完整文件已存在，但没有 manifest 所有权记录或生成标记。",
+      "negative_case": "尝试对该未知用户文件执行初始化或强制同步。",
+      "expected_failure": "生成在写入前停止，并报告不会覆盖无归属文件。",
+      "recovery_case": "通过经评审的迁移移动或明确采纳该文件，再重新生成。",
+      "expected_recovery": "生成成功，且不修改无关用户内容。",
+      "proves": "force 模式不能无声扩大所有权到任意仓库文件。"
+    },
+    {
+      "id": "noninteractive-required-input",
+      "applies_when": "aicg init 在没有交互终端时运行，且配置或 --yes 默认值未提供必需选择。",
+      "negative_case": "通过管道标准输入调用 init，省略必需的客户端、技术栈、治理深度或语言决策。",
+      "expected_failure": "命令在写入任何治理文件前以状态码 2 退出。",
+      "recovery_case": "提供完整 JSON 配置，或使用明确的 --yes 默认值后重新运行。",
+      "expected_recovery": "确定性初始化完成，aicg check 报告结构证据。",
+      "proves": "自动化不会为必需治理决策获得隐藏的交互猜测。"
+    },
+    {
+      "id": "agent-assist-fallback",
+      "applies_when": "确定性初始化后选择了 AI 辅助完善。",
+      "negative_case": "使用不可用、未认证、超时或执行失败的已选 Agent CLI。",
+      "expected_failure": "确定性框架保持完整，辅助完善被报告为 unverified，并打印安全重试命令。",
+      "recovery_case": "恢复正常 Agent CLI 会话，运行打印出的重试命令，不使用绕过或跳过批准的标志。",
+      "expected_recovery": "助手成功退出，且 aicg check 与项目验证均可独立重放。",
+      "proves": "可选 AI 丰富不能回滚或破坏离线基础。"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
@@ -79,6 +79,18 @@ try {
   run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--config', answers, `--approve=${requestPayload.plan.planHash}`, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
+  const installedRoot = path.dirname(path.dirname(installedBin));
+  const { buildArtifacts } = await import(pathToFileURL(path.join(installedRoot, 'src/generator.mjs')));
+  const { scanProject } = await import(pathToFileURL(path.join(installedRoot, 'src/scanner.mjs')));
+  const { applyArtifactPlan, planArtifacts } = await import(pathToFileURL(path.join(installedRoot, 'src/managed-files.mjs')));
+  const installedConfig = JSON.parse(fs.readFileSync(path.join(projectDirectory, '.ai-governance/config.json'), 'utf8'));
+  const firstUse = buildArtifacts(installedConfig, { ...scanProject(projectDirectory), governanceUsage: ['release', 'surface', 'acceptance'] });
+  for (const relative of ['release-acceptance-policy.json', 'surface-verification-profiles.json', 'acceptance-contract.json']) {
+    const artifact = firstUse.find((entry) => entry.path === `docs/ai/${relative}`);
+    assert.match(artifact.content, /[\u3400-\u9fff]/u, `installed Chinese first-use artifact: ${relative}`);
+  }
+  applyArtifactPlan(projectDirectory, planArtifacts(projectDirectory, firstUse));
+  run(process.execPath, [installedBin, 'check', projectDirectory, '--json']);
   const standardsPreview = run(process.execPath, [installedBin, 'standards', projectDirectory, '--json']);
   assert.equal(JSON.parse(standardsPreview.stdout).mode, 'read-only-preview');
   const chatStandardsPreview = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '生成技术规范预览', '--json']);

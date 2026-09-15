@@ -1,0 +1,358 @@
+{
+  "schemaVersion": 1,
+  "policyId": "aicg-release-acceptance-v1",
+  "scopes": {
+    "projectCompletion": {
+      "command": "aicg complete",
+      "independentParticipantsRequired": false,
+      "claimBoundary": "仅证明已配置的项目完成检查，不构成组织级发布认证。"
+    },
+    "organizationalReleaseCertification": {
+      "command": "aicg release-check",
+      "independentParticipantsRequired": true,
+      "claimBoundary": "对部署、发布或产品认证声明应用按风险分级的独立证据策略。"
+    }
+  },
+  "changeTypes": [
+    "bugfix",
+    "feature",
+    "major"
+  ],
+  "scorecard": {
+    "minimumWeightedScore": 85,
+    "blockingFindingSeverities": [
+      "P0",
+      "P1"
+    ],
+    "dimensions": [
+      {
+        "id": "business-understanding",
+        "weight": 15,
+        "minimumScore": 80,
+        "critical": true
+      },
+      {
+        "id": "project-lifecycle-boundary",
+        "weight": 10,
+        "minimumScore": 70,
+        "critical": false
+      },
+      {
+        "id": "directory-design",
+        "weight": 10,
+        "minimumScore": 70,
+        "critical": false
+      },
+      {
+        "id": "architecture-design",
+        "weight": 15,
+        "minimumScore": 80,
+        "critical": true
+      },
+      {
+        "id": "code-design",
+        "weight": 15,
+        "minimumScore": 80,
+        "critical": true
+      },
+      {
+        "id": "encapsulation-and-reuse",
+        "weight": 10,
+        "minimumScore": 70,
+        "critical": false
+      },
+      {
+        "id": "security-and-reliability",
+        "weight": 10,
+        "minimumScore": 80,
+        "critical": true
+      },
+      {
+        "id": "skill-quality-and-evolution",
+        "weight": 10,
+        "minimumScore": 70,
+        "critical": false
+      },
+      {
+        "id": "gate-efficiency-and-usability",
+        "weight": 5,
+        "minimumScore": 70,
+        "critical": false
+      }
+    ]
+  },
+  "riskSignals": {
+    "authorization": {
+      "minimumTier": "feature",
+      "reason": "授权缺陷可能跨越操作者和资源边界。"
+    },
+    "multi-tenancy": {
+      "minimumTier": "feature",
+      "reason": "租户隔离失败可能暴露或损坏其他租户的数据。"
+    },
+    "payment": {
+      "minimumTier": "feature",
+      "reason": "资金流转需要独立的负向与恢复证据。"
+    },
+    "sensitive-data": {
+      "minimumTier": "feature",
+      "reason": "敏感数据变更需要独立安全评审。"
+    },
+    "data-migration": {
+      "minimumTier": "feature",
+      "reason": "未演练恢复流程时，迁移失败可能不可逆。"
+    },
+    "external-side-effect": {
+      "minimumTier": "feature",
+      "reason": "外部副作用需要幂等性和恢复证据。"
+    },
+    "public-contract": {
+      "minimumTier": "feature",
+      "reason": "公共契约变更需要兼容性和消费方证据。"
+    },
+    "breaking-public-api": {
+      "minimumTier": "major",
+      "requiresChangeType": "major",
+      "reason": "破坏性公共契约变更需要 major 发布验收。"
+    },
+    "governance-schema": {
+      "minimumTier": "major",
+      "requiresChangeType": "major",
+      "reason": "治理模式变更可能使所有已生成项目失效。"
+    }
+  },
+  "tiers": {
+    "bugfix": {
+      "semverChange": "patch",
+      "maximumEvidenceAgeDays": 14,
+      "minimumParticipants": {
+        "engineers": 1,
+        "architects": 1
+      },
+      "requiredEngineerScenarios": [
+        "defect-regression"
+      ],
+      "requiredArchitectLenses": [
+        "change-scope"
+      ],
+      "requiredEvidence": [
+        "scope-boundary",
+        "defect-reproduction",
+        "negative-positive-regression",
+        "affected-scope-verification",
+        "governance-gate",
+        "package-smoke",
+        "rollback-plan"
+      ]
+    },
+    "feature": {
+      "semverChange": "minor",
+      "maximumEvidenceAgeDays": 14,
+      "minimumParticipants": {
+        "engineers": 2,
+        "architects": 2
+      },
+      "requiredEngineerScenarios": [
+        "business-flow",
+        "integration-contract"
+      ],
+      "requiredArchitectLenses": [
+        "business-domain",
+        "application-platform"
+      ],
+      "requiredEvidence": [
+        "scope-boundary",
+        "business-contract",
+        "directory-and-architecture-review",
+        "implementation-verification",
+        "targeted-negative-probes",
+        "canonical-reuse-review",
+        "capability-evolution-review",
+        "governance-gate",
+        "package-smoke",
+        "rollback-plan"
+      ]
+    },
+    "major": {
+      "semverChange": "major",
+      "maximumEvidenceAgeDays": 30,
+      "minimumParticipants": {
+        "engineers": 5,
+        "architects": 3
+      },
+      "requiredEngineerScenarios": [
+        "greenfield",
+        "brownfield",
+        "high-risk-boundary",
+        "canonical-reuse",
+        "upgrade-compatibility"
+      ],
+      "requiredArchitectLenses": [
+        "business-domain",
+        "application-platform",
+        "security-governance"
+      ],
+      "requiredEvidence": [
+        "scope-boundary",
+        "five-by-three-blind-evaluation",
+        "greenfield-real-project",
+        "brownfield-real-project",
+        "business-and-architecture-scorecards",
+        "cross-platform-matrix",
+        "baseline-comparison",
+        "migration-and-compatibility",
+        "all-applicable-negative-probes",
+        "real-client-replay",
+        "governance-gate",
+        "package-install-smoke",
+        "rollback-rehearsal"
+      ]
+    }
+  },
+  "evidenceCatalog": {
+    "scope-boundary": {
+      "description": "变更范围、排除项、用户所有的文件及迁移授权已接受独立评审。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "defect-reproduction": {
+      "description": "已用精确输入在前一版本复现缺陷，并观察到失败。",
+      "verificationModes": [
+        "probe"
+      ]
+    },
+    "negative-positive-regression": {
+      "description": "回归测试在修复前失败，在修复后通过。",
+      "verificationModes": [
+        "probe"
+      ]
+    },
+    "affected-scope-verification": {
+      "description": "受影响范围的测试、类型检查、lint 和构建已通过。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "business-contract": {
+      "description": "操作者、资源、负责人、状态、授权、事务、副作用和未决缺口均有证据。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "directory-and-architecture-review": {
+      "description": "模块放置、依赖方向、内聚、耦合和迁移边界已接受评审。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "implementation-verification": {
+      "description": "与功能相称的单元、集成、契约和构建验证已通过。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "targeted-negative-probes": {
+      "description": "至少一个功能专属故障已被注入、拒绝、修复并成功重放。",
+      "verificationModes": [
+        "probe"
+      ]
+    },
+    "canonical-reuse-review": {
+      "description": "新代码使用已有客户端、守卫、仓储、适配器和公共入口，未重复创建。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "capability-evolution-review": {
+      "description": "已明确评估本次变更应更新技能、创建技能、保留候选，还是提供有理由的 no-skill 结果。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "governance-gate": {
+      "description": "真实治理完成入口已通过，当前探针覆盖其失败行为。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "package-smoke": {
+      "description": "可分发包或可部署产物已完成干净安装和冒烟测试。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "rollback-plan": {
+      "description": "存在具体的撤销或回滚流程，并明确不可逆边界。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "five-by-three-blind-evaluation": {
+      "description": "五名独立工程评估者与三名架构师在共识评审前完成了隔离场景评估。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "greenfield-real-project": {
+      "description": "一个真实新项目已完成初始化和具有代表性的实现任务。",
+      "verificationModes": [
+        "artifact"
+      ]
+    },
+    "brownfield-real-project": {
+      "description": "一个结构不同的既有项目在保留现有代码的同时完成了具有代表性的变更。",
+      "verificationModes": [
+        "artifact"
+      ]
+    },
+    "business-and-architecture-scorecards": {
+      "description": "独立评分表覆盖业务理解、目录、架构、代码设计、封装、安全、技能和可用性。",
+      "verificationModes": [
+        "review"
+      ]
+    },
+    "cross-platform-matrix": {
+      "description": "每个声明的操作系统与运行时组合都有当前证据，或已明确排除在发布声明之外。",
+      "verificationModes": [
+        "artifact"
+      ]
+    },
+    "baseline-comparison": {
+      "description": "与前一版本或未启用治理的对照相比，本次治理执行已比较缺陷、复用、耗时、token 和人工干预。",
+      "verificationModes": [
+        "artifact"
+      ]
+    },
+    "migration-and-compatibility": {
+      "description": "升级、向后兼容、弃用以及数据和配置迁移路径已实际验证。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "all-applicable-negative-probes": {
+      "description": "每项适用的 acceptance-contract 探针都有当前负向和恢复证据。",
+      "verificationModes": [
+        "probe"
+      ]
+    },
+    "real-client-replay": {
+      "description": "每个声明的 AI 客户端均执行了其真实配置入口；仅有合成调用不足以证明。",
+      "verificationModes": [
+        "artifact"
+      ]
+    },
+    "package-install-smoke": {
+      "description": "与发布形态一致的软件包已在支持环境的干净测试项目中安装并执行。",
+      "verificationModes": [
+        "command"
+      ]
+    },
+    "rollback-rehearsal": {
+      "description": "已从发布候选演练回滚，并验证用户所有的状态得到保留。",
+      "verificationModes": [
+        "probe"
+      ]
+    }
+  }
+}

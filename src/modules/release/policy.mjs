@@ -6,6 +6,7 @@ import { usageError } from '../../kernel/errors/usage-error.mjs';
 import { repositoryFile, sha256File } from './repository-evidence.mjs';
 
 const POLICY_PATH = path.join(PACKAGE_ROOT, 'assets', 'policies', 'release-acceptance-policy.json');
+const CHINESE_POLICY_PATH = path.join(PACKAGE_ROOT, 'assets', 'policies', 'zh-CN', 'release-acceptance-policy.json');
 const TIER_ORDER = ['bugfix', 'feature', 'major'];
 
 function assertPolicy(condition, message) {
@@ -123,15 +124,18 @@ export function loadProjectReleaseAcceptancePolicy(root) {
     const safePolicy = repositoryFile(root, 'docs/ai/release-acceptance-policy.json', 'release acceptance policy', errors);
     if (!safePolicy) throw usageError(errors.join(' '));
     const policy = loadReleaseAcceptancePolicy(safePolicy);
-    assertPolicy(sha256File(safePolicy) === baselineDigest, 'project policy snapshot is stale or drifted; review and run aicg sync before release.');
-    selected = { policy, source: 'project-snapshot', absolutePath: safePolicy, digest: baselineDigest };
+    const snapshotDigest = sha256File(safePolicy);
+    // Localized snapshots are exact built-in artifacts, not arbitrary prose
+    // overrides. Bind receipts to the bytes actually selected by the project.
+    assertPolicy(snapshotDigest === baselineDigest || snapshotDigest === sha256File(CHINESE_POLICY_PATH), 'project policy snapshot is stale or drifted; review and run aicg sync before release.');
+    selected = { policy, source: 'project-snapshot', absolutePath: safePolicy, digest: snapshotDigest };
   }
   if (!fs.existsSync(projectOverride)) return selected;
   const errors = [];
   const safeOverride = repositoryFile(root, 'docs/ai/release-acceptance-override.json', 'release acceptance override', errors);
   if (!safeOverride) throw usageError(errors.join(' '));
   const override = loadReleaseAcceptancePolicy(safeOverride);
-  assertPolicyNotWeaker(override, baseline);
+  assertPolicyNotWeaker(override, selected.policy);
   return { policy: override, source: 'project-override', absolutePath: safeOverride, digest: sha256File(safeOverride) };
 }
 
