@@ -25,6 +25,8 @@ function git(root, args) {
   return spawnSync('git', args, { cwd: root, encoding: 'utf8' });
 }
 
+const LEGACY_CONTEXT_MAP_FIXTURE = path.resolve('test/fixtures/context-map/legacy-v1-no-business.yaml');
+
 async function legacyBusinessUpgradeFixture(root, mutateLegacy = () => {}) {
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'legacy-business-upgrade',
@@ -552,6 +554,105 @@ test('second initialization is idempotent', (context) => {
   const second = initialize(root);
   assert.deepEqual(second.applied.changed, []);
   assert.equal(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'), before);
+});
+
+test('ordinary sync upgrades the real legacy context map without deleting user routes', (context) => {
+  const root = fixture('legacy-context-map-upgrade');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({
+    ...value,
+    clients: ['codex'],
+    governanceDepth: 'complete',
+    domainConstraints: [],
+  }));
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const legacy = `${fs.readFileSync(LEGACY_CONTEXT_MAP_FIXTURE, 'utf8')}
+  custom_operations:
+    description: Preserve this user-maintained route.
+    required:
+      - docs/custom-runbook.md
+`;
+  fs.writeFileSync(contextPath, legacy);
+
+  const scan = scanProject(root);
+  const beforeUpgrade = checkProject(scan);
+  assert.equal(beforeUpgrade.ok, false);
+  assert.ok(beforeUpgrade.errors.some((error) => error.includes('missing required profile ordinary')));
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const plan = planArtifacts(root, buildArtifacts(config, scan), { force: true });
+  assert.deepEqual(plan.conflicts, []);
+  assert.equal(plan.operations.some((operation) => operation.remove), false);
+  const applied = applyArtifactPlan(root, plan, {
+    transactional: true,
+    verify: () => checkProject(scanProject(root)),
+  });
+
+  assert.equal(applied.verification.ok, true);
+  const upgraded = fs.readFileSync(contextPath, 'utf8');
+  assert.match(upgraded, /^base:\n  required:\n    - docs\/ai\/rules\/00_always\.mdc$/m);
+  assert.match(upgraded, /^  ordinary:\n    extends: base\n    required: \[\]$/m);
+  assert.match(upgraded, /^  behavior_change:\n    extends: ordinary\n    conditional:/m);
+  assert.match(upgraded, /^  release:\n    extends: ordinary$/m);
+  let preservedOffset = 0;
+  for (const line of legacy.split(/\r?\n/).filter(Boolean)) {
+    const nextOffset = upgraded.indexOf(line, preservedOffset);
+    assert.notEqual(nextOffset, -1, `missing preserved context-map line: ${line}`);
+    preservedOffset = nextOffset + line.length;
+  }
+});
+
+test('ordinary sync fails closed for an unrecognized legacy context-map layout', (context) => {
+  const root = fixture('legacy-context-map-conflict');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({ ...value, clients: ['codex'], governanceDepth: 'complete' }));
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const legacy = fs.readFileSync(LEGACY_CONTEXT_MAP_FIXTURE, 'utf8').replace('  review:', '  archived_review:');
+  fs.writeFileSync(contextPath, legacy);
+
+  const scan = scanProject(root);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const plan = planArtifacts(root, buildArtifacts(config, scan), { force: true });
+  assert.ok(plan.conflicts.some((conflict) => conflict.includes('unrecognized legacy profile layout')));
+  assert.throws(() => applyArtifactPlan(root, plan), /Cannot safely generate governance/);
+  assert.equal(fs.readFileSync(contextPath, 'utf8'), legacy);
+});
+
+test('check rejects fake profile containers and invalid incremental inheritance', (context) => {
+  const variants = [
+    {
+      name: 'archived-container',
+      mutate: (content) => content.replace(/^profiles:$/m, 'archived_profiles:'),
+      expected: 'top-level profiles',
+    },
+    {
+      name: 'missing-parent',
+      mutate: (content) => content.replace('    extends: base', '    extends: missing_base'),
+      expected: 'extends unknown profile missing_base',
+    },
+    {
+      name: 'missing-required-profile',
+      mutate: (content) => content.replace('  ordinary:\n    extends: base\n    required: []\n', ''),
+      expected: 'missing required profile ordinary',
+    },
+    {
+      name: 'broken-chain',
+      mutate: (content) => content.replace('    extends: base', '    extends: behavior_change'),
+      expected: 'inheritance cycle',
+    },
+  ];
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+
+  for (const variant of variants) {
+    const root = fixture(`context-map-${variant.name}`);
+    roots.push(root);
+    initialize(root);
+    const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+    fs.writeFileSync(contextPath, variant.mutate(fs.readFileSync(contextPath, 'utf8')));
+    const result = checkProject(scanProject(root));
+    assert.equal(result.ok, false, variant.name);
+    assert.ok(result.errors.some((error) => error.includes(variant.expected)), `${variant.name}: ${result.errors.join('; ')}`);
+  }
 });
 
 test('init upgrades legacy seed routing when owner-confirmed business governance is added', async (context) => {
