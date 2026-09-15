@@ -241,8 +241,9 @@ export function planArtifacts(root, artifacts, options = {}) {
       conflicts.push(`${relative}: ${error.message}`);
       continue;
     }
-    if (actualHash !== entry.sha256 && !options.force) {
-      conflicts.push(`${relative}: stale managed content changed; use --force to remove only the previously managed artifact`);
+    if (actualHash !== entry.sha256) {
+      retained.push({ ...entry, path: relative });
+      conflicts.push(`${relative}: stale managed content changed and will not be removed`);
       continue;
     }
     if (entry.ownership === 'full' && !current.includes(GENERATED_MARKER)) {
@@ -263,7 +264,10 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
   }
   const linkPaths = [...links];
-  const manifestValue = buildManifest(operations, { generatedAt: manifest?.generatedAt ?? null });
+  const manifestValue = buildManifest(operations, {
+    generatedAt: manifest?.generatedAt ?? null,
+    retained: manifestRemovalAuthority.trusted ? retained : [],
+  });
   const manifestContent = stableJson(manifestValue);
   const manifestPath = path.join(root, MANIFEST_PATH);
   return {
