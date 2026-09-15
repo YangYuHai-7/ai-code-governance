@@ -26,7 +26,7 @@
 
 ---
 
-### 任务 1：可信 Manifest 与默认零删除 Sync
+### Task 1：可信 Manifest 与默认零删除 Sync
 
 **文件：**
 
@@ -113,7 +113,7 @@ git add src/modules/governance/manifest-trust.mjs src/modules/governance/artifac
 git commit -m "fix: make ordinary governance sync non-destructive"
 ```
 
-### 任务 2：零删除缩短常驻上下文
+### Task 2：零删除缩短常驻上下文
 
 **文件：**
 
@@ -168,7 +168,7 @@ git add src/modules/governance/compiler.mjs test/context-budget.test.mjs test/ge
 git commit -m "perf: reduce default governance context"
 ```
 
-### 任务 3：安装顺序、语言分离与既有栈确认
+### Task 3：安装顺序、语言分离与既有栈确认
 
 **文件：**
 
@@ -238,7 +238,7 @@ git add src/kernel/config/constants.mjs src/modules/governance/compiler.mjs src/
 git commit -m "feat: separate onboarding and artifact languages"
 ```
 
-### 任务 4：能力与产物选择器
+### Task 4：能力与产物选择器
 
 **文件：**
 
@@ -310,7 +310,7 @@ git add src/modules/governance/artifact-selection.mjs src/modules/governance/com
 git commit -m "feat: select governance artifacts by capability"
 ```
 
-### 任务 5：纯函数任务路由与机器可读策略
+### Task 5：纯函数任务路由与机器可读策略
 
 **文件：**
 
@@ -381,7 +381,7 @@ git add src/modules/governance/task-routing.mjs src/modules/governance/compiler.
 git commit -m "feat: add adaptive task routing policy"
 ```
 
-### 任务 6：Completion 的 Diff 等级校验
+### Task 6：Completion 的 Diff 等级校验
 
 **文件：**
 
@@ -436,7 +436,7 @@ git add src/cli/command-specs.mjs src/cli/commands/completion.mjs src/modules/co
 git commit -m "feat: enforce minimum task level at completion"
 ```
 
-### 任务 7：本地调用模式与快速测试分层
+### Task 7：本地调用模式与快速测试分层
 
 **文件：**
 
@@ -505,7 +505,7 @@ git add src/modules/governance/compiler.mjs src/cli/prompts.mjs package.json .gi
 git commit -m "perf: add local governance fast path"
 ```
 
-### 任务 8：安全 Legacy Prune
+### Task 8：安全 Legacy Prune
 
 **文件：**
 
@@ -567,7 +567,7 @@ git add src/cli/command-specs.mjs src/cli/commands/governance.mjs src/modules/go
 git commit -m "feat: add approved legacy governance pruning"
 ```
 
-### 任务 9：按任务资格执行 Skill 收割
+### Task 9：按任务资格执行 Skill 收割
 
 **文件：**
 
@@ -624,7 +624,7 @@ git add src/modules/capabilities/harvest.mjs src/cli/commands/capabilities.mjs s
 git commit -m "feat: gate skill harvesting by verified task impact"
 ```
 
-### 任务 10：预算门禁、文档同步与候选版本验证
+### Task 10：预算门禁、文档同步与候选版本验证
 
 **文件：**
 
