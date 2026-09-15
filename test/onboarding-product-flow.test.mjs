@@ -8,6 +8,7 @@ import { assessArchitecture } from '../src/architecture-assessment.mjs';
 import { buildArtifacts, defaultConfig, governanceCommand, validateConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { promptConfig, promptGuidedConfig } from '../src/cli/prompts.mjs';
+import { addReadOnlyGuidance, initSuccessGuidance, printHumanGuidance } from '../src/cli/read-only-guidance.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -46,6 +47,64 @@ async function capturePromptLabels(callback) {
     console.log = original;
   }
 }
+
+function humanGuidanceLines(result) {
+  const lines = [];
+  const original = console.log;
+  console.log = (line) => lines.push(line);
+  try {
+    printHumanGuidance(result);
+    return lines;
+  } finally {
+    console.log = original;
+  }
+}
+
+test('pinned init success places a localized installation prerequisite beside its daily command', (context) => {
+  const root = fixture('pinned-success-prerequisite');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  for (const [locale, label, message] of [
+    ['en', 'PREREQUISITE: ', 'Temporary pinned bootstrap does not install a persistent CLI. First verify an installed project-local or global AICG executable and use the matching invocation mode. If none is available, stop and request an explicit installation or choice; never resolve a remote package automatically.'],
+    ['zh-CN', '运行前提：', '临时固定版本启动不会安装持久 CLI。请先确认项目本地或全局 AICG 可执行文件确实可用，并使用匹配的调用方式。若均不可用，停止并请求显式安装或选择；不要自动解析远程包。'],
+  ]) {
+    const result = initSuccessGuidance({ ...defaultConfig(scan), invocationMode: 'npm-exec-pinned', interactionLanguage: locale });
+    assert.equal(result.actionGuide.recommendedAction.command, 'aicg check . --json');
+    assert.deepEqual(result.actionGuide.recommendedAction.invocationPrerequisite, {
+      id: 'installed-aicg-cli', status: 'verification-required', onMissing: 'stop-and-request-explicit-install-or-selection', allowRemotePackageResolution: false, message,
+    });
+    const lines = humanGuidanceLines(result);
+    assert.equal(lines[2], `${label}${message}`);
+    assert.doesNotMatch(lines.join('\n'), /npm exec --yes --package/);
+  }
+});
+
+test('pinned read-only commands carry installation prerequisites without warning local or global modes', (context) => {
+  const root = fixture('pinned-read-only-prerequisite');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  for (const locale of ['en', 'zh-CN']) {
+    const config = { ...defaultConfig(scan), invocationMode: 'npm-exec-pinned' };
+    const result = addReadOnlyGuidance('doctor', { ok: true }, scan, { config, locale });
+    assert.equal(result.actionGuide.recommendedAction.command, `aicg assess . --locale ${locale} --json`);
+    const prerequisite = result.actionGuide.recommendedAction.invocationPrerequisite;
+    assert.equal(prerequisite?.id, 'installed-aicg-cli');
+    assert.equal(prerequisite.status, 'verification-required');
+    assert.equal(prerequisite.allowRemotePackageResolution, false);
+    for (const action of result.nextSteps.filter((step) => step.command)) assert.deepEqual(action.invocationPrerequisite, prerequisite);
+    assert.equal(humanGuidanceLines(result)[2], `${locale === 'en' ? 'PREREQUISITE: ' : '运行前提：'}${prerequisite.message}`);
+    assert.doesNotMatch(JSON.stringify(result), /npm exec --yes --package/);
+    assert.match(prerequisite.message, locale === 'en' ? /Temporary pinned bootstrap.*persistent CLI/ : /临时固定版本启动不会安装持久 CLI/);
+  }
+  for (const invocationMode of ['project-local', 'global']) {
+    const config = { ...defaultConfig(scan), invocationMode };
+    for (const result of [initSuccessGuidance(config), addReadOnlyGuidance('doctor', { ok: true }, scan, { config })]) {
+      assert.equal(Object.hasOwn(result.actionGuide.recommendedAction, 'invocationPrerequisite'), false);
+      assert.equal(humanGuidanceLines(result).length, 4);
+      assert.doesNotMatch(humanGuidanceLines(result).join('\n'), /bootstrap|PREREQUISITE/);
+    }
+  }
+});
 
 test('guided onboarding asks clients first and artifact language second', async (context) => {
   const root = fixture('guided-preset');
