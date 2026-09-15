@@ -655,6 +655,47 @@ test('check rejects fake profile containers and invalid incremental inheritance'
   }
 });
 
+test('check stops the formal profiles scope at quoted top-level mapping keys', (context) => {
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+  for (const [name, boundary] of [
+    ['double-quoted', '"archived_profiles":'],
+    ['single-quoted', "'archived_profiles':"],
+  ]) {
+    const root = fixture(`context-map-${name}-boundary`);
+    roots.push(root);
+    initialize(root);
+    const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+    const content = fs.readFileSync(contextPath, 'utf8');
+    fs.writeFileSync(contextPath, content.replace('profiles:\n', `profiles:\n${boundary}\n`));
+
+    const result = checkProject(scanProject(root));
+    assert.equal(result.ok, false, name);
+    assert.ok(result.errors.some((error) => error.includes('missing required profile ordinary')), `${name}: ${result.errors.join('; ')}`);
+  }
+});
+
+test('check rejects inheritance declared by the top-level base profile', (context) => {
+  const variants = [
+    ['missing-parent', 'missing_base'],
+    ['ordinary-cycle', 'ordinary'],
+  ];
+  const roots = [];
+  context.after(() => roots.forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
+  for (const [name, parent] of variants) {
+    const root = fixture(`context-map-base-${name}`);
+    roots.push(root);
+    initialize(root);
+    const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+    const content = fs.readFileSync(contextPath, 'utf8');
+    fs.writeFileSync(contextPath, content.replace('base:\n', `base:\n  extends: ${parent}\n`));
+
+    const result = checkProject(scanProject(root));
+    assert.equal(result.ok, false, name);
+    assert.ok(result.errors.some((error) => error.includes(`base profile must not extend ${parent}`)), `${name}: ${result.errors.join('; ')}`);
+  }
+});
+
 test('init upgrades legacy seed routing when owner-confirmed business governance is added', async (context) => {
   const root = fixture('legacy-business-upgrade');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

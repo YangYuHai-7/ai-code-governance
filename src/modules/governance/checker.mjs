@@ -48,6 +48,10 @@ function yamlName(line, indent) {
   return match?.[1] ?? match?.[2] ?? null;
 }
 
+function startsTopLevelYamlNode(line) {
+  return line.length > 0 && !/^\s/.test(line) && !/^\s*#/.test(line);
+}
+
 function contextMapStructure(content) {
   const lines = content.split(/\r?\n/);
   const issues = [];
@@ -61,7 +65,7 @@ function contextMapStructure(content) {
     const start = baseHeaders[0];
     let end = lines.length;
     for (let index = start + 1; index < lines.length; index += 1) {
-      if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
+      if (startsTopLevelYamlNode(lines[index])) {
         end = index;
         break;
       }
@@ -74,7 +78,7 @@ function contextMapStructure(content) {
     const start = profilesHeaders[0];
     let end = lines.length;
     for (let index = start + 1; index < lines.length; index += 1) {
-      if (/^[A-Za-z0-9_-]+:\s*/.test(lines[index])) {
+      if (startsTopLevelYamlNode(lines[index])) {
         end = index;
         break;
       }
@@ -165,6 +169,11 @@ function contextMapStructureIssues(structure) {
   const issues = [...structure.issues];
   if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has('docs/ai/rules/00_always.mdc')) {
     issues.push('base profile must require docs/ai/rules/00_always.mdc');
+  }
+  for (const line of structure.base?.lines ?? []) {
+    if (!/^  (?:extends|["']extends["'])\s*:/.test(line)) continue;
+    const parent = line.match(/^  (?:extends|["']extends["'])\s*:\s*["']?([A-Za-z0-9_-]+)["']?\s*$/)?.[1];
+    issues.push(parent ? `base profile must not extend ${parent}` : 'base profile must not declare extends');
   }
   const requiredParents = new Map([
     ['ordinary', 'base'],
