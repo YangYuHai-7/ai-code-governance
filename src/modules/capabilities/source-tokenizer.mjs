@@ -1,3 +1,5 @@
+const LINE_TERMINATOR = /[\r\n\u2028\u2029]/;
+
 function isRegexStart(tokens) {
   const previous = tokens.at(-1);
   if (!previous) return true;
@@ -48,15 +50,15 @@ export function sourceTokens(content) {
   let index = 0;
   const push = (kind, value, start) => tokens.push({
     kind, value, raw: content.slice(start, index), start, end: index,
-    lineBreakBefore: /[\r\n]/.test(content.slice(tokens.at(-1)?.end ?? 0, start)),
+    lineBreakBefore: LINE_TERMINATOR.test(content.slice(tokens.at(-1)?.end ?? 0, start)),
   });
   while (index < content.length) {
     const current = content[index];
     const next = content[index + 1];
     if (/\s/.test(current)) { index += 1; continue; }
     if (current === '/' && next === '/') {
-      index = content.indexOf('\n', index + 2);
-      if (index === -1) break;
+      index += 2;
+      while (index < content.length && !LINE_TERMINATOR.test(content[index])) index += 1;
       continue;
     }
     if (current === '/' && next === '*') {
@@ -77,7 +79,7 @@ export function sourceTokens(content) {
           while (/[a-z]/i.test(content[index] ?? '')) index += 1;
           break;
         }
-        if (content[index] === '\n') break;
+        if (LINE_TERMINATOR.test(content[index])) break;
         index += 1;
       }
       push('regex', content.slice(start, index), start);
@@ -143,7 +145,7 @@ export function capabilitySourceChanged(before, after) {
       values.push({
         kind: token.kind,
         raw: token.kind === 'string' ? token.raw.slice(1, -1) : token.raw,
-        ...(restricted || postfix ? { lineBreakBefore: token.lineBreakBefore } : {}),
+        ...(restricted || postfix || token.value === '=>' ? { lineBreakBefore: token.lineBreakBefore } : {}),
       });
       if (token.kind === 'punctuation' && ['(', '[', '{'].includes(token.value)) depth += 1;
       if (token.kind === 'punctuation' && [')', ']', '}'].includes(token.value)) depth -= 1;

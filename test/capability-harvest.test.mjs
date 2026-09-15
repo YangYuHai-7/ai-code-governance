@@ -77,7 +77,41 @@ for (const [name, before, after, changed] of [
   });
 }
 
+for (const [label, separator] of [['CR', '\r'], ['LF', '\n'], ['CRLF', '\r\n'], ['LS', '\u2028'], ['PS', '\u2029']]) {
+  for (const keyword of ['return', 'throw', 'break', 'continue', 'yield', 'async']) {
+    test(`source comparison preserves actual ${label} after restricted ${keyword}`, () => {
+      assert.equal(harvestModule.capabilitySourceChanged(`${keyword} value`, `${keyword}${separator}value`), true);
+      assert.equal(harvestModule.capabilitySourceChanged(`${keyword}\nvalue`, `${keyword}${separator}value`), false);
+    });
+  }
+  test(`source comparison terminates line comments at actual ${label}`, () => {
+    assert.equal(harvestModule.capabilitySourceChanged(`return // note${separator}true`, `return // note${separator}false`), true);
+  });
+  test(`source comparison preserves actual ${label} inside restricted comments and before async arrows`, () => {
+    assert.equal(harvestModule.capabilitySourceChanged('return /* note */ true', `return /* note${separator} */ true`), true);
+    assert.equal(harvestModule.capabilitySourceChanged('const can = async (value) => value;', `const can = async (value)${separator}=> value;`), true);
+  });
+}
+
 for (const [name, source, expectedId, symbol, exportedAs] of [
+  ['ambient object return alias', 'declare function Policy(): { can(): boolean }; export { Policy };', null],
+  ['ambient object return default', 'declare function Policy(): { can(): boolean }; export default Policy;', null],
+  ['object return overload', 'export function Policy(): { can(): boolean };', null],
+  ['function type return overload', 'export function Policy(): () => { can(): boolean };', null],
+  ['nested generic return overload', 'export function Policy(): Promise<Array<{ can(): boolean }>>;', null],
+  ['object return type without runtime decision', 'export function Policy(): { can(): boolean } { return service; }', null],
+  ['private nested decision inside public factory', 'export function Policy() { class Private { can() { return true; } } return unrelated; }', null],
+  ['private decision in returned callback', 'export function Policy() { return () => { class Private { can() { return true; } } return unrelated; }; }', null],
+  ['generic return overload', 'export function Policy<T>(): Promise<{ can(): boolean }>; export const unrelated = 1;', null],
+  ['abstract decision signature', 'export abstract class Policy { abstract can(): boolean; }', null],
+  ['ambient class alias', 'declare class Policy { can(): boolean; } export { Policy };', null],
+  ['type-only policy', 'export type Policy = { can(): boolean }; export interface Authorization { can(): boolean }', null],
+  ['guard contract without implementation', 'export class AccessGuard implements CanActivate {}', null],
+  ['object return implementation', 'export function Policy(): { can(): boolean } { return { can() { return true; } }; }', 'project-authorization', 'Policy', 'Policy'],
+  ['generic object return implementation', 'export function Policy<T extends { id: string }>(): Promise<{ can(): boolean }> { return Promise.resolve({ can() { return true; } }); }', 'project-authorization', 'Policy', 'Policy'],
+  ['object return default implementation', 'export default function Policy(): { can(): boolean } { return { can() { return true; } }; }', 'project-authorization', 'Policy', 'default'],
+  ['object return alias implementation', 'function Policy(): { can(): boolean } { return { can() { return true; } }; } export { Policy as AccessPolicy };', 'project-authorization', 'Policy', 'AccessPolicy'],
+  ['typed concrete decision method', 'export class Policy { can(): boolean { return true; } }', 'project-authorization', 'Policy', 'Policy'],
   ['private policy beside unrelated export', 'export const unrelated = 1; class Policy { can() { return true; } }', null],
   ['private policy beside unrelated alias', 'const unrelated = 1; class Policy { can() { return true; } } export { unrelated as PolicyApi };', null],
   ['decision method in a different class', 'export class Policy {} class Helper { can() { return true; } }', null],
@@ -107,6 +141,7 @@ for (const [name, source, expectedId, symbol, exportedAs] of [
       assert.equal(evidence.symbol, symbol);
       assert.equal(evidence.exportedAs, exportedAs);
       assert.ok(source.slice(evidence.declarationRange.start, evidence.declarationRange.end).includes(symbol));
+      if (name.includes('implementation')) assert.ok(source.slice(evidence.declarationRange.start, evidence.declarationRange.end).includes('return true;'));
       assert.ok(source.slice(evidence.exportRange.start, evidence.exportRange.end).startsWith('export'));
     }
   });
