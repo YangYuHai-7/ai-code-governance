@@ -15,7 +15,7 @@ Usage:
   aicg team [path] [--config team-context.json] [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
-  aicg complete [path] [--verify <discovered-command>] [--json]
+  aicg complete [path] [--task-level L0|L1|L2|L3] [--verify <discovered-command>] [--json]
   aicg hook <install|status> [path] [--yes] [--json]
   aicg release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--clients all|client,...] [--locale zh-CN|en] [--dry-run] [--approve planHash] [--json]

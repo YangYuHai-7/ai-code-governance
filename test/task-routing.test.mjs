@@ -8,6 +8,25 @@ import { scanProject } from '../src/scanner.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { classifyTaskRoute, minimumTaskLevelFromPaths, taskRoutingPolicy } from '../src/modules/governance/index.mjs';
 import { matchSimpleGlob } from '../src/shared/index.mjs';
+import * as routing from '../src/modules/governance/task-routing.mjs';
+
+test('completion routes compare declarations with canonical path and owner risk minimums', () => {
+  for (const [paths, config, declaredLevel, minimumLevel, status] of [
+    [[], {}, 'L0', 'L0', 'verified'],
+    [['README.md'], {}, 'L0', 'L1', 'upgrade-required'],
+    [['src/widget.mjs'], {}, 'L1', 'L2', 'upgrade-required'],
+    [['apps/web/widget.mjs', 'apps/api/widget.mjs'], {}, 'L2', 'L3', 'upgrade-required'],
+    [['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }, 'L2', 'L3', 'upgrade-required'],
+    [['src/payment.mjs'], {}, 'L3', 'L3', 'verified'],
+    [['src/widget.mjs'], {}, null, 'L2', 'unverified-declaration'],
+  ]) {
+    const result = routing.evaluateCompletionTaskRoute(paths, config, declaredLevel);
+    assert.equal(result.declaredLevel, declaredLevel);
+    assert.equal(result.minimumLevel, minimumLevel);
+    assert.equal(result.status, status);
+    assert.ok(result.reasons.length > 0);
+  }
+});
 
 test('task route level is the maximum required by mutation scope and risk', () => {
   for (const [input, expected] of [
