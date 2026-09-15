@@ -1,6 +1,6 @@
 import { usageError } from '../../kernel/index.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
-import { isSafeRelative, normalizeRelative } from '../../shared/index.mjs';
+import { isSafeRelative, matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
 
 const ORDER = ['L0', 'L1', 'L2', 'L3'];
 const DIMENSIONS = {
@@ -40,55 +40,135 @@ const BASE_APPROVALS = {
 
 const PATH_RULES = [
   {
-    id: 'migration',
-    level: 'L3',
-    patterns: ['**/migration/**', '**/migrations/**', '**/*.migration.*'],
-    matches: (relative) => /(^|\/)migrations?(\/|$)|\.migration\./.test(relative),
-  },
-  {
-    id: 'security-and-money',
-    level: 'L3',
-    patterns: ['**/authentication/**', '**/authorization/**', '**/permissions/**', '**/payments/**', '**/tenants/**'],
-    matches: (relative) => /(^|\/)(auth(?:entication|orization)?|permissions?|payments?|billing|tenants?|multi-tenancy)(\/|\.|-|_|$)/.test(relative),
-  },
-  {
     id: 'architecture-and-external-automation',
     level: 'L3',
-    patterns: ['docs/ai/architecture-profile.json', 'docs/ai/module-graph.json', '**/deploy/**', '**/release-workflow.*', '**/*.tf'],
-    matches: (relative) => /^(docs\/ai\/(architecture-profile|module-graph)\.json|\.github\/workflows\/(deploy|release)[^/]*\.(?:ya?ml)|(?:scripts?\/)?(?:deploy|publish)(?:\/|\.|-|_|$)|infra\/)|\.tf(?:vars)?$/.test(relative),
+    patterns: [
+      'docs/ai/architecture-profile.json',
+      'docs/ai/module-graph.json',
+      '.github/workflows/deploy*.yml',
+      '.github/workflows/deploy*.yaml',
+      '.github/workflows/release*.yml',
+      '.github/workflows/release*.yaml',
+      'deploy/**',
+      '**/deploy/**',
+      'publish/**',
+      '**/publish/**',
+      'infra/**',
+      '**/infra/**',
+      '*.tf',
+      '**/*.tf',
+      '*.tfvars',
+      '**/*.tfvars',
+    ],
+    examples: ['services/foo/deploy/run.sh', 'infra/network.tf'],
+  },
+  {
+    id: 'migration-artifact',
+    level: 'L3',
+    patterns: [
+      'migration/*.sql', 'migration/**/*.sql', 'migrations/*.sql', 'migrations/**/*.sql',
+      'migration/*.js', 'migration/**/*.js', 'migrations/*.js', 'migrations/**/*.js',
+      'migration/*.ts', 'migration/**/*.ts', 'migrations/*.ts', 'migrations/**/*.ts',
+      'migration/*.py', 'migration/**/*.py', 'migrations/*.py', 'migrations/**/*.py',
+      'migration/*.rb', 'migration/**/*.rb', 'migrations/*.rb', 'migrations/**/*.rb',
+      'migration/*.go', 'migration/**/*.go', 'migrations/*.go', 'migrations/**/*.go',
+      '*.migration.*', '**/*.migration.*',
+    ],
+    examples: ['db/migrations/20260915-add-account.sql'],
+  },
+  {
+    id: 'security-fixture',
+    level: 'L3',
+    patterns: [
+      'fixtures/risk-evidence/**', 'fixtures/security/**',
+      'fixtures/auth/**', 'fixtures/authentication/**', 'fixtures/authorization/**',
+      'fixtures/permission/**', 'fixtures/permissions/**',
+      'fixtures/payment/**', 'fixtures/payments/**', 'fixtures/billing/**',
+      'fixtures/tenant/**', 'fixtures/tenants/**', 'fixtures/multi-tenancy/**',
+    ],
+    examples: ['test/fixtures/risk-evidence/authorization-policy.json'],
   },
   {
     id: 'dependency',
     level: 'L2',
-    patterns: ['package.json', '**/package.json', '**/*lock*', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', '**/*.gradle'],
-    matches: (relative) => /(^|\/)(package\.json|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?|deno\.lock|pyproject\.toml|poetry\.lock|requirements(?:-[^/]+)?\.txt|pipfile(?:\.lock)?|go\.(?:mod|sum)|cargo\.(?:toml|lock)|gemfile(?:\.lock)?|composer\.(?:json|lock)|pom\.xml|gradle\.lockfile|build\.gradle(?:\.kts)?|podfile(?:\.lock)?|package\.(?:swift|resolved))$/.test(relative),
+    patterns: [
+      'package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lock', 'bun.lockb', 'deno.lock',
+      'uv.lock', 'pyproject.toml', 'poetry.lock', 'requirements.txt', 'requirements-*.txt', 'pipfile', 'pipfile.lock',
+      'manage.py',
+      'go.mod', 'go.sum', 'go.work', 'go.work.sum', 'cargo.toml', 'cargo.lock',
+      'gemfile', 'gemfile.lock', 'composer.json', 'composer.lock', 'symfony.lock',
+      'artisan',
+      'pom.xml', 'gradle.lockfile', 'build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts',
+      'angular.json', 'svelte.config.js', 'svelte.config.ts',
+      'global.json', 'directory.packages.props', 'packages.lock.json', '*.sln', '*.slnx', '*.csproj',
+      'androidmanifest.xml', '*.xcodeproj/**', '*.xcworkspace/**', 'package.swift', 'package.resolved', 'podfile', 'podfile.lock',
+      'capacitor.config.ts', 'capacitor.config.json', 'config.xml', 'pubspec.yaml', 'pubspec.lock',
+      'src-tauri/tauri.conf.json', 'cmakelists.txt', 'meson.build', 'makefile', 'platformio.ini', 'conanfile.py', 'vcpkg.json',
+    ],
+    examples: ['uv.lock', 'packages.lock.json', 'Example.xcodeproj/project.pbxproj'],
+  },
+  {
+    id: 'public-contract-artifact',
+    level: 'L2',
+    patterns: [
+      'openapi.*', '**/openapi.*', 'asyncapi.*', '**/asyncapi.*', 'schema.*', '**/schema.*', '*.schema.*', '**/*.schema.*',
+      '*.proto', '**/*.proto', '*.graphql', '**/*.graphql', '*.gql', '**/*.gql', '*.prisma', '**/*.prisma',
+      'contract/*.json', 'contract/**/*.json', 'contracts/*.json', 'contracts/**/*.json',
+      'contract/*.yaml', 'contract/**/*.yaml', 'contracts/*.yaml', 'contracts/**/*.yaml',
+      'contract/*.yml', 'contract/**/*.yml', 'contracts/*.yml', 'contracts/**/*.yml',
+      'schema/*.json', 'schema/**/*.json', 'schemas/*.json', 'schemas/**/*.json',
+      'schema/*.yaml', 'schema/**/*.yaml', 'schemas/*.yaml', 'schemas/**/*.yaml',
+      'schema/*.yml', 'schema/**/*.yml', 'schemas/*.yml', 'schemas/**/*.yml',
+    ],
+    examples: ['test/fixtures/contracts/openapi.yaml', 'prisma/schema.prisma'],
+  },
+  {
+    id: 'ordinary-documentation-or-test',
+    level: 'L1',
+    patterns: [
+      'docs/*.md', 'docs/**/*.md', 'docs/*.mdx', 'docs/**/*.mdx', 'docs/*.txt', 'docs/**/*.txt',
+      'docs/*.rst', 'docs/**/*.rst', 'docs/*.adoc', 'docs/**/*.adoc',
+      'readme*', 'changelog*', 'contributing*', 'license*',
+      'test/**', 'tests/**', '__tests__/**', '*.test.*', '**/*.test.*', '*.spec.*', '**/*.spec.*', 'test_*.*', '*_test.*',
+    ],
+    examples: ['docs/payments/guide.md', 'docs/api/guide.md', 'src/__tests__/widget.test.mjs'],
+  },
+  {
+    id: 'security-and-money',
+    level: 'L3',
+    patterns: [
+      'auth/**', 'authentication/**', 'authorization/**', 'permission/**', 'permissions/**',
+      'payment/**', 'payments/**', 'billing/**', 'tenant/**', 'tenants/**', 'multi-tenancy/**',
+      '*authentication*', '*authorization*', '*permission*', '*payment*', '*billing*', '*tenant*',
+    ],
+    examples: ['src/authorization/policy.mjs', 'src/payments/settle.mjs'],
   },
   {
     id: 'public-contract',
     level: 'L2',
-    patterns: ['api/**', 'contracts/**', 'schemas/**', '**/schema.*', '**/openapi.*', '**/*.proto'],
-    matches: (relative) => /(^|\/)(api|contracts?|schemas?)(\/|$)|(^|\/)(schema|openapi|asyncapi)(?:\.|\/)|\.(?:schema\.[^/]+|proto|graphql|gql)$/.test(relative),
+    patterns: ['api/**', 'contract/**', 'contracts/**', 'schema/**', 'schemas/**'],
+    examples: ['api/handlers/account.mjs', 'contracts/public-api.yaml'],
   },
   {
     id: 'production-source',
     level: 'L2',
-    patterns: ['src/**', 'app/**', 'lib/**', 'server/**', 'client/**', 'apps/**', 'packages/**', 'backend/**', 'frontend/**', 'cmd/**', 'internal/**', 'pkg/**'],
-    matches: (relative) => /^(src|app|lib|server|client|apps|packages|backend|frontend|cmd|internal|pkg|services|modules|crates|ios|android|mobile|desktop)\//.test(relative),
+    patterns: ['src/**', 'app/**', 'lib/**', 'server/**', 'client/**', 'apps/**', 'packages/**', 'backend/**', 'frontend/**', 'cmd/**', 'internal/**', 'pkg/**', 'services/**', 'modules/**', 'crates/**', 'ios/**', 'android/**', 'mobile/**', 'desktop/**'],
+    examples: ['src/widget.mjs', 'backend/orders/service.go'],
   },
 ];
 
-const SURFACE_SEGMENTS = [
-  ['web', /(^|\/)(web|frontend|client|ui)(\/|$)/],
-  ['api', /(^|\/)(api|backend|server)(\/|$)/],
-  ['ios', /(^|\/)ios(\/|$)/],
-  ['android', /(^|\/)android(\/|$)/],
-  ['mobile', /(^|\/)mobile(\/|$)/],
-  ['desktop', /(^|\/)(desktop|electron)(\/|$)/],
+const SURFACE_RULES = [
+  { id: 'web', patterns: ['web/**', 'frontend/**', 'client/**', 'ui/**'], examples: ['apps/web/editor.mjs'] },
+  { id: 'api', patterns: ['api/**', 'backend/**', 'server/**'], examples: ['apps/api/editor.mjs'] },
+  { id: 'ios', patterns: ['ios/**'], examples: ['apps/ios/editor.swift'] },
+  { id: 'android', patterns: ['android/**'], examples: ['apps/android/Editor.kt'] },
+  { id: 'mobile', patterns: ['mobile/**'], examples: ['apps/mobile/editor.dart'] },
+  { id: 'desktop', patterns: ['desktop/**', 'electron/**'], examples: ['apps/desktop/editor.mjs'] },
 ];
 
 function routeLevel(input, field) {
   const value = input?.[field];
-  if (!Object.hasOwn(DIMENSIONS[field], value)) {
+  if (typeof value !== 'string' || !Object.hasOwn(DIMENSIONS[field], value)) {
     throw usageError(`task route ${field} must be one of: ${Object.keys(DIMENSIONS[field]).join(', ')}.`);
   }
   return DIMENSIONS[field][value];
@@ -148,11 +228,15 @@ function confirmedRiskLevel(config) {
   return signals.length > 0 ? 'L2' : 'L0';
 }
 
+function matchesPatterns(relative, patterns) {
+  return patterns.some((pattern) => matchSimpleGlob(relative, pattern));
+}
+
 function changedSurfaces(paths) {
   const surfaces = new Set();
   for (const relative of paths) {
-    const surface = SURFACE_SEGMENTS.find(([, pattern]) => pattern.test(relative));
-    if (surface) surfaces.add(surface[0]);
+    const surface = SURFACE_RULES.find((rule) => matchesPatterns(relative, rule.patterns));
+    if (surface) surfaces.add(surface.id);
   }
   return surfaces;
 }
@@ -160,10 +244,13 @@ function changedSurfaces(paths) {
 export function minimumTaskLevelFromPaths(paths, config = {}) {
   const normalized = normalizedChangedPaths(paths);
   const levels = [confirmedRiskLevel(config)];
+  const surfaceCandidates = [];
   for (const relative of normalized) {
-    levels.push(PATH_RULES.find((rule) => rule.matches(relative))?.level ?? 'L1');
+    const rule = PATH_RULES.find((candidate) => matchesPatterns(relative, candidate.patterns));
+    levels.push(rule?.level ?? 'L1');
+    if (rule?.id !== 'ordinary-documentation-or-test') surfaceCandidates.push(relative);
   }
-  if (changedSurfaces(normalized).size > 1) levels.push('L3');
+  if (changedSurfaces(surfaceCandidates).size > 1) levels.push('L3');
   return maxLevel(...levels);
 }
 
@@ -196,12 +283,15 @@ export function taskRoutingPolicy(config) {
       clarityEffect: 'adds-gates-only',
       externalAction: 'L3-with-separate-approval',
       deliveryRule: 'declared-level-must-not-be-lower-than-path-minimum',
+      surfaceGroups: SURFACE_RULES.map(({ id, patterns, examples }) => ({ id, patterns: [...patterns], examples: [...examples] })),
+      multiSurfaceExamples: [['apps/web/editor.mjs', 'apps/api/editor.mjs']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),
     },
-    pathRules: PATH_RULES.map(({ id, level, patterns }) => ({
+    pathRules: PATH_RULES.map(({ id, level, patterns, examples }) => ({
       id,
       level,
-      patterns,
+      patterns: [...patterns],
+      examples: [...examples],
       description: localized(config, `Changed paths matching ${id} require at least ${level}.`, `匹配 ${id} 的变更路径至少需要 ${level}。`),
     })),
   };

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
-import { classifyTaskRoute, minimumTaskLevelFromPaths } from '../src/modules/governance/index.mjs';
+import { classifyTaskRoute, minimumTaskLevelFromPaths, taskRoutingPolicy } from '../src/modules/governance/index.mjs';
 
 test('task route level is the maximum required by mutation scope and risk', () => {
   for (const [input, expected] of [
@@ -66,6 +66,18 @@ test('task route rejects every unsupported input enum fail closed', () => {
   }
 });
 
+test('task route accepts only primitive strings for every enum field', () => {
+  const valid = { mutation: 'none', scope: 'single-file', risk: 'low', clarity: 'clear' };
+  for (const field of ['mutation', 'scope', 'risk', 'clarity']) {
+    for (const value of [[valid[field]], new String(valid[field]), null, 1, true, {}]) {
+      assert.throws(
+        () => classifyTaskRoute({ ...valid, [field]: value }),
+        (error) => error.code === 'AICG_USAGE' && error.message.includes(field),
+      );
+    }
+  }
+});
+
 test('changed paths conservatively raise the minimum task level', () => {
   for (const [paths, expected] of [
     [[], 'L0'],
@@ -91,6 +103,82 @@ test('changed paths conservatively raise the minimum task level', () => {
   }
   assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['public-api'] }), 'L2');
   assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }), 'L3');
+});
+
+test('ordinary documentation and tests take precedence over incidental risk and surface names', () => {
+  for (const paths of [
+    ['docs/payments/guide.md'],
+    ['docs/api/guide.md'],
+    ['src/__tests__/widget.test.mjs'],
+    ['src/payments/widget.test.mjs'],
+    ['docs/web/guide.md', 'docs/api/guide.md'],
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths(paths, { confirmedRiskSignals: [] }), 'L1', paths.join(', '));
+  }
+});
+
+test('machine-sensitive contract schema migration and security fixtures override ordinary test paths', () => {
+  for (const [paths, expected] of [
+    [['test/fixtures/contracts/openapi.yaml'], 'L2'],
+    [['test/fixtures/schemas/account.schema.json'], 'L2'],
+    [['test/fixtures/migrations/001-add-account.sql'], 'L3'],
+    [['test/fixtures/risk-evidence/authorization-policy.json'], 'L3'],
+    [['fixtures/security/policy.json'], 'L3'],
+    [['config/authorization/policy.yaml'], 'L3'],
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths(paths, { confirmedRiskSignals: [] }), expected, paths.join(', '));
+  }
+});
+
+test('supported ecosystem dependency manifests and lockfiles require L2', () => {
+  for (const relative of [
+    'uv.lock',
+    'packages.lock.json',
+    'manage.py',
+    'artisan',
+    'angular.json',
+    'svelte.config.js',
+    'settings.gradle.kts',
+    'go.work',
+    'symfony.lock',
+    'global.json',
+    'Directory.Packages.props',
+    'AndroidManifest.xml',
+    'Example.xcodeproj/project.pbxproj',
+    'capacitor.config.ts',
+    'pubspec.yaml',
+    'src-tauri/tauri.conf.json',
+    'CMakeLists.txt',
+    'meson.build',
+    'Makefile',
+    'platformio.ini',
+    'conanfile.py',
+    'vcpkg.json',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L2', relative);
+  }
+  assert.equal(minimumTaskLevelFromPaths(['notes.todo'], { confirmedRiskSignals: [] }), 'L1');
+});
+
+test('machine policy examples are evaluated by the canonical path rules', () => {
+  const policy = taskRoutingPolicy({ artifactLanguage: 'en' });
+  for (const rule of policy.pathRules) {
+    assert.ok(rule.patterns.length > 0, `${rule.id} needs executable patterns`);
+    assert.ok(rule.examples.length > 0, `${rule.id} needs executable examples`);
+    for (const relative of rule.examples) {
+      assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), rule.level, `${rule.id}: ${relative}`);
+    }
+  }
+  assert.ok(policy.pathRules.find((rule) => rule.id === 'architecture-and-external-automation').patterns.includes('**/deploy/**'));
+  assert.equal(minimumTaskLevelFromPaths(['services/foo/deploy/run.sh'], { confirmedRiskSignals: [] }), 'L3');
+  for (const surface of policy.escalation.surfaceGroups) {
+    for (const relative of surface.examples) {
+      assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L2', `${surface.id}: ${relative}`);
+    }
+  }
+  for (const paths of policy.escalation.multiSurfaceExamples) {
+    assert.equal(minimumTaskLevelFromPaths(paths, { confirmedRiskSignals: [] }), 'L3', paths.join(', '));
+  }
 });
 
 test('changed path classification rejects malformed paths and risk configuration', () => {
