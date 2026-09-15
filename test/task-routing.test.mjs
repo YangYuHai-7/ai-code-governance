@@ -7,6 +7,7 @@ import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { classifyTaskRoute, minimumTaskLevelFromPaths, taskRoutingPolicy } from '../src/modules/governance/index.mjs';
+import { matchSimpleGlob } from '../src/shared/index.mjs';
 
 test('task route level is the maximum required by mutation scope and risk', () => {
   for (const [input, expected] of [
@@ -109,11 +110,71 @@ test('ordinary documentation and tests take precedence over incidental risk and 
   for (const paths of [
     ['docs/payments/guide.md'],
     ['docs/api/guide.md'],
+    ['docs/deploy/guide.md'],
+    ['docs/infra/guide.md'],
+    ['docs/schema.md'],
     ['src/__tests__/widget.test.mjs'],
     ['src/payments/widget.test.mjs'],
+    ['test/deploy/deploy.test.mjs'],
+    ['test/infra/infra.test.mjs'],
+    ['test/openapi.test.mjs'],
     ['docs/web/guide.md', 'docs/api/guide.md'],
   ]) {
     assert.equal(minimumTaskLevelFromPaths(paths, { confirmedRiskSignals: [] }), 'L1', paths.join(', '));
+  }
+});
+
+test('migration directories elevate non-document artifacts across supported source ecosystems', () => {
+  for (const relative of [
+    'db/migrations/001-add-account.php',
+    'db/migrations/002-add-account.cs',
+    'db/migrations/003-add-account.mjs',
+    'db/migrations/004-add-account.kt',
+    'db/migrations/005-add-account.yaml',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L3', relative);
+  }
+  for (const relative of [
+    'db/migrations/README.md',
+    'docs/migrations/guide.md',
+    'test/migrations/runner.test.mjs',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L1', relative);
+  }
+});
+
+test('sensitive tokens recognize delimited filenames without substring false positives', () => {
+  for (const relative of [
+    'src/auth.ts',
+    'config/auth.yaml',
+    'src/auth-session.mjs',
+    'config/auth_policy.yml',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L3', relative);
+  }
+  for (const [relative, expected] of [
+    ['src/author.ts', 'L2'],
+    ['src/oauth.ts', 'L2'],
+    ['config/authorize.yaml', 'L1'],
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), expected, relative);
+  }
+});
+
+test('deployment and publishing scripts elevate only at explicit token boundaries', () => {
+  for (const relative of [
+    'scripts/deploy.sh',
+    'deploy.sh',
+    'scripts/publish-package.mjs',
+    'services/foo/deploy/run.sh',
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), 'L3', relative);
+  }
+  for (const [relative, expected] of [
+    ['scripts/redeployment.sh', 'L1'],
+    ['src/deployment.ts', 'L2'],
+  ]) {
+    assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), expected, relative);
   }
 });
 
@@ -166,10 +227,12 @@ test('machine policy examples are evaluated by the canonical path rules', () => 
     assert.ok(rule.patterns.length > 0, `${rule.id} needs executable patterns`);
     assert.ok(rule.examples.length > 0, `${rule.id} needs executable examples`);
     for (const relative of rule.examples) {
+      assert.ok(rule.patterns.some((pattern) => matchSimpleGlob(relative.toLowerCase(), pattern)), `${rule.id} owns ${relative}`);
+      assert.equal(rule.excludePatterns.some((pattern) => matchSimpleGlob(relative.toLowerCase(), pattern)), false, `${rule.id} excludes ${relative}`);
       assert.equal(minimumTaskLevelFromPaths([relative], { confirmedRiskSignals: [] }), rule.level, `${rule.id}: ${relative}`);
     }
   }
-  assert.ok(policy.pathRules.find((rule) => rule.id === 'architecture-and-external-automation').patterns.includes('**/deploy/**'));
+  assert.ok(policy.pathRules.find((rule) => rule.id === 'deployment-and-publishing').patterns.includes('**/deploy/**'));
   assert.equal(minimumTaskLevelFromPaths(['services/foo/deploy/run.sh'], { confirmedRiskSignals: [] }), 'L3');
   for (const surface of policy.escalation.surfaceGroups) {
     for (const relative of surface.examples) {
