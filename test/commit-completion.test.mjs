@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { PRE_COMMIT_HOOK_MARKER } from '../src/commit-completion.mjs';
+import { PRE_COMMIT_HOOK_MARKER, runCompletion } from '../src/commit-completion.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -23,7 +23,184 @@ function git(root, args) {
 function initialize(root) {
   const result = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
   assert.equal(result.status, 0, result.stderr);
+  baseline(root);
 }
+
+function baseline(root) {
+  for (const args of [
+    ['init'], ['config', 'user.email', 'aicg@example.test'], ['config', 'user.name', 'AICG Test'],
+    ['add', '--all'], ['-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'completion baseline'],
+  ]) {
+    const result = git(root, args);
+    assert.equal(result.status, 0, result.stderr);
+  }
+}
+
+function write(root, relative, content = 'export const value = true;\n') {
+  fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(root, relative), content);
+}
+
+test('completion rejects L1 after a production or high-risk diff', (context) => {
+  const root = fixture('task-level');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/payment.mjs');
+  const result = run(['complete', root, '--task-level', 'L1', '--json']);
+  assert.equal(result.status, 1, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.taskRoute.status, 'upgrade-required');
+  assert.equal(payload.taskRoute.minimumLevel, 'L3');
+  assert.equal(payload.ok, false);
+});
+
+test('manual completion classifies staged unstaged untracked deleted and renamed paths', (context) => {
+  const root = fixture('changed-paths');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  write(root, 'src/modules/session/auth.mjs');
+  baseline(root);
+  for (const [relative, staged, minimum] of [
+    ['README.md', false, 'L1'],
+    ['src/modules/widget/index.mjs', false, 'L2'],
+    ['package-lock.json', true, 'L2'],
+    ['db/migrations/001.sql', false, 'L3'],
+    ['test/fixtures/contracts/openapi.yaml', false, 'L2'],
+    ['docs/ai/architecture-profile.json', false, 'L3'],
+  ]) {
+    write(root, relative, '{}\n');
+    if (staged) assert.equal(git(root, ['add', relative]).status, 0);
+    const result = runCompletion(root, { taskLevel: 'L0' });
+    assert.equal(result.taskRoute.minimumLevel, minimum, relative);
+    assert.equal(result.taskRoute.status, 'upgrade-required', relative);
+    assert.equal(result.ok, false, relative);
+    baseline(root);
+  }
+  fs.unlinkSync(path.join(root, 'src/modules/session/auth.mjs'));
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L3');
+  baseline(root);
+  assert.equal(git(root, ['mv', 'src/modules/widget/index.mjs', 'widget.md']).status, 0);
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L2');
+  assert.equal(runCompletion(root, { taskLevel: 'L1', fromGitHook: true }).taskRoute.minimumLevel, 'L2');
+});
+
+test('completion verifies sufficient declarations and identifies omitted declarations', (context) => {
+  const root = fixture('declared-level');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  assert.equal(runCompletion(root, { taskLevel: 'L0' }).taskRoute.status, 'verified');
+  write(root, 'README.md', '# Guide\n');
+  const declared = runCompletion(root, { taskLevel: 'L1' });
+  assert.equal(declared.ok, true);
+  assert.equal(declared.taskRoute.declaredLevel, 'L1');
+  assert.equal(declared.taskRoute.minimumLevel, 'L1');
+  assert.equal(declared.taskRoute.status, 'verified');
+  const omitted = runCompletion(root);
+  assert.equal(omitted.ok, true);
+  assert.equal(omitted.taskRoute.declaredLevel, null);
+  assert.equal(omitted.taskRoute.status, 'unverified-declaration');
+  const text = run(['complete', root, '--task-level', 'L1']);
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /task_route=verified.*declared=L1.*minimum=L1/);
+});
+
+test('completion reads owner-confirmed risk from the worktree or staged snapshot', (context) => {
+  const root = fixture('confirmed-risk');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Public API responses retain their documented shape.'], ['public-api']);
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L2');
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  write(root, '.ai-governance/config.json', JSON.stringify({ ...config, confirmedRiskSignals: ['external-side-effect'] }));
+  assert.equal(runCompletion(root, { taskLevel: 'L2' }).taskRoute.minimumLevel, 'L3');
+  const hook = runCompletion(root, { taskLevel: 'L2', fromGitHook: true });
+  assert.equal(hook.taskRoute.minimumLevel, 'L2');
+  assert.equal(hook.taskRoute.status, 'verified');
+});
+
+test('hook task routing uses only staged paths while manual routing sees unstaged production changes', (context) => {
+  const root = fixture('index-routing');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  baseline(root);
+  write(root, 'README.md', '# Staged guide\n');
+  assert.equal(git(root, ['add', 'README.md']).status, 0);
+  write(root, 'src/modules/widget/index.mjs', 'export const value = false;\n');
+  write(root, 'db/migrations/001.sql', 'select 1;\n');
+  const hook = runCompletion(root, { taskLevel: 'L1', fromGitHook: true });
+  assert.equal(hook.taskRoute.minimumLevel, 'L1');
+  assert.equal(hook.taskRoute.status, 'verified');
+  assert.deepEqual(hook.stagedFiles, ['README.md']);
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L3');
+});
+
+test('upgrade-required completion performs no harvest or project command mutations', (context) => {
+  const root = fixture('upgrade-read-only');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'package.json', JSON.stringify({ scripts: { verify: 'node --eval "require(\'fs\').writeFileSync(\'mutation-marker\', \'bad\')"' } }));
+  assert.equal(run(['sync', root]).status, 0);
+  baseline(root);
+  write(root, 'src/modules/widget/index.mjs');
+  const tree = () => Object.fromEntries(fs.readdirSync(root, { recursive: true })
+    .filter((relative) => !relative.startsWith(`.git${path.sep}`) && fs.lstatSync(path.join(root, relative)).isFile())
+    .sort().map((relative) => [relative, fs.readFileSync(path.join(root, relative), 'base64')]));
+  const treeBefore = tree();
+  const before = git(root, ['status', '--porcelain=v1', '-z']).stdout;
+  const manifest = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
+  const result = runCompletion(root, { taskLevel: 'L1', verificationCommand: 'npm run verify' });
+  assert.equal(result.governance.ok, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.projectVerification.status, 'skipped-after-task-route-failure');
+  assert.equal(fs.existsSync(path.join(root, 'mutation-marker')), false);
+  assert.equal(git(root, ['status', '--porcelain=v1', '-z']).stdout, before);
+  assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/manifest.json')), manifest);
+  assert.deepEqual(tree(), treeBefore);
+});
+
+test('completion fails closed on missing HEAD corrupt index and invalid routing config', (context) => {
+  const root = fixture('missing-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.equal(git(root, ['init']).status, 0);
+  assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /changed paths/.test(error.message));
+  initialize(root);
+  const indexPath = path.join(root, '.git/index');
+  const indexBefore = fs.readFileSync(indexPath);
+  write(root, '.git/index', 'corrupt index');
+  for (const fromGitHook of [false, true]) {
+    assert.throws(() => runCompletion(root, { fromGitHook, taskLevel: 'L1' }), (error) => error.code === 'AICG_USAGE');
+  }
+  fs.writeFileSync(indexPath, indexBefore);
+  const configPath = path.join(root, '.ai-governance/config.json');
+  const configBefore = fs.readFileSync(configPath);
+  for (const invalid of ['{', JSON.stringify({ confirmedRiskSignals: ['guessed-risk'] })]) {
+    fs.writeFileSync(configPath, invalid);
+    assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /routing configuration/.test(error.message));
+  }
+  fs.unlinkSync(configPath);
+  assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE');
+  write(root, 'linked-config.json', configBefore);
+  fs.symlinkSync(path.join(root, 'linked-config.json'), configPath);
+  assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /symbolic link/.test(error.message));
+});
+
+test('completion rejects invalid declarations and unreadable repository evidence fail closed', (context) => {
+  const root = fixture('route-errors');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  for (const taskLevel of ['L4', 'l1', '', 1, ['L1'], true]) {
+    assert.throws(() => runCompletion(root, { taskLevel }), (error) => error.code === 'AICG_USAGE' && /task.level/.test(error.message));
+  }
+  const invalid = run(['complete', root, '--task-level', 'L4', '--json']);
+  assert.equal(invalid.status, 2);
+  assert.match(invalid.stderr, /task.level/);
+  write(root, '.git/HEAD', 'invalid head\n');
+  assert.throws(() => runCompletion(root, { taskLevel: 'L1' }), (error) => error.code === 'AICG_USAGE');
+  const noRepo = fixture('no-repository');
+  context.after(() => fs.rmSync(noRepo, { recursive: true, force: true }));
+  assert.notEqual(run(['complete', noRepo, '--json']).status, 0);
+});
 
 function initializeWithConstraints(root, constraints, confirmedRiskSignals = ['authorization']) {
   const configPath = path.join(os.tmpdir(), `aicg-completion-config-${process.pid}-${Date.now()}-${Math.random()}.json`);
@@ -35,6 +212,7 @@ function initializeWithConstraints(root, constraints, confirmedRiskSignals = ['a
   try {
     const result = run(['init', root, '--clients', 'all', '--config', configPath, '--yes', '--no-assist']);
     assert.equal(result.status, 0, result.stderr);
+    baseline(root);
   } finally {
     fs.rmSync(configPath, { force: true });
   }
@@ -431,7 +609,7 @@ test('chat completion and the managed pre-commit hook validate only when explici
   assert.equal(git(root, ['config', 'user.name', 'AICG Test']).status, 0);
   initialize(root);
   assert.equal(git(root, ['add', '--all']).status, 0);
-  assert.equal(git(root, ['commit', '-m', 'governance baseline']).status, 0);
+  assert.equal(git(root, ['commit', '--allow-empty', '-m', 'governance baseline']).status, 0);
 
   const completion = run(['request', root, '--text', '运行完成门禁', '--json']);
   assert.equal(completion.status, 0, completion.stderr);

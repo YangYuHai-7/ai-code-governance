@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProject } from '../governance/index.mjs';
+import { checkProject, evaluateCompletionTaskRoute, validateConfig, validateTaskLevel } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
-import { sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
-import { PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
+import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
+import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
 import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -114,9 +114,34 @@ export function installCommitHook(plan) {
 }
 
 function stagedPaths(root) {
-  const result = runGit(root, ['diff', '--cached', '--name-only', '-z'], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+  const result = runGit(root, ['diff', '--cached', '--name-only', '-z', '--no-renames'], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
   if (result.error || result.status !== 0) throw usageError('Cannot read the Git index for the pre-commit completion gate.');
   return result.stdout.split('\0').filter(Boolean).sort((left, right) => left.localeCompare(right));
+}
+
+function changedPaths(root) {
+  const paths = [];
+  // Disable rename collapsing so moving a sensitive source into docs cannot hide its removal.
+  for (const args of [
+    ['diff', '--name-only', '-z', '--no-renames', 'HEAD'],
+    ['ls-files', '--others', '--exclude-standard', '-z'],
+  ]) {
+    const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    if (result.error || result.status !== 0) throw usageError('Cannot read changed paths for the completion gate.');
+    paths.push(...result.stdout.split('\0').filter(Boolean));
+  }
+  return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+}
+
+function completionTaskRoute(scan, paths, taskLevel) {
+  let config;
+  try {
+    assertNoLinkAncestor(scan.root, CONFIG_PATH);
+    config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
+  } catch (error) {
+    throw usageError(`Cannot read task routing configuration for the completion gate: ${error.message}`);
+  }
+  return evaluateCompletionTaskRoute(paths, config, taskLevel);
 }
 
 function withIndexSnapshot(root, action) {
@@ -189,17 +214,20 @@ function runVerification(scan, selected) {
   };
 }
 
-function completionResult(scan, { mode, stagedFiles = [], verificationCommand = null }) {
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null }) {
+  const taskRoute = completionTaskRoute(scan, paths, taskLevel);
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
-  if (selectedVerification && governance.ok) {
+  if (selectedVerification && taskRoute.status === 'upgrade-required') {
+    projectVerification = { status: 'skipped-after-task-route-failure', command: selectedVerification.command };
+  } else if (selectedVerification && governance.ok) {
     projectVerification = runVerification(scan, selectedVerification);
   } else if (selectedVerification) {
     projectVerification = { status: 'skipped-after-governance-failure', command: selectedVerification.command };
   }
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
-  const ok = governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
+  const ok = taskRoute.status !== 'upgrade-required' && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
@@ -208,6 +236,7 @@ function completionResult(scan, { mode, stagedFiles = [], verificationCommand = 
     target: scan.root,
     stagedFiles,
     ok,
+    taskRoute,
     productionReadiness,
     surfaceVerification,
     claimBoundary,
@@ -225,10 +254,13 @@ function completionResult(scan, { mode, stagedFiles = [], verificationCommand = 
   };
 }
 
-export function runCompletion(target, { fromGitHook = false, verificationCommand = null } = {}) {
+export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null } = {}) {
+  validateTaskLevel(taskLevel);
   if (!fromGitHook) {
+    const root = resolveGitRepository(target);
+    const paths = changedPaths(root);
     const scan = scanProject(target, { probeEnvironment: false });
-    return completionResult(scan, { mode: 'manual', verificationCommand });
+    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand });
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
   const root = resolveGitRepository(target);
@@ -236,5 +268,7 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
   return withIndexSnapshot(root, (snapshot) => completionResult(scanProject(snapshot, { probeEnvironment: false }), {
     mode: 'git-pre-commit',
     stagedFiles: paths,
+    paths,
+    taskLevel,
   }));
 }

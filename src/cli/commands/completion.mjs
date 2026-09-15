@@ -10,6 +10,8 @@ function printCompletion(result, json) {
   console.log(`PRODUCTION_READINESS=${result.productionReadiness.state} constraint_evidence=${result.productionReadiness.constraintEvidence.status}`);
   console.log(`CLAIM_BOUNDARY: ${result.claimBoundary}`);
   console.log(`completion_gate=${result.ok ? 'pass' : 'fail'} mode=${result.mode}`);
+  console.log(`task_route=${result.taskRoute.status} declared=${result.taskRoute.declaredLevel ?? 'omitted'} minimum=${result.taskRoute.minimumLevel}`);
+  for (const reason of result.taskRoute.reasons) console.log(`TASK_ROUTE: ${reason}`);
   if (result.stagedFiles.length > 0) console.log(`staged_files=${result.stagedFiles.join(',')}`);
   console.log(`governance=${result.governance.ok ? 'pass' : 'fail'} project_verification=${result.projectVerification.status}`);
   for (const warning of result.governance.warnings) console.warn(`WARN: ${warning}`);
@@ -19,7 +21,7 @@ function printCompletion(result, json) {
 }
 
 export function completeCommand(target, options) {
-  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null });
+  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null, taskLevel: options['task-level'] ?? null });
   printCompletion(result, Boolean(options.json));
   if (!result.ok) process.exitCode = 1;
 }

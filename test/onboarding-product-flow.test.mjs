@@ -364,6 +364,13 @@ test('post-init source and scripts produce read-only rescan CTAs without mutatin
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const initialized = run(['init', root, '--clients', 'codex', '--locale', 'zh-CN', '--yes', '--no-assist']);
   assert.equal(initialized.status, 0, initialized.stderr);
+  for (const args of [
+    ['init'], ['add', '--all'],
+    ['-c', 'user.name=AICG Test', '-c', 'user.email=aicg@example.test', '-c', 'core.hooksPath=/dev/null', 'commit', '-m', 'governance baseline'],
+  ]) {
+    const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
   const configPath = path.join(root, '.ai-governance', 'config.json');
   const configBefore = fs.readFileSync(configPath, 'utf8');
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({

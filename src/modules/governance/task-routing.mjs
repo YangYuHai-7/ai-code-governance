@@ -309,6 +309,27 @@ export function minimumTaskLevelFromPaths(paths, config = {}) {
   return maxLevel(...levels);
 }
 
+export function validateTaskLevel(taskLevel) {
+  if (taskLevel !== null && !ORDER.includes(taskLevel)) {
+    throw usageError('task-level must be one of L0, L1, L2, L3.');
+  }
+  return taskLevel;
+}
+
+export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = null) {
+  validateTaskLevel(declaredLevel);
+  const minimumLevel = minimumTaskLevelFromPaths(paths, config);
+  const status = declaredLevel === null ? 'unverified-declaration'
+    : ORDER.indexOf(declaredLevel) < ORDER.indexOf(minimumLevel) ? 'upgrade-required' : 'verified';
+  const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths)}.`];
+  if (config.confirmedRiskSignals?.length) {
+    reasons.push(`Owner-confirmed risk signals require at least ${confirmedRiskLevel(config)}: ${config.confirmedRiskSignals.join(', ')}.`);
+  }
+  if (status === 'unverified-declaration') reasons.push('No task level was declared; compatibility completion does not verify a declaration.');
+  if (status === 'upgrade-required') reasons.push(`Declared ${declaredLevel} is below minimum ${minimumLevel}; upgrade the task route before completion.`);
+  return { declaredLevel, minimumLevel, status, reasons };
+}
+
 function localized(config, english, chinese) {
   if (config.artifactLanguage === 'zh-CN') return chinese;
   if (config.artifactLanguage === 'bilingual') return `${english} / ${chinese}`;
