@@ -88,25 +88,6 @@ function yamlTopLevelBlock(content, key) {
   return lines.slice(start, end).join('\n').trimEnd();
 }
 
-function yamlConditionalBlock(content, profileName, conditionName) {
-  const profile = yamlProfileBlock(content, profileName);
-  if (!profile) return null;
-  const lines = profile.split(/\r?\n/);
-  const escapedName = conditionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const conditionHeader = new RegExp(`^      (?:${escapedName}|["']${escapedName}["'])\\s*:\\s*$`);
-  const starts = lines.flatMap((line, index) => conditionHeader.test(line) ? [index] : []);
-  if (starts.length === 0) return null;
-  if (starts.length > 1) throw new Error(`${CONTEXT_MAP_PATH}: duplicate ${conditionName} conditions are not safe to merge`);
-  const [start] = starts;
-  let end = lines.length;
-  for (let index = start + 1; index < lines.length; index += 1) {
-    if (/^      (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^    [A-Za-z0-9_-]+\s*:/.test(lines[index])) {
-      end = index;
-      break;
-    }
-  }
-  return lines.slice(start, end).join('\n').trimEnd();
-}
 
 function recognizedLegacyBusinessProfile(profile) {
   const lines = profile?.split(/\r?\n/) ?? [];
@@ -134,8 +115,66 @@ function recognizedLegacyBusinessProfile(profile) {
   return isStandard || (lines.length === minimal.length && minimal.every((line, index) => lines[index] === line));
 }
 
+function conditionalSeedLayout(profile) {
+  const lines = profile.split(/\r?\n/);
+  const headers = lines.flatMap((line, index) => /^    (?:conditional|["']conditional["'])\s*:/.test(line) ? [index] : []);
+  if (headers.length !== 1 || !/^    conditional:(?: \{\})?$/.test(lines[headers[0]])) {
+    throw new Error(`${CONTEXT_MAP_PATH}: behavior_change profile has no unambiguous safe conditional block to extend`);
+  }
+  const start = headers[0];
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^    \S/.test(lines[index]) && !/^\s*#/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  const empty = lines[start] === '    conditional: {}';
+  const conditions = new Map();
+  let active = null;
+  for (let index = start + 1; index < end; index += 1) {
+    const line = lines[index];
+    if (/^\s*(?:#.*)?$/.test(line)) continue;
+    if (empty) throw new Error(`${CONTEXT_MAP_PATH}: empty conditional map has conflicting nested content`);
+    const header = line.match(/^      (?:([A-Za-z0-9_-]+)|["']([A-Za-z0-9_-]+)["']):\s*$/);
+    if (header) {
+      active = header[1] ?? header[2];
+      if (conditions.has(active)) throw new Error(`${CONTEXT_MAP_PATH}: duplicate ${active} conditions are not safe to merge`);
+      conditions.set(active, { header: line, entries: [] });
+    } else if (active && /^        -\s+(?:[A-Za-z0-9._/-]+|"[A-Za-z0-9._/-]+"|'[A-Za-z0-9._/-]+')\s*$/.test(line)) {
+      conditions.get(active).entries.push(line);
+    } else {
+      throw new Error(`${CONTEXT_MAP_PATH}: unsupported conditional mapping syntax is not safe to merge`);
+    }
+  }
+  return { lines, start, end, empty, conditions };
+}
+
+function mergeConditionalSeedRoutes(current, desired) {
+  const currentProfile = yamlProfileBlock(current, 'behavior_change');
+  const desiredProfile = yamlProfileBlock(desired, 'behavior_change');
+  const required = conditionalSeedLayout(desiredProfile);
+  if (required.conditions.size === 0) return current;
+  const existing = conditionalSeedLayout(currentProfile);
+  const additions = [];
+  for (const [condition, route] of required.conditions) {
+    const present = existing.conditions.get(condition);
+    if (present) {
+      if (stableJson(present.entries) !== stableJson(route.entries)) {
+        throw new Error(`${CONTEXT_MAP_PATH}: existing behavior_change ${condition} condition conflicts with the required AICG route`);
+      }
+    } else {
+      additions.push(route.header, ...route.entries);
+    }
+  }
+  if (additions.length === 0) return current;
+  if (existing.empty) existing.lines[existing.start] = '    conditional:';
+  existing.lines.splice(existing.end, 0, ...additions);
+  const newline = current.includes('\r\n') ? '\r\n' : '\n';
+  return current.replace(currentProfile.replaceAll('\n', newline), existing.lines.join(newline));
+}
+
 function mergeLegacyContextMapSeed(current, desired) {
-  const requiredBusiness = yamlConditionalBlock(desired, 'behavior_change', 'business');
   const legacyProfile = yamlProfileBlock(current, 'business_constraints');
   if (legacyProfile && !recognizedLegacyBusinessProfile(legacyProfile)) {
     throw new Error(`${CONTEXT_MAP_PATH}: existing business_constraints profile conflicts with the required AICG route`);
@@ -190,50 +229,7 @@ function mergeLegacyContextMapSeed(current, desired) {
     const expanded = currentRelease.replace(/^    required: \[\]$/m, '    required:\n      - docs/ai/release-acceptance-policy.json');
     current = current.replace(currentRelease.replaceAll('\n', newline), expanded.replaceAll('\n', newline));
   }
-  if (!requiredBusiness) return current;
-  const existingBusiness = yamlConditionalBlock(current, 'behavior_change', 'business');
-  if (existingBusiness) {
-    if (existingBusiness === requiredBusiness) return current;
-    throw new Error(`${CONTEXT_MAP_PATH}: existing behavior_change business condition conflicts with the required AICG route`);
-  }
-  const newline = current.includes('\r\n') ? '\r\n' : '\n';
-  const lines = current.split(/\r?\n/);
-  const profilesStart = lines.findIndex((line) => line === 'profiles:');
-  if (profilesStart === -1) return current;
-  const behaviorStart = lines.findIndex((line, index) => index > profilesStart && line === '  behavior_change:');
-  if (behaviorStart === -1) {
-    const requiredProfile = yamlProfileBlock(desired, 'behavior_change');
-    if (!requiredProfile) return current;
-    let insertion = lines.length;
-    for (let index = profilesStart + 1; index < lines.length; index += 1) {
-      if (/^[A-Za-z0-9_-]+:\s*$/.test(lines[index])) {
-        insertion = index;
-        break;
-      }
-    }
-    lines.splice(insertion, 0, ...requiredProfile.split('\n'));
-    return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
-  }
-  let behaviorEnd = lines.length;
-  for (let index = behaviorStart + 1; index < lines.length; index += 1) {
-    if (/^  (?:[A-Za-z0-9_-]+|["'][A-Za-z0-9_-]+["'])\s*:/.test(lines[index]) || /^[A-Za-z0-9_-]+\s*:/.test(lines[index])) {
-      behaviorEnd = index;
-      break;
-    }
-  }
-  const conditionalStart = lines.findIndex((line, index) => index > behaviorStart && index < behaviorEnd && line === '    conditional:');
-  if (conditionalStart === -1) {
-    throw new Error(`${CONTEXT_MAP_PATH}: behavior_change profile has no safe conditional block to extend`);
-  }
-  let insertion = behaviorEnd;
-  for (let index = conditionalStart + 1; index < behaviorEnd; index += 1) {
-    if (/^    [A-Za-z0-9_-]+\s*:/.test(lines[index])) {
-      insertion = index;
-      break;
-    }
-  }
-  lines.splice(insertion, 0, ...requiredBusiness.split('\n'));
-  return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+  return mergeConditionalSeedRoutes(current, desired);
 }
 
 function trustedLegacyManifest(root, manifest) {

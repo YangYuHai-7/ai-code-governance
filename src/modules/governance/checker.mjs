@@ -4,6 +4,7 @@ import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
 import { selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { conditionalArtifactRoutes } from './artifact-selection.mjs';
 import {
   extractManagedBlock,
   loadManifest,
@@ -13,7 +14,6 @@ import {
 } from './managed-files.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256 } from '../../shared/index.mjs';
-import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH } from './business-constraints.mjs';
 
 const ACCEPTANCE_CONTRACT_PATH = 'docs/ai/acceptance-contract.json';
 const ACCEPTANCE_RESULTS_PATH = 'docs/ai/acceptance-results.json';
@@ -389,8 +389,9 @@ export function checkProject(scan) {
       warnings.push(`${CONFIG_PATH}: legacy-unconfigured architecture profile; re-run aicg init to record a future-code policy before relying on directory guidance.`);
     }
     let expected = [];
+    let selected = [];
     try {
-      const selected = selectedArtifactDefinitions(config, scan);
+      selected = selectedArtifactDefinitions(config, scan);
       for (const assertion of selected.flatMap((definition) => definition.gateAssertions)) gateAssertions.add(assertion);
       expected = selected.map((definition) => definition.build(selected));
     } catch (error) {
@@ -499,21 +500,20 @@ export function checkProject(scan) {
     if (!managedAgentsContent) {
       reachabilityErrors.push('AGENTS.md: shared managed entrypoint is not reachable');
     }
-    const architecturePaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'architecture');
-    const architectureRouted = architecturePaths.has('docs/ai/architecture-profile.json')
-      && architecturePaths.has('docs/ai/rules/15_architecture.mdc');
     if (gateAssertions.has('context-map') && !managedAgentsContent.includes('docs/ai/context-map.yaml')) {
       reachabilityErrors.push('AGENTS.md: context map is not reachable from the shared entrypoint');
     }
-    if (gateAssertions.has('architecture-route') && !architectureRouted) {
-      reachabilityErrors.push('docs/ai/context-map.yaml: architecture profile and generated rule are not reachable from the behavior_change route');
-    }
-    if (gateAssertions.has('business-route')) {
-      const businessPaths = profileConditionalPaths(contextMapRouting, 'behavior_change', 'business');
-      const businessRouted = (relative) => businessPaths.has(relative);
-      if (!businessRouted(BUSINESS_CONSTRAINTS_PATH)) reachabilityErrors.push(`${BUSINESS_CONSTRAINTS_PATH}: owner-confirmed constraint registry is not reachable from the behavior_change route`);
-      if (gateAssertions.has('business-skill-route') && !businessRouted(BUSINESS_CONSTRAINT_SKILL_PATH)) {
-        reachabilityErrors.push(`${BUSINESS_CONSTRAINT_SKILL_PATH}: business constraint Skill is not reachable from the behavior_change route`);
+    if (gateAssertions.has('conditional-route')) {
+      for (const [condition, paths] of conditionalArtifactRoutes(selected, 'behavior_change')) {
+        const routed = profileConditionalPaths(contextMapRouting, 'behavior_change', condition);
+        for (const relative of paths) {
+          if (routed.has(relative)) continue;
+          const definition = selected.find((item) => item.path === relative);
+          const label = definition.gateAssertions.includes('business-skill-route') ? 'business constraint Skill'
+            : definition.gateAssertions.includes('business-route') ? 'owner-confirmed constraint registry'
+              : 'selected artifact';
+          reachabilityErrors.push(`${relative}: ${label} is not reachable from the behavior_change route (${condition})`);
+        }
       }
     }
     if (gateAssertions.has('claude-adapter')) {

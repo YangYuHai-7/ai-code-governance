@@ -589,7 +589,8 @@ test('a stale context-map seed fails closed without expanding the refreshed root
   const contextMap = path.join(root, 'docs/ai/context-map.yaml');
   fs.writeFileSync(contextMap, fs.readFileSync(contextMap, 'utf8').replace('        - docs/ai/rules/15_architecture.mdc\n', ''));
   const result = run(['init', root, '--yes', '--no-assist', '--force']);
-  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /architecture condition conflicts with the required AICG route/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
   assert.equal(run(['check', root, '--json']).status, 1);
 });

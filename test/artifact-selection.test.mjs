@@ -9,6 +9,7 @@ import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { resolveGovernanceCapabilities, selectArtifactDefinitions } from '../src/modules/governance/artifact-selection.mjs';
+import { deriveArchitectureDecision } from '../src/modules/architecture/index.mjs';
 
 const MINIMAL_CODEX_ALLOWLIST = [
   '.ai-governance/config.json',
@@ -149,5 +150,83 @@ test('produced evidence and certification receipts are preserved without creatin
   for (const relative of resultPaths) {
     assert.equal(selected.find((item) => item.path === relative)?.activation, 'evidence-produced');
     assert.equal(buildArtifacts(config, snapshot).find((item) => item.path === relative)?.content, receipt);
+  }
+});
+
+for (const scenario of ['business', 'architecture-active', 'architecture-advisory', 'stack']) {
+  test(`minimal to standard materializes and routes selected ${scenario} policy`, (context) => {
+    const { root, config, scan } = fixture(context);
+    applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+    const upgraded = { ...config, governanceDepth: 'standard' };
+    if (scenario === 'business') upgraded.domainConstraints = ['Only the owner can close an account.'];
+    if (scenario.startsWith('architecture-')) {
+      upgraded.initialization = scenario === 'architecture-active'
+        ? { lifecycle: 'greenfield', existingCodeStrategy: null, source: 'config' }
+        : { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' };
+      upgraded.architecture = deriveArchitectureDecision(scan, upgraded);
+      assert.equal(upgraded.architecture.status, scenario.slice('architecture-'.length));
+    }
+    const plan = planArtifacts(root, buildArtifacts(upgraded, scanProject(root)));
+    assert.deepEqual(plan.conflicts, []);
+    assert.equal(plan.operations.some((item) => item.remove), false);
+    applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) });
+    const map = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
+    const expected = {
+      business: ['docs/ai/business-constraints.json', 'docs/ai/skills/business-constraints/SKILL.md'],
+      architecture: ['docs/ai/architecture-profile.json', 'docs/ai/rules/15_architecture.mdc'],
+      stack: ['docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md'],
+    }[scenario.startsWith('architecture-') ? 'architecture' : scenario];
+    for (const relative of expected) {
+      assert.ok(map.includes(`        - ${relative}\n`), `missing route ${relative}`);
+      assert.equal(fs.existsSync(path.join(root, relative)), true);
+    }
+    assert.equal(checkProject(scanProject(root)).ok, true);
+  });
+}
+
+test('conditional upgrade preserves custom conditions comments order and CRLF bytes', (context) => {
+  const { root, config, scan } = fixture(context);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const target = path.join(root, 'docs/ai/context-map.yaml');
+  const custom = '    conditional:\n      # Owner route before generated additions.\n      local_operations:\n        - docs/owner-runbook.md\n      # Keep this trailing comment.\n';
+  const original = fs.readFileSync(target, 'utf8').replace('    conditional: {}\n', custom).replaceAll('\n', '\r\n');
+  fs.writeFileSync(target, original);
+  const upgraded = { ...config, governanceDepth: 'standard', domainConstraints: ['Keep owner data scoped.'] };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(upgraded, scanProject(root))), { transactional: true, verify: () => checkProject(scanProject(root)) });
+  const after = fs.readFileSync(target, 'utf8');
+  assert.ok(after.includes(custom.replaceAll('\n', '\r\n')));
+  assert.equal(/(?<!\r)\n/.test(after), false);
+  let offset = 0;
+  for (const line of original.split('\r\n')) {
+    const next = after.indexOf(line, offset);
+    assert.notEqual(next, -1, `lost or reordered user line ${line}`);
+    offset = next + line.length;
+  }
+});
+
+test('untrusted and ambiguous conditional upgrades fail closed without changing files', (context) => {
+  for (const scenario of ['foreign', 'duplicate', 'inline-map', 'conflicting-stack']) {
+    const { root, config, scan } = fixture(context);
+    applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+    const target = path.join(root, 'docs/ai/context-map.yaml');
+    const manifestPath = path.join(root, '.ai-governance/manifest.json');
+    if (scenario === 'foreign') {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      manifest.generatedBy = 'foreign-owner';
+      fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+    } else {
+      const replacement = {
+        duplicate: '    conditional: {}\n    conditional: {}',
+        'inline-map': '    conditional: {stack: [docs/owner.md]}',
+        'conflicting-stack': '    conditional:\n      stack:\n        - docs/owner.md',
+      }[scenario];
+      fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace('    conditional: {}', replacement));
+    }
+    const before = [target, manifestPath, path.join(root, '.ai-governance/config.json')].map((file) => [file, fs.readFileSync(file, 'utf8')]);
+    const upgraded = { ...config, governanceDepth: 'standard' };
+    const plan = planArtifacts(root, buildArtifacts(upgraded, scanProject(root)));
+    assert.throws(() => applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) }));
+    for (const [file, bytes] of before) assert.equal(fs.readFileSync(file, 'utf8'), bytes);
+    assert.equal(fs.existsSync(path.join(root, 'docs/ai/technical-standards.json')), false);
   }
 });
