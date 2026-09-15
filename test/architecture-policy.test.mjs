@@ -13,6 +13,19 @@ import { evaluateModuleGraph, moduleGraphDeclaration } from '../src/modules/arch
 const cli = path.resolve('bin/aicg.js');
 const ACTIVE_GRAPH_CONFIG = { architecture: { status: 'active', verification: { dependencyDirection: 'aicg-check-js-ts-module-graph' } } };
 
+test('minimal checker does not require unselected architecture artifacts or routes', (context) => {
+  const root = fixture('minimal-optional-policy');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'minimal' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/architecture-profile.json')), false);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/rules/15_architecture.mdc')), false);
+  const result = run(['check', root, '--json']);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(JSON.parse(result.stdout).evidence.reachable, 'pass');
+});
+
 function writeSource(root, relative, content) {
   const absolute = path.join(root, relative);
   fs.mkdirSync(path.dirname(absolute), { recursive: true });
