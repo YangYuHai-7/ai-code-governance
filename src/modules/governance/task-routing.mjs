@@ -38,6 +38,29 @@ const BASE_APPROVALS = {
   L3: ['requirements', 'design', 'plan'],
 };
 
+const DOCUMENTATION_OR_TEST_FILE_PATTERNS = [
+  '*.md', '**/*.md', '*.mdx', '**/*.mdx', '*.txt', '**/*.txt',
+  '*.rst', '**/*.rst', '*.adoc', '**/*.adoc',
+  'readme*', 'changelog*', 'contributing*', 'license*',
+  '*.test.*', '**/*.test.*', '*.spec.*', '**/*.spec.*', 'test_*.*', '*_test.*',
+];
+
+const ORDINARY_DOCUMENTATION_OR_TEST_PATTERNS = [
+  'docs/*.md', 'docs/**/*.md', 'docs/*.mdx', 'docs/**/*.mdx', 'docs/*.txt', 'docs/**/*.txt',
+  'docs/*.rst', 'docs/**/*.rst', 'docs/*.adoc', 'docs/**/*.adoc',
+  'test/**', 'tests/**', '__tests__/**',
+  ...DOCUMENTATION_OR_TEST_FILE_PATTERNS,
+];
+
+function delimitedTokenPatterns(tokens) {
+  return tokens.flatMap((token) => [
+    `${token}/**`, `**/${token}/**`,
+    `${token}.*`, `**/${token}.*`,
+    `${token}-*`, `**/${token}-*`,
+    `${token}_*`, `**/${token}_*`,
+  ]);
+}
+
 const PATH_RULES = [
   {
     id: 'architecture-and-external-automation',
@@ -49,32 +72,19 @@ const PATH_RULES = [
       '.github/workflows/deploy*.yaml',
       '.github/workflows/release*.yml',
       '.github/workflows/release*.yaml',
-      'deploy/**',
-      '**/deploy/**',
-      'publish/**',
-      '**/publish/**',
-      'infra/**',
-      '**/infra/**',
       '*.tf',
       '**/*.tf',
       '*.tfvars',
       '**/*.tfvars',
     ],
-    examples: ['services/foo/deploy/run.sh', 'infra/network.tf'],
+    examples: ['.github/workflows/deploy.yml', 'infra/network.tf'],
   },
   {
-    id: 'migration-artifact',
+    id: 'migration-fixture',
     level: 'L3',
-    patterns: [
-      'migration/*.sql', 'migration/**/*.sql', 'migrations/*.sql', 'migrations/**/*.sql',
-      'migration/*.js', 'migration/**/*.js', 'migrations/*.js', 'migrations/**/*.js',
-      'migration/*.ts', 'migration/**/*.ts', 'migrations/*.ts', 'migrations/**/*.ts',
-      'migration/*.py', 'migration/**/*.py', 'migrations/*.py', 'migrations/**/*.py',
-      'migration/*.rb', 'migration/**/*.rb', 'migrations/*.rb', 'migrations/**/*.rb',
-      'migration/*.go', 'migration/**/*.go', 'migrations/*.go', 'migrations/**/*.go',
-      '*.migration.*', '**/*.migration.*',
-    ],
-    examples: ['db/migrations/20260915-add-account.sql'],
+    patterns: ['fixtures/migration/**', '**/fixtures/migration/**', 'fixtures/migrations/**', '**/fixtures/migrations/**'],
+    excludePatterns: DOCUMENTATION_OR_TEST_FILE_PATTERNS,
+    examples: ['test/fixtures/migrations/20260915-add-account.sql'],
   },
   {
     id: 'security-fixture',
@@ -86,6 +96,7 @@ const PATH_RULES = [
       'fixtures/payment/**', 'fixtures/payments/**', 'fixtures/billing/**',
       'fixtures/tenant/**', 'fixtures/tenants/**', 'fixtures/multi-tenancy/**',
     ],
+    excludePatterns: DOCUMENTATION_OR_TEST_FILE_PATTERNS,
     examples: ['test/fixtures/risk-evidence/authorization-policy.json'],
   },
   {
@@ -111,8 +122,13 @@ const PATH_RULES = [
     id: 'public-contract-artifact',
     level: 'L2',
     patterns: [
-      'openapi.*', '**/openapi.*', 'asyncapi.*', '**/asyncapi.*', 'schema.*', '**/schema.*', '*.schema.*', '**/*.schema.*',
+      'openapi.json', '**/openapi.json', 'openapi.yaml', '**/openapi.yaml', 'openapi.yml', '**/openapi.yml',
+      'swagger.json', '**/swagger.json', 'swagger.yaml', '**/swagger.yaml', 'swagger.yml', '**/swagger.yml',
+      'asyncapi.json', '**/asyncapi.json', 'asyncapi.yaml', '**/asyncapi.yaml', 'asyncapi.yml', '**/asyncapi.yml',
+      'schema.json', '**/schema.json', 'schema.yaml', '**/schema.yaml', 'schema.yml', '**/schema.yml',
+      '*.schema.json', '**/*.schema.json', '*.schema.yaml', '**/*.schema.yaml', '*.schema.yml', '**/*.schema.yml',
       '*.proto', '**/*.proto', '*.graphql', '**/*.graphql', '*.gql', '**/*.gql', '*.prisma', '**/*.prisma',
+      '*.avsc', '**/*.avsc', '*.xsd', '**/*.xsd', '*.wsdl', '**/*.wsdl', '*.thrift', '**/*.thrift',
       'contract/*.json', 'contract/**/*.json', 'contracts/*.json', 'contracts/**/*.json',
       'contract/*.yaml', 'contract/**/*.yaml', 'contracts/*.yaml', 'contracts/**/*.yaml',
       'contract/*.yml', 'contract/**/*.yml', 'contracts/*.yml', 'contracts/**/*.yml',
@@ -125,23 +141,36 @@ const PATH_RULES = [
   {
     id: 'ordinary-documentation-or-test',
     level: 'L1',
-    patterns: [
-      'docs/*.md', 'docs/**/*.md', 'docs/*.mdx', 'docs/**/*.mdx', 'docs/*.txt', 'docs/**/*.txt',
-      'docs/*.rst', 'docs/**/*.rst', 'docs/*.adoc', 'docs/**/*.adoc',
-      'readme*', 'changelog*', 'contributing*', 'license*',
-      'test/**', 'tests/**', '__tests__/**', '*.test.*', '**/*.test.*', '*.spec.*', '**/*.spec.*', 'test_*.*', '*_test.*',
-    ],
+    patterns: ORDINARY_DOCUMENTATION_OR_TEST_PATTERNS,
     examples: ['docs/payments/guide.md', 'docs/api/guide.md', 'src/__tests__/widget.test.mjs'],
+  },
+  {
+    id: 'migration-artifact',
+    level: 'L3',
+    patterns: ['migration/**', '**/migration/**', 'migrations/**', '**/migrations/**', '*.migration.*', '**/*.migration.*'],
+    excludePatterns: DOCUMENTATION_OR_TEST_FILE_PATTERNS,
+    examples: ['db/migrations/20260915-add-account.sql'],
+  },
+  {
+    id: 'infrastructure',
+    level: 'L3',
+    patterns: ['infra/**', '**/infra/**'],
+    examples: ['infra/deployment.yaml'],
+  },
+  {
+    id: 'deployment-and-publishing',
+    level: 'L3',
+    patterns: delimitedTokenPatterns(['deploy', 'publish', 'release']),
+    examples: ['services/foo/deploy/run.sh', 'scripts/deploy.sh', 'scripts/publish-package.mjs'],
   },
   {
     id: 'security-and-money',
     level: 'L3',
-    patterns: [
-      'auth/**', 'authentication/**', 'authorization/**', 'permission/**', 'permissions/**',
-      'payment/**', 'payments/**', 'billing/**', 'tenant/**', 'tenants/**', 'multi-tenancy/**',
-      '*authentication*', '*authorization*', '*permission*', '*payment*', '*billing*', '*tenant*',
-    ],
-    examples: ['src/authorization/policy.mjs', 'src/payments/settle.mjs'],
+    patterns: delimitedTokenPatterns([
+      'auth', 'authentication', 'authorization', 'permission', 'permissions',
+      'payment', 'payments', 'billing', 'tenant', 'tenants', 'multi-tenancy',
+    ]),
+    examples: ['src/auth.ts', 'config/auth.yaml', 'src/authorization/policy.mjs', 'src/payments/settle.mjs'],
   },
   {
     id: 'public-contract',
@@ -232,6 +261,11 @@ function matchesPatterns(relative, patterns) {
   return patterns.some((pattern) => matchSimpleGlob(relative, pattern));
 }
 
+function matchesRule(relative, rule) {
+  return matchesPatterns(relative, rule.patterns)
+    && !matchesPatterns(relative, rule.excludePatterns ?? []);
+}
+
 function changedSurfaces(paths) {
   const surfaces = new Set();
   for (const relative of paths) {
@@ -246,7 +280,7 @@ export function minimumTaskLevelFromPaths(paths, config = {}) {
   const levels = [confirmedRiskLevel(config)];
   const surfaceCandidates = [];
   for (const relative of normalized) {
-    const rule = PATH_RULES.find((candidate) => matchesPatterns(relative, candidate.patterns));
+    const rule = PATH_RULES.find((candidate) => matchesRule(relative, candidate));
     levels.push(rule?.level ?? 'L1');
     if (rule?.id !== 'ordinary-documentation-or-test') surfaceCandidates.push(relative);
   }
@@ -287,10 +321,11 @@ export function taskRoutingPolicy(config) {
       multiSurfaceExamples: [['apps/web/editor.mjs', 'apps/api/editor.mjs']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),
     },
-    pathRules: PATH_RULES.map(({ id, level, patterns, examples }) => ({
+    pathRules: PATH_RULES.map(({ id, level, patterns, excludePatterns = [], examples }) => ({
       id,
       level,
       patterns: [...patterns],
+      excludePatterns: [...excludePatterns],
       examples: [...examples],
       description: localized(config, `Changed paths matching ${id} require at least ${level}.`, `匹配 ${id} 的变更路径至少需要 ${level}。`),
     })),
