@@ -9,7 +9,7 @@ import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
-import { hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
+import { conditionalArtifactRoutes, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 
 function yamlList(values, indent = 0) {
   const prefix = ' '.repeat(indent);
@@ -253,33 +253,10 @@ ${rows}
 
 function contextMap(config, selected) {
   const selectedPaths = new Set(selected.map((definition) => definition.path));
-  const hasBusinessSkill = config.domainConstraints.length > 0 && config.governanceDepth !== 'minimal';
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]');
-  const conditional = selectedPaths.has('docs/ai/architecture-profile.json') ? [
-    '      architecture:',
-    '        - docs/ai/architecture-profile.json',
-    '        - docs/ai/rules/15_architecture.mdc',
-  ] : [];
-  if (selectedPaths.has('docs/ai/technical-standards.json')) {
-    const standardSkills = selected
-      .map((artifact) => artifact.path)
-      .filter((relative) => relative.startsWith('docs/ai/skills/standards/'));
-    conditional.push(
-      '      stack:',
-      '        - docs/ai/stack-profile.json',
-      '        - docs/ai/rules/20_stack.mdc',
-      '        - docs/ai/technical-standards.json',
-      ...standardSkills.map((relative) => `        - ${relative}`),
-    );
-  }
-  if (selectedPaths.has(BUSINESS_CONSTRAINTS_PATH)) {
-    conditional.push(
-      '      business:',
-      `        - ${BUSINESS_CONSTRAINTS_PATH}`,
-      ...(hasBusinessSkill ? [`        - ${BUSINESS_CONSTRAINT_SKILL_PATH}`] : []),
-    );
-  }
+  const conditional = [...conditionalArtifactRoutes(selected, 'behavior_change')]
+    .flatMap(([condition, paths]) => [`      ${condition}:`, ...paths.map((relative) => `        - ${relative}`)]);
   return `version: 1
 base:
   required:
@@ -431,7 +408,8 @@ export function artifactDefinitions(config, scan) {
   const definitions = [];
   const add = (relative, capability, content, { activation = 'selected', requires = [], ownership = 'seed', routeProfiles = [], gateAssertions = [], kind = 'canonical', source = 'template:governance' } = {}) => {
     definitions.push({
-      id: relative, path: relative, capability, activation, requires, ownership, routeProfiles, gateAssertions,
+      id: relative, path: relative, capability, activation, requires, ownership, routeProfiles,
+      gateAssertions: [...gateAssertions, ...(routeProfiles.some((route) => route.startsWith('behavior_change:')) ? ['conditional-route'] : [])],
       build: (selected) => ({ path: relative, content: content(selected), ownership, kind, source }),
     });
   };
@@ -465,7 +443,7 @@ export function artifactDefinitions(config, scan) {
   for (const relative of ['reviews/.gitkeep', 'reports/.gitkeep']) add(relative, 'routing', () => `# ${GENERATED_MARKER}\n`, { kind: 'local-output-directory', source: 'template:local-output-layout' });
 
   add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { source: 'template:anti-patterns' });
-  add('docs/ai/stack-profile.json', 'policy', () => stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), { requires: [stack], ownership: 'full', source: 'capability-pack-registry' });
+  add('docs/ai/stack-profile.json', 'policy', () => stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), { requires: [stack], ownership: 'full', source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
   add('docs/ai/rules/20_stack.mdc', 'policy', () => stackRule(config, packs), { requires: [stack], source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
   add('docs/ai/architecture-profile.json', 'policy', () => stableJson(architectureProfileDocument(config)), { requires: [architecture], ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['architecture-placement', 'architecture-route'], routeProfiles: ['behavior_change:architecture'] });
   add('docs/ai/rules/15_architecture.mdc', 'policy', () => architectureRule(config), { requires: [architecture], ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision', routeProfiles: ['behavior_change:architecture'] });
@@ -486,7 +464,7 @@ export function artifactDefinitions(config, scan) {
       if (config.clients.includes('claude-code')) standardPaths.push(`.claude/skills/standards/${standard.id}/SKILL.md`);
     }
     for (const relative of standardPaths) {
-      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === 'docs/ai/technical-standards.json' ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: ['behavior_change:stack'] });
+      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === 'docs/ai/technical-standards.json' ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: relative.startsWith('docs/ai/') ? ['behavior_change:stack'] : [] });
       definitions.at(-1).build = () => standardArtifacts().find((artifact) => artifact.path === relative);
     }
   }

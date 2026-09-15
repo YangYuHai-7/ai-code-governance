@@ -40,3 +40,16 @@ export function selectArtifactDefinitions(config, scan, definitions) {
     return ['eager-core', 'selected'].includes(definition.activation);
   });
 }
+
+export function conditionalArtifactRoutes(definitions, profile) {
+  const routes = new Map();
+  for (const definition of definitions) {
+    for (const route of definition.routeProfiles) {
+      const [name, condition] = route.split(':');
+      if (name !== profile || !condition) continue;
+      if (!routes.has(condition)) routes.set(condition, []);
+      routes.get(condition).push(definition.path);
+    }
+  }
+  return routes;
+}
