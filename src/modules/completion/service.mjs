@@ -169,6 +169,34 @@ function capabilityChangedPaths(scan, paths) {
   return { paths: changed };
 }
 
+function verificationInputSnapshot(scan, knownPaths = []) {
+  const unavailable = { reason: 'product-change-evidence-unavailable' };
+  if (scan.scanBudget?.complete !== true) return unavailable;
+  const relevant = (relative) => isProductionCapabilityPath(relative) || relative === 'package.json' || relative.endsWith('/package.json');
+  try {
+    const index = git(scan.root, ['ls-files', '--stage', '-z']).split('\0').filter(Boolean).map((entry) => {
+      const separator = entry.indexOf('\t');
+      if (separator < 0) throw new Error('Invalid index record.');
+      return { path: entry.slice(separator + 1), entry: entry.slice(0, separator) };
+    }).filter((entry) => relevant(entry.path));
+    const paths = [...new Set([...knownPaths, ...scan.files.map((file) => file.relative), ...index.map((entry) => entry.path)])]
+      .filter(relevant).sort((left, right) => left.localeCompare(right));
+    const sources = paths.map((relative) => {
+      assertNoLinkAncestor(scan.root, relative, { allowFinalLink: true });
+      return { path: relative, snapshot: snapshotPath(path.join(scan.root, relative)) };
+    });
+    const fields = git(scan.root, ['diff', '--name-status', '-z', '--no-renames', 'HEAD']).split('\0').filter(Boolean);
+    if (fields.length % 2 !== 0) return unavailable;
+    const diff = [];
+    for (let index = 0; index < fields.length; index += 2) {
+      if (relevant(fields[index + 1])) diff.push({ status: fields[index], path: fields[index + 1] });
+    }
+    return { paths, fingerprint: digest({ head: git(scan.root, ['rev-parse', 'HEAD']), sources, index, diff }) };
+  } catch {
+    return unavailable;
+  }
+}
+
 function withIndexSnapshot(root, action) {
   const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-index-snapshot-'));
   try {
@@ -244,10 +272,27 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
+  let harvestBindingReason = null;
   if (selectedVerification && taskRoute.status === 'upgrade-required') {
     projectVerification = { status: 'skipped-after-task-route-failure', command: selectedVerification.command };
   } else if (selectedVerification && governance.ok) {
+    const bindHarvest = taskRoute.status === 'verified' && ['L2', 'L3'].includes(taskRoute.declaredLevel);
+    const before = bindHarvest ? verificationInputSnapshot(scan, paths) : null;
     projectVerification = runVerification(scan, selectedVerification);
+    if (before && projectVerification.status === 'passed') {
+      let after;
+      try {
+        after = verificationInputSnapshot(scanProject(scan.root, { probeEnvironment: false }), before.paths ?? paths);
+      } catch {
+        after = { reason: 'product-change-evidence-unavailable' };
+      }
+      harvestBindingReason = before.reason ?? after.reason ?? (before.fingerprint !== after.fingerprint ? 'verification-input-changed' : null);
+      projectVerification.inputEvidence = {
+        status: harvestBindingReason ? 'unverified' : 'unchanged',
+        beforeFingerprint: before.fingerprint ?? null,
+        afterFingerprint: after.fingerprint ?? null,
+      };
+    }
   } else if (selectedVerification) {
     projectVerification = { status: 'skipped-after-governance-failure', command: selectedVerification.command };
   }
@@ -255,7 +300,8 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   const ok = taskRoute.status !== 'upgrade-required' && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
-  const changeEvidence = assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
+  const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
+    : assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
   harvestInput.changedPaths = changeEvidence.paths;
   const harvest = completionCapabilityHarvestSummary(config, scan, harvestInput);
   if (changeEvidence.reason) harvest.reason = changeEvidence.reason;
