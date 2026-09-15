@@ -3,7 +3,7 @@ import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { isArchitectureNonSourcePath } from '../architecture/index.mjs';
-import { publicDeclarations } from './public-declarations.mjs';
+import { implementationBodyAfter, publicDeclarations } from './public-declarations.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs']);
 
@@ -69,14 +69,28 @@ function isAuthorizationBoundaryPath(relative) {
 
 function exportedAuthorizationBoundaries(model) {
   return model.declarations.filter((declaration) => {
-    const own = model.tokens.slice(declaration.startIndex, declaration.endIndex)
-      .map((token, offset) => ({ ...token, index: declaration.startIndex + offset, depth: model.depths[declaration.startIndex + offset] }));
-    const hasDecision = own.some((token) => token.kind === 'identifier' && token.depth === 1
-      && ['can', 'authorize', 'check', 'enforce', 'permit', 'deny'].includes(token.value)
-      && tokenIs(model.tokens, token.index + 1, '('));
-    const hasGuard = declaration.kind === 'class' && own.some((token) => token.kind === 'identifier'
-      && ((token.depth === 0 && token.value === 'CanActivate')
-        || (token.depth === 1 && token.value === 'canActivate' && tokenIs(model.tokens, token.index + 1, '('))));
+    if (declaration.bodyStartIndex === null) return false;
+    const own = model.tokens.slice(declaration.bodyStartIndex + 1, declaration.endIndex - 1)
+      .map((token, offset) => ({ ...token, index: declaration.bodyStartIndex + 1 + offset }));
+    const methodScopes = declaration.kind === 'class' ? [declaration.bodyStartIndex] : own.flatMap((token) => {
+      if (token.value !== 'return' || model.depths[token.index] !== 1 || model.tokens[token.index + 1]?.lineBreakBefore) return [];
+      let object = token.index + 1;
+      // Factory evidence is restricted to an actually returned object, not a
+      // private nested declaration or a method inside a returned callback.
+      if (['Promise', '.', 'resolve', '('].every((value, offset) => tokenIs(model.tokens, object + offset, value))) object += 4;
+      return tokenIs(model.tokens, object, '{') && model.closes.has(object) ? [object] : [];
+    });
+    const implementedMethod = (token) => {
+      if (token.kind !== 'identifier' || !tokenIs(model.tokens, token.index + 1, '(')) return false;
+      if (!methodScopes.some((scope) => token.index > scope && token.index < model.closes.get(scope)
+        && model.depths[token.index] === model.depths[scope] + 1)) return false;
+      const parametersEnd = model.closes.get(token.index + 1);
+      if (parametersEnd === undefined) return false;
+      const body = implementationBodyAfter(model.tokens, model.closes, parametersEnd + 1);
+      return body >= 0 && model.closes.get(body) < declaration.endIndex - 1;
+    };
+    const hasDecision = own.some((token) => ['can', 'authorize', 'check', 'enforce', 'permit', 'deny'].includes(token.value) && implementedMethod(token));
+    const hasGuard = declaration.kind === 'class' && own.some((token) => token.value === 'canActivate' && implementedMethod(token));
     return hasGuard || (/^(?:Permission|Authorization|Authorize|Policy|Ability)\w*$/.test(declaration.symbol) && hasDecision);
   });
 }
