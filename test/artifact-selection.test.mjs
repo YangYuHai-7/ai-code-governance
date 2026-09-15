@@ -34,6 +34,34 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
   assert.equal(paths.some((value) => /release|surface|acceptance|reviews|reports|lifecycle/.test(value)), false);
 });
 
+test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
+  for (const [governanceDepth, expectedFiles, maxBytes] of [
+    ['minimal', 6, 24 * 1024],
+    ['standard', 19, 64 * 1024],
+    ['complete', 21, 96 * 1024],
+  ]) {
+    const { root, config, scan } = fixture(context);
+    const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
+    const plan = planArtifacts(root, artifacts);
+    applyArtifactPlan(root, plan);
+    const expectedPaths = [...artifacts.map((artifact) => artifact.path), '.ai-governance/manifest.json'].sort();
+    const actualPaths = [];
+    const walk = (relative = '') => {
+      for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+        const child = relative ? `${relative}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) walk(child);
+        else actualPaths.push(child);
+      }
+    };
+    walk();
+    assert.deepEqual(actualPaths.sort(), expectedPaths, `${governanceDepth}: unexpected installed artifact`);
+    assert.equal(actualPaths.length, expectedFiles);
+    const bytes = actualPaths.reduce((sum, relative) => sum + fs.statSync(path.join(root, relative)).size, 0);
+    assert.ok(bytes <= maxBytes, `${governanceDepth}: ${bytes} > ${maxBytes} bytes`);
+    context.diagnostic(JSON.stringify({ governanceDepth, files: actualPaths.length, bytes, maxBytes, paths: actualPaths }));
+  }
+});
+
 test('standard and complete do not eagerly enable evidence or lifecycle features', (context) => {
   const { config, scan } = fixture(context);
   for (const governanceDepth of ['standard', 'complete']) {

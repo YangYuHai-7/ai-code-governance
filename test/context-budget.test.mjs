@@ -6,6 +6,48 @@ import test from 'node:test';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 
+// These are documentation contracts requested for the adaptive-flow migration;
+// they prove discoverable guidance, never actual client execution.
+test('installation documentation exposes adaptive routing and independent artifact language', () => {
+  for (const relative of ['README.md', 'SKILL.md', 'references/initializer.md']) {
+    const doc = fs.readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
+    assert.match(doc, /Agent-first/);
+    assert.match(doc, /artifact-language-second/);
+    assert.match(doc, /artifactLanguage.{0,40}en/);
+    assert.match(doc, /zh-CN/);
+    assert.match(doc, /L0[\s\S]*L1[\s\S]*L2[\s\S]*L3/);
+    assert.match(doc, /sync \. --prune --dry-run/);
+    assert.match(doc, /sync \. --prune --approve <planHash>/);
+    assert.doesNotMatch(doc, /自动完整模式|每个有行为变化的任务.*自动运行|用户当前语言作为交互与产物语言/);
+  }
+});
+
+test('evolution documentation keeps verified completion candidate-only and promotion explicit', () => {
+  const doc = fs.readFileSync(new URL('../references/continuous-skill-evolution.md', import.meta.url), 'utf8');
+  assert.match(doc, /verified/);
+  assert.match(doc, /candidate-only/);
+  assert.match(doc, /no automatic promotion/i);
+  assert.match(doc, /not-applicable/);
+  assert.match(doc, /no-skill-with-reason/);
+  assert.doesNotMatch(doc, /自动晋升判据|每次有行为变化的任务完成前自动执行|生成或升级 Skill.*才能 complete/);
+});
+
+test('every preset retains the same bounded ordinary context closure', (context) => {
+  const root = fixture('presets');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  for (const governanceDepth of ['minimal', 'standard', 'complete']) {
+    const artifacts = buildArtifacts({ ...defaultConfig(scan), clients: ['codex'], governanceDepth }, scan);
+    const closure = contextClosure(artifacts, 'ordinary');
+    const text = closure.join('\n');
+    assert.equal(closure.length, 3);
+    assert.ok(closure.every(Boolean));
+    assert.ok(Buffer.byteLength(text) <= 3600, `${governanceDepth}: ordinary byte budget`);
+    assert.ok(Math.ceil(text.length / 4) <= 900, `${governanceDepth}: ordinary token estimate`);
+    assert.doesNotMatch(text, /release-check|harvest|promote|reviews\/|reports\/|technical-standards|hooks?/i);
+  }
+});
+
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-context-budget-${name}-`));
 }
