@@ -41,6 +41,52 @@ function write(root, relative, content = 'export const value = true;\n') {
   fs.writeFileSync(path.join(root, relative), content);
 }
 
+for (const [mutation, body, taskLevel] of [
+  ['untracked-risk', "fs.mkdirSync('db/migrations', { recursive: true }); fs.writeFileSync('db/migrations/001.sql', 'select 1;');", 'L1'],
+  ['unstaged-risk', "fs.appendFileSync('src/modules/session/auth.mjs', '\\nexport const changed = true;');", 'L2'],
+  ['staged-risk', "fs.appendFileSync('src/modules/session/auth.mjs', '\\nexport const changed = true;'); require('node:child_process').execFileSync('git', ['add', 'src/modules/session/auth.mjs']);", 'L2'],
+  ['staged-reversed-in-worktree', "const p = 'src/modules/session/auth.mjs'; const before = fs.readFileSync(p); fs.appendFileSync(p, '\\nexport const changed = true;'); require('node:child_process').execFileSync('git', ['add', p]); fs.writeFileSync(p, before);", 'L2'],
+  ['configured-risk', "const p = '.ai-governance/config.json'; const c = JSON.parse(fs.readFileSync(p)); c.domainConstraints = ['External actions require approval.']; c.confirmedRiskSignals = ['external-side-effect']; fs.writeFileSync(p, JSON.stringify(c));", 'L1'],
+]) {
+  test(`completion refreshes final task routing after verification ${mutation}`, (context) => {
+    const root = fixture(`final-route-${mutation}`);
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    initialize(root);
+    write(root, 'src/modules/session/auth.mjs');
+    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ scripts: { test: 'node scripts/verify.cjs' } }));
+    assert.equal(run(['sync', root]).status, 0);
+    baseline(root);
+    write(root, 'README.md', '# Changed guide\n');
+    const manifest = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
+    const result = runCompletion(root, { taskLevel, verificationCommand: 'npm test' });
+    assert.equal(result.projectVerification.status, 'passed');
+    assert.equal(result.taskRoute.minimumLevel, 'L3');
+    assert.equal(result.taskRoute.status, 'upgrade-required');
+    assert.equal(result.ok, false);
+    assert.equal(result.harvest.status, 'skipped');
+    assert.equal(result.harvest.reason, 'task-route-upgrade-required');
+    assert.deepEqual(result.harvest.candidates, []);
+    assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/manifest.json')), manifest);
+  });
+}
+
+for (const [mutation, body] of [
+  ['index', "fs.writeFileSync('.git/index', 'corrupt');"],
+  ['config', "fs.writeFileSync('.ai-governance/config.json', '{}');"],
+]) {
+  test(`completion fails closed when verification leaves final ${mutation} unreadable`, (context) => {
+    const root = fixture(`final-route-unreadable-${mutation}`);
+    context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    initialize(root);
+    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ scripts: { test: 'node scripts/verify.cjs' } }));
+    assert.equal(run(['sync', root]).status, 0);
+    baseline(root);
+    assert.throws(() => runCompletion(root, { taskLevel: 'L1', verificationCommand: 'npm test' }), /Cannot read.*(?:changed paths|routing configuration)/);
+  });
+}
+
 test('completion returns current verified capability candidates without writing or staging artifacts', (context) => {
   const root = fixture('harvest-summary');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -89,7 +135,7 @@ test('completion returns current verified capability candidates without writing 
   assert.equal(formatOnly.reason, 'no-production-source-change');
 });
 
-test('completion skips harvesting when a verified command leaves HEAD source evidence unreadable', (context) => {
+test('completion fails closed when a verified command leaves HEAD source evidence unreadable', (context) => {
   const root = fixture('harvest-missing-source-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
@@ -102,11 +148,7 @@ test('completion skips harvesting when a verified command leaves HEAD source evi
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 2000 });\n");
-  const result = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' });
-  assert.equal(result.projectVerification.status, 'passed');
-  assert.equal(result.harvest.status, 'skipped');
-  assert.equal(result.harvest.reason, 'product-change-evidence-unavailable');
-  assert.deepEqual(result.harvest.candidates, []);
+  assert.throws(() => runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' }), /Cannot read changed paths/);
 });
 
 for (const [mutation, body] of [

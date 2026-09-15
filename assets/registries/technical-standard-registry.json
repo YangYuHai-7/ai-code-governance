@@ -9,6 +9,12 @@
   "standards": [
     {
       "id": "software-design-and-verification",
+      "translations": { "zh-CN": {
+        "title": "软件设计与变更验证",
+        "practices": ["每个模块承担一个内聚的业务职责，并公开小而明确的公共契约。", "在应用边界编排流程；界面、传输、持久化和领域策略不得任意相互依赖。", "选择满足已确认需求的最小变更；没有当前用途和负责人时，不添加扩展点、抽象或基础设施。", "复用已验证的项目能力，避免创建重复的客户端、授权路径或数据访问封装。", "每次行为变更都添加或更新最小有效验证，并运行受影响项目命令和 aicg check。"],
+        "verification": ["对变更模块运行针对性的行为测试或类型检查。", "生成治理产物或更新技能后，运行 aicg check .。", "记录未运行的命令和剩余边界，不作无证据的完成声明。"],
+        "boundaries": ["这些治理原则不能替代官方框架规范。", "生成的技能仅声明指引，不能证明代码库已自动实现低耦合或完整测试。"]
+      } },
       "title": "Software design and change verification",
       "appliesTo": { "always": true },
       "sources": [
@@ -38,6 +44,12 @@
     },
     {
       "id": "react-component-purity",
+      "translations": { "zh-CN": {
+        "title": "React 组件纯度与副作用边界",
+        "practices": ["保持渲染逻辑纯净：相同的 props、state 和 context 必须产生相同结果。", "渲染期间不得修改 props、state、context 或非局部值。", "用户引起的副作用放在事件处理器中，与外部系统的同步放在 Effects 中，并限制其作用范围。", "当独立状态、数据加载或业务策略形成独立变更原因时，拆分组件。"],
+        "verification": ["使用项目测试执行器验证受影响交互以及加载和错误状态。", "若项目具备类型检查或构建命令，则执行它们。"],
+        "boundaries": ["应用特定版本 API 前，确认已安装的 React 版本。", "客户端校验可改善可用性，但不能替代服务端授权或校验。"]
+      } },
       "title": "React component purity and effect boundaries",
       "appliesTo": { "packagesAny": ["react", "react-dom"] },
       "sources": [
@@ -66,6 +78,12 @@
     },
     {
       "id": "mantine-ui-composition",
+      "translations": { "zh-CN": {
+        "title": "Mantine 界面组合与表单边界",
+        "practices": ["重复的视觉决策优先使用组件 API 和共享主题；重复或复杂样式移入局部 CSS 模块或主题扩展。", "不要将内联样式属性作为功能的主要样式系统。", "每个表单都应具备有类型的值模型、明确的校验错误、等待状态，以及唯一的提交副作用负责人。", "取消或替换过期的异步字段校验，并以服务端校验为准。"],
+        "verification": ["测试无效、有效、等待和重复提交的表单路径。", "检查变更控件的键盘操作和可见错误反馈。"],
+        "boundaries": ["Mantine 描述界面行为，不验证服务端业务规则。", "确认已安装 Mantine 版本对样式导入的要求。"]
+      } },
       "title": "Mantine UI composition and form boundaries",
       "appliesTo": { "packagesAny": ["@mantine/core", "@mantine/form"] },
       "sources": [
@@ -101,6 +119,12 @@
     },
     {
       "id": "nestjs-module-boundaries",
+      "translations": { "zh-CN": {
+        "title": "NestJS 模块边界",
+        "practices": ["每项业务能力建模为功能模块；控制器作为传输适配器，提供者放在模块边界内部。", "仅导出构成明确公共接口的提供者，避免将便利提供者变为全局依赖。", "授权和用例编排保留在应用服务内，不放入控制器或仓储。", "在传输边界执行 DTO 或契约校验，并在返回响应前映射持久化细节。"],
+        "verification": ["通过控制器或应用服务边界测试模块公共行为。", "编译 Nest 应用并运行针对性测试命令。"],
+        "boundaries": ["没有项目证据时，不推断多租户、角色或工作流转换。", "采用装饰器或平台集成前，确认已安装 NestJS 主版本的指引。"]
+      } },
       "title": "NestJS module boundaries",
       "appliesTo": { "packagesAny": ["@nestjs/core", "@nestjs/common"] },
       "sources": [
@@ -136,6 +160,12 @@
     },
     {
       "id": "fastify-contracts-and-serialization",
+      "translations": { "zh-CN": {
+        "title": "Fastify 请求与响应契约",
+        "practices": ["为路由参数、查询、请求头和请求体定义输入模式；模式是可信应用代码，不是用户输入。", "公共端点使用响应模式，确保仅序列化预期字段。", "初始校验保持同步且不查询数据库；异步授权或查找放在适当的后续生命周期钩子。", "返回稳定且有文档说明的错误，不泄露内部校验或实现细节。"],
+        "verification": ["测试路由的畸形输入、未授权输入和意外字段。", "测试序列化响应不包含敏感或内部字段。"],
+        "boundaries": ["模式校验不能替代授权、幂等性或工作流状态约束。", "选择插件或生命周期 API 前，确认 Fastify 和 Nest 平台适配器版本。"]
+      } },
       "title": "Fastify request and response contracts",
       "appliesTo": { "packagesAny": ["fastify", "@nestjs/platform-fastify"] },
       "sources": [
@@ -171,6 +201,12 @@
     },
     {
       "id": "critical-api-integrity-and-replay",
+      "translations": { "zh-CN": {
+        "title": "关键 API 完整性、幂等性与重放防护",
+        "practices": ["添加控制前，根据业务影响识别关键写端点；每次此类请求均由服务端强制授权和工作流状态转换。", "可由外部重试的写入必须幂等：将幂等键绑定到已认证主体、操作和规范化请求标识；原子保留首次结果，拒绝同一键对应不同请求。", "威胁模型要求端到端请求完整性时，明确签名覆盖组件、允许算法、密钥解析、创建与过期窗口和验证错误；不得自创签名格式。", "对重放敏感请求，按操作需要在服务端执行有限有效窗口及一次性或幂等状态；不得信任前端保证顺序。", "不得将秘密和签名放在 URL 中，并从日志中脱敏。"],
+        "verification": ["测试有效请求、签名组件被篡改、过期请求以及重放或重复请求。", "测试并发重复提交仅产生一次业务效果，并返回明确的重复响应。", "测试服务端拒绝无效或乱序的状态转换。"],
+        "boundaries": ["不默认给所有端点添加消息签名；先记录威胁模型和密钥生命周期。", "幂等存储时长、规范化和响应语义是需要负责人确认的产品决策。"]
+      } },
       "title": "Critical API integrity, idempotency, and replay resistance",
       "appliesTo": { "packagesAny": ["@nestjs/core", "@nestjs/common", "fastify", "@nestjs/platform-fastify"] },
       "sources": [
@@ -208,6 +244,12 @@
     },
     {
       "id": "drizzle-transaction-boundaries",
+      "translations": { "zh-CN": {
+        "title": "Drizzle 数据访问与事务边界",
+        "practices": ["查询构造和持久化映射应位于单个模块负责的仓储或数据访问边界内。", "仅将必须共同成功或失败的数据库变更放入事务；尽可能将外部网络调用放在事务外。", "在用例中明确传递事务句柄，不隐式开启嵌套且不相关的工作单元。", "使用数据库约束和冲突处理保证并发正确性，不仅依赖事前读取。"],
+        "verification": ["测试多步写入失败时的回滚。", "针对相关唯一约束或状态约束，测试重复和并发写入。"],
+        "boundaries": ["根据有文档记录的业务不变量选择隔离级别和重试行为，不套用通用默认值。", "Drizzle 事务支持取决于已安装的数据库驱动及版本。"]
+      } },
       "title": "Drizzle data access and transaction boundaries",
       "appliesTo": { "packagesAny": ["drizzle-orm"] },
       "sources": [
@@ -243,6 +285,12 @@
     },
     {
       "id": "postgresql-concurrency-invariants",
+      "translations": { "zh-CN": {
+        "title": "PostgreSQL 并发不变量",
+        "practices": ["为关键操作选择锁、约束、隔离级别或重试策略前，先明确并发不变量。", "适当使用唯一约束、条件更新和行锁，避免正确性依赖读写时序。", "选定隔离级别可能产生序列化失败或冲突时，明确处理这些结果。", "将序列值视为标识符，不作为可回滚业务事件或无间隙计数器。"],
+        "verification": ["运行试图违反不变量的并发测试。", "在真实的 PostgreSQL 兼容测试环境验证回滚、冲突和重试行为。"],
+        "boundaries": ["PostgreSQL 默认值和行为不能替产品决定冲突策略。", "生产规模、连接池配置和迁移顺序需要环境专属证据。"]
+      } },
       "title": "PostgreSQL concurrency invariants",
       "appliesTo": { "packagesAny": ["pg", "postgres", "@neondatabase/serverless", "@vercel/postgres"] },
       "sources": [
@@ -271,6 +319,12 @@
     },
     {
       "id": "socketio-realtime-contracts",
+      "translations": { "zh-CN": {
+        "title": "Socket.IO 实时事件契约",
+        "practices": ["在一个共享边界内定义有版本的事件名称及有类型的载荷和确认契约。", "服务端授权房间成员资格，并根据已验证的租户、用户或实体所有权推导房间名；房间不构成客户端授权机制。", "需要明确结果的命令使用确认和超时语义；允许客户端重试时，处理器必须幂等。", "仅对允许丢失的最新状态信号使用 volatile 事件，不用于必须交付的业务状态。"],
+        "verification": ["测试未授权加入房间和跨租户广播尝试。", "测试确认超时、重连、重复命令和事件版本兼容行为。"],
+        "boundaries": ["Socket.IO 交付机制不能替代持久化领域事件或可靠任务队列。", "多服务器扩展需要明确的适配器和交付语义决策。"]
+      } },
       "title": "Socket.IO realtime event contracts",
       "appliesTo": { "packagesAny": ["socket.io", "socket.io-client"] },
       "sources": [
@@ -306,6 +360,12 @@
     },
     {
       "id": "livekit-token-boundaries",
+      "translations": { "zh-CN": {
+        "title": "LiveKit 令牌与媒体授权边界",
+        "practices": ["仅在可信后端完成用户与房间成员授权后签发访问令牌；不得向浏览器或移动端暴露 API 秘密。", "每个令牌仅具备当前操作所需的最小权限、房间身份和较短有效期。", "房间创建、参与者授权和应用业务状态保留在后端领域边界，不信任客户端房间输入。", "审计令牌签发，但不记录原始令牌或秘密。"],
+        "verification": ["测试未授权用户无法获取或使用房间令牌。", "测试权限缩减、过期令牌拒绝和有效参与者加入路径。"],
+        "boundaries": ["LiveKit 权限控制媒体访问，不能替代业务数据的应用层授权。", "令牌 TTL、身份格式和房间生命周期必须由产品安全设计负责。"]
+      } },
       "title": "LiveKit token and media authorization boundaries",
       "appliesTo": { "packagesAny": ["livekit-server-sdk", "livekit-client", "@livekit/components-react"] },
       "sources": [
@@ -334,6 +394,12 @@
     },
     {
       "id": "redis-delivery-semantics",
+      "translations": { "zh-CN": {
+        "title": "Redis 交付语义与所有权",
+        "practices": ["根据交付和恢复要求选择 Redis 数据结构，不仅考虑便利性。", "仅在可接受断连期间丢失时使用 Pub/Sub；需要重放、恢复或消费组协调时，使用 Streams 等持久机制。", "与负责模块共同定义键所有权、TTL、序列化、重试和清理规则。", "除非产品明确接受该持久性模型，否则不将 Redis 作为不可逆业务状态的事实来源。"],
+        "verification": ["根据声明的交付保证测试断连、重启、重复和消费者恢复行为。", "测试 TTL 或保留策略清理不会删除其他模块的键命名空间。"],
+        "boundaries": ["Redis 拓扑、持久化和集群行为需要部署专属验证。", "至少一次交付仍要求消费者保持幂等。"]
+      } },
       "title": "Redis delivery semantics and ownership",
       "appliesTo": { "packagesAny": ["redis", "ioredis"] },
       "sources": [
@@ -369,6 +435,12 @@
     },
     {
       "id": "bullmq-idempotent-jobs",
+      "translations": { "zh-CN": {
+        "title": "BullMQ 幂等任务处理",
+        "practices": ["确保每个任务可安全运行多次，并聚焦于小型、可观测的工作单元。", "根据操作的交付契约选择尝试次数、退避、超时、保留和去重模式；不惯性启用重试。", "在业务边界持久化或推导幂等标识，防止重复处理造成重复效果。", "区分可重试的暂时故障与永久校验或授权失败，并记录操作人员可见的结果。"],
+        "verification": ["测试重复入队、部分失败后的重试和最终失败路径。", "测试保留与去重设置不会无声允许重复业务效果。"],
+        "boundaries": ["仅靠队列重试不能使外部副作用幂等。", "生产工作进程并发和可观测性需要明确的运维负责人。"]
+      } },
       "title": "BullMQ idempotent job processing",
       "appliesTo": { "packagesAny": ["bullmq"] },
       "sources": [

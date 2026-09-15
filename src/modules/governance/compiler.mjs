@@ -233,6 +233,18 @@ export function validateConfig(config) {
 function rootInstructions(config) {
   const completeCommand = governanceCommand(config, 'complete .');
   const syncCommand = governanceCommand(config, 'sync .');
+  if (config.artifactLanguage === 'zh-CN') return `## AI 编码治理
+
+本区块由 \`aicg\` 管理，区块外的项目专属内容会保留。
+
+- 治理正典：\`${config.canonicalRoot}/\`
+- 从 \`${config.canonicalRoot}/context-map.yaml\` 的 \`ordinary\` 配置开始，仅在任务需要时加载更大的配置。
+- 保留无关的用户修改，并在请求范围内工作。
+- 如果配置的 AICG 命令不可用，停止并请求明确安装；日常工作不得临时下载包。${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` 固定版本引导需要全局安装 ai-code-governance@${config.toolVersion ?? TOOL_VERSION}，或本地安装后明确选择 project-local 配置。` : ''}
+- ${taskRoutingSummary(config)}
+- 客户端适配器由工具生成。修改正典后运行 \`${syncCommand}\`，不要直接编辑适配器。
+- 交付前运行一次 \`${completeCommand}\`，并按运行时指引选择任务所需的仓库验证命令。
+`;
   return `## ${languageTitle(config, 'AI 编码治理', 'AI coding governance')}
 
 This block is managed by \`aicg\`. Project-specific content outside this block is preserved.
@@ -249,6 +261,18 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 
 function alwaysRule(config) {
   const completeCommand = governanceCommand(config, 'complete .');
+  if (config.artifactLanguage === 'zh-CN') return `---
+alwaysApply: true
+---
+
+# 常驻治理规则
+
+1. 保留无关的用户修改，将工作限制在请求范围内。
+2. 将代码和测试视为当前行为的证据，保持受影响的治理声明准确。
+3. 如实报告证据，包括未实际运行的命令、客户端、平台和集成。
+4. 仅使用仓库中存在的命令，不得编造命令或添加未经批准的参数。
+5. 交付前运行一次 \`${completeCommand}\`，并执行任务需要且已发现的验证命令。
+`;
   return `---
 alwaysApply: true
 ---
@@ -265,6 +289,22 @@ alwaysApply: true
 
 function stackRule(config, packs) {
   const rows = packs.map((pack) => `| \`${pack.id}\` | ${pack.evidence} | ${(pack.validation_sources ?? []).join('; ')} |`).join('\n');
+  if (config.artifactLanguage === 'zh-CN') return `---
+alwaysApply: false
+profiles: [implementation]
+---
+
+# 技术栈证据边界
+
+| 能力包 | 证据状态 | 验证来源 |
+| --- | --- | --- |
+${rows}
+
+- 应用特定版本的指引前，从仓库清单或锁文件确认已安装版本。
+- 生成或修改框架专属编码规范前，查阅当前官方文档。
+- 选中的 \`unverified\` 能力包仅提供路由，不代表认证证据。
+- 结合相邻实现和测试，将通用技术栈指引落实到项目。
+`;
   return `---
 alwaysApply: false
 profiles: [implementation]
@@ -304,7 +344,7 @@ profiles:
       - ${checkCommand}
   release:
     extends: ordinary
-    description: Validate risk-tiered evidence before deployment or publication.
+    description: ${languageTitle(config, '部署或发布前，验证对应风险等级的证据。', 'Validate risk-tiered evidence before deployment or publication.')}
     required:${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? '\n      - docs/ai/release-acceptance-policy.json' : ' []'}
     commandTemplate: ${releaseCommand}
 `;
@@ -312,7 +352,9 @@ profiles:
 
 function verificationProfiles(config) {
   const assessCommand = governanceCommand(config, `assess . --locale ${config.interactionLanguage ?? 'en'} --json`);
-  const runtimeInstruction = `# runtime discovery required: inspect actionGuide.allowedVerificationCommands from ${assessCommand}`;
+  const runtimeInstruction = config.artifactLanguage === 'zh-CN'
+    ? `# 运行时发现验证命令：检查 ${assessCommand} 返回的 actionGuide.allowedVerificationCommands`
+    : `# runtime discovery required: inspect actionGuide.allowedVerificationCommands from ${assessCommand}`;
   return `version: 1
 profiles:
   governance:
@@ -335,6 +377,45 @@ function governanceReadme(config, scan, packs, selected) {
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <type> --evidence <repository-relative-json>');
   const syncCommand = governanceCommand(config, 'sync .');
+  if (config.artifactLanguage === 'zh-CN') return `# ${config.projectName} — AI 治理正典
+
+本目录是人工维护的治理来源。客户端专属普通文件是生成的适配器，由 \`${checkCommand}\` 检查。
+
+${selectedPaths.has('docs/ai/architecture-profile.json') ? '生成的[架构配置](architecture-profile.json)是未来源码放置的唯一当前策略，不授权迁移业务代码。' : '尚未选择架构策略；依赖生成的放置指引前，需要确认架构决策。'}
+
+${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `部署或发布前，结合[发布验收策略](release-acceptance-policy.json)及 Git 跟踪的证据运行 \`${releaseCommand}\`，检查具体重放计划后，使用 \`--replay --approve <planHash>\` 执行。` : '发布、端验证和验收策略在首次使用时生成。生成治理产物不授予部署或发布权限。'} 工具不会编造独立评审者的批准。
+
+## 配置
+
+- 初始化时的仓库拓扑：\`${classifyProject(scan).codebase.topology.value}\`
+- 治理深度：\`${config.governanceDepth}\`
+- 交互语言：\`${config.interactionLanguage ?? 'en'}\`；产物语言：\`${config.artifactLanguage}\`
+- CLI 调用方式：\`${config.invocationMode ?? 'npm-exec-pinned'}\`；固定工具版本：\`${config.toolVersion ?? TOOL_VERSION}\`
+- 客户端支持决策：\`${config.clientSupport?.mode ?? 'legacy-unrecorded'}\`；来源：\`${config.clientSupport?.source ?? 'legacy-config'}\`
+- 客户端：${config.clients.map((item) => `\`${item}\``).join(', ')}
+- 技术栈：${packs.map((pack) => `\`${pack.id}\` (${pack.evidence})`).join(', ')}
+- 支持的操作系统目标：${config.supportedOs.map((item) => `\`${item}\``).join(', ')}
+- 当前生成器证据仅覆盖 \`${scan.currentOs}\`；其他平台需由 CI 或真实客户端探针验证。
+
+## 初始化边界
+
+唯一当前初始化决策保存在 \`.ai-governance/config.json\`${selectedPaths.has('docs/ai/decision-ledger.json') ? '，并派生到 `docs/ai/decision-ledger.json`' : ''}。修改架构或既有行为前，先读取已记录的决策。本种子文档不授权迁移。
+
+## 所有权
+
+| 路径 | 维护责任 |
+| --- | --- |
+| \`docs/ai/\` | 人工维护的治理正典 |
+${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `| \`docs/ai/release-acceptance-policy.json\` | 由 \`${syncCommand}\` 更新的受管基线，仅可通过独立覆盖策略收紧 |\n` : ''}| \`.ai-governance/config.json\` | 已确认的初始化决策 |
+| \`.ai-governance/manifest.json\` | 生成的所有权和内容哈希 |
+| 客户端专属适配器 | 运行 \`${syncCommand}\` 生成，不直接编辑 |
+
+## 待补证据
+
+${config.domainConstraints.length > 0 ? config.domainConstraints.map((item) => `- 已确认约束：${item}`).join('\n') : '- 确定性初始化期间尚未确认项目专属业务不变量。'}
+- 技术栈专属规则在提升为强制策略前，需要依据当前官方文档更新。
+- 除非配置明确启用，否则钩子、CI 集成和外部工作流提供方保持关闭。
+`;
   return `# ${config.projectName} — ${languageTitle(config, 'AI 治理正典', 'AI governance canon')}
 
 This directory is the human-maintained governance source. Client-specific regular files are generated adapters and are checked by \`${checkCommand}\`.
@@ -379,6 +460,18 @@ ${config.domainConstraints.length > 0 ? config.domainConstraints.map((item) => `
 function antiPatterns(config) {
   const syncCommand = governanceCommand(config, 'sync .');
   const checkCommand = governanceCommand(config, 'check .');
+  if (config.artifactLanguage === 'zh-CN') return `# 项目反模式
+
+仅在存在仓库证据、评审发现、事故或负责人明确决策后添加条目。
+
+## 修改生成的适配器
+
+**错误：** 直接编辑客户端专属的生成规则或技能适配器。
+
+**正确：** 修改正典来源并运行 \`${syncCommand}\`。
+
+**原因：** 直接编辑会造成客户端漂移，并导致 \`${checkCommand}\` 失败。
+`;
   return `# ${languageTitle(config, '项目反模式', 'Project anti-patterns')}
 
 Only add an item after repository evidence, a review finding, an incident, or an explicit owner decision exists.
@@ -394,6 +487,21 @@ Only add an item after repository evidence, a review finding, an incident, or an
 }
 
 function stackSkill(config, pack) {
+  if (config.artifactLanguage === 'zh-CN') return `---
+name: ${pack.id}
+description: 验证已安装版本并加载项目证据后，应用 ${pack.id} 的仓库约定。
+---
+
+# ${pack.id}
+
+<!-- ${GENERATED_MARKER} -->
+
+1. 读取 \`AGENTS.md\`、\`${config.canonicalRoot}/context-map.yaml\` 和相邻实现的测试。
+2. 从清单或锁文件验证已安装的技术栈版本。
+3. 对版本敏感的决策查阅当前官方来源；生成的路由外壳并非永不变化的最佳实践手册。
+4. 使用这些项目验证来源：${(pack.validation_sources ?? []).join('; ') || '仅限仓库已定义的命令'}。
+5. 缺少命令、不支持的组合或未确认的业务不变量应报告为 \`unverified\`，不得编造。
+`;
   const description = `Apply ${pack.id} repository conventions after verifying installed versions and loading project evidence.`;
   return `---
 name: ${pack.id}
@@ -415,6 +523,13 @@ description: ${description}
 function bootstrapPrompt(config) {
   const syncCommand = governanceCommand(config, 'sync .');
   const checkCommand = governanceCommand(config, 'check .');
+  if (config.artifactLanguage === 'zh-CN') return `# AI 辅助完善治理
+
+${config.projectName} 的确定性 \`${governanceCommand(config, 'init')}\` 阶段已完成。
+
+${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? `仅用于引导：\`${governanceBootstrapCommand(config)}\` 临时解析固定版本的软件包，不安装日常 CLI。执行日常命令前，明确运行 \`npm install --global ai-code-governance@${config.toolVersion ?? TOOL_VERSION}\`，或本地安装并明确选择 project-local 模式。如果无法安装，停止并报告缺失的 CLI。\n` : ''}
+检查仓库并完善 \`${config.canonicalRoot}/\` 下人工维护的文件。保留生成的适配器及用户既有内容。提出代码变更前，读取 \`.ai-governance/config.json\` 和 \`docs/ai/decision-ledger.json\`；初始化决策以此为准，本种子提示不授权迁移或业务代码修改。仅依据需求、代码、测试、ADR、事故或用户明确决策推导业务规则。研究所选技术栈版本的当前官方文档。修改正典技能或规则后运行 \`${syncCommand}\`，随后执行 \`${checkCommand}\` 和真实项目验证命令。未经明确授权，不启用钩子、CI、外部提供方、发布或破坏性迁移。
+`;
   return `# AI-assisted governance completion
 
 The deterministic \`${governanceCommand(config, 'init')}\` phase is complete for ${config.projectName}.
@@ -426,6 +541,15 @@ Inspect the repository and refine the human-maintained files under \`${config.ca
 }
 
 function cursorRule(config) {
+  if (config.artifactLanguage === 'zh-CN') return `---
+description: 将 Cursor 路由到仓库的 AI 治理正典。
+alwaysApply: true
+---
+
+<!-- ${GENERATED_MARKER} -->
+
+读取 \`AGENTS.md\`，随后遵循 \`${config.canonicalRoot}/context-map.yaml\` 和 \`${config.canonicalRoot}/rules/00_always.mdc\`。客户端专属适配器由工具生成；修改正典治理后运行 \`${governanceCommand(config, 'sync .')}\`。
+`;
   return `---
 description: Route Cursor to the repository AI governance canon.
 alwaysApply: true
@@ -523,14 +647,14 @@ export function artifactDefinitions(config, scan) {
     add(relative, 'lifecycle', () => capabilityArtifacts().find((artifact) => artifact.path === relative).content, { ownership: 'full', kind: relative === 'docs/ai/capability-evolution.json' ? 'capability-evolution-catalog' : 'project-capability-skill', source: 'project-capability-harvest', gateAssertions: ['capability-evidence'] });
     definitions.at(-1).build = () => capabilityArtifacts().find((artifact) => artifact.path === relative);
   }
-  add('docs/ai/lifecycle.md', 'lifecycle', () => '# Governance lifecycle\n\nPromote repeated, evidence-backed guidance into rules or Skills. Review stale sources, retire superseded guidance, and keep one owner for every fact.\n', { source: 'template:lifecycle' });
-  add('docs/memory/INDEX.md', 'lifecycle', () => '# Project memory index\n\nRecord current module behavior and machine-checkable assertions here. Do not use this directory as a changelog.\n', { requires: [(value) => value.features.knowledge], source: 'template:memory-index' });
-  add('docs/ai/long-running/README.md', 'lifecycle', () => '# Long-running task state\n\nCreate one task directory per approved long-running effort. Runtime state references canonical plans and external changes instead of copying them.\n', { requires: [(value) => value.features.taskRuntime], source: 'template:task-runtime' });
+  add('docs/ai/lifecycle.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 治理生命周期\n\n将重复出现且有证据支持的指引提升为规则或技能。审查过期资料，停用已被替代的指引，并为每项事实保留唯一维护者。\n' : '# Governance lifecycle\n\nPromote repeated, evidence-backed guidance into rules or Skills. Review stale sources, retire superseded guidance, and keep one owner for every fact.\n', { source: 'template:lifecycle' });
+  add('docs/memory/INDEX.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 项目记忆索引\n\n在此记录当前模块行为和机器可检查的断言。本目录不作为变更日志使用。\n' : '# Project memory index\n\nRecord current module behavior and machine-checkable assertions here. Do not use this directory as a changelog.\n', { requires: [(value) => value.features.knowledge], source: 'template:memory-index' });
+  add('docs/ai/long-running/README.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 长期任务状态\n\n每项已批准的长期工作建立一个任务目录。运行时状态引用正典计划与外部变更，不复制这些内容。\n' : '# Long-running task state\n\nCreate one task directory per approved long-running effort. Runtime state references canonical plans and external changes instead of copying them.\n', { requires: [(value) => value.features.taskRuntime], source: 'template:task-runtime' });
 
   add('docs/ai/workflow-integrations.yaml', 'integration', () => 'schema_version: 1\nmode: project-native\nproviders: {}\nauthority:\n  current_product_behavior: project-code-and-tests\n  active_change: project-native\n  project_ai_governance: docs/ai\n  implementation_task_list: project-native\n  runtime_state: docs/ai/long-running\n  delivery_evidence: docs/ai/acceptance-results.json\n', { requires: [(value) => value.features.externalWorkflows] });
-  add('docs/ai/hooks.md', 'integration', () => '# Hook integration candidate\n\nHook installation was selected, but each agent uses a different lifecycle API. Keep this capability `unverified` until a real client entrypoint calls the project delivery check and a negative/recovery probe passes. Do not install a shell-specific adapter or bypass an existing hook chain.\n', { requires: [(value) => value.features.hooks] });
-  add('docs/ai/ci-integration.md', 'integration', () => `# CI integration candidate\n\nAdd \`${governanceCommand(config, 'check .')}\` to the repository's existing CI task runner only after the tool has a pinned installation source. Until the real workflow is replayed with a deliberate drift failure and recovery, report CI enforcement as \`unverified\`.\n`, { requires: [(value) => value.features.ciIntegration] });
-  add('CLAUDE.md', 'integration', () => '@AGENTS.md\n\nClaude Code loads the shared project governance through the native import above.', { requires: [(value) => value.clients.includes('claude-code')], ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', gateAssertions: ['claude-adapter'] });
+  add('docs/ai/hooks.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? '# 钩子集成候选\n\n已选择安装钩子，但各代理使用不同的生命周期 API。在真实客户端入口调用项目交付检查、且负向与恢复探针通过前，保持此能力为 `unverified`。不得安装仅适用于特定 shell 的适配器或绕过既有钩子链。\n' : '# Hook integration candidate\n\nHook installation was selected, but each agent uses a different lifecycle API. Keep this capability `unverified` until a real client entrypoint calls the project delivery check and a negative/recovery probe passes. Do not install a shell-specific adapter or bypass an existing hook chain.\n', { requires: [(value) => value.features.hooks] });
+  add('docs/ai/ci-integration.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? `# CI 集成候选\n\n工具具备固定版本的安装来源后，才将 \`${governanceCommand(config, 'check .')}\` 加入仓库既有的 CI 任务执行器。在真实工作流完成重放、验证故意引入的漂移失败和恢复之前，将 CI 强制执行状态报告为 \`unverified\`。\n` : `# CI integration candidate\n\nAdd \`${governanceCommand(config, 'check .')}\` to the repository's existing CI task runner only after the tool has a pinned installation source. Until the real workflow is replayed with a deliberate drift failure and recovery, report CI enforcement as \`unverified\`.\n`, { requires: [(value) => value.features.ciIntegration] });
+  add('CLAUDE.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? '@AGENTS.md\n\nClaude Code 通过上述原生导入加载共享的项目治理。' : '@AGENTS.md\n\nClaude Code loads the shared project governance through the native import above.', { requires: [(value) => value.clients.includes('claude-code')], ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', gateAssertions: ['claude-adapter'] });
   add('.cursor/rules/ai-code-governance.mdc', 'integration', () => cursorRule(config), { requires: [(value) => value.clients.includes('cursor')], ownership: 'full', kind: 'adapter', source: 'docs/ai/rules/00_always.mdc', gateAssertions: ['cursor-adapter'] });
 
   add('docs/ai/release-acceptance-policy.json', 'evidence', () => readText(path.join(PACKAGE_ROOT, 'assets/policies/release-acceptance-policy.json')), { activation: 'first-use', requires: [usage('release')], ownership: 'full', kind: 'release-policy', source: 'asset:release-acceptance-policy', routeProfiles: ['release'], gateAssertions: ['release-route'] });

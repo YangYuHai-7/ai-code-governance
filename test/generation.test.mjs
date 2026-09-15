@@ -9,6 +9,7 @@ import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { deriveArchitectureDecision } from '../src/architecture-policy.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-${name}-`));
@@ -26,6 +27,56 @@ function git(root, args) {
 }
 
 const LEGACY_CONTEXT_MAP_FIXTURE = path.resolve('test/fixtures/context-map/legacy-v1-no-business.yaml');
+
+test('Chinese artifacts localize generated body instructions across selected depths', (context) => {
+  const root = fixture('chinese-artifact-bodies');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  for (const governanceDepth of ['minimal', 'standard', 'complete']) {
+    const config = { ...defaultConfig(scan), governanceDepth, artifactLanguage: 'zh-CN', clients: ['codex', 'claude-code', 'cursor'], initialization: { lifecycle: 'greenfield', existingCodeStrategy: null, source: 'config' },
+      stacks: ['backend-node'], domainConstraints: ['Owner-authored invariant stays verbatim.'], confirmedRiskSignals: ['authorization'],
+      features: { knowledge: true, taskRuntime: true, hooks: true, ciIntegration: true, externalWorkflows: true } };
+    config.architecture = deriveArchitectureDecision(scan, config);
+    const artifacts = buildArtifacts(config, scan);
+    const body = (relative) => artifacts.find((artifact) => artifact.path === relative)?.content;
+    for (const [relative, expected] of [
+      ['AGENTS.md', /保留.*用户.*修改/],
+      ['docs/ai/README.md', /本目录.*治理/],
+      ['docs/ai/rules/00_always.mdc', /如实.*证据/],
+      ['docs/ai/context-map.yaml', /description:.*部署.*发布/],
+      ['.cursor/rules/ai-code-governance.mdc', /读取.*AGENTS/],
+      ['CLAUDE.md', /原生导入/],
+    ]) assert.match(body(relative), expected, `${governanceDepth}: ${relative}`);
+    if (governanceDepth === 'minimal') {
+      assert.match(body('AGENTS.md'), /L0.*只读.*L1.*低风险.*升级至 L2\/L3/s);
+      continue;
+    }
+    for (const [relative, expected] of [
+      ['docs/ai/bootstrap-prompt.md', /检查仓库/],
+      ['docs/ai/anti-patterns.md', /直接编辑.*适配器/],
+      ['docs/ai/rules/20_stack.mdc', /确认.*版本/],
+      ['docs/ai/rules/15_architecture.mdc', /当前.*架构/],
+      ['docs/ai/skills/business-constraints/SKILL.md', /成功用例/],
+      ['docs/ai/lifecycle.md', /证据.*规则/],
+      ['docs/memory/INDEX.md', /记录.*模块/],
+      ['docs/ai/long-running/README.md', /任务目录/],
+      ['docs/ai/hooks.md', /真实客户端/],
+      ['docs/ai/ci-integration.md', /验证.*恢复/],
+      ['docs/ai/verification-profiles.yaml', /运行时.*验证命令/],
+    ]) assert.match(body(relative), expected, `${governanceDepth}: ${relative}`);
+    assert.match(body('docs/ai/skills/business-constraints/SKILL.md'), /Owner-authored invariant stays verbatim\./);
+    const architecture = JSON.parse(body('docs/ai/architecture-profile.json'));
+    for (const text of [architecture.profile.summary, ...architecture.invariants, ...architecture.boundaries]) assert.match(text, /[\u3400-\u9fff]/u);
+    assert.match(JSON.parse(body('docs/ai/module-graph.json')).claimBoundary, /[\u3400-\u9fff]/u);
+    for (const artifact of artifacts.filter((item) => /\/skills\/standards\/.*\/SKILL\.md$/.test(item.path))) {
+      assert.match(artifact.content, /版本.*证据/, artifact.path);
+      assert.doesNotMatch(artifact.content, /Apply this technical standard|Read the installed|This generated/);
+    }
+    if (governanceDepth === 'complete') assert.match(body('docs/ai/skills/backend-node/SKILL.md'), /读取.*AGENTS/);
+    applyArtifactPlan(root, planArtifacts(root, artifacts));
+    assert.equal(checkProject(scanProject(root)).ok, true, governanceDepth);
+  }
+});
 
 test('configuration defaults artifact and code documentation languages independently by project stage', (context) => {
   const greenfieldRoot = fixture('language-default-greenfield');
@@ -702,6 +753,38 @@ test('check stops the formal profiles scope at quoted top-level mapping keys', (
     assert.equal(result.ok, false, name);
     assert.ok(result.errors.some((error) => error.includes('missing required profile ordinary')), `${name}: ${result.errors.join('; ')}`);
   }
+});
+
+test('context routing rejects equivalent duplicate keys and unsupported YAML structures', (context) => {
+  const root = fixture('context-map-strict-yaml');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const original = fs.readFileSync(contextPath, 'utf8');
+  const variants = [
+    ['quoted-profiles', (s) => `${s}\n"profiles": {}\n`],
+    ['quoted-base', (s) => `${s}\n'base': {}\n`],
+    ['quoted-extends', (s) => s.replace('    extends: base', '    extends: base\n    "extends": missing')],
+    ['quoted-required', (s) => s.replace('    required: []', '    required: []\n    "required": []')],
+    ['quoted-conditional', (s) => s.replace('    conditional:', '    "conditional": {}\n    conditional:')],
+    ['quoted-profile-id', (s) => `${s}\n  "ordinary":\n    extends: base\n`],
+    ['quoted-condition-id', (s) => s.replace('    conditional:', '    conditional:\n      sample:\n        - docs/ai/rules/00_always.mdc\n      "sample":\n        - docs/ai/rules/00_always.mdc\n    other:')],
+    ['explicit-key', (s) => `${s}\n? profiles\n: {}\n`],
+    ['escaped-key', (s) => `${s}\n"pro\\u0066iles": {}\n`],
+    ['merge-key', (s) => s.replace('    extends: base', '    extends: base\n    <<: {extends: missing}')],
+    ['flow-profile', (s) => `${s}\n  decoy: {extends: ordinary}\n`],
+    ['flow-conditional', (s) => s.replace('    conditional:', '    conditional: {sample: [docs/ai/rules/00_always.mdc]}\n    other:')],
+    ['explicit-profile-key', (s) => `${s}\n  ? ordinary\n  : {extends: base}\n`],
+  ];
+  for (const [name, mutate] of variants) {
+    fs.writeFileSync(contextPath, mutate(original));
+    const result = checkProject(scanProject(root));
+    assert.equal(result.ok, false, name);
+    assert.ok(result.errors.some((error) => /context-map.*(?:duplicate|unsupported|exactly one)/.test(error)), `${name}: ${result.errors.join('; ')}`);
+  }
+  const quoted = original.replace(/^(\s*)(profiles|base|ordinary|behavior_change|release|extends|required|conditional):/gm, '$1"$2":');
+  fs.writeFileSync(contextPath, quoted);
+  assert.equal(checkProject(scanProject(root)).ok, true, 'supported quoted scalar keys retain the same route');
 });
 
 test('check rejects inheritance declared by the top-level base profile', (context) => {

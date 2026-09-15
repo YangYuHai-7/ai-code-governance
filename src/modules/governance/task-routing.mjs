@@ -1,6 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 import { isSafeRelative, matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
+import { BUILD_CONFIGURATION_NAMES, IMPLEMENTATION_EXTENSIONS, NON_IMPLEMENTATION_PREFIXES } from '../repository/index.mjs';
 
 const ORDER = ['L0', 'L1', 'L2', 'L3'];
 const DIMENSIONS = {
@@ -49,7 +50,7 @@ const DOCUMENTATION_OR_TEST_FILE_PATTERNS = [
 const ORDINARY_DOCUMENTATION_OR_TEST_PATTERNS = [
   'docs/*.md', 'docs/**/*.md', 'docs/*.mdx', 'docs/**/*.mdx', 'docs/*.txt', 'docs/**/*.txt',
   'docs/*.rst', 'docs/**/*.rst', 'docs/*.adoc', 'docs/**/*.adoc',
-  'test/**', 'tests/**', '__tests__/**',
+  'docs/**', 'test/**', 'tests/**', '__tests__/**', 'fixtures/**', '__fixtures__/**',
   ...DOCUMENTATION_OR_TEST_FILE_PATTERNS,
 ];
 
@@ -190,8 +191,17 @@ const PATH_RULES = [
   {
     id: 'production-source',
     level: 'L2',
-    patterns: ['src/**', 'app/**', 'lib/**', 'server/**', 'client/**', 'apps/**', 'packages/**', 'backend/**', 'frontend/**', 'cmd/**', 'internal/**', 'pkg/**', 'services/**', 'modules/**', 'crates/**', 'ios/**', 'android/**', 'mobile/**', 'desktop/**'],
-    examples: ['src/widget.mjs', 'backend/orders/service.go'],
+    patterns: [
+      'src/**', 'app/**', 'lib/**', 'server/**', 'client/**', 'apps/**', 'packages/**', 'backend/**', 'frontend/**',
+      'cmd/**', 'internal/**', 'pkg/**', 'services/**', 'modules/**', 'crates/**', 'ios/**', 'android/**', 'mobile/**', 'desktop/**',
+      'web/**', 'ui/**', 'electron/**',
+      ...[...IMPLEMENTATION_EXTENSIONS].map((extension) => `*${extension}`),
+    ],
+    excludePatterns: [
+      ...NON_IMPLEMENTATION_PREFIXES.map((prefix) => `${prefix}**`),
+      ...BUILD_CONFIGURATION_NAMES.map((name) => `${name}.config.*`),
+    ],
+    examples: ['src/widget.mjs', 'backend/orders/service.go', 'web/editor.tsx', 'main.py', 'index.js'],
   },
 ];
 

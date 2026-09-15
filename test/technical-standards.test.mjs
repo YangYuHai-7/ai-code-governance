@@ -8,9 +8,31 @@ import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
-import { loadTechnicalStandardRegistry, selectTechnicalStandards, technicalStandardsSummary, validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
+import { buildTechnicalStandardArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards, technicalStandardsSummary, validateTechnicalStandardRegistry } from '../src/technical-standards.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+
+test('all bundled technical standards localize body prose while retaining sources and machine identifiers', (context) => {
+  const root = fixture('chinese-standards');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const registry = loadTechnicalStandardRegistry();
+  const config = { ...defaultConfig(scan), artifactLanguage: 'zh-CN', technologyPackages: registry.standards.flatMap((standard) => standard.appliesTo.packagesAny ?? []) };
+  const built = buildTechnicalStandardArtifacts(config, scan);
+  for (const entry of built.artifacts.filter((artifact) => artifact.path.endsWith('SKILL.md'))) {
+    assert.match(entry.content, /版本.*证据/);
+    const instructions = entry.content.split('## 必需实践')[1];
+    assert.ok(instructions, entry.path);
+    for (const line of instructions.split('\n').filter((line) => line.startsWith('- '))) assert.match(line, /[\u3400-\u9fff]/u, `${entry.path}: ${line}`);
+  }
+  const manifest = JSON.parse(built.artifacts[0].content);
+  assert.equal(manifest.skills.length, 12);
+  for (const standard of registry.standards) {
+    const localized = manifest.skills.find((entry) => entry.id === standard.id);
+    assert.equal(localized.path, `docs/ai/skills/standards/${standard.id}/SKILL.md`);
+    assert.deepEqual(localized.sources, standard.sources);
+  }
+});
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-technical-standards-${name}-`));

@@ -149,7 +149,7 @@ export function moduleGraphDeclaration(config) {
     ],
     crossModulePrivateImports: 'forbidden',
     internalPathAllowlist: [],
-    claimBoundary: 'Only statically analyzable relative JS/TS imports and exports are checked. Dynamic imports, aliases, runtime resolution, cohesion, and single responsibility remain unverified.',
+    claimBoundary: config.artifactLanguage === 'zh-CN' ? '仅检查可静态分析的相对 JS/TS 导入和导出。动态导入、别名、运行时解析、内聚性和单一职责仍未经验证。' : 'Only statically analyzable relative JS/TS imports and exports are checked. Dynamic imports, aliases, runtime resolution, cohesion, and single responsibility remain unverified.',
   };
 }
 

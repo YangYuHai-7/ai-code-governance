@@ -125,6 +125,22 @@ test('changed paths conservatively raise the minimum task level', () => {
   assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }), 'L3');
 });
 
+test('product source roots and root entrypoints share scanner implementation classification', () => {
+  for (const relative of [
+    'web/editor.tsx', 'ui/widget.vue', 'electron/main.cjs', 'components/button.svelte',
+    'routes/home.astro', 'Sources/Example/App.swift', 'app.py', 'main.py', 'main.go', 'index.js',
+    'widget.dart', 'features/editor.rs', 'web/styles.css', 'web/index.html',
+  ]) assert.equal(minimumTaskLevelFromPaths([relative]), 'L2', relative);
+  for (const relative of [
+    'docs/web/example.js', 'docs/ui/example.py', 'test/web/widget.js', 'tests/ui/widget.vue',
+    'fixtures/web/widget.js', 'web/fixtures/widget.js', 'web/__fixtures__/widget.ts',
+    'web/tests/widget.ts', 'ui/widget.test.ts', 'index.test.js', 'test_main.py',
+    'scripts/example.js', 'vite.config.ts', 'docs/readme.md',
+  ]) assert.equal(minimumTaskLevelFromPaths([relative]), 'L1', relative);
+  assert.equal(minimumTaskLevelFromPaths(['web/editor.tsx', 'electron/main.cjs']), 'L3');
+  assert.equal(minimumTaskLevelFromPaths(['docs/web/example.js', 'docs/api/example.js']), 'L1');
+});
+
 test('ordinary documentation and tests take precedence over incidental risk and surface names', () => {
   for (const paths of [
     ['docs/payments/guide.md'],
