@@ -5,3 +5,4 @@ export * from './compiler.mjs';
 export * from './execution-plan.mjs';
 export * from './managed-files.mjs';
 export * from './manifest-trust.mjs';
+export * from './task-routing.mjs';
