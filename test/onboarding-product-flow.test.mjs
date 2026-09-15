@@ -5,9 +5,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { assessArchitecture } from '../src/architecture-assessment.mjs';
-import { defaultConfig } from '../src/generator.mjs';
+import { defaultConfig, validateConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
-import { promptGuidedConfig } from '../src/cli/prompts.mjs';
+import { promptConfig, promptGuidedConfig } from '../src/cli/prompts.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -99,6 +99,55 @@ test('guided existing-project onboarding shows detected stacks and requires conf
   ));
   assert.deepEqual(corrected.value.stacks, ['backend-node']);
   assert.ok(corrected.labels.some((label) => label === 'Correct technology stacks'));
+});
+
+test('full onboarding accepts ordinary constraints with no confirmed risk signals', async (context) => {
+  const root = fixture('full-optional-risk-signals');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const readline = scriptedReadline([
+    '1', '', '', '1', '', '', '', '',
+    'Every workspace belongs to one owner.', '', '',
+  ]);
+
+  const config = await promptConfig(scan, defaultConfig(scan), { locale: 'en', readline });
+
+  assert.deepEqual(config.domainConstraints, ['Every workspace belongs to one owner.']);
+  assert.deepEqual(config.confirmedRiskSignals, []);
+  assert.equal(config.features.aiAssist, false);
+});
+
+test('guided client multi-select normalizes unordered duplicate input to registry order', async (context) => {
+  const root = fixture('guided-client-order');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+
+  for (const [answer, expectedClients, expectedMode] of [
+    ['3,2,1,1', ['codex', 'claude-code', 'cursor'], 'all-built-in'],
+    ['3,1,3', ['codex', 'cursor'], 'selected'],
+  ]) {
+    const config = await promptGuidedConfig(
+      scan,
+      defaultConfig(scan),
+      { locale: 'en', readline: scriptedReadline([answer, '', '1', '', '1', '1']) },
+    );
+    assert.deepEqual(config.clients, expectedClients);
+    assert.deepEqual(config.clientSupport.selectedClients, expectedClients);
+    assert.equal(config.clientSupport.mode, expectedMode);
+    assert.doesNotThrow(() => validateConfig({
+      ...config,
+      initialization: { ...config.initialization, source: 'interactive' },
+    }));
+  }
+
+  await assert.rejects(
+    promptGuidedConfig(
+      scan,
+      defaultConfig(scan),
+      { locale: 'en', readline: scriptedReadline([',']) },
+    ),
+    /Select at least one value/,
+  );
 });
 
 test('Chinese and English human discovery output gives one plain-language action, reason, boundary, and exact command', (context) => {

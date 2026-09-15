@@ -7,7 +7,7 @@ import { loadCapabilityRegistry } from '../registry.mjs';
 
 function indexes(value, size) {
   const result = value.split(',').map((item) => Number.parseInt(item.trim(), 10) - 1).filter((item) => Number.isInteger(item) && item >= 0 && item < size);
-  return [...new Set(result)];
+  return [...new Set(result)].sort((left, right) => left - right);
 }
 
 async function chooseOne(rl, label, options, defaultIndex = 0, locale = null) {
@@ -21,7 +21,7 @@ async function chooseOne(rl, label, options, defaultIndex = 0, locale = null) {
   return options[selected].value;
 }
 
-async function chooseMany(rl, label, options, defaultValues, locale = null) {
+async function chooseMany(rl, label, options, defaultValues, { locale = null, required = true } = {}) {
   console.log(`\n${label}`);
   const defaultMarker = locale === 'zh-CN' ? ' [默认]' : locale === 'en' ? ' [default]' : ' [默认 / default]';
   options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}${defaultValues.includes(option.value) ? defaultMarker : ''}`));
@@ -30,7 +30,11 @@ async function chooseMany(rl, label, options, defaultValues, locale = null) {
     : locale === 'en' ? 'Select comma-separated numbers [defaults]: '
       : '请选择编号，多个用逗号分隔 / Select comma-separated numbers [defaults]: ';
   const answer = (await rl.question(prompt)).trim();
-  if (!answer && defaultValues.length > 0) return [...defaultValues];
+  if (!answer && defaultValues.length > 0) {
+    const defaults = new Set(defaultValues);
+    return options.map((option) => option.value).filter((value) => defaults.has(value));
+  }
+  if (!answer && !required) return [];
   if (!answer) throw usageError(`至少选择一项 / Select at least one value for ${label}.`);
   const selected = indexes(answer, options.length);
   if (selected.length === 0) throw usageError(`至少选择一项 / Select at least one value for ${label}.`);
@@ -96,14 +100,14 @@ async function promptStacks(rl, scan, initialization, locale, { guided = false }
       0,
     );
     if (action === 'confirm') return detected;
-    return chooseMany(rl, localized(locale, 'Correct technology stacks', '修正技术栈'), stackOptions(), detected, locale);
+    return chooseMany(rl, localized(locale, 'Correct technology stacks', '修正技术栈'), stackOptions(), detected, { locale });
   }
   return chooseMany(
     rl,
     localized(locale, 'Target technology stacks', '目标技术栈'),
     stackOptions(),
     detected,
-    locale,
+    { locale },
   );
 }
 
@@ -151,7 +155,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
         localized(locale, 'Which AI coding tools should this project support?', '要支持哪些 AI 编码工具？'),
         clientOptions(locale),
         ['codex'],
-        locale,
+        { locale },
       );
       clientSupport = {
         mode: clientSupportMode(clients),
@@ -245,7 +249,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       localized(locale, 'Which AI coding tools should this project support?', '要支持哪些 AI 编码工具？'),
       clientOptions(locale),
       seed.clientSupport?.selectedClients ?? ['codex'],
-      locale,
+      { locale },
     );
     const artifactLanguage = await chooseOne(
       rl,
@@ -294,7 +298,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       { label: 'macOS', value: 'macos' },
       { label: 'Windows', value: 'windows' },
       { label: 'Linux', value: 'linux' },
-    ], seed.supportedOs);
+    ], seed.supportedOs, { locale: interactionLanguage });
     const knowledge = governanceDepth === 'complete' && await yesNo(rl, 'Generate the knowledge-memory layer?', true);
     const taskRuntime = governanceDepth === 'complete' && await yesNo(rl, 'Generate the long-running task runtime?', true);
     const hooks = await yesNo(rl, 'Prepare project hooks?', false);
@@ -310,7 +314,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       { label: 'Multi-tenancy', value: 'multi-tenancy' },
       { label: 'Data consistency', value: 'data-consistency' },
       { label: 'Public API', value: 'public-api' },
-    ], seed.confirmedRiskSignals ?? []);
+    ], seed.confirmedRiskSignals ?? [], { locale: interactionLanguage, required: false });
     const aiAssist = await yesNo(rl, 'Run an installed AI agent after deterministic initialization?', false);
 
     return {
