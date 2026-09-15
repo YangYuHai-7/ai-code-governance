@@ -16,14 +16,22 @@ export async function syncCommand(target, options) {
   });
   assertManagedArchitectureConfigTrusted(scan.root, config);
   const artifacts = buildArtifacts(config, scan);
-  const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
+  const plan = planArtifacts(scan.root, artifacts, {
+    force: options.force,
+    migrateLinks: options['migrate-links'],
+    allowStaleRemoval: false,
+  });
   const result = applyArtifactPlan(scan.root, plan, {
     dryRun: options['dry-run'],
     migrateLinks: options['migrate-links'],
     transactional: !options['dry-run'],
     verify: options['dry-run'] ? undefined : () => checkProject(scanProject(scan.root)),
   });
-  console.log(JSON.stringify({ dryRun: Boolean(options['dry-run']), changed: result.changed }, null, 2));
+  console.log(JSON.stringify({
+    dryRun: Boolean(options['dry-run']),
+    changed: result.changed,
+    retained: plan.retained.map((item) => item.path),
+  }, null, 2));
   if (!options['dry-run']) {
     printCheck(result.verification, false);
     if (!result.verification.ok) process.exitCode = 1;

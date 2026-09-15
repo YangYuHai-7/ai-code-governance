@@ -13,6 +13,7 @@ import { isSafeRelative, normalizeRelative, stableJson } from '../../shared/inde
 import { linkAncestor, nonDirectoryAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
 import { loadManifest } from './manifest-store.mjs';
+import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import {
   mergeGitignoreBlock,
   mergeManagedBlock,
@@ -103,9 +104,11 @@ export function planArtifacts(root, artifacts, options = {}) {
   const manifest = loadManifest(root);
   const operations = [];
   const conflicts = [];
+  const retained = [];
   const links = new Set();
   const expectedPaths = new Set(artifacts.map((artifact) => normalizeRelative(artifact.path)));
   const previousFiles = Array.isArray(manifest?.files) ? manifest.files : [];
+  const manifestRemovalAuthority = validateManifestRemovalAuthority(root, manifest);
   const legacyManagedProject = trustedLegacyManifest(root, manifest);
   if (manifest && manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION) conflicts.push(`${MANIFEST_PATH}: unsupported schemaVersion`);
   if (manifest && !Array.isArray(manifest.files)) conflicts.push(`${MANIFEST_PATH}: files must be an array`);
@@ -193,6 +196,15 @@ export function planArtifacts(root, artifacts, options = {}) {
       continue;
     }
     if (expectedPaths.has(relative)) continue;
+    if (options.allowStaleRemoval !== true) {
+      retained.push({ ...entry, path: relative });
+      continue;
+    }
+    if (!manifestRemovalAuthority.trusted) {
+      retained.push({ ...entry, path: relative });
+      conflicts.push(`${MANIFEST_PATH}: manifest is not trusted for stale removal (${manifestRemovalAuthority.errors.join(', ')})`);
+      continue;
+    }
     const absolute = path.join(root, relative);
     const invalidAncestor = nonDirectoryAncestor(root, relative);
     if (invalidAncestor) {
@@ -257,6 +269,7 @@ export function planArtifacts(root, artifacts, options = {}) {
   return {
     operations,
     conflicts,
+    retained,
     links: linkPaths,
     previousManifest: manifest,
     manifest: {
