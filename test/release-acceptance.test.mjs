@@ -6,6 +6,9 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { loadReleaseAcceptancePolicy, releaseAcceptanceRequirements, runReleaseAcceptance as runReleaseAcceptanceCore } from '../src/release-acceptance.mjs';
+import { loadProjectReleaseAcceptancePolicy } from '../src/modules/release/policy.mjs';
+import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
+import { scanProject } from '../src/scanner.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -68,9 +71,10 @@ function npmRun(root, script) {
 }
 
 function completeEvidence(root, changeType, previousVersion, releaseVersion, riskSignals = [], verifyCommand = 'node -e "process.exit(0)"', fixtureOptions = {}) {
-  const policy = loadReleaseAcceptancePolicy();
+  const policy = fixtureOptions.policySnapshot ? JSON.parse(fixtureOptions.policySnapshot) : loadReleaseAcceptancePolicy();
   const requirements = releaseAcceptanceRequirements(changeType, riskSignals, policy);
   git(root, ['init', '--quiet']);
+  if (fixtureOptions.policySnapshot) writeFile(root, 'docs/ai/release-acceptance-policy.json', fixtureOptions.policySnapshot);
   const packageDocument = (version) => ({
     name: 'release-fixture',
     version,
@@ -91,7 +95,7 @@ function completeEvidence(root, changeType, previousVersion, releaseVersion, ris
   commit(root, 'release candidate');
   const releaseRevision = git(root, ['rev-parse', 'HEAD']);
   const releaseTree = git(root, ['rev-parse', 'HEAD^{tree}']);
-  const digest = policyDigest();
+  const digest = fixtureOptions.policySnapshot ? fileDigest(path.join(root, 'docs/ai/release-acceptance-policy.json')) : policyDigest();
   const submittedAt = new Date(Date.now() - 2000).toISOString();
   const consensusAt = new Date(Date.now() - 1000).toISOString();
   const generatedAt = new Date().toISOString();
@@ -210,6 +214,62 @@ test('release policy records the shared scorecard and risk-proportional particip
   assert.deepEqual(policy.tiers.bugfix.minimumParticipants, { engineers: 1, architects: 1 });
   assert.deepEqual(policy.tiers.feature.minimumParticipants, { engineers: 2, architects: 2 });
   assert.deepEqual(policy.tiers.major.minimumParticipants, { engineers: 5, architects: 3 });
+});
+
+function chinesePolicySnapshot(root) {
+  const scan = { ...scanProject(root), governanceUsage: ['release'] };
+  return buildArtifacts({ ...defaultConfig(scan), artifactLanguage: 'zh-CN' }, scan)
+    .find((artifact) => artifact.path === 'docs/ai/release-acceptance-policy.json').content;
+}
+
+test('Chinese release snapshots retain exact-byte drift protection and non-weakening overrides', (context) => {
+  const root = fixture('chinese-policy');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const content = chinesePolicySnapshot(root);
+  const policyPath = writeFile(root, 'docs/ai/release-acceptance-policy.json', content);
+  git(root, ['init', '--quiet']);
+  commit(root, 'localized policy');
+  const selected = loadProjectReleaseAcceptancePolicy(root);
+  assert.equal(selected.digest, fileDigest(path.join(root, policyPath)));
+  assert.notEqual(selected.digest, policyDigest());
+  assert.equal(selected.source, 'project-snapshot');
+  for (const drifted of [content.replace('85', '84'), content.replace('代码', '任意代码')]) {
+    assert.notEqual(drifted, content);
+    writeFile(root, policyPath, drifted);
+    commit(root, 'policy drift');
+    assert.throws(() => loadProjectReleaseAcceptancePolicy(root), /stale or drifted/);
+  }
+  writeFile(root, policyPath, content);
+  const override = JSON.parse(content);
+  override.scorecard.minimumWeightedScore = 84;
+  writeFile(root, 'docs/ai/release-acceptance-override.json', JSON.stringify(override));
+  commit(root, 'weaker override');
+  assert.throws(() => loadProjectReleaseAcceptancePolicy(root), /cannot weaken/);
+  override.scorecard.minimumWeightedScore = 90;
+  writeFile(root, 'docs/ai/release-acceptance-override.json', JSON.stringify(override));
+  commit(root, 'stricter override');
+  assert.equal(loadProjectReleaseAcceptancePolicy(root).policy.scorecard.minimumWeightedScore, 90);
+  override.riskSignals.authorization.reason = 'Arbitrary new meaning';
+  writeFile(root, 'docs/ai/release-acceptance-override.json', JSON.stringify(override));
+  commit(root, 'redefined risk meaning');
+  assert.throws(() => loadProjectReleaseAcceptancePolicy(root), /cannot redefine/);
+});
+
+test('Chinese first-use release policy binds passing evidence and replay to its own digest', (context) => {
+  const root = fixture('chinese-acceptance');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const prepared = completeEvidence(root, 'bugfix', '1.2.3', '1.2.4', [], undefined, { policySnapshot: chinesePolicySnapshot(root) });
+  const result = runReleaseAcceptance(root, { changeType: 'bugfix', evidencePath: prepared.evidencePath });
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  assert.deepEqual(result.evidenceCoverage, { passed: 7, required: 7 });
+  assert.equal(result.commandReplays.length, 3);
+  assert.notEqual(prepared.payload.policy.sha256, policyDigest());
+  prepared.payload.policy.sha256 = policyDigest();
+  writeFile(root, prepared.evidencePath, JSON.stringify(prepared.payload));
+  commit(root, 'wrong-language policy digest');
+  const rejected = runReleaseAcceptanceCore(root, { changeType: 'bugfix', evidencePath: prepared.evidencePath });
+  assert.equal(rejected.ok, false);
+  assert.ok(rejected.errors.some((error) => /policy.*(digest|sha256)/i.test(error)), rejected.errors.join('\n'));
 });
 
 test('bugfix acceptance passes only with patch versioning and complete repository-local evidence', (context) => {

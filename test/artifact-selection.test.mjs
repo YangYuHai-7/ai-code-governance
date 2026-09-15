@@ -10,6 +10,8 @@ import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { resolveGovernanceCapabilities, selectArtifactDefinitions } from '../src/modules/governance/artifact-selection.mjs';
 import { deriveArchitectureDecision } from '../src/modules/architecture/index.mjs';
+import { surfaceVerificationProfiles } from '../src/modules/repository/index.mjs';
+import { sha256, stableJson } from '../src/shared/index.mjs';
 
 const MINIMAL_CODEX_ALLOWLIST = [
   '.ai-governance/config.json',
@@ -98,6 +100,44 @@ test('first-use materializes only the requested evidence family and never manufa
     const paths = buildArtifacts(config, snapshot).map((item) => item.path).sort();
     assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, relative].sort());
     assert.equal(selectedArtifactDefinitions(config, snapshot).find((item) => item.path === relative).activation, 'first-use');
+  }
+});
+
+test('first-use Chinese evidence artifacts localize prose and preserve every machine field', (context) => {
+  const { root, config, scan } = fixture(context);
+  const expected = new Map([
+    ['docs/ai/release-acceptance-policy.json', fs.readFileSync('assets/policies/release-acceptance-policy.json', 'utf8')],
+    ['docs/ai/surface-verification-profiles.json', stableJson(surfaceVerificationProfiles())],
+    ['docs/ai/acceptance-contract.json', fs.readFileSync('assets/contracts/acceptance-contract.json', 'utf8')],
+  ]);
+  assert.equal(sha256(expected.get('docs/ai/release-acceptance-policy.json')), 'a978f63bad494ab4519c673c1d87f224776ca311856525b2fbe0d961fe5a56ea');
+  assert.equal(sha256(expected.get('docs/ai/surface-verification-profiles.json')), '7e0779fbe78c372c8e2b0fd73b768df9808aeb5256060780b7bd3aa4ee113246');
+  assert.equal(sha256(expected.get('docs/ai/acceptance-contract.json')), '2fd5633856ec347e4e54538d74654f5532d1111c4c2a54bceeb094194e6cf377');
+  const proseKeys = new Set(['description', 'reason', 'claimBoundary', 'binding', 'coverage', 'applies_when', 'negative_case', 'expected_failure', 'recovery_case', 'expected_recovery', 'proves']);
+  const machineFields = (value, location = [], requireChinese = false) => {
+    if (typeof value === 'string' && (proseKeys.has(location.at(-1)) || ['claim_states', 'failure_policy'].includes(location.at(-2)))) {
+      if (requireChinese) assert.match(value, /[\u3400-\u9fff]/u, location.join('.'));
+      return '<localized-prose>';
+    }
+    if (Array.isArray(value)) return value.map((entry, index) => machineFields(entry, [...location, index], requireChinese));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, machineFields(entry, [...location, key], requireChinese)]));
+    return value;
+  };
+  const snapshot = { ...scan, governanceUsage: ['release', 'surface', 'acceptance'] };
+  for (const artifactLanguage of ['en', 'bilingual', 'zh-CN']) {
+    const artifacts = buildArtifacts({ ...config, artifactLanguage }, snapshot);
+    for (const [relative, english] of expected) {
+      const content = artifacts.find((entry) => entry.path === relative).content;
+      if (artifactLanguage !== 'zh-CN') assert.equal(content, english, `${artifactLanguage}: ${relative}`);
+      assert.deepEqual(machineFields(JSON.parse(content), [], artifactLanguage === 'zh-CN'), machineFields(JSON.parse(english)), relative);
+    }
+    if (artifactLanguage === 'zh-CN') {
+      applyArtifactPlan(root, planArtifacts(root, artifacts));
+      assert.equal(checkProject(scanProject(root)).ok, true);
+      const results = 'docs/ai/acceptance-results.json';
+      fs.writeFileSync(path.join(root, results), JSON.stringify({ contract_schema_version: 2, results: [] }));
+      assert.equal(checkProject(scanProject(root)).ok, false, 'localized acceptance contract must still enforce full probe coverage');
+    }
   }
 });
 

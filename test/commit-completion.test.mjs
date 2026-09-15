@@ -5,6 +5,9 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { PRE_COMMIT_HOOK_MARKER, runCompletion } from '../src/commit-completion.mjs';
+import { buildArtifacts } from '../src/generator.mjs';
+import { scanProject } from '../src/scanner.mjs';
+import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -20,8 +23,14 @@ function git(root, args) {
   return spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
 }
 
-function initialize(root) {
-  const result = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
+function initialize(root, artifactLanguage) {
+  const options = [];
+  if (artifactLanguage) {
+    const answersPath = path.join(root, 'answers.json');
+    fs.writeFileSync(answersPath, JSON.stringify({ artifactLanguage, initialization: { lifecycle: 'greenfield', existingCodeStrategy: null } }));
+    options.push('--config', answersPath);
+  }
+  const result = run(['init', root, '--clients', 'all', '--yes', '--no-assist', ...options]);
   assert.equal(result.status, 0, result.stderr);
   baseline(root);
 }
@@ -478,10 +487,10 @@ test('completion exposes only verification scripts and never runs implicit npm l
   assert.equal(JSON.parse(verified.stdout).projectVerification.status, 'passed');
 });
 
-test('surface verification passes a reachable HTTP story through a discovered safe command', (context) => {
+for (const artifactLanguage of ['en', 'zh-CN']) test(`surface verification passes a reachable HTTP story through a discovered safe command (${artifactLanguage})`, (context) => {
   const root = fixture('surface-http');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initialize(root);
+  initialize(root, artifactLanguage);
   fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --eval "process.exit(0)"' } }));
@@ -497,6 +506,13 @@ test('surface verification passes a reachable HTTP story through a discovered sa
       command: 'npm run test:http',
     }],
   }));
+  const synced = run(['sync', root]);
+  assert.equal(synced.status, 0, `${synced.stderr}\n${synced.stdout}`);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  const firstUse = { ...scanProject(root), governanceUsage: ['surface'] };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, firstUse)));
+  const profiles = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/surface-verification-profiles.json'), 'utf8'));
+  assert.equal(/[\u3400-\u9fff]/u.test(profiles.claimBoundary), artifactLanguage === 'zh-CN');
   const fabricated = run(['complete', root, '--verify', 'npm run test:http', '--json']);
   assert.equal(fabricated.status, 1, fabricated.stderr);
   const fabricatedPayload = JSON.parse(fabricated.stdout);

@@ -591,10 +591,10 @@ test('check fails closed when the repository scan budget truncates evidence', (c
   assert.ok(result.errors.some((error) => error.includes('repository scan incomplete: file limit 2 reached')));
 });
 
-test('check keeps enforcement unverified when complete receipt fields have not been replayed', (context) => {
+for (const artifactLanguage of ['en', 'zh-CN']) test(`check keeps enforcement unverified when complete receipt fields have not been replayed (${artifactLanguage})`, (context) => {
   const root = fixture('verified-enforcement-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initialize(root, (value) => value, { governanceUsage: ['acceptance'] });
+  initialize(root, (value) => ({ ...value, artifactLanguage }), { governanceUsage: ['acceptance'] });
   const contract = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/acceptance-contract.json'), 'utf8'));
   const results = contract.required_probe_families.map((family) => ({
     id: family.id,
