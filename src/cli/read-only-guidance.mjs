@@ -19,6 +19,21 @@ function localized(locale, zh, en) {
   return locale === 'zh-CN' ? zh : en;
 }
 
+function invocationPrerequisites(config, locale) {
+  if (config?.invocationMode !== 'npm-exec-pinned') return {};
+  return {
+    invocationPrerequisite: {
+      id: 'installed-aicg-cli',
+      status: 'verification-required',
+      onMissing: 'stop-and-request-explicit-install-or-selection',
+      allowRemotePackageResolution: false,
+      message: localized(locale,
+        '临时固定版本启动不会安装持久 CLI。请先确认项目本地或全局 AICG 可执行文件确实可用，并使用匹配的调用方式。若均不可用，停止并请求显式安装或选择；不要自动解析远程包。',
+        'Temporary pinned bootstrap does not install a persistent CLI. First verify an installed project-local or global AICG executable and use the matching invocation mode. If none is available, stop and request an explicit installation or choice; never resolve a remote package automatically.'),
+    },
+  };
+}
+
 function guidedInitCommand(prefix, locale, { migrateLinks = false } = {}) {
   return `${prefix} init . --guided --locale ${locale}${migrateLinks ? ' --migrate-links' : ''}`;
 }
@@ -49,6 +64,9 @@ export function printHumanGuidance(result) {
     : { action: 'ACTION: ', command: 'NEXT COMMAND: ', reason: 'REASON: ', boundary: 'BOUNDARY: ' };
   console.log(`${labels.action}${action.description}`);
   if (action.command) console.log(`${labels.command}${action.command}`);
+  if (action.command && action.invocationPrerequisite) {
+    console.log(`${locale === 'zh-CN' ? '运行前提：' : 'PREREQUISITE: '}${action.invocationPrerequisite.message}`);
+  }
   console.log(`${labels.reason}${guide.reason}`);
   console.log(`${labels.boundary}${guide.claimBoundary}`);
 }
@@ -61,6 +79,7 @@ export function initSuccessGuidance(config) {
     description: localized(locale, '检查刚生成的治理文件是否完整。', 'Check that the generated governance files are complete.'),
     command: `${prefix} check . --json`,
     readOnly: true,
+    ...invocationPrerequisites(config, locale),
   };
   return {
     actionGuide: {
@@ -243,6 +262,10 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
         });
   }
 
+  const prerequisites = invocationPrerequisites(config, locale);
+  for (const action of nextSteps) {
+    if (action.command) Object.assign(action, prerequisites);
+  }
   const recommendedAction = nextSteps[0];
 
   return {
