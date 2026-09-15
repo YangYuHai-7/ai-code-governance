@@ -43,6 +43,23 @@ function sameInitialization(left, right) {
   );
 }
 
+function recordArchitectureDecisionGap(config) {
+  if (config.initialization?.lifecycle !== 'greenfield') return config;
+  const requiredDecisions = [...config.initialClassification.requiredDecisions];
+  if (!requiredDecisions.some((decision) => decision.id === 'architecture-not-established')) {
+    requiredDecisions.push({
+      id: 'architecture-not-established',
+      status: 'not-established',
+      question: 'Architecture is not established until implementation evidence exists and the owner confirms a stable pattern.',
+      options: [],
+    });
+  }
+  return {
+    ...config,
+    initialClassification: { ...config.initialClassification, requiredDecisions },
+  };
+}
+
 function assertInitializationWriteBoundary(plan) {
   const unexpected = plan.operations
     .map((operation) => operation.path)
@@ -61,10 +78,12 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   const existing = rawExisting ? normalizeClientSupport(rawExisting, { source: 'legacy-config' }) : null;
   assertManagedArchitectureConfigTrusted(scan.root, existing);
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
+  let codeDocumentationPolicyExplicit = existing?.codeDocumentationPolicy !== undefined;
   let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
   let prompted = false;
   if (options.config) {
     const supplied = readJson(path.resolve(options.config));
+    if (supplied.codeDocumentationPolicy !== undefined) codeDocumentationPolicyExplicit = true;
     if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
     const { initialClassification: _ignoredClassification, architecture: _ignoredArchitecture, projectMode: _ignoredProjectMode, ...safeSupplied } = supplied;
     const normalizedSupplied = safeSupplied.clientSupport
@@ -88,13 +107,17 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
       locale: options.locale,
       preserveDepth: Boolean(existing),
       preserveArtifactLanguage: Boolean(existing),
+      preserveCodeDocumentationPolicy: codeDocumentationPolicyExplicit,
       preserveInvocation: Boolean(existing),
     });
     prompted = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   } else if (!options.yes && !options.config && !allowDefaults) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Interactive init requires a TTY. Use --yes or --config <json>.');
-    config = await promptConfig(scan, config, { locale: options.locale });
+    config = await promptConfig(scan, config, {
+      locale: options.locale,
+      preserveCodeDocumentationPolicy: codeDocumentationPolicyExplicit,
+    });
     prompted = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   }
@@ -131,12 +154,21 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
         allowRecordedGreenfield: Boolean(existing?.initialization?.lifecycle === 'greenfield' && sameInitialization(existing.initialization, config.initialization)),
       }),
     };
+    config = recordArchitectureDecisionGap(config);
     config = {
       ...config,
       architecture: deriveArchitectureDecision(scan, config, existing?.architecture ?? null, { legacyGovernance: Boolean(existing && !existing.architecture) }),
     };
   } catch (error) {
     throw usageError(error.message);
+  }
+  if (!codeDocumentationPolicyExplicit) {
+    config = {
+      ...config,
+      codeDocumentationPolicy: currentAssessment.codebase.lifecycle.value === 'existing' || config.initialization.lifecycle === 'existing'
+        ? 'inherit-existing'
+        : 'en',
+    };
   }
   if (config.features.aiAssist && currentAssessment.codebase.lifecycle.value !== 'greenfield') {
     throw usageError('AI assist is unavailable when the repository has existing or ambiguous product evidence; deterministic initialization must not modify business code.');

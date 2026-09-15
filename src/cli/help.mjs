@@ -43,7 +43,9 @@ Novice quick start:
   aicg doctor . --locale en
   aicg init . --guided --locale en
 
---guided asks for the client, project stage, governance depth, language, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
+--guided asks for AI coding tools first and governance artifact language second, followed by project stage, technology stack confirmation or selection, governance depth, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
+
+--locale controls interaction language only. Governance artifacts default to English; choose config.artifactLanguage or answer the separate guided question to change them. Existing bilingual artifact configurations remain supported but are not offered for new guided choices.
 `;
 
 export const HELP_ZH = `AI 代码治理 CLI
@@ -73,9 +75,9 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg doctor . --locale zh-CN
   aicg init . --guided --locale zh-CN
 
---guided 会通过选项收集编码工具、项目阶段、治理强度、语言和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
+--guided 会先收集 AI 编码工具，再单独询问治理产物语言，然后确认项目阶段、检测到的技术栈或目标技术栈、治理强度和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
 
-交互语言由 --locale 或 config.interactionLanguage 控制；治理产物语言由 config.artifactLanguage 单独控制。
+--locale 只控制交互语言。治理产物默认使用英语；如需更改，请设置 config.artifactLanguage 或回答独立的引导问题。已有 bilingual 配置继续兼容，但新的引导选项不再推荐它。
 `;
 
 export function helpFor(locale = 'en') {

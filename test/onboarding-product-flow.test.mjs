@@ -25,33 +25,80 @@ function writeBrownfield(root) {
   fs.writeFileSync(path.join(root, 'src', 'App.tsx'), 'export const App = () => null;\n');
 }
 
-test('guided preset collects the five novice decisions without a JSON file', async (context) => {
-  const root = fixture('guided-preset');
-  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'manifest-only' }));
-  const scan = scanProject(root);
-  const answers = ['1', '1', '1', '1'];
-  const questions = [];
-  const readline = {
-    question: async (question) => {
-      questions.push(question);
-      return answers.shift();
-    },
+function scriptedReadline(answers) {
+  return {
+    question: async () => answers.shift() ?? '',
     close() {},
   };
+}
 
-  const config = await promptGuidedConfig(scan, defaultConfig(scan), { locale: 'zh-CN', readline });
-  assert.equal(answers.length, 0);
-  assert.equal(config.interactionLanguage, 'zh-CN');
-  assert.equal(config.artifactLanguage, 'zh-CN');
+async function capturePromptLabels(callback) {
+  const labels = [];
+  const original = console.log;
+  console.log = (message = '') => {
+    const text = String(message);
+    if (text.startsWith('\n')) labels.push(text.trim());
+  };
+  try {
+    const value = await callback();
+    return { labels, value };
+  } finally {
+    console.log = original;
+  }
+}
+
+test('guided onboarding asks clients first and artifact language second', async (context) => {
+  const root = fixture('guided-preset');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const readline = scriptedReadline(['1', '', '1', '', '1', '1']);
+
+  const { labels, value: config } = await capturePromptLabels(
+    () => promptGuidedConfig(scan, defaultConfig(scan), { readline }),
+  );
+  assert.deepEqual(labels.slice(0, 2), [
+    'Which AI coding tools should this project support? / 要支持哪些 AI 编码工具？',
+    'Governance artifact language / 治理产物语言',
+  ]);
+  assert.equal(config.interactionLanguage, 'en');
+  assert.equal(config.artifactLanguage, 'en');
+  assert.equal(config.codeDocumentationPolicy, 'en');
   assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex'], source: 'interactive' });
   assert.deepEqual(config.clients, ['codex']);
   assert.deepEqual(config.initialization, { lifecycle: 'greenfield', existingCodeStrategy: null, source: null });
+  assert.deepEqual(config.stacks, ['generic-unknown']);
   assert.equal(config.governanceDepth, 'minimal');
   assert.equal(config.invocationMode, 'project-local');
   assert.equal(config.features.aiAssist, false);
-  assert.equal(questions.length, 4);
-  assert.doesNotMatch(questions.join('\n'), /Git|manifest|enforcement|negative probe/i);
+  assert.ok(config.initialClassification.requiredDecisions.some((decision) => decision.id === 'architecture-not-established' && decision.status === 'not-established'));
+});
+
+test('guided existing-project onboarding shows detected stacks and requires confirmation or correction', async (context) => {
+  const root = fixture('guided-existing-stack');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeBrownfield(root);
+  const scan = scanProject(root);
+
+  const confirmed = await capturePromptLabels(() => promptGuidedConfig(
+    scan,
+    defaultConfig(scan),
+    { locale: 'zh-CN', readline: scriptedReadline(['1', '', '2', '1', '1', '1', '1']) },
+  ));
+  assert.equal(confirmed.value.artifactLanguage, 'en');
+  assert.equal(confirmed.value.codeDocumentationPolicy, 'inherit-existing');
+  assert.deepEqual(confirmed.value.stacks, ['frontend-react']);
+  assert.equal(confirmed.labels[0], '要支持哪些 AI 编码工具？');
+  assert.equal(confirmed.labels[1], '治理产物语言');
+  assert.ok(confirmed.labels.some((label) => label.includes('检测到的技术栈：frontend-react')));
+  assert.ok(confirmed.labels.some((label) => label === '确认或修正检测到的技术栈？'));
+
+  const corrected = await capturePromptLabels(() => promptGuidedConfig(
+    scan,
+    defaultConfig(scan),
+    { locale: 'en', readline: scriptedReadline(['1', '', '2', '2', '4', '1', '1', '1']) },
+  ));
+  assert.deepEqual(corrected.value.stacks, ['backend-node']);
+  assert.ok(corrected.labels.some((label) => label === 'Correct technology stacks'));
 });
 
 test('Chinese and English human discovery output gives one plain-language action, reason, boundary, and exact command', (context) => {
@@ -127,7 +174,8 @@ test('non-interactive init requires an explicit client scope and records invocat
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
   assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex', 'cursor'], source: 'cli' });
   assert.equal(config.interactionLanguage, 'zh-CN');
-  assert.equal(config.artifactLanguage, 'zh-CN');
+  assert.equal(config.artifactLanguage, 'en');
+  assert.equal(config.codeDocumentationPolicy, 'en');
   assert.equal(config.invocationMode, 'npm-exec-pinned');
   assert.equal(config.toolVersion, '0.2.0');
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
@@ -147,6 +195,24 @@ test('legacy explicit clients in a config are normalized without losing compatib
   assert.equal(initialized.status, 0, initialized.stderr);
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
   assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex'], source: 'config' });
+});
+
+test('a confirmed new project records that architecture is not established', (context) => {
+  const root = fixture('new-project-architecture-gap');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'new-project-scaffold' }));
+  const configPath = path.join(root, 'answers.json');
+  fs.writeFileSync(configPath, JSON.stringify({
+    clients: ['codex'],
+    initialization: { lifecycle: 'greenfield', existingCodeStrategy: null },
+  }));
+
+  const initialized = run(['init', root, '--config', configPath, '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
+  assert.ok(config.initialClassification.requiredDecisions.some((decision) => (
+    decision.id === 'architecture-not-established' && decision.status === 'not-established'
+  )));
 });
 
 test('architecture assessment produces stable adoptable ids and an approved selection only changes governance', (context) => {
@@ -209,6 +275,8 @@ test('help exposes Chinese onboarding while preserving English artifact language
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /客户端支持范围必须显式选择/);
   assert.match(result.stdout, /artifactLanguage/);
+  assert.match(result.stdout, /--locale 只控制交互语言/);
+  assert.match(result.stdout, /治理产物默认使用英语/);
 });
 
 test('read-only discovery commands expose locale-aware action guides and distinguish scan shape from lifecycle', (context) => {

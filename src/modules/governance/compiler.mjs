@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
+import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
 import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
@@ -21,6 +21,15 @@ function languageTitle(config, zh, en) {
   return zh;
 }
 
+function defaultCodeDocumentationPolicy(config, fallbackLifecycle = null) {
+  const lifecycle = config.initialization?.lifecycle
+    ?? config.initialClassification?.codebase?.lifecycle?.value
+    ?? fallbackLifecycle;
+  if (lifecycle === 'existing') return 'inherit-existing';
+  if (!lifecycle && ['brownfield', 'monorepo', 'repository-family'].includes(config.projectMode)) return 'inherit-existing';
+  return 'en';
+}
+
 export function governanceCommand(config, args = '') {
   const suffix = args ? ` ${args}` : '';
   if (config.invocationMode === 'project-local') return `npm exec -- aicg${suffix}`;
@@ -30,6 +39,15 @@ export function governanceCommand(config, args = '') {
 
 export function defaultConfig(scan) {
   const assessment = classifyProject(scan);
+  const requiredDecisions = [...assessment.requiredDecisions];
+  if (assessment.codebase.lifecycle.value === 'greenfield') {
+    requiredDecisions.push({
+      id: 'architecture-not-established',
+      status: 'not-established',
+      question: 'Architecture is not established until implementation evidence exists and the owner confirms a stable pattern.',
+      options: [],
+    });
+  }
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
@@ -41,13 +59,14 @@ export function defaultConfig(scan) {
     initialClassification: {
       codebase: assessment.codebase,
       implementationBoundary: assessment.implementationBoundary,
-      requiredDecisions: assessment.requiredDecisions,
+      requiredDecisions,
     },
     canonicalRoot: 'docs/ai',
     clients: ['codex', 'claude-code', 'cursor'],
     stacks: scan.stacks.map((stack) => stack.id),
     governanceDepth: 'standard',
-    artifactLanguage: 'zh-CN',
+    artifactLanguage: 'en',
+    codeDocumentationPolicy: assessment.codebase.lifecycle.value === 'existing' ? 'inherit-existing' : 'en',
     supportedOs: ['macos', 'windows', 'linux'],
     technologyPackages: [],
     projectCapabilities: [],
@@ -64,20 +83,40 @@ export function defaultConfig(scan) {
   };
 }
 
-function normalizeInitialClassification(config, scan) {
-  if (config.initialClassification) return config;
+function normalizeConfigDefaults(config, scan) {
   const assessment = classifyProject(scan);
+  const initialClassification = config.initialClassification ?? {
+    codebase: assessment.codebase,
+    implementationBoundary: assessment.implementationBoundary,
+    requiredDecisions: assessment.requiredDecisions,
+  };
+  const requiredDecisions = [...initialClassification.requiredDecisions];
+  if (
+    initialClassification.codebase.lifecycle.value === 'greenfield'
+    && !requiredDecisions.some((decision) => decision.id === 'architecture-not-established')
+  ) {
+    requiredDecisions.push({
+      id: 'architecture-not-established',
+      status: 'not-established',
+      question: 'Architecture is not established until implementation evidence exists and the owner confirms a stable pattern.',
+      options: [],
+    });
+  }
   return {
     ...config,
+    codeDocumentationPolicy: config.codeDocumentationPolicy
+      ?? defaultCodeDocumentationPolicy(config, assessment.codebase.lifecycle.value),
     initialClassification: {
-      codebase: assessment.codebase,
-      implementationBoundary: assessment.implementationBoundary,
-      requiredDecisions: assessment.requiredDecisions,
+      ...initialClassification,
+      requiredDecisions,
     },
   };
 }
 
 export function validateConfig(config) {
+  if (config.codeDocumentationPolicy === undefined) {
+    config = { ...config, codeDocumentationPolicy: defaultCodeDocumentationPolicy(config) };
+  }
   if (config.schemaVersion !== CONFIG_SCHEMA_VERSION) throw usageError(`config.schemaVersion must be ${CONFIG_SCHEMA_VERSION}.`);
   if (!config.projectName || typeof config.projectName !== 'string') throw usageError('config.projectName is required.');
   if (!['greenfield', 'brownfield', 'monorepo', 'repository-family'].includes(config.projectMode)) {
@@ -101,6 +140,7 @@ export function validateConfig(config) {
   if (!SUPPORTED_DEPTHS.includes(config.governanceDepth)) throw usageError(`Unsupported governance depth: ${config.governanceDepth}`);
   if (!SUPPORTED_LANGUAGES.includes(config.artifactLanguage)) throw usageError(`Unsupported artifact language: ${config.artifactLanguage}`);
   if (config.interactionLanguage !== undefined && !SUPPORTED_INTERACTION_LANGUAGES.includes(config.interactionLanguage)) throw usageError(`Unsupported interaction language: ${config.interactionLanguage}`);
+  if (!SUPPORTED_CODE_DOCUMENTATION_POLICIES.includes(config.codeDocumentationPolicy)) throw usageError(`Unsupported code documentation policy: ${config.codeDocumentationPolicy}`);
   if (config.invocationMode !== undefined && !INVOCATION_MODES.includes(config.invocationMode)) throw usageError(`Unsupported invocation mode: ${config.invocationMode}`);
   if (!Array.isArray(config.supportedOs) || config.supportedOs.some((value) => !SUPPORTED_OSES.includes(value))) {
     throw usageError('config.supportedOs contains an unsupported operating system.');
@@ -408,7 +448,7 @@ function fullDepthArtifacts(config) {
 }
 
 export function buildArtifacts(config, scan) {
-  config = normalizeInitialClassification(config, scan);
+  config = normalizeConfigDefaults(config, scan);
   validateConfig(config);
   const agents = resolveAgents(config.clients);
   const packs = resolvePacks(config.stacks);
