@@ -124,7 +124,8 @@ function changedPaths(root) {
   const paths = [];
   // Disable rename collapsing so moving a sensitive source into docs cannot hide its removal.
   for (const args of [
-    ['diff', '--name-only', '-z', '--no-renames', 'HEAD'],
+    ['diff', '--cached', '--name-only', '-z', '--no-renames', 'HEAD'],
+    ['diff', '--name-only', '-z', '--no-renames'],
     ['ls-files', '--others', '--exclude-standard', '-z'],
   ]) {
     const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
@@ -268,7 +269,7 @@ function runVerification(scan, selected) {
 }
 
 function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null }) {
-  const { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
+  let { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
@@ -279,6 +280,11 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     const bindHarvest = taskRoute.status === 'verified' && ['L2', 'L3'].includes(taskRoute.declaredLevel);
     const before = bindHarvest ? verificationInputSnapshot(scan, paths) : null;
     projectVerification = runVerification(scan, selectedVerification);
+    // Manual verification can mutate any path or the routing configuration. Re-read
+    // both before claiming a final route; hook mode never runs project commands and
+    // continues to use only its materialized index snapshot.
+    paths = changedPaths(scan.root);
+    ({ config, taskRoute } = completionTaskRoute(scan, paths, taskLevel));
     if (before && projectVerification.status === 'passed') {
       let after;
       try {
@@ -304,7 +310,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     : assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
   harvestInput.changedPaths = changeEvidence.paths;
   const harvest = completionCapabilityHarvestSummary(config, scan, harvestInput);
-  if (changeEvidence.reason) harvest.reason = changeEvidence.reason;
+  if (changeEvidence.reason && taskRoute.status !== 'upgrade-required') harvest.reason = changeEvidence.reason;
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
     schemaVersion: 1,

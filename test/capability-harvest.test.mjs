@@ -28,6 +28,22 @@ function initialize(root, overrides = {}) {
   return config;
 }
 
+test('Chinese capability Skills localize generated instructions and preserve discovered evidence', (context) => {
+  const root = fixture('chinese-candidate');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { axios: '1.7.0' } }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/http-client.ts'), "import axios from 'axios'; export const client = axios.create({});\n");
+  const scan = scanProject(root);
+  const prepared = prepareCapabilityHarvest({ ...defaultConfig(scan), artifactLanguage: 'zh-CN' }, scan);
+  const artifacts = buildArtifacts(prepared.config, scan);
+  const skill = artifacts.find((entry) => entry.path === 'docs/ai/skills/project/use-project-http-client/SKILL.md');
+  assert.match(skill.content, /读取当前实现/);
+  assert.match(skill.content, /候选.*批准/);
+  assert.match(skill.content, /src\/http-client\.ts/);
+  assert.doesNotMatch(skill.content, /This is an automatically|Read the current implementation/);
+});
+
 test('harvest eligibility requires a verified behavior route and production source', () => {
   assert.equal(typeof harvestModule.assessHarvestEligibility, 'function');
   const assess = harvestModule.assessHarvestEligibility;

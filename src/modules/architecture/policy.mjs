@@ -241,7 +241,7 @@ export function architectureProfileDocument(config) {
     profile: {
       id: profile.id,
       version: profile.version,
-      summary: profile.summary,
+      summary: profile.translations?.[config.artifactLanguage]?.summary ?? profile.summary,
     },
     status: decision.status,
     mode: decision.mode,
@@ -249,10 +249,16 @@ export function architectureProfileDocument(config) {
     stackCandidates: decision.stackCandidates,
     topologyBinding: decision.topologyBinding,
     scope: decision.scope,
-    invariants: profile.invariants,
+    invariants: profile.translations?.[config.artifactLanguage]?.invariants ?? profile.invariants,
     placement: profile.placement,
     verification: decision.verification,
-    boundaries: [
+    boundaries: config.artifactLanguage === 'zh-CN' ? [
+      '此配置不创建产品目录、不生成业务代码、不移动文件，也不批准迁移。',
+      decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
+        ? 'aicg check 通过表示受管治理产物、当前文件树放置、可静态分析的相对 JS/TS 依赖方向以及跨模块公共入口已通过检查。'
+        : 'aicg check 通过仅验证受管治理产物；此配置未激活时，架构依赖方向仍仅为声明。',
+      '在项目添加专用验证器之前，动态导入、别名、不支持的语言、内聚性和单一职责仍仅为指引。',
+    ] : [
       'This profile does not create product directories, generate business code, move files, or approve a migration.',
       decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
         ? 'A passing aicg check verifies managed governance artifacts, current-tree placement, statically analyzable relative JS/TS dependency directions, and cross-module public entrypoints.'
@@ -268,6 +274,23 @@ export function architectureProfileDocument(config) {
 
 export function architectureRule(config) {
   const decision = config.architecture ?? legacyArchitectureDecision({ initialization: config.initialization ?? null });
+  if (config.artifactLanguage === 'zh-CN') return `---
+alwaysApply: false
+profiles: [implementation]
+---
+
+<!-- ${GENERATED_MARKER} -->
+
+# 架构边界
+
+唯一当前架构策略为 [architecture-profile.json](../architecture-profile.json)。状态为 \`${decision.status}\`，模式为 \`${decision.mode}\`。
+
+- 仅在策略为 active 时应用于新实现；不得据此推断迁移或重写既有代码已获批准。
+${decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
+    ? '- `aicg check .` 检查当前文件树的放置规则，以及 `docs/ai/module-graph.json` 声明的可静态分析的相对 JS/TS 依赖方向和跨模块公共入口。动态导入、别名、不支持的语言、内聚性和单一职责仍未经验证。'
+    : '- 架构配置未处于 active 状态时，`aicg check .` 不强制检查依赖方向；这些边界仅为声明。'}
+- 如果策略是 advisory 或 legacy-unconfigured，保留当前产品结构，并在修改前请求单独批准的架构决策。
+`;
   const title = decision.status === 'active' ? 'Active future-code module boundary' : decision.status === 'advisory' ? 'Advisory architecture boundary' : 'Legacy-unconfigured architecture boundary';
   const graphGuidance = decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
     ? '- `aicg check .` enforces current-tree placement plus statically analyzable relative JS/TS dependency directions and cross-module public entrypoints declared in `docs/ai/module-graph.json`. Dynamic imports, aliases, unsupported languages, cohesion, and single responsibility remain unverified.'

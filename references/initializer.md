@@ -76,6 +76,8 @@ aicg sync . --prune --approve <planHash>
 
 Review every action, reason, protected path, and the exact planHash. Only trusted unchanged fully managed current/historical artifacts qualify. Unknown/seed/drifted/evidence content is retained. Plan approval binds current config/manifest, provenance, tree contents and permissions; a changed input invalidates it. `--force` or unrelated approval cannot bypass pruning. Apply/check failure restores prior files, metadata, links, and manifest transactionally.
 
+Seed, drifted, and protected files are retained and listed only as manual cleanup candidates; cleanup requires a separate human review, and repeated prune approvals never delete them automatically.
+
 Adapters are ordinary generated files or native imports: Claude Code's managed `CLAUDE.md` imports `@AGENTS.md`; selected client rules/Skills resolve to canonical sources. No symlink/junction adapter is created. Link migration requires explicit authorization; controlled rollback may restore the user's original link only.
 
 ## Architecture and local output

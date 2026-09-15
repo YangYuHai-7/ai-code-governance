@@ -36,15 +36,17 @@ const SOURCE_EXTENSIONS = new Set([
   '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm', '.vue', '.svelte', '.astro',
 ]);
 
-const IMPLEMENTATION_EXTENSIONS = new Set([
+export const IMPLEMENTATION_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.vue', '.svelte', '.astro', '.py', '.go', '.java', '.kt', '.kts', '.rb', '.php',
   '.rs', '.cs', '.swift', '.c', '.cc', '.cpp', '.cxx', '.m', '.mm', '.scala', '.dart', '.ex', '.exs', '.r', '.lua', '.pl', '.s', '.asm',
 ]);
 
-const NON_IMPLEMENTATION_PREFIXES = [
+export const NON_IMPLEMENTATION_PREFIXES = [
   'scripts/', 'script/', 'tools/', 'tooling/', '.github/', 'migrations/', 'migration/', 'db/migrate/', 'database/migrations/',
   'drizzle/', 'prisma/migrations/', 'infra/', 'infrastructure/', 'terraform/',
 ];
+
+export const BUILD_CONFIGURATION_NAMES = ['vite', 'next', 'webpack', 'rollup', 'eslint', 'prettier', 'tailwind', 'postcss', 'jest', 'vitest', 'drizzle', 'prisma'];
 
 const GREENFIELD_SAFE_PATHS = [
   /^(?:README(?:\.[^/]+)?|LICENSE(?:\.[^/]+)?|NOTICE(?:\.[^/]+)?|CHANGELOG(?:\.[^/]+)?|CONTRIBUTING(?:\.[^/]+)?)$/i,
@@ -61,7 +63,8 @@ function normalizedExtension(relative) {
 }
 
 function isBuildConfiguration(relative) {
-  return /^(?:vite|next|webpack|rollup|eslint|prettier|tailwind|postcss|jest|vitest|drizzle|prisma)\.config\.[^/]+$/i.test(relative.split('/').at(-1));
+  const basename = relative.split('/').at(-1).toLowerCase();
+  return BUILD_CONFIGURATION_NAMES.some((name) => basename.startsWith(`${name}.config.`));
 }
 
 export function isImplementationSourcePath(relative) {

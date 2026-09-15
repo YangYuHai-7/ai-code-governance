@@ -52,9 +52,48 @@ function startsTopLevelYamlNode(line) {
   return line.length > 0 && !/^\s/.test(line) && !/^\s*#/.test(line);
 }
 
-function contextMapStructure(content) {
-  const lines = content.split(/\r?\n/);
+function normalizeContextMapping(content) {
   const issues = [];
+  const frames = [{ indent: -1, name: null, keys: new Set() }];
+  let topLevel = null;
+  const lines = content.split(/\r?\n/).map((line) => {
+    if (/^\s*(?:#.*)?$/.test(line)) return line;
+    const formal = topLevel === 'base' || topLevel === 'profiles';
+    const match = line.match(/^( *)(?:([A-Za-z0-9_-]+)|"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'):\s*(.*?)\s*$/);
+    if (!match) {
+      // This parser accepts a deliberately small block-mapping subset. Explicit,
+      // escaped, merge, anchor, and flow mapping keys must never shadow a route.
+      if (startsTopLevelYamlNode(line) || (formal && !/^ +-\s+/.test(line))) {
+        issues.push('unsupported mapping syntax in context-map routing');
+      }
+      return line;
+    }
+    const indent = match[1].length;
+    const name = match[2] ?? match[3] ?? match[4];
+    const value = match[5].replace(/\s+#.*$/, '');
+    if (indent === 0) topLevel = name;
+    while (frames.length > 1 && frames.at(-1).indent >= indent) frames.pop();
+    const parent = frames.at(-1);
+    if (parent.keys.has(name)) issues.push(`duplicate mapping key ${name} in context-map routing`);
+    parent.keys.add(name);
+    const inRouting = topLevel === 'base' || topLevel === 'profiles';
+    if (inRouting) {
+      const container = indent === 0 || (topLevel === 'profiles' && indent === 2);
+      if ((container && value !== '')
+        || (name === 'conditional' && !['', '{}'].includes(value))
+        || (name === 'required' && !['', '[]'].includes(value))
+        || (/^[{&*!?]/.test(value) && !(name === 'conditional' && value === '{}'))) {
+        issues.push(`unsupported mapping syntax for ${name} in context-map routing`);
+      }
+    }
+    if (value === '') frames.push({ indent, name, keys: new Set() });
+    return `${match[1]}${name}:${value ? ` ${value}` : ''}`;
+  });
+  return { lines, issues };
+}
+
+function contextMapStructure(content) {
+  const { lines, issues } = normalizeContextMapping(content);
   const profilesHeaders = lines.flatMap((line, index) => line === 'profiles:' ? [index] : []);
   const baseHeaders = lines.flatMap((line, index) => line === 'base:' ? [index] : []);
   if (profilesHeaders.length !== 1) issues.push(`expected exactly one top-level profiles container; found ${profilesHeaders.length}`);

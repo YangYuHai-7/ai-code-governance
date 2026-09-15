@@ -114,7 +114,39 @@ function sourcesMarkdown(sources) {
   }).join('\n');
 }
 
-function technicalSkill(standard, selection, snapshot) {
+function technicalSkill(standard, selection, snapshot, config) {
+  if (config.artifactLanguage === 'zh-CN') return `---
+name: ${standard.id}
+description: 仅在技术版本及项目证据与任务匹配时，应用已审阅的${standard.title}指引。
+---
+
+# ${standard.title}
+
+<!-- ${GENERATED_MARKER} -->
+
+## 适用性
+
+- 选择依据：\`${selection.kind}\` (${selection.evidence.join(', ')})
+- 来源状态：\`${snapshot.status}\`；审阅日期：${snapshot.reviewedAt}；${snapshot.refreshAfterDays} 天后更新。
+
+## 证据来源
+
+${standard.sources.map((source) => `- ${source.url ? `[${source.title}](${source.url})` : source.title} — ${source.kind}；获取日期：${source.retrievedAt}。`).join('\n')}
+
+## 必需实践
+
+${markdownList(standard.practices)}
+
+## 必需验证
+
+${markdownList(standard.verification)}
+
+## 边界
+
+${markdownList(standard.boundaries)}
+
+- 本技能仅声明指引，不代表已强制执行策略或已完成真实客户端验证。
+`;
   return `---
 name: ${standard.id}
 description: Apply the reviewed ${standard.title} guidance only when its declared technology evidence matches the task.
@@ -149,13 +181,13 @@ ${markdownList(standard.boundaries)}
 `;
 }
 
-function technicalStandardsManifest(selection) {
+function technicalStandardsManifest(selection, config = {}) {
   return {
     schemaVersion: 1,
     status: selection.snapshot.status,
     reviewedAt: selection.snapshot.reviewedAt,
     refreshAfterDays: selection.snapshot.refreshAfterDays,
-    boundary: selection.snapshot.boundary,
+    boundary: config.artifactLanguage === 'zh-CN' ? '本注册表是所选主要来源的可复现离线快照，不声称已安装框架为最新版本或项目已强制执行所有规则。' : selection.snapshot.boundary,
     technologyEvidence: {
       installedPackages: selection.installedPackages,
       configuredPackages: selection.configuredPackages,
@@ -173,14 +205,18 @@ function technicalStandardsManifest(selection) {
     })),
     generationVerification: {
       requiredCommand: 'aicg check .',
-      boundary: 'The generator verifies managed artifact integrity. Framework and business verification remain project-specific and must be run separately.',
+      boundary: config.artifactLanguage === 'zh-CN' ? '生成器验证受管产物完整性。框架与业务验证依赖具体项目，必须单独运行。' : 'The generator verifies managed artifact integrity. Framework and business verification remain project-specific and must be run separately.',
     },
   };
 }
 
 export function buildTechnicalStandardArtifacts(config, scan, registry = loadTechnicalStandardRegistry()) {
   const selection = selectTechnicalStandards(scan, config, registry);
-  const manifest = technicalStandardsManifest(selection);
+  selection.selected = selection.selected.map((entry) => ({
+    ...entry,
+    standard: { ...entry.standard, ...(entry.standard.translations?.[config.artifactLanguage] ?? {}) },
+  }));
+  const manifest = technicalStandardsManifest(selection, config);
   const artifacts = [{
     path: 'docs/ai/technical-standards.json',
     content: stableJson(manifest),
@@ -190,7 +226,7 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
   }];
   for (const { standard, selection: reason } of selection.selected) {
     const canonicalPath = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
-    const content = technicalSkill(standard, reason, selection.snapshot);
+    const content = technicalSkill(standard, reason, selection.snapshot, config);
     artifacts.push({
       path: canonicalPath,
       content,

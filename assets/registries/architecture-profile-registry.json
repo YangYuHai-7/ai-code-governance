@@ -6,6 +6,10 @@
       "version": 1,
       "status": "active",
       "summary": "A minimal module-boundary policy for new source without prescribing framework layers or creating product directories.",
+      "translations": { "zh-CN": {
+        "summary": "适用于新增源码的最小模块边界策略，不预设框架分层，也不创建产品目录。",
+        "invariants": ["将每项新增业务能力放在职责明确且有名称的功能或领域模块中。", "保持模块专属代码内聚，通过明确公共入口供其他模块使用。", "共享代码独立于具体业务模块。", "不得据此预先创建推测性的分层、仓储、接口、事件总线或空目录。", "不得将此策略视为移动、重写或格式化既有代码的授权。"]
+      } },
       "invariants": [
         "Place each new business capability in a named feature or domain module with a clear responsibility.",
         "Keep module-specific code cohesive and expose cross-module use through an explicit public entrypoint.",
