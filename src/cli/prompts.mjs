@@ -1,6 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import { defaultConfig } from '../generator.mjs';
+import { defaultConfig, governanceBootstrapCommand, projectLocalAvailable } from '../generator.mjs';
 import { classifyProject } from '../project-assessment.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { loadCapabilityRegistry } from '../registry.mjs';
@@ -199,11 +199,21 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       { label: zh ? '标准：加入路由、项目规则和验证指引' : 'Standard: add routing, project rules, and verification guidance', value: 'standard' },
       { label: zh ? '完整：适合长期、多人协作' : 'Complete: for long-running, multi-person work', value: 'complete' },
     ]);
-    const invocationMode = preserveInvocation ? seed.invocationMode : await guidedChoice(rl, interactionLanguage, zh ? '以后如何在这个项目里运行 AICG？' : 'How will you run AICG in this project?', [
-      { label: zh ? '使用项目已安装的版本（推荐）' : 'Use the version installed in this project (recommended)', value: 'project-local' },
-      { label: zh ? '每次使用当前固定版本' : 'Use the currently pinned version each time', value: 'npm-exec-pinned' },
-      { label: zh ? '使用电脑上全局安装的版本' : 'Use a globally installed version', value: 'global' },
-    ]);
+    let invocationMode = seed.invocationMode;
+    if (!preserveInvocation) {
+      const localAvailable = projectLocalAvailable(scan.root);
+      if (!localAvailable) console.log(zh
+        ? '\n未检测到项目本地 AICG 可执行文件。请显式选择固定版本启动或全局安装方式。'
+        : '\nNo project-local AICG executable was found. Explicitly choose pinned bootstrap or a global installation.');
+      invocationMode = await chooseOne(rl, zh ? '以后如何在这个项目里运行 AICG？' : 'How will you run AICG in this project?', [
+        ...(localAvailable ? [{ label: zh ? '使用项目已安装的版本（推荐）' : 'Use the version installed in this project (recommended)', value: 'project-local' }] : []),
+        { label: zh ? '固定版本启动（需要 npm 包解析）' : 'Pinned bootstrap (requires npm package resolution)', value: 'npm-exec-pinned' },
+        { label: zh ? '使用电脑上全局安装的版本' : 'Use a globally installed version', value: 'global' },
+      ], localAvailable ? 0 : null, interactionLanguage);
+      if (invocationMode === 'npm-exec-pinned') console.log(zh
+        ? `固定版本启动帮助：${governanceBootstrapCommand(seed)}。这不会安装日常 CLI；日常使用前请显式安装全局版本，或本地安装后选择 project-local。`
+        : `Pinned bootstrap help: ${governanceBootstrapCommand(seed)}. This does not install a daily CLI; explicitly install globally before daily work, or install locally and select project-local.`);
+    }
 
     return {
       ...seed,

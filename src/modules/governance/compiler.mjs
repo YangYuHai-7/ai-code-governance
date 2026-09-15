@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
 import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
@@ -35,8 +36,36 @@ function defaultCodeDocumentationPolicy(config, fallbackLifecycle = null) {
 export function governanceCommand(config, args = '') {
   const suffix = args ? ` ${args}` : '';
   if (config.invocationMode === 'project-local') return `npm exec -- aicg${suffix}`;
-  if (config.invocationMode === 'global') return `aicg${suffix}`;
+  // Pinned mode records bootstrap provenance; daily work requires an installed CLI.
+  return `aicg${suffix}`;
+}
+
+export function governanceBootstrapCommand(config, args = 'help') {
+  const suffix = args ? ` ${args}` : '';
   return `npm exec --yes --package=ai-code-governance@${config.toolVersion ?? TOOL_VERSION} -- aicg${suffix}`;
+}
+
+export function projectLocalAvailable(root) {
+  if (!root) return false;
+  try {
+    const packageName = 'ai-code-governance';
+    const packageRoot = path.join(root, 'node_modules', packageName);
+    const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
+    if (manifest.name !== packageName || typeof manifest.bin?.aicg !== 'string') return false;
+    const entry = path.resolve(packageRoot, manifest.bin.aicg);
+    if (!entry.startsWith(`${packageRoot}${path.sep}`) || !fs.statSync(entry).isFile()) return false;
+    const bin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'aicg.cmd' : 'aicg');
+    if (!fs.statSync(bin).isFile()) return false;
+    fs.accessSync(entry, fs.constants.R_OK);
+    if (process.platform === 'win32') {
+      const shim = fs.readFileSync(bin, 'utf8').replaceAll('\\', '/');
+      return shim.includes(`../${packageName}/${manifest.bin.aicg.replace(/^\.\//, '')}`);
+    }
+    fs.accessSync(bin, fs.constants.X_OK);
+    return fs.realpathSync(bin) === fs.realpathSync(entry);
+  } catch {
+    return false;
+  }
 }
 
 export function defaultConfig(scan) {
@@ -54,7 +83,7 @@ export function defaultConfig(scan) {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     generatedBy: TOOL_NAME,
     toolVersion: TOOL_VERSION,
-    invocationMode: 'npm-exec-pinned',
+    invocationMode: projectLocalAvailable(scan.root) ? 'project-local' : 'npm-exec-pinned',
     interactionLanguage: 'en',
     projectName: scan.projectName,
     projectMode: scan.projectMode,
@@ -211,6 +240,7 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Canonical governance: \`${config.canonicalRoot}/\`
 - Start with the \`ordinary\` profile in \`${config.canonicalRoot}/context-map.yaml\`; use a larger profile only when the task requires it.
 - Preserve unrelated user changes and remain within the requested scope.
+- If the configured AICG command is unavailable, stop and request an explicit install; never fetch a package during daily work.${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` Pinned bootstrap requires a global installation of ai-code-governance@${config.toolVersion ?? TOOL_VERSION}, or a local installation followed by an explicit project-local configuration choice.` : ''}
 - ${taskRoutingSummary(config)}
 - Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
 - Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
@@ -388,6 +418,8 @@ function bootstrapPrompt(config) {
   return `# AI-assisted governance completion
 
 The deterministic \`${governanceCommand(config, 'init')}\` phase is complete for ${config.projectName}.
+
+${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? `Bootstrap only: \`${governanceBootstrapCommand(config)}\` temporarily resolves the pinned package and does not install a daily CLI. Before daily commands, explicitly install with \`npm install --global ai-code-governance@${config.toolVersion ?? TOOL_VERSION}\`, or install locally and explicitly select project-local mode. If installation is unavailable, stop and report the missing CLI.\n` : ''}
 
 Inspect the repository and refine the human-maintained files under \`${config.canonicalRoot}/\`. Preserve generated adapters and existing user content. Before proposing any code change, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`; initialization decisions are authoritative there, and this seed prompt never authorizes migration or business-code changes. Derive business rules only from requirements, code, tests, ADRs, incidents, or explicit user decisions. Research current official documentation for the selected stack versions. Run \`${syncCommand}\` after canonical Skill or rule changes, then run \`${checkCommand}\` and real project verification commands. Do not enable hooks, CI, external providers, publishing, or destructive migration without explicit authorization.
 `;

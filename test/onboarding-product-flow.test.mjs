@@ -5,7 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { assessArchitecture } from '../src/architecture-assessment.mjs';
-import { defaultConfig, validateConfig } from '../src/generator.mjs';
+import { buildArtifacts, defaultConfig, governanceCommand, validateConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { promptConfig, promptGuidedConfig } from '../src/cli/prompts.mjs';
 
@@ -68,9 +68,79 @@ test('guided onboarding asks clients first and artifact language second', async 
   assert.deepEqual(config.initialization, { lifecycle: 'greenfield', existingCodeStrategy: null, source: null });
   assert.deepEqual(config.stacks, ['generic-unknown']);
   assert.equal(config.governanceDepth, 'minimal');
-  assert.equal(config.invocationMode, 'project-local');
+  assert.equal(config.invocationMode, 'npm-exec-pinned');
   assert.equal(config.features.aiAssist, false);
   assert.ok(config.initialClassification.requiredDecisions.some((decision) => decision.id === 'architecture-not-established' && decision.status === 'not-established'));
+});
+
+test('guided onboarding only recommends project-local when the package and executable exist', async (context) => {
+  const root = fixture('local-executable');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'node_modules', '.bin'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ devDependencies: { 'ai-code-governance': '0.2.0' } }));
+  const prompt = () => {
+    const scan = scanProject(root);
+    return promptGuidedConfig(scan, defaultConfig(scan), { locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '1']) });
+  };
+  assert.equal((await prompt()).invocationMode, 'npm-exec-pinned', 'a declared dependency is not an installed executable');
+  const installed = path.join(root, 'node_modules', 'ai-code-governance');
+  fs.mkdirSync(installed);
+  fs.copyFileSync('package.json', path.join(installed, 'package.json'));
+  fs.cpSync('bin', path.join(installed, 'bin'), { recursive: true });
+  fs.chmodSync(path.join(installed, 'bin', 'aicg.js'), 0o755);
+  for (const directory of ['src', 'assets']) fs.symlinkSync(path.resolve(directory), path.join(installed, directory), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal((await prompt()).invocationMode, 'npm-exec-pinned', 'a package without its bin entry is not locally invocable');
+  const bin = path.join(root, 'node_modules', '.bin', process.platform === 'win32' ? 'aicg.cmd' : 'aicg');
+  if (process.platform === 'win32') fs.writeFileSync(bin, '@node "%~dp0%\\..\\ai-code-governance\\bin\\aicg.js" %*\r\n');
+  else fs.symlinkSync('../ai-code-governance/bin/aicg.js', bin);
+  const scan = scanProject(root);
+  assert.equal(defaultConfig(scan).invocationMode, 'project-local');
+  assert.equal((await prompt()).invocationMode, 'project-local');
+  const npmArgs = ['exec', '--', 'aicg', '--version'];
+  const offline = spawnSync(process.env.npm_execpath ? process.execPath : 'npm', process.env.npm_execpath ? [process.env.npm_execpath, ...npmArgs] : npmArgs, {
+    cwd: root, encoding: 'utf8', timeout: 10_000, shell: !process.env.npm_execpath && process.platform === 'win32',
+    env: { ...process.env, npm_config_offline: 'true', npm_config_cache: path.join(root, 'empty-npm-cache'), npm_config_update_notifier: 'false' },
+  });
+  assert.equal(offline.status, 0, `${offline.error ?? ''}\n${offline.stderr}`);
+  assert.match(offline.stdout, /0\.2\.0/);
+  const config = { ...defaultConfig(scan), invocationMode: 'project-local' };
+  assert.equal(governanceCommand(config, 'check .'), 'npm exec -- aicg check .');
+  for (const artifact of buildArtifacts(config, scan)) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
+  fs.unlinkSync(bin);
+  assert.equal((await prompt()).invocationMode, 'npm-exec-pinned');
+});
+
+test('missing local executable requires an explicit bootstrap or global choice and preserves existing mode', async (context) => {
+  const root = fixture('invocation-choice');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  await assert.rejects(promptGuidedConfig(scan, defaultConfig(scan), {
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '']),
+  }), /explicit selection/i);
+  const global = await promptGuidedConfig(scan, defaultConfig(scan), {
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '2']),
+  });
+  assert.equal(global.invocationMode, 'global');
+  for (const invocationMode of ['project-local', 'global', 'npm-exec-pinned']) {
+    const existing = await promptGuidedConfig(scan, { ...defaultConfig(scan), invocationMode }, {
+      locale: 'en', preserveInvocation: true, readline: scriptedReadline(['1', '', '1', '', '1']),
+    });
+    assert.equal(existing.invocationMode, invocationMode);
+  }
+});
+
+test('legacy pinned config retains its mode while daily artifacts require installation and bootstrap stays separate', (context) => {
+  const root = fixture('legacy-pinned-daily');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), invocationMode: 'npm-exec-pinned' };
+  const artifacts = buildArtifacts(config, scan);
+  const content = (relative) => artifacts.find((artifact) => artifact.path === relative).content;
+  assert.equal(JSON.parse(content('.ai-governance/config.json')).invocationMode, 'npm-exec-pinned');
+  assert.equal(governanceCommand(config, 'complete .'), 'aicg complete .');
+  assert.match(content('AGENTS.md'), /unavailable.*stop.*install/i);
+  assert.match(content('docs/ai/bootstrap-prompt.md'), /npm exec --yes --package=ai-code-governance@0\.2\.0 -- aicg/);
+  for (const artifact of artifacts.filter((entry) => entry.path !== 'docs/ai/bootstrap-prompt.md')) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
 });
 
 test('guided existing-project onboarding shows detected stacks and requires confirmation or correction', async (context) => {
@@ -228,7 +298,8 @@ test('non-interactive init requires an explicit client scope and records invocat
   assert.equal(config.invocationMode, 'npm-exec-pinned');
   assert.equal(config.toolVersion, '0.2.0');
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
-  assert.match(agents, /npm exec --yes --package=ai-code-governance@0\.2\.0 -- aicg complete \./);
+  assert.match(agents, /aicg complete \./);
+  assert.doesNotMatch(agents, /npm exec --yes --package/);
 });
 
 test('legacy explicit clients in a config are normalized without losing compatibility', (context) => {
