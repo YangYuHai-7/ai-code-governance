@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { initCommand } from '../src/cli/commands/init.mjs';
 import { checkProject } from '../src/checker.mjs';
-import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
+import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
 
@@ -26,6 +26,34 @@ function git(root, args) {
 }
 
 const LEGACY_CONTEXT_MAP_FIXTURE = path.resolve('test/fixtures/context-map/legacy-v1-no-business.yaml');
+
+test('configuration defaults artifact and code documentation languages independently by project stage', (context) => {
+  const greenfieldRoot = fixture('language-default-greenfield');
+  const existingRoot = fixture('language-default-existing');
+  context.after(() => {
+    fs.rmSync(greenfieldRoot, { recursive: true, force: true });
+    fs.rmSync(existingRoot, { recursive: true, force: true });
+  });
+  fs.writeFileSync(path.join(existingRoot, 'app.js'), 'export const existing = true;\n');
+
+  const greenfieldScan = scanProject(greenfieldRoot);
+  const existingScan = scanProject(existingRoot);
+  assert.equal(defaultConfig(greenfieldScan).artifactLanguage, 'en');
+  assert.equal(defaultConfig(greenfieldScan).codeDocumentationPolicy, 'en');
+  assert.equal(defaultConfig(existingScan).codeDocumentationPolicy, 'inherit-existing');
+
+  const legacy = { ...defaultConfig(existingScan), artifactLanguage: 'bilingual' };
+  delete legacy.codeDocumentationPolicy;
+  assert.equal(validateConfig(legacy).codeDocumentationPolicy, 'inherit-existing');
+  const persisted = JSON.parse(buildArtifacts(legacy, existingScan).find((artifact) => artifact.path === '.ai-governance/config.json').content);
+  assert.equal(persisted.artifactLanguage, 'bilingual');
+  assert.equal(persisted.codeDocumentationPolicy, 'inherit-existing');
+
+  assert.throws(
+    () => validateConfig({ ...defaultConfig(greenfieldScan), codeDocumentationPolicy: 'bilingual' }),
+    /Unsupported code documentation policy/,
+  );
+});
 
 async function legacyBusinessUpgradeFixture(root, mutateLegacy = () => {}) {
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({

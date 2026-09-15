@@ -3,30 +3,108 @@ import { stdin as input, stdout as output } from 'node:process';
 import { defaultConfig } from '../generator.mjs';
 import { classifyProject } from '../project-assessment.mjs';
 import { usageError } from '../kernel/index.mjs';
+import { loadCapabilityRegistry } from '../registry.mjs';
 
 function indexes(value, size) {
   const result = value.split(',').map((item) => Number.parseInt(item.trim(), 10) - 1).filter((item) => Number.isInteger(item) && item >= 0 && item < size);
   return [...new Set(result)];
 }
 
-async function chooseOne(rl, label, options, defaultIndex = 0) {
+async function chooseOne(rl, label, options, defaultIndex = 0, locale = null) {
   console.log(`\n${label}`);
   options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}`));
-  const prompt = Number.isInteger(defaultIndex) ? `请选择 / Select [${defaultIndex + 1}]: ` : '请选择 / Select: ';
+  const basePrompt = locale === 'zh-CN' ? '请选择' : locale === 'en' ? 'Select' : '请选择 / Select';
+  const prompt = Number.isInteger(defaultIndex) ? `${basePrompt} [${defaultIndex + 1}]: ` : `${basePrompt}: `;
   const answer = (await rl.question(prompt)).trim();
   const selected = answer ? Number.parseInt(answer, 10) - 1 : defaultIndex;
   if (!Number.isInteger(selected) || selected < 0 || selected >= options.length) throw usageError(`必须显式选择 / An explicit selection is required for ${label}.`);
   return options[selected].value;
 }
 
-async function chooseMany(rl, label, options, defaultValues) {
+async function chooseMany(rl, label, options, defaultValues, locale = null) {
   console.log(`\n${label}`);
-  options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}${defaultValues.includes(option.value) ? ' [默认 / default]' : ''}`));
-  const answer = (await rl.question('请选择编号，多个用逗号分隔 / Select comma-separated numbers [defaults]: ')).trim();
-  if (!answer) return [...defaultValues];
+  const defaultMarker = locale === 'zh-CN' ? ' [默认]' : locale === 'en' ? ' [default]' : ' [默认 / default]';
+  options.forEach((option, index) => console.log(`  ${index + 1}. ${option.label}${defaultValues.includes(option.value) ? defaultMarker : ''}`));
+  const prompt = locale === 'zh-CN'
+    ? '请选择编号，多个用逗号分隔 [默认值]: '
+    : locale === 'en' ? 'Select comma-separated numbers [defaults]: '
+      : '请选择编号，多个用逗号分隔 / Select comma-separated numbers [defaults]: ';
+  const answer = (await rl.question(prompt)).trim();
+  if (!answer && defaultValues.length > 0) return [...defaultValues];
+  if (!answer) throw usageError(`至少选择一项 / Select at least one value for ${label}.`);
   const selected = indexes(answer, options.length);
   if (selected.length === 0) throw usageError(`至少选择一项 / Select at least one value for ${label}.`);
   return selected.map((index) => options[index].value);
+}
+
+function localized(locale, en, zh) {
+  if (locale === 'zh-CN') return zh;
+  if (locale === 'en') return en;
+  return `${en} / ${zh}`;
+}
+
+function clientOptions(locale) {
+  return [
+    { label: localized(locale, 'Codex (recommended)', 'Codex（推荐）'), value: 'codex' },
+    { label: 'Claude Code', value: 'claude-code' },
+    { label: 'Cursor', value: 'cursor' },
+    { label: localized(locale, 'Generic AGENTS.md-compatible agent', '通用 AGENTS.md 兼容 Agent'), value: 'generic' },
+  ];
+}
+
+function clientSupportMode(clients) {
+  return clients.length === 3 && ['codex', 'claude-code', 'cursor'].every((client) => clients.includes(client))
+    ? 'all-built-in'
+    : 'selected';
+}
+
+function artifactLanguageOptions(locale) {
+  return [
+    { label: localized(locale, 'English (recommended)', '英语（推荐）'), value: 'en' },
+    { label: localized(locale, 'Simplified Chinese', '简体中文'), value: 'zh-CN' },
+  ];
+}
+
+function stackOptions() {
+  return loadCapabilityRegistry().packs.map((pack) => ({
+    label: `${pack.id} (${pack.evidence})`,
+    value: pack.id,
+  }));
+}
+
+function detectedStackSummary(scan) {
+  return scan.stacks.map((stack) => {
+    const paths = stack.paths?.length > 0 ? `; ${stack.paths.join(', ')}` : '';
+    return `${stack.id} (${stack.evidence}${paths})`;
+  }).join(', ');
+}
+
+async function promptStacks(rl, scan, initialization, locale, { guided = false } = {}) {
+  const choose = guided
+    ? (label, options, defaultIndex) => guidedChoice(rl, locale, label, options, defaultIndex)
+    : (label, options, defaultIndex) => chooseOne(rl, label, options, defaultIndex, locale);
+  const detected = scan.stacks.map((stack) => stack.id);
+  if (initialization.lifecycle === 'existing') {
+    const separator = locale === 'zh-CN' ? '：' : ': ';
+    console.log(`\n${localized(locale, 'Detected technology stacks', '检测到的技术栈')}${separator}${detectedStackSummary(scan)}`);
+    const action = await choose(
+      localized(locale, 'Confirm or correct detected technology stacks?', '确认或修正检测到的技术栈？'),
+      [
+        { label: localized(locale, 'Confirm detected stacks (recommended)', '确认检测结果（推荐）'), value: 'confirm' },
+        { label: localized(locale, 'Correct the stack selection', '修正技术栈选择'), value: 'correct' },
+      ],
+      0,
+    );
+    if (action === 'confirm') return detected;
+    return chooseMany(rl, localized(locale, 'Correct technology stacks', '修正技术栈'), stackOptions(), detected, locale);
+  }
+  return chooseMany(
+    rl,
+    localized(locale, 'Target technology stacks', '目标技术栈'),
+    stackOptions(),
+    detected,
+    locale,
+  );
 }
 
 async function yesNo(rl, label, defaultValue = false) {
@@ -55,17 +133,40 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
   readline = null,
   preserveDepth = false,
   preserveArtifactLanguage = false,
+  preserveCodeDocumentationPolicy = false,
   preserveInvocation = false,
 } = {}) {
   const rl = readline ?? createInterface({ input, output });
   const ownsReadline = readline === null;
   try {
-    const interactionLanguage = locale ?? await guidedChoice(rl, 'en', 'Choose your language / 选择语言', [
-      { label: '中文', value: 'zh-CN' },
-      { label: 'English', value: 'en' },
-    ], seed.interactionLanguage === 'zh-CN' ? 0 : 1);
+    const interactionLanguage = locale ?? seed.interactionLanguage ?? 'en';
     const zh = interactionLanguage === 'zh-CN';
     const assessment = classifyProject(scan);
+
+    let clients = seed.clients;
+    let clientSupport = seed.clientSupport;
+    if (!clientSupport) {
+      clients = await chooseMany(
+        rl,
+        localized(locale, 'Which AI coding tools should this project support?', '要支持哪些 AI 编码工具？'),
+        clientOptions(locale),
+        ['codex'],
+        locale,
+      );
+      clientSupport = {
+        mode: clientSupportMode(clients),
+        selectedClients: clients,
+        source: 'interactive',
+      };
+    }
+
+    const artifactLanguage = preserveArtifactLanguage ? seed.artifactLanguage : await guidedChoice(
+      rl,
+      interactionLanguage,
+      localized(locale, 'Governance artifact language', '治理产物语言'),
+      artifactLanguageOptions(locale),
+      0,
+    );
 
     let initialization = seed.initialization?.lifecycle
       ? { ...seed.initialization }
@@ -79,6 +180,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       ], defaultIndex);
       initialization = { lifecycle, existingCodeStrategy: null, source: null };
     }
+    const stacks = await promptStacks(rl, scan, initialization, interactionLanguage, { guided: true });
     if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
       const existingCodeStrategy = await guidedChoice(rl, interactionLanguage, zh ? '新治理如何对待现有代码？' : 'How should new governance treat existing code?', [
         { label: zh ? '保持现有代码不变（推荐）' : 'Keep existing code unchanged (recommended)', value: 'keep-existing' },
@@ -86,23 +188,6 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
         { label: zh ? '只准备一份待单独批准的分阶段计划' : 'Prepare a separately approved staged plan', value: 'staged-migration' },
       ]);
       initialization = { ...initialization, existingCodeStrategy };
-    }
-
-    let clients = seed.clients;
-    let clientSupport = seed.clientSupport;
-    if (!clientSupport) {
-      const clientChoice = await guidedChoice(rl, interactionLanguage, zh ? '要支持哪些 AI 编码工具？' : 'Which AI coding tools should this project support?', [
-        { label: zh ? '仅 Codex（推荐）' : 'Codex only (recommended)', value: 'codex' },
-        { label: zh ? '全部内建工具（Codex、Claude Code、Cursor）' : 'All built-in tools (Codex, Claude Code, Cursor)', value: 'all' },
-        { label: zh ? '仅 Claude Code' : 'Claude Code only', value: 'claude-code' },
-        { label: zh ? '仅 Cursor' : 'Cursor only', value: 'cursor' },
-      ]);
-      clients = clientChoice === 'all' ? ['codex', 'claude-code', 'cursor'] : [clientChoice];
-      clientSupport = {
-        mode: clientChoice === 'all' ? 'all-built-in' : 'selected',
-        selectedClients: clients,
-        source: 'interactive',
-      };
     }
 
     const governanceDepth = preserveDepth ? seed.governanceDepth : await guidedChoice(rl, interactionLanguage, zh ? '需要多少治理内容？' : 'How much governance do you need?', [
@@ -119,9 +204,13 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
     return {
       ...seed,
       interactionLanguage,
-      artifactLanguage: preserveArtifactLanguage ? seed.artifactLanguage : interactionLanguage,
+      artifactLanguage,
+      codeDocumentationPolicy: preserveCodeDocumentationPolicy
+        ? seed.codeDocumentationPolicy
+        : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',
       clients,
       clientSupport,
+      stacks,
       governanceDepth,
       invocationMode,
       initialization,
@@ -140,14 +229,32 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
   }
 }
 
-export async function promptConfig(scan, seed = defaultConfig(scan), { locale = null } = {}) {
-  const rl = createInterface({ input, output });
+export async function promptConfig(scan, seed = defaultConfig(scan), {
+  locale = null,
+  readline = null,
+  preserveCodeDocumentationPolicy = false,
+} = {}) {
+  const rl = readline ?? createInterface({ input, output });
+  const ownsReadline = readline === null;
   try {
-    const interactionLanguage = locale ?? await chooseOne(rl, 'Interaction language / 交互语言', [
-      { label: '中文', value: 'zh-CN' },
-      { label: 'English', value: 'en' },
-    ], seed.interactionLanguage === 'zh-CN' ? 0 : 1);
+    const interactionLanguage = locale ?? seed.interactionLanguage ?? 'en';
     const zh = interactionLanguage === 'zh-CN';
+
+    const clients = await chooseMany(
+      rl,
+      localized(locale, 'Which AI coding tools should this project support?', '要支持哪些 AI 编码工具？'),
+      clientOptions(locale),
+      seed.clientSupport?.selectedClients ?? ['codex'],
+      locale,
+    );
+    const artifactLanguage = await chooseOne(
+      rl,
+      localized(locale, 'Governance artifact language', '治理产物语言'),
+      artifactLanguageOptions(locale),
+      0,
+      locale,
+    );
+
     console.log(zh ? `目标：${scan.root}` : `Target: ${scan.root}`);
     console.log(zh ? `检测到的项目模式：${scan.projectMode}` : `Detected mode: ${scan.projectMode}`);
     console.log(zh ? `检测到的技术栈：${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}` : `Detected stacks: ${scan.stacks.map((stack) => `${stack.id} (${stack.evidence})`).join(', ')}`);
@@ -163,16 +270,12 @@ export async function promptConfig(scan, seed = defaultConfig(scan), { locale = 
       ], null);
       initialization = { lifecycle, existingCodeStrategy: null, source: null };
     } else if (assessment.codebase.lifecycle.value === 'existing') {
-      const strategy = await chooseOne(rl, 'Existing-code strategy', [
-        { label: 'Keep existing code unchanged', value: 'keep-existing' },
-        { label: 'Apply the standard to new code only', value: 'new-code-standard' },
-        { label: 'Prepare a separately approved staged migration', value: 'staged-migration' },
-      ], null);
-      initialization = { lifecycle: 'existing', existingCodeStrategy: strategy, source: null };
+      initialization = { lifecycle: 'existing', existingCodeStrategy: null, source: null };
     } else {
       console.log('Repository lifecycle: greenfield (high-confidence scanner result).');
       initialization = { lifecycle: 'greenfield', existingCodeStrategy: null, source: null };
     }
+    const stacks = await promptStacks(rl, scan, initialization, interactionLanguage);
     if (initialization.lifecycle === 'existing' && !initialization.existingCodeStrategy) {
       const strategy = await chooseOne(rl, 'Existing-code strategy', [
         { label: 'Keep existing code unchanged', value: 'keep-existing' },
@@ -182,33 +285,11 @@ export async function promptConfig(scan, seed = defaultConfig(scan), { locale = 
       initialization = { ...initialization, existingCodeStrategy: strategy };
     }
 
-    const clientMode = await chooseOne(rl, zh ? '客户端支持范围' : 'Client support scope', [
-      { label: zh ? '全部内建客户端（Codex、Claude Code、Cursor）' : 'All built-in clients (Codex, Claude Code, Cursor)', value: 'all-built-in' },
-      { label: zh ? '仅指定客户端' : 'Selected clients only', value: 'selected' },
-    ], null);
-    const clients = clientMode === 'all-built-in' ? ['codex', 'claude-code', 'cursor'] : await chooseMany(
-      rl,
-      zh ? 'AI 客户端' : 'AI clients',
-      [
-        { label: 'Codex', value: 'codex' },
-        { label: 'Claude Code', value: 'claude-code' },
-        { label: 'Cursor', value: 'cursor' },
-        { label: 'Generic AGENTS.md-compatible agent', value: 'generic' },
-      ],
-      [],
-    );
-    const allPacks = (await import('../registry.mjs')).loadCapabilityRegistry().packs.map((pack) => ({ label: `${pack.id} (${pack.evidence})`, value: pack.id }));
-    const stacks = await chooseMany(rl, 'Technology stacks', allPacks, seed.stacks);
     const governanceDepth = await chooseOne(rl, 'Governance depth', [
       { label: 'Minimal', value: 'minimal' },
       { label: 'Standard (recommended)', value: 'standard' },
       { label: 'Complete', value: 'complete' },
     ], ['minimal', 'standard', 'complete'].indexOf(seed.governanceDepth));
-    const artifactLanguage = await chooseOne(rl, 'Governance artifact language', [
-      { label: 'Chinese', value: 'zh-CN' },
-      { label: 'English', value: 'en' },
-      { label: 'Bilingual', value: 'bilingual' },
-    ], ['zh-CN', 'en', 'bilingual'].indexOf(seed.artifactLanguage));
     const supportedOs = await chooseMany(rl, 'Supported operating systems', [
       { label: 'macOS', value: 'macos' },
       { label: 'Windows', value: 'windows' },
@@ -236,10 +317,17 @@ export async function promptConfig(scan, seed = defaultConfig(scan), { locale = 
       ...seed,
       interactionLanguage,
       clients,
-      clientSupport: { mode: clientMode, selectedClients: clients, source: 'interactive' },
+      clientSupport: {
+        mode: clientSupportMode(clients),
+        selectedClients: clients,
+        source: 'interactive',
+      },
       stacks,
       governanceDepth,
       artifactLanguage,
+      codeDocumentationPolicy: preserveCodeDocumentationPolicy
+        ? seed.codeDocumentationPolicy
+        : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',
       supportedOs,
       initialization,
       features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, aiAssist },
@@ -247,7 +335,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), { locale = 
       confirmedRiskSignals,
     };
   } finally {
-    rl.close();
+    if (ownsReadline) rl.close();
   }
 }
 export async function confirmPlan(paths, planHash = null, initialization = null, implementationBoundary = null) {
