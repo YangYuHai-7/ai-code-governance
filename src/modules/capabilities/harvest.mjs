@@ -1,6 +1,9 @@
 import { usageError } from '../../kernel/index.mjs';
-import { unique } from '../../shared/index.mjs';
+import { matchSimpleGlob, normalizeRelative, unique } from '../../shared/index.mjs';
+import { taskRoutingPolicy } from '../governance/index.mjs';
+import { readText } from '../../adapters/filesystem/index.mjs';
 import { renderCapabilityArtifacts } from './artifacts.mjs';
+import { sourceTokens } from './source-tokenizer.mjs';
 import {
   commandEvidence,
   detectCapabilityCandidates,
@@ -12,6 +15,104 @@ import {
 } from './detector.mjs';
 
 export { detectCapabilityCandidates };
+
+export function isProductionCapabilityPath(relative) {
+  if (!isSafeCapabilityPath(relative)) return false;
+  const normalized = normalizeRelative(relative).toLowerCase();
+  // Reuse Task 5's source roots, not its risk levels: migrations/config can be L3
+  // without implementing a reusable product capability.
+  const rules = taskRoutingPolicy({}).pathRules;
+  const sourceRules = rules.filter((rule) => ['production-source', 'public-contract'].includes(rule.id));
+  if (!sourceRules.some((rule) => rule.patterns.some((pattern) => matchSimpleGlob(normalized, pattern)))) return false;
+  if (/(^|\/)(?:docs?|tests?|__tests__|fixtures?|__fixtures__|tmp|temp|scripts?|config|configs?|migrations?|dist|build|coverage|node_modules)(?:\/|$)/.test(normalized)) return false;
+  if (/(?:^|[/._-])(?:test|spec|fixture|tmp|temp|temporary|config|migration)(?=[/._-]|$)/.test(normalized)) return false;
+  return /\.(?:[cm]?js|jsx|tsx?|py|go|rs|java|kt|kts|swift|dart|cs|cpp|cc|c|h|hpp|rb|php|vue|svelte)$/.test(normalized);
+}
+
+export function assessHarvestEligibility({ taskRoute, changedPaths = [], verification } = {}) {
+  if (taskRoute?.status !== undefined && taskRoute.status !== 'verified') {
+    const reason = ['upgrade-required', 'unverified-declaration'].includes(taskRoute.status) ? taskRoute.status : 'unverified';
+    return { eligible: false, reason: `task-route-${reason}` };
+  }
+  const level = taskRoute?.declaredLevel ?? taskRoute?.level;
+  if (!['L2', 'L3'].includes(level) || taskRoute?.reasonCodes?.some((code) => ['mutation:none', 'mutation:governance-only', 'mutation:non-production'].includes(code))) {
+    return { eligible: false, reason: 'no-verified-product-behavior-change' };
+  }
+  if (verification?.status !== 'passed') {
+    const status = ['not-requested', 'failed', 'skipped-after-governance-failure', 'skipped-after-task-route-failure'].includes(verification?.status) ? verification.status : 'unverified';
+    return { eligible: false, reason: `project-verification-${status}` };
+  }
+  if (!Array.isArray(changedPaths) || !changedPaths.some(isProductionCapabilityPath)) return { eligible: false, reason: 'no-production-source-change' };
+  return { eligible: true, reason: 'verified-product-behavior-change' };
+}
+
+export function capabilitySourceChanged(before, after) {
+  // Tokens preserve string values while excluding formatting and comments.
+  const tokens = (source) => sourceTokens(source).filter((token) => token.kind !== 'punctuation' || token.value !== ';');
+  return JSON.stringify(tokens(before)) !== JSON.stringify(tokens(after));
+}
+
+function deduplicateCandidate(candidate, existing) {
+  const overlap = (left, right) => left.some((entry) => right.includes(entry));
+  const priorities = [
+    ['capability-id', existing.filter((entry) => entry.id === candidate.id)],
+    ['public-entrypoint', existing.filter((entry) => overlap(entry.publicEntrypoints, [...candidate.publicEntrypoints, ...candidate.implementationPaths]))],
+    ['implementation-path', existing.filter((entry) => overlap(entry.implementationPaths, candidate.implementationPaths))],
+  ];
+  for (const [basis, matches] of priorities) {
+    if (matches.length === 0) continue;
+    if (matches.length > 1) return { capabilityId: candidate.id, existingCapabilityId: null, outcome: 'no-skill-with-reason', reason: `ambiguous-${basis}-match` };
+    const match = matches[0];
+    return {
+      capabilityId: candidate.id,
+      existingCapabilityId: match.id,
+      outcome: ['retired', 'superseded'].includes(match.status) ? 'no-skill-with-reason' : basis === 'capability-id' ? 'update-existing' : 'extend-existing',
+      reason: ['retired', 'superseded'].includes(match.status) ? 'inactive-capability-requires-owner-review' : `matched-${basis}`,
+    };
+  }
+  return { capabilityId: candidate.id, existingCapabilityId: null, outcome: 'create-new', reason: 'no-existing-capability-match' };
+}
+
+function deduplicateCandidates(candidates, existing) {
+  const decisions = candidates.map((candidate) => deduplicateCandidate(candidate, existing));
+  const priority = ['matched-capability-id', 'matched-public-entrypoint', 'matched-implementation-path'];
+  return decisions.map((decision) => {
+    if (!decision.existingCapabilityId || decision.outcome === 'no-skill-with-reason') return decision;
+    const competing = decisions.filter((entry) => entry.existingCapabilityId === decision.existingCapabilityId && entry.outcome !== 'no-skill-with-reason');
+    const best = Math.min(...competing.map((entry) => priority.indexOf(entry.reason)));
+    const winners = competing.filter((entry) => priority.indexOf(entry.reason) === best);
+    if (winners.length === 1 && winners[0] === decision) return decision;
+    return { ...decision, outcome: 'no-skill-with-reason', reason: 'conflicting-detected-capabilities' };
+  });
+}
+
+export function completionCapabilityHarvestSummary(config, scan, input) {
+  const eligibility = assessHarvestEligibility(input);
+  const base = {
+    ...eligibility,
+    status: 'skipped',
+    candidates: [],
+    boundary: 'Dry-run candidates only. No Skill, manifest, catalog, or index is written. Harvest and promotion require separate explicit approval; candidates are not adopted or enforced.',
+  };
+  if (!eligibility.eligible) return base;
+  const changed = new Set(input.changedPaths.filter(isProductionCapabilityPath).map(normalizeRelative));
+  const productionScan = {
+    ...scan,
+    files: sourceFiles(scan).filter((file) => isProductionCapabilityPath(file.relative)
+      && sourceTokens(readText(file.absolute)).some((token) => token.kind === 'identifier' && token.value === 'export')),
+  };
+  const discovered = detectCapabilityCandidates(productionScan)
+    .filter((entry) => entry.implementationPaths.some((relative) => changed.has(relative)));
+  if (discovered.length === 0) return { ...base, eligible: false, reason: 'no-reusable-public-capability-change' };
+  const existing = validateProjectCapabilities(config.projectCapabilities ?? []);
+  const decisions = deduplicateCandidates(discovered, existing);
+  return {
+    ...base,
+    status: 'dry-run',
+    verification: { command: input.verification.command, status: input.verification.status, outputDigest: input.verification.outputDigest },
+    candidates: discovered.map((capability, index) => ({ ...decisions[index], capability })),
+  };
+}
 
 const CAPABILITY_STATES = new Set(['candidate', 'adopted', 'superseded', 'retired']);
 const HARVEST_OUTCOMES = new Set(['candidate-recorded', 'adopted-promoted', 'no-skill-with-reason', 'review-required', 'not-run']);
@@ -190,8 +291,24 @@ export function prepareCapabilityHarvest(config, scan) {
   const existing = validateProjectCapabilities(config.projectCapabilities ?? []);
   const byId = new Map(existing.map((capability) => [capability.id, capability]));
   const discovered = detectCapabilityCandidates(scan);
-  const outcomes = discovered.map((entry) => preserveOrUpdate(byId.get(entry.id), entry));
-  const discoveredIds = new Set(discovered.map((entry) => entry.id));
+  const decisions = deduplicateCandidates(discovered, existing);
+  const currentSources = new Set(sourceFiles(scan).map((file) => file.relative));
+  const outcomes = discovered.flatMap((entry, index) => {
+    const decision = decisions[index];
+    if (decision.outcome === 'no-skill-with-reason') return [];
+    const previous = byId.get(decision.existingCapabilityId);
+    const implementationPaths = decision.outcome === 'extend-existing'
+      ? unique([...previous.implementationPaths.filter((relative) => currentSources.has(relative)), ...entry.implementationPaths]).sort((left, right) => left.localeCompare(right))
+      : entry.implementationPaths;
+    const candidate = previous ? {
+      ...entry, id: previous.id, skill: previous.skill, owner: previous.owner,
+      publicEntrypoints: previous.publicEntrypoints,
+      implementationPaths,
+      implementationFingerprint: implementationFingerprint(scan, implementationPaths),
+    } : entry;
+    return [preserveOrUpdate(previous, candidate)];
+  });
+  const discoveredIds = new Set(outcomes.map((entry) => entry.capability.id));
   const retainedOutcomes = existing.filter((entry) => !discoveredIds.has(entry.id)).map((entry) => retainedOutcome(entry, scan));
   const allOutcomes = [...outcomes, ...retainedOutcomes];
   const capabilities = allOutcomes.map((entry) => entry.capability).sort((left, right) => left.id.localeCompare(right.id));
@@ -208,7 +325,7 @@ export function prepareCapabilityHarvest(config, scan) {
     productChangeFingerprint: productFingerprint(scan),
     outcome,
     candidateIds,
-    detectedCapabilityIds: discovered.map((entry) => entry.id),
+    detectedCapabilityIds: [...discoveredIds].sort((left, right) => left.localeCompare(right)),
     drift,
     reviewItems,
     verification: {
@@ -218,6 +335,7 @@ export function prepareCapabilityHarvest(config, scan) {
     },
   };
   return {
+    decisions,
     config: {
       ...config,
       projectCapabilities: capabilities,
@@ -346,6 +464,7 @@ export function capabilityHarvestSummary(config, scan) {
     mode: 'read-only-preview',
     target: scan.root,
     ...prepared.harvest,
+    decisions: prepared.decisions,
     plannedCapabilities: prepared.config.projectCapabilities,
     boundary: 'No file was written. Applying a harvest requires the explicit write command or a matching chat execution-plan approval.',
   };

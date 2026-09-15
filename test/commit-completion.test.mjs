@@ -41,6 +41,70 @@ function write(root, relative, content = 'export const value = true;\n') {
   fs.writeFileSync(path.join(root, relative), content);
 }
 
+test('completion returns current verified capability candidates without writing or staging artifacts', (context) => {
+  const root = fixture('harvest-summary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: 'node -e "process.exit(0)"', 'test:fail': 'node -e "process.exit(1)"' } }));
+  assert.equal(run(['sync', root]).status, 0);
+  baseline(root);
+  write(root, 'src/modules/http/index.ts', "import axios from 'axios'; export const client = axios.create({});\n");
+  const tree = () => Object.fromEntries(fs.readdirSync(root, { recursive: true })
+    .filter((relative) => !relative.startsWith(`.git${path.sep}`) && fs.lstatSync(path.join(root, relative)).isFile())
+    .sort().map((relative) => [relative, fs.readFileSync(path.join(root, relative), 'base64')]));
+  const before = tree();
+  const index = git(root, ['ls-files', '--stage']).stdout;
+  const result = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.harvest?.status, 'dry-run');
+  assert.equal(result.harvest.eligible, true);
+  assert.equal(result.harvest.candidates[0].outcome, 'create-new');
+  assert.equal(result.harvest.candidates[0].capability.status, 'candidate');
+  assert.equal(result.harvest.candidates[0].capability.promotion, undefined);
+  assert.equal(result.harvest.verification.command, 'npm run test');
+  assert.deepEqual(tree(), before);
+  assert.equal(git(root, ['ls-files', '--stage']).stdout, index);
+  for (const [options, reason] of [
+    [{ taskLevel: 'L2' }, 'project-verification-not-requested'],
+    [{ taskLevel: 'L2', verificationCommand: 'npm run test:fail' }, 'project-verification-failed'],
+    [{ verificationCommand: 'npm test' }, 'task-route-unverified-declaration'],
+    [{ taskLevel: 'L1', verificationCommand: 'npm test' }, 'task-route-upgrade-required'],
+  ]) {
+    const skipped = runCompletion(root, options).harvest;
+    assert.equal(skipped.status, 'skipped');
+    assert.equal(skipped.reason, reason);
+    assert.deepEqual(skipped.candidates, []);
+  }
+  baseline(root);
+  write(root, 'src/modules/unrelated/index.ts');
+  assert.equal(runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' }).harvest.reason, 'no-reusable-public-capability-change');
+  baseline(root);
+  write(root, 'src/modules/http/index.ts', "import axios from 'axios';\n\nexport const client = axios.create({ });\n");
+  const formatOnly = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' }).harvest;
+  assert.equal(formatOnly.status, 'skipped');
+  assert.equal(formatOnly.reason, 'no-production-source-change');
+});
+
+test('completion skips harvesting when a verified command leaves HEAD source evidence unreadable', (context) => {
+  const root = fixture('harvest-missing-source-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  const source = 'src/modules/http/index.ts';
+  write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 1000 });\n");
+  baseline(root);
+  const blob = git(root, ['rev-parse', `HEAD:${source}`]).stdout.trim();
+  const objectPath = `.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`;
+  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: `node -e "require('fs').unlinkSync('${objectPath}')"` } }));
+  assert.equal(run(['sync', root]).status, 0);
+  baseline(root);
+  write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 2000 });\n");
+  const result = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' });
+  assert.equal(result.projectVerification.status, 'passed');
+  assert.equal(result.harvest.status, 'skipped');
+  assert.equal(result.harvest.reason, 'product-change-evidence-unavailable');
+  assert.deepEqual(result.harvest.candidates, []);
+});
+
 test('completion rejects L1 after a production or high-risk diff', (context) => {
   const root = fixture('task-level');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
