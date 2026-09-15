@@ -74,6 +74,7 @@ export function walkFilesDetailed(root, options = {}) {
   const ignoredAtAnyDepth = new Set([...((options.ignoredAtAnyDepth ?? ignored))].map(normalizeIgnored));
   const ignoredAtRoot = new Set([...ignored, ...(options.ignoredAtRoot ?? []).map(normalizeIgnored)]);
   const result = [];
+  const directories = [];
   const truncatedDirectories = [];
   const directoryBudgetPaths = [];
   const oversizedFiles = [];
@@ -91,6 +92,7 @@ export function walkFilesDetailed(root, options = {}) {
   function visit(current, depth) {
     if (stopped()) return;
     const currentRelative = normalizeRelative(path.relative(root, current)) || '.';
+    if (options.includeDirectories === true) directories.push({ absolute: current, relative: currentRelative, type: 'directory' });
     if (observedDirectories >= maxDirectories) {
       directoryLimitReached = true;
       directoryBudgetPaths.push(currentRelative);
@@ -160,6 +162,7 @@ export function walkFilesDetailed(root, options = {}) {
   const byPath = (left, right) => left.path.localeCompare(right.path) || left.operation?.localeCompare(right.operation ?? '') || 0;
   return {
     files: result,
+    ...(options.includeDirectories === true ? { directories } : {}),
     budget: {
       maxDepth,
       maxFiles,
