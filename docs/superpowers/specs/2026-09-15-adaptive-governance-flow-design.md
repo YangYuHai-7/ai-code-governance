@@ -1,128 +1,128 @@
-# Adaptive AI Code Governance Flow Design
+# 自适应 AI 编码治理流程设计
 
-## Status
+## 状态
 
-- Decision: approved by the Product Owner on 2026-09-15.
-- Scope: redesign AICG onboarding, artifact selection, task routing, approval gates, and capability harvesting so governance effort scales with the actual task.
-- Default governance artifact language: English.
-- Initial first-class artifact languages: English and Simplified Chinese.
-- Compatibility boundary: existing repositories and existing bilingual configurations remain readable and are never destructively compacted by an ordinary upgrade.
-- Evidence boundary: model classification can recommend a route, but only repository state, owner-confirmed risk, real commands, and current-diff evidence may satisfy a machine gate.
+- 决策状态：产品负责人已于 2026-09-15 批准。
+- 范围：重新设计 AICG 的安装引导、产物选择、任务路由、批准门槛和能力收割，使治理成本随真实任务动态变化。
+- 治理产物默认语言：英语。
+- 首批正式支持的治理产物语言：英语、简体中文。
+- 兼容边界：现有项目和已有双语配置必须继续可读；普通升级不得破坏性压缩历史产物。
+- 证据边界：模型分类只能推荐流程；只有仓库状态、负责人确认的风险、真实命令和当前 diff 证据才能满足机器门禁。
 
-## Problem
+## 问题
 
-The current product contains the right governance capabilities but exposes too many of them as an unconditional baseline. A minimal Codex-only project currently produces 19 governance files, broader presets produce 21–37 files, and ordinary implementation begins with roughly 1,600–2,700 governance tokens. By contrast, the governance checker itself takes roughly 0.1 seconds on small fixtures and about 0.68 seconds on a 10,000-file fixture. The primary latency is therefore context and ceremony, not checker CPU time.
+当前产品包含了正确的治理能力，但把过多能力放进了无条件基线。Codex-only 的最小档目前会生成 19 个治理文件，更高档位会生成 21–37 个文件；普通实现任务启动时也需要固定加载约 1,600–2,700 个治理 token。相比之下，小型 fixture 上的治理检查约为 0.1 秒，10,000 文件 fixture 约为 0.68 秒。因此主要延迟来自上下文和流程仪式，而不是检查器本身的 CPU 时间。
 
-The onboarding flow also conflates interaction language with artifact language, defaults generated artifacts to Chinese in `defaultConfig()`, and can treat a complete capability model as the default response to a vague governance request. At task time, labels such as "one-sentence requirement", "complete requirement", "small issue", and "large feature" mix two different dimensions: input clarity and change impact. This can force a trivial but tersely worded request through the longest process while allowing a clearly written high-risk change to look deceptively simple.
+当前安装流程还存在三个问题：交互语言和治理产物语言可能被绑定；`defaultConfig()` 默认生成中文产物；模糊的治理请求可能直接触发完整能力模型。任务运行阶段又把“一句话需求”“完整需求”“小问题”“大功能”混在同一分类里，而它们实际属于两个维度：输入明确度与改动影响。这会让一个表达简短的小需求走最重流程，也可能让一份写得很完整的高风险需求显得过于简单。
 
-The redesigned product must keep a single canonical source, minimal routing, real machine gates, safe migration, and capability evolution without making every task execute the full lifecycle.
+新设计必须同时保留单一正典、最小路由、真实机器门禁、安全迁移和能力成长，但不能让所有任务都执行完整生命周期。
 
-## Goals
+## 目标
 
-1. Make the first user-visible onboarding decision the supported coding agents.
-2. Ask separately for governance artifact language and default it to English.
-3. Detect existing technology stacks before asking questions; ask existing-project owners to confirm detection instead of selecting a replacement stack.
-4. Extract architecture and reusable project-capability candidates only from evidence in existing repositories.
-5. Generate a small stable governance kernel plus only the capabilities selected by evidence and owner decisions.
-6. Route conversations according to mutation type, impact scope, risk, and clarity.
-7. Allow direct answers and low-risk fixes without design or plan ceremony.
-8. Require explicit requirement and plan approval for business, high-risk, large, or cross-surface changes.
-9. Treat skill evolution as evidence-bound candidate harvesting, with update-existing preferred over create-new.
-10. Prevent artifact reduction from deleting user or legacy content during an ordinary upgrade.
+1. 把支持哪些编码 Agent 作为安装时第一个用户可见的决策。
+2. 单独询问治理产物语言，并默认使用英语。
+3. 在提问前检测既有技术栈；既有项目由用户确认检测结果，而不是重新选栈。
+4. 只根据既有仓库中的真实证据提取架构和公共能力候选。
+5. 生成小型稳定内核，以及由证据和用户决策选中的能力。
+6. 根据变更类型、影响范围、风险和明确度路由对话。
+7. 简单问答和低风险修复不强制走设计或计划流程。
+8. 业务、高风险、大型或跨端变更必须经过需求与计划批准。
+9. Skill 成长采用有证据的候选收割，优先更新已有 Skill，而不是新建。
+10. 精简产物时，不允许普通升级删除用户内容或历史内容。
 
-## Non-goals
+## 非目标
 
-- Building a general plugin marketplace or arbitrary artifact-rule engine.
-- Using keyword matching alone to classify task risk or authorize release.
-- Replacing an existing project specification or execution workflow.
-- Requiring design documents, plans, subagents, or governance subprocesses for every request.
-- Inferring business rules, risk acceptance, architecture, or supported clients from filenames or the current chat client.
-- Automatically modernizing an existing technology stack.
-- Treating generated files, simulated reviewers, or a passing structural check as product-behavior evidence.
-- Publishing packages, pushing repositories, deploying, or installing hooks without separate authorization.
+- 建设通用插件市场或任意表达式驱动的产物规则引擎。
+- 仅靠关键词判断任务风险或获得发布授权。
+- 替代项目已有的规格或执行工作流。
+- 要求每个请求都生成设计文档、计划、子 Agent 或治理子进程。
+- 根据文件名或当前聊天客户端推断业务规则、风险接受、架构或支持的客户端。
+- 自动升级既有项目的技术栈。
+- 把文件已生成、模拟评审或结构检查通过视为产品行为证据。
+- 未获独立授权时发布包、推送仓库、部署或安装 hook。
 
-## Design Principles
+## 设计原则
 
-### Stable kernel, conditional capability
+### 稳定内核，条件能力
 
-Every governed repository keeps three non-negotiable properties:
+每个受治理仓库必须保留三项不可退让的能力：
 
-1. one canonical governance source;
-2. a route to the smallest relevant context;
-3. a machine check that fails when an enforced claim is false.
+1. 一个治理正典源；
+2. 一条通向最小相关上下文的路由；
+3. 被强制声明不成立时会失败的机器检查。
 
-The twelve-layer model remains a capability catalog, not a mandatory file bundle. Presets select capabilities; capabilities select artifacts; task profiles select which artifacts enter context.
+十二层模型继续作为能力目录，不再作为必须全部生成的文件套餐。preset 选择能力，能力选择产物，任务 profile 决定哪些产物进入上下文。
 
-### Classification uses independent dimensions
+### 分类维度彼此独立
 
-Task size, risk, mutation, and clarity are assessed separately. A one-sentence request may be an L0 answer or L3 feature. A complete specification may be an L1 documentation edit or an L3 high-risk change.
+任务范围、风险、变更类型和明确度分别判断。一句话需求可能是 L0 问答，也可能是 L3 大功能；完整需求可能只是 L1 文档修改，也可能是 L3 高风险变更。
 
-### Ceremony is monotonic
+### 流程只能升级
 
-A task may upgrade when new evidence appears, but may not downgrade after it crosses a stronger approval boundary. A documentation task whose actual diff changes production behavior upgrades before delivery. A release route is entered only by explicit release intent, never by a word appearing in documentation.
+任务发现新证据时可以升级，但跨过更强批准边界后不能降级。文档任务的实际 diff 如果改变生产行为，交付前必须升级。只有明确发布意图才能进入发布流程，文档里出现“发布”二字不算授权。
 
-### Questions protect decisions, not implementation trivia
+### 提问保护决策，不追问实现琐事
 
-The agent interrupts only when different answers materially change behavior, public contracts, data, compatibility, external effects, acceptance, or requested scope. Ordinary implementation details are resolved from project evidence and reported at delivery.
+只有不同答案会实质改变业务行为、公共契约、数据、兼容性、外部副作用、验收或任务范围时，Agent 才打断用户。普通实现细节应根据项目证据自行决定，并在交付时说明。
 
-### No ownership, no automatic deletion
+### 没有所有权就不能自动删除
 
-Legacy, seed, unknown, drifted, or user-edited content is retained. Destructive compaction requires a trusted manifest, a dry-run plan, an exact plan hash, and explicit approval.
+历史、seed、未知、漂移或用户编辑过的内容一律保留。破坏性压缩必须有可信 manifest、dry-run 计划、精确 planHash 和显式批准。
 
-## Architecture
+## 总体架构
 
 ```text
-Read-only repository scan
-  -> onboarding decisions
-  -> capability selection
-  -> artifact selection
-  -> plan and budget preview
-  -> transactional apply
-  -> integrity check
+只读扫描仓库
+  -> 收集安装决策
+  -> 选择能力
+  -> 选择产物
+  -> 预览计划和预算
+  -> 事务式应用
+  -> 完整性检查
 
-Conversation intent
-  -> semantic route recommendation
-  -> minimum context profile
-  -> optional requirement/design/plan gates
-  -> implementation and project verification
-  -> diff-based route validation
-  -> capability-harvest candidate
+对话意图
+  -> 推荐任务等级
+  -> 加载最小上下文 profile
+  -> 按需执行需求/设计/计划批准
+  -> 实现并运行项目验证
+  -> 根据实际 diff 校验最低等级
+  -> 生成能力收割候选
 ```
 
-The implementation is divided into seven bounded components.
+实现拆为七个边界清晰的组件。
 
-### 1. Onboarding decision collector
+### 1. 安装决策收集器
 
-The collector consumes scanner output and user answers. It does not write files. The interactive order is:
+决策收集器接收扫描结果和用户答案，但不写文件。交互顺序固定为：
 
-1. supported coding agents;
-2. governance artifact language;
-3. repository lifecycle confirmation;
-4. technology stack confirmation or selection;
-5. existing-code strategy, when applicable;
-6. recommended governance preset and optional capabilities;
-7. command invocation mode and separately authorized integrations.
+1. 支持哪些编码 Agent；
+2. 治理产物使用什么语言；
+3. 确认新项目还是既有项目；
+4. 确认或选择技术栈；
+5. 既有代码采用什么策略；
+6. 推荐的治理档位和可选能力；
+7. AICG 调用方式，以及需要单独授权的集成。
 
-The repository scan still runs before the first prompt so the questions can include evidence, but it cannot decide the supported-client scope or silently replace an owner answer.
+仓库扫描仍然先于第一个问题执行，以便问题能携带真实证据；但扫描结果不能替用户决定客户端范围，也不能静默覆盖用户答案。
 
-### 2. Capability selector
+### 2. 能力选择器
 
-The selector is a small internal module, not a public registry framework. It resolves existing `governanceDepth`, `features`, confirmed repository evidence, and owner decisions into six capability groups:
+能力选择器是一个小型内部模块，不建设公开的注册框架。它把现有 `governanceDepth`、`features`、已确认的仓库证据和用户决策解析成六组能力：
 
-| Capability | Responsibility | Activation |
+| 能力 | 职责 | 启用条件 |
 | --- | --- | --- |
-| `core` | canonical root, config, manifest, root entry, integrity gate | always |
-| `routing` | context profiles and verification routing | standard or complete |
-| `policy` | architecture, stack, business, and anti-pattern rules | evidence plus owner confirmation |
-| `evidence` | acceptance, surface, and release evidence | first use |
-| `lifecycle` | memory, long-running tasks, harvest and promotion | explicit feature |
-| `integration` | client adapters, hooks, CI, external workflow bridge | explicit selection |
+| `core` | 正典目录、配置、manifest、根入口、完整性门禁 | 始终启用 |
+| `routing` | 上下文 profile 和验证路由 | standard 或 complete |
+| `policy` | 架构、技术栈、业务和反模式规则 | 有证据且用户确认 |
+| `evidence` | acceptance、surface、release 证据 | 首次使用 |
+| `lifecycle` | memory、长任务、harvest 和 promotion | 显式启用 |
+| `integration` | 客户端 adapter、hook、CI、外部工作流 bridge | 显式选择 |
 
-The initial implementation may encode these groups as JavaScript metadata next to artifact builders. It must not introduce a configurable expression language, dynamic plugin loading, or a second JSON authority.
+第一版可以把这些能力编码成紧邻产物 builder 的 JavaScript 元数据，但不能引入可配置表达式语言、动态插件加载或第二份 JSON 正典。
 
-### 3. Artifact selector
+### 3. 产物选择器
 
-Each artifact builder declares:
+每个产物 builder 声明：
 
 ```text
 id
@@ -135,13 +135,13 @@ routeProfiles
 gateAssertions
 ```
 
-The selector computes an exact allowlist for a new project. `buildArtifacts()` delegates to the selector instead of treating every known artifact as a baseline. The checker derives expected artifacts from the same resolved selection so generator and checker cannot define different depth contracts.
+选择器为新项目计算精确 allowlist。`buildArtifacts()` 改为委托选择器，而不是把所有已知产物当作基线。检查器从同一份选择结果计算期望产物，避免生成器和检查器分别定义一套档位契约。
 
-### 4. Task route recommender
+### 4. 任务路由推荐器
 
-Semantic intent classification remains an agent responsibility because the CLI cannot reliably infer meaning from bare keywords. The governance framework generates a machine-readable routing policy and concise native-agent instructions.
+CLI 无法仅凭关键词可靠理解语义，因此初始意图分类仍由 Agent 完成。治理框架负责生成机器可读路由策略和简洁的客户端原生指令。
 
-The route input model is:
+路由输入模型：
 
 ```text
 mutation: none | governance-only | non-production | product-behavior | external-action
@@ -150,7 +150,7 @@ risk: low | business | high-consequence
 clarity: clear | locally-ambiguous | exploratory
 ```
 
-The route output is:
+路由输出模型：
 
 ```text
 level: L0 | L1 | L2 | L3
@@ -161,53 +161,53 @@ overlays
 reasonCodes
 ```
 
-The agent recommends the initial level. Before delivery, the CLI checks the actual diff, selected risk signals, release intent, and verification evidence to calculate a machine-verifiable minimum level. If the declared route is too weak, completion fails with an upgrade instruction. Machine checks do not downgrade or authorize external actions.
+Agent 推荐初始等级。交付前，CLI 根据实际 diff、已选择风险、发布意图和验证证据计算机器可验证的最低等级。如果声明等级过低，完成门禁必须失败并要求升级。机器检查不能自动降级，也不能授权外部操作。
 
-### 5. Approval gate coordinator
+### 5. 批准门槛协调器
 
-Governance defines when approval is required but does not create a duplicate planning authority. If the repository has an approved workflow provider, its design, plan, task list, and completion artifacts remain authoritative. Otherwise, L2 approval may remain in the client conversation and L3 uses the selected client-native design and plan workflow. Persistent task runtime is created only when its capability is explicitly enabled.
+治理框架只定义何时需要批准，不创建第二套计划正典。如果项目已经选择规格或执行工作流 provider，其 design、plan、task list 和 completion artifact 继续由该 provider 管理；否则 L2 批准可以保留在客户端对话中，L3 使用所选客户端原生的设计和计划流程。只有显式启用 task runtime 能力时，才创建持久任务运行时。
 
-### 6. Capability harvester
+### 6. 能力收割器
 
-Harvest runs only after verified product-behavior changes. It produces candidates, not automatically trusted skills. It binds candidates to current implementation paths, public entry points, tests, owner, and fingerprint.
+harvest 只在产品行为变更通过真实验证后运行。它生成候选，不生成自动可信的 Skill。候选必须绑定当前实现路径、公共入口、测试、owner 和实现 fingerprint。
 
-Candidate resolution order is:
+候选处理优先级：
 
 ```text
-update existing skill
-  > extend existing skill
-  > create a new skill
-  > record no-skill-with-reason
+更新已有 Skill
+  > 扩展已有 Skill
+  > 创建新 Skill
+  > 记录 no-skill-with-reason
 ```
 
-### 7. Migration guard
+### 7. 迁移保护器
 
-Template v3 adds the new selection and routing behavior. Ordinary sync across template versions retains legacy artifacts. Physical compaction is a separate approved action using the existing execution-plan hash and transactional rollback primitives.
+template v3 引入新的选择和路由行为。普通跨版本 sync 必须保留历史产物。物理压缩是单独批准的动作，并复用已有 execution plan 的 planHash 和事务回滚能力。
 
-## Onboarding Flow
+## 安装流程
 
-### Agent selection
+### Agent 选择
 
-The first visible question asks which clients must consume the same governance source:
+第一个可见问题询问哪些客户端必须读取同一个治理正典：
 
-- Codex only;
-- Claude Code only;
-- Cursor only;
-- a user-selected combination;
-- all built-in clients.
+- 仅 Codex；
+- 仅 Claude Code；
+- 仅 Cursor；
+- 用户多选；
+- 全部内建客户端。
 
-Because artifact and interaction language have not been selected yet, this first prompt is concise and bilingual unless an explicit `--locale` already supplies the interaction language. The second prompt then selects governance artifact language; choosing a chat language must not silently answer it.
+在尚未选择交互语言前，第一个问题默认使用简短的中英双语；如果用户已经通过 `--locale` 明确指定交互语言，则使用指定语言。第二个问题才选择治理产物语言，聊天语言不能静默替用户回答产物语言。
 
-The selection is recorded with source `user` or `interactive`. Repository files and the active chat client are evidence of current state, not authorization to narrow support.
+选择记录的来源必须是 `user` 或 `interactive`。仓库现有文件和当前聊天客户端只能说明现状，不能授权缩小支持范围。
 
-### Language selection
+### 语言选择
 
-The second visible question asks for governance artifact language:
+第二个可见问题询问治理产物语言：
 
-- English, recommended and default;
-- Simplified Chinese.
+- 英语，推荐且默认；
+- 简体中文。
 
-The configuration separates three language concerns:
+配置分离三类语言：
 
 ```json
 {
@@ -217,149 +217,149 @@ The configuration separates three language concerns:
 }
 ```
 
-- `interactionLanguage` controls prompts and human CLI output and may follow the user.
-- `artifactLanguage` controls governance prose and defaults to `en` independently of interaction language.
-- `codeDocumentationPolicy` is `inherit-existing` for existing projects and `en` for greenfield projects unless the user overrides it.
+- `interactionLanguage` 控制提示和 CLI 人类可读输出，可以跟随用户。
+- `artifactLanguage` 控制治理正文，独立于交互语言，默认 `en`。
+- `codeDocumentationPolicy` 在既有项目默认 `inherit-existing`，新项目默认 `en`，除非用户覆盖。
 
-JSON/YAML keys, IDs, enums, commands, and filenames remain English in all modes. Existing `bilingual` configurations remain valid for compatibility, but bilingual is not a recommended guided default. If a later version generates a translated companion, one language remains canonical and the translation is generated, hash-bound, and excluded from the default context closure.
+所有模式下，JSON/YAML 字段名、ID、枚举、命令和文件名都保持英语。为兼容旧项目，现有 `bilingual` 配置继续有效，但不再作为推荐的引导默认值。未来如果生成翻译伴随文件，必须指定一种正典语言；翻译文件带 generated 标识和 hash，不进入默认上下文闭包。
 
-### Technology stack
+### 技术栈
 
-For an existing repository, the scanner displays the detected languages, runtimes, frameworks, infrastructure, package evidence, and confidence. The user confirms or corrects that result. The flow skips greenfield selection but never silently treats detection as owner approval.
+既有项目由扫描器展示检测到的语言、运行时、框架、基础设施、package 证据和置信度，用户确认或修正结果。流程跳过从零选型，但不能把检测结果静默视为负责人批准。
 
-For a greenfield repository, the user selects the intended stack. AICG generates only the selected stack capabilities. Current official sources are researched only when a stack skill is actually requested; unrelated framework material is not generated.
+新项目由用户选择目标技术栈，AICG 只生成所选技术栈能力。只有实际请求对应 Skill 时才检索当前官方来源，不生成无关框架资料。
 
-### Architecture and reusable capabilities
+### 架构和公共能力
 
-For an existing repository, AICG inspects module boundaries, dependency direction, public clients, repositories, adapters, guards, policies, repeated implementation patterns, tests, and documented business invariants. Findings are classified as:
+既有项目检查模块边界、依赖方向、公共 Client、Repository、Adapter、Guard、Policy、重复实现、测试和已记录业务不变量。发现分为：
 
-- `verified-candidate`: code and tests support the claim;
-- `needs-owner-confirmation`: implementation exists but its intended contract is unclear;
-- `gap`: naming or weak evidence is insufficient.
+- `verified-candidate`：代码和测试能够支持该声明；
+- `needs-owner-confirmation`：实现存在，但目标契约不明确；
+- `gap`：命名或弱证据不足以形成规则。
 
-Only the first two appear in the approval preview, and only approved, evidence-bound candidates become project skills or architecture rules.
+只有前两类进入批准预览；只有用户批准且有证据绑定的候选才能成为项目 Skill 或架构规则。
 
-For a greenfield repository, architecture is recorded as `not-established`. The initializer must not invent layers or module boundaries. Architecture and project skills are added after a feature establishes verified patterns.
+新项目的架构状态记录为 `not-established`。初始化器不能虚构分层和模块边界；等功能形成真实稳定模式后，再补充架构或项目 Skill。
 
-### Preview and apply
+### 预览与应用
 
-Before writing, the initializer displays:
+写入前必须展示：
 
-- selected clients and language decisions;
-- lifecycle and stack evidence;
-- selected preset and capabilities;
-- exact file actions;
-- managed file count, bytes, and default context estimate;
-- which claims are `stated`, `reachable`, or intended to become `enforced`;
-- required hooks, CI, AI assistance, network access, or external-provider authorization;
-- plan hash.
+- 所选客户端和语言；
+- 项目阶段和技术栈证据；
+- 推荐档位和启用能力；
+- 精确文件动作；
+- 受管文件数、字节数和默认上下文估算；
+- 哪些声明只是 `stated`、哪些 `reachable`、哪些计划成为 `enforced`；
+- 所需 hook、CI、AI assist、网络权限或外部 provider 授权；
+- planHash。
 
-No write occurs until the user approves the plan. Apply is transactional and is followed by one integrity check.
+用户批准计划前不得写入。应用必须具备事务性，完成后统一执行一次完整性检查。
 
-## Presets and Artifact Budgets
+## 档位与产物预算
 
-### Minimal: trusted kernel
+### Minimal：可信内核
 
-Minimal is suitable for solo maintainers, small repositories, and first adoption. It includes config, manifest, the shared native entry, canonical index, always-on invariants, the selected client adapter when needed, and one integrity gate.
+适合单人、小仓库和首次采用治理。只包含配置、manifest、共享原生入口、正典索引、常驻不变量、必要的已选客户端 adapter 和一个完整性门禁。
 
-It does not eagerly create architecture, technical standards, release policy, acceptance contract/results, surface profiles/results, decision ledger, memory, task runtime, review/report placeholders, hooks, CI, or capability-evolution artifacts.
+默认不生成架构、技术规范、发布策略、acceptance contract/results、surface profiles/results、decision ledger、memory、task runtime、reviews/reports 占位目录、hook、CI 或 capability evolution 产物。
 
-- Target: no more than 8 managed files for Codex-only.
-- Hard initial gate: no more than 10 managed files.
-- Default-start governance context: no more than 1,200 estimated tokens.
+- Codex-only 目标：不超过 8 个受管文件。
+- 首版硬门禁：不超过 10 个受管文件。
+- 默认启动治理上下文：不超过约 1,200 tokens。
 
-### Standard: project routing and policy
+### Standard：项目路由与策略
 
-Standard extends Minimal with a context map and verification profiles. Architecture, anti-patterns, stack skills, and business skills are conditional on repository evidence and owner confirmation. Release, surface, and formal acceptance artifacts materialize on first use.
+在 Minimal 上增加 context map 和 verification profiles。架构、反模式、技术 Skill 和业务 Skill 只有存在仓库证据并经负责人确认才生成。release、surface 和正式 acceptance 产物首次使用时才物化。
 
-- Standard core budget: no more than 20 managed files before conditional project skills and selected client adapters.
-- Ordinary-task initial context: no more than 900 tokens.
-- Behavior-change initial context: no more than 1,800 tokens.
+- Standard 核心预算：不含条件性项目 Skill 和已选客户端 adapter 时，不超过 20 个受管文件。
+- 普通任务初始上下文：不超过 900 tokens。
+- 行为变更初始上下文：不超过 1,800 tokens。
 
-### Complete: lifecycle availability
+### Complete：提供生命周期能力
 
-Complete makes lifecycle governance available but does not eagerly materialize every optional feature. Memory, long-running task runtime, hooks, CI, external workflows, and additional evidence remain independently selected.
+Complete 表示生命周期治理可以使用，不表示所有可选功能立即物化。memory、长任务 runtime、hook、CI、外部工作流和额外 evidence 仍需分别选择。
 
-Complete is recommended only after explicit selection or multiple owner-confirmed signals such as long-running work, high-consequence boundaries, multi-client teams, CI enforcement, or ongoing capability promotion.
+只有用户明确选择，或存在多个负责人确认的信号时才推荐 Complete，例如长周期任务、高后果边界、多客户端团队、CI 强制或持续 capability promotion。
 
-- Complete core budget: no more than 26 managed files before conditional skills and extra client adapters.
-- Ordinary and behavior-change startup budgets remain identical to Standard.
+- Complete 核心预算：不含条件 Skill 和额外客户端 adapter 时，不超过 26 个受管文件。
+- 普通任务和行为变更的启动预算与 Standard 相同。
 
-An unspecified governance request uses scanner evidence to recommend Minimal or Standard and never silently activates Complete.
+用户只说“建立治理”时，根据扫描证据推荐 Minimal 或 Standard，绝不静默启用 Complete。
 
-## Dynamic Conversation Flow
+## 动态对话流程
 
-### L0: answer directly
+### L0：直接回答
 
-Use for read-only explanation, review, discovery, and status requests.
-
-```text
-understand -> read minimum evidence -> answer
-```
-
-There is no design, plan, governance subprocess, or harvest step.
-
-### L1: quick low-risk change
-
-Use for a localized change that does not alter business rules, public API/schema, permissions, compatibility, or external effects.
+适用于只读解释、评审、发现和状态查询。
 
 ```text
-locate -> clarify only material ambiguity -> edit -> targeted test -> one completion check
+理解问题 -> 读取最小证据 -> 直接回答
 ```
 
-No formal user-approved plan is required. If new evidence crosses an L2/L3 boundary, work stops before the wider change and the route upgrades.
+不生成设计、plan，不运行治理子进程，也不执行 harvest。
 
-### L2: business or medium-impact change
+### L1：快速低风险修改
 
-Use when product behavior, a business rule, a state transition, a public contract, or an owner-confirmed risk boundary changes.
+适用于局部修改，且不改变业务规则、公共 API/schema、权限、兼容性或外部副作用。
 
 ```text
-understand current behavior
-  -> define goal, rules, boundaries, and acceptance
-  -> ask one material question at a time
-  -> user approves requirements
-  -> present implementation plan
-  -> user approves plan
-  -> implement and verify
+定位 -> 只澄清实质歧义 -> 修改 -> 定向测试 -> 一次完成检查
 ```
 
-Both requirement and plan approval are required.
+不要求正式的用户批准 plan。发现新证据跨入 L2/L3 边界时，必须在扩大修改前停止并升级流程。
 
-### L3: large, cross-surface, architectural, or high-consequence change
+### L2：业务或中等影响变更
 
-Use for multi-module or multi-surface features, architectural contracts, migrations, compatibility work, or high-consequence behavior.
+适用于改变产品行为、业务规则、状态流、公共契约或负责人确认的风险边界。
 
 ```text
-analyze -> adversarial/multi-role review when justified
-  -> close requirement gaps one at a time
-  -> user approves requirements and design
-  -> decompose tasks and dependencies
-  -> user approves execution plan
-  -> serial or parallel implementation
-  -> integration verification
+理解当前行为
+  -> 明确目标、规则、边界和验收
+  -> 每次询问一个实质问题
+  -> 用户确认需求
+  -> 给出实施 plan
+  -> 用户批准 plan
+  -> 实现并验证
 ```
 
-Different clients or subagents are used only when task boundaries, input/output contracts, ownership, and independent tests are already clear and concurrent edits will not overlap. Shared API contracts are fixed before parallel implementation begins.
+需求和计划都必须获得批准。
 
-### Exploratory and complete inputs
+### L3：大型、跨端、架构或高后果变更
 
-"One-sentence requirement" is not a fixed level. If it is already clear, it immediately routes to L0–L3. If it is unclear, the agent brainstorms, asks one material question per turn, produces an approved requirement summary, and then routes by impact.
+适用于多模块、多端、架构契约、迁移、兼容性工作或高后果行为。
 
-"Complete requirement" is also not a fixed level. It is first checked for contradiction, missing failure paths, authorization/data boundaries, unverifiable acceptance, and cross-system impact. Multi-role adversarial review is used only for L3 scope or risk.
+```text
+分析 -> 按需执行对抗性/多角色评审
+  -> 逐项关闭需求缺口
+  -> 用户批准需求与设计
+  -> 拆分任务和依赖
+  -> 用户批准执行计划
+  -> 串行或并行实现
+  -> 集成验证
+```
 
-## Context Profiles
+只有任务边界清晰、输入输出契约已固定、文件所有权不重叠且可以独立测试时，才使用不同客户端或子 Agent 并行实现。前后端共享 API 必须先确定契约，再开始并行开发。
 
-The generated root entry contains only:
+### 一句话需求与完整需求
 
-1. canonical location;
-2. smallest-profile routing instruction;
-3. scope and user-change protection;
-4. generated-adapter ownership boundary;
-5. one delivery gate entrypoint.
+“一句话需求”不是固定等级。已经足够明确时，立即重新分类到 L0–L3；不明确时才进入头脑风暴，每轮询问一个实质问题，形成经批准的需求摘要后，再按影响分类。
 
-The always-on rule contains only cross-task invariants. Architecture details, technical standards, harvest, hooks, reviews/reports, acceptance, and release policy are excluded from the ordinary startup closure.
+“完整需求”也不是固定等级。先检查矛盾、异常路径、权限和数据边界、不可验收描述与跨系统影响。只有达到 L3 范围或风险时才执行多角色对抗评审。
 
-Suggested profiles:
+## 上下文 Profile
+
+生成的根入口只保留：
+
+1. 正典位置；
+2. 选择最小 profile 的指引；
+3. 作用域和用户改动保护；
+4. generated adapter 的所有权边界；
+5. 一个交付门禁入口。
+
+常驻规则只保留跨任务不变量。架构细节、技术规范、harvest、hook、reviews/reports、acceptance 和 release policy 都不进入普通启动闭包。
+
+建议 profile：
 
 ```yaml
 base:
@@ -384,158 +384,158 @@ profiles:
       - docs/ai/release-acceptance-policy.json
 ```
 
-Within one task, canonical content is deduplicated by canonical path and content hash. Client adapters resolve to canonical IDs and never cause a second load.
+同一任务中，正典内容按 canonical path 和 content hash 去重。客户端 adapter 解析到 canonical ID，不能造成第二次加载。
 
-## Approval and Interruption Rules
+## 批准与打断规则
 
-The agent must interrupt before proceeding when an answer would change:
+当答案会改变以下事项时，Agent 必须打断并提问：
 
-- product behavior or acceptance;
-- public API, schema, data migration, or compatibility;
-- authorization, payment, tenancy, sensitive data, or external side effects;
-- destructive or irreversible action;
-- requested scope;
-- architecture ownership or selected workflow authority;
-- deployment, publication, or external messaging.
+- 产品行为或验收标准；
+- 公共 API、schema、数据迁移或兼容性；
+- 权限、支付、租户、敏感数据或外部副作用；
+- 破坏性或不可逆操作；
+- 用户指定范围；
+- 架构所有权或所选工作流的权威归属；
+- 部署、发布或外部消息。
 
-The agent does not interrupt merely to ask about naming, internal implementation preference, formatting, or another reversible low-risk decision already covered by project conventions.
+以下情况不应打断用户：命名偏好、内部实现选择、格式或项目约定已覆盖的可逆低风险决定。
 
-External actions always require a separate exact approval, even when an implementation plan was approved.
+外部操作始终需要独立且精确的批准，即使实施 plan 已经批准。
 
-## Capability Harvest and Skill Growth
+## 能力收割与 Skill 成长
 
-Harvest is eligible only after a behavior-changing task passes product verification. A candidate must have:
+只有行为变更任务通过产品验证后，才有资格运行 harvest。候选必须包含：
 
-- a stable capability ID;
-- a verified implementation path;
-- an owner or explicit ownership gap;
-- a public entry point or an explicit gap;
-- current test or verification evidence;
-- a trigger and adjacent exclusions;
-- an implementation fingerprint;
-- a review date.
+- 稳定 capability ID；
+- 已验证实现路径；
+- owner 或明确的 owner gap；
+- 公共入口或明确 gap；
+- 当前测试或验证证据；
+- 触发条件和相邻排除条件；
+- 实现 fingerprint；
+- 复核日期。
 
-No harvest runs for read-only work, prose-only changes, formatting, test fixtures, temporary scripts, or low-risk fixes with no reusable capability change.
+只读任务、纯文案修改、格式修改、测试 fixture、临时脚本以及没有公共能力变化的低风险修复都不运行 harvest。
 
-Candidates are deduplicated against existing skills. A candidate does not become `adopted` or `enforced` without the existing promotion approval and successful project-owned verification. A changed fingerprint invalidates stale promotion evidence and requires review.
+候选必须先与现有 Skill 去重。没有通过既有 promotion 审批和真实项目命令验证的候选，不能成为 `adopted` 或 `enforced`。fingerprint 变化会使旧 promotion evidence 失效，并要求重新评审。
 
-## Safe Migration
+## 安全迁移
 
-Artifact slimming must not begin by deleting entries from the current builder. The safe sequence is:
+不能通过直接删减当前 builder 清单来开始产物精简。安全顺序是：
 
-1. validate manifest provenance, schema, tool/template source, ownership kind, source path, and hashes before granting stale-removal authority;
-2. reuse the existing execution-plan preimage and plan-hash contract for sync deletion;
-3. make an ordinary template-v3 sync retain legacy artifacts;
-4. remove legacy artifacts from active routing before considering physical cleanup;
-5. report seed files only as manual cleanup candidates;
-6. permit automatic prune only for trusted, fully owned, unmodified historical-template artifacts;
-7. require `sync --prune --dry-run` followed by `sync --prune --approve <planHash>`;
-8. reject stale approval when any input changes;
-9. keep `--force` independent from and subordinate to prune approval;
-10. run the normal checker after apply and transactionally restore preimages if validation fails.
+1. 在授予 stale-removal 权限前，校验 manifest 来源、schema、tool/template 来源、ownership、source path 和 hash；
+2. sync 删除复用已有 execution plan 的 preimage 和 planHash 契约；
+3. template v3 的普通 sync 保留所有历史产物；
+4. 先从活动路由移除历史产物，再考虑物理清理；
+5. seed 文件只作为人工清理候选报告；
+6. 只有可信、完全受管、未修改且属于历史模板的产物才能自动 prune；
+7. 先执行 `sync --prune --dry-run`，再执行 `sync --prune --approve <planHash>`；
+8. 任何输入变化都使旧批准失效；
+9. `--force` 不能代替或绕过 prune 批准；
+10. 应用后运行正常 checker；验证失败时事务式恢复所有 preimage。
 
-Existing release, acceptance, and surface evidence is retained as dormant history. Existing unselected client adapters are retained until explicitly pruned. Existing invocation mode is preserved; only new installations receive the new default.
+现有 release、acceptance 和 surface evidence 作为 dormant 历史保留。未选择的旧客户端 adapter 保留到用户显式 prune。既有项目保留原 invocation mode；只有新安装采用新默认值。
 
-## Performance and Behavior Budgets
+## 性能与行为预算
 
-| Metric | L0 ordinary | L1 quick change | L2/L3 behavior | Release |
+| 指标 | L0 普通任务 | L1 快速修改 | L2/L3 行为变更 | 发布 |
 | --- | ---: | ---: | ---: | ---: |
-| Initial unique governance files | <= 3 | <= 3 | <= 5 | <= 5 |
-| Initial governance tokens | <= 900 | <= 900 | <= 1,800 | <= 3,000 |
-| Cumulative unique governance files | <= 3 | <= 5 | <= 8 | <= 8 |
-| Governance subprocesses | 0 | 1 | 1 by default | exactly 2 |
+| 初始唯一治理文件 | <= 3 | <= 3 | <= 5 | <= 5 |
+| 初始治理 tokens | <= 900 | <= 900 | <= 1,800 | <= 3,000 |
+| 单轮累计治理文件 | <= 3 | <= 5 | <= 8 | <= 8 |
+| 治理子进程 | 0 | 1 | 默认 1 | 精确 2 |
 
-Machine budgets:
+机器预算：
 
-- small-fixture `check` p95 <= 250 ms;
-- 1,000-file `check` p95 <= 300 ms;
-- 10,000-file `check` p95 <= 1 second;
-- routing computation p95 <= 20 ms;
-- local `test:fast` p95 <= 5 seconds;
-- full regression runs only for merge, release, or explicit full validation.
+- 小型 fixture 的 `check` p95 <= 250 ms；
+- 1,000 文件 `check` p95 <= 300 ms；
+- 10,000 文件 `check` p95 <= 1 秒；
+- 路由计算 p95 <= 20 ms；
+- 本地 `test:fast` p95 <= 5 秒；
+- 完整回归只用于合并、发布或显式完整验证。
 
-Performance tests use warmup plus repeated samples and gate both an absolute limit and a bounded regression from the recorded baseline. File count, bytes, context closure, negative content, and process count are separate gates; fast execution alone cannot hide context growth.
+性能测试需要预热和重复采样，同时检查绝对上限和相对基线退化。文件数、字节数、上下文闭包、负向内容和进程数分别设门禁；运行速度快不能掩盖上下文膨胀。
 
-## Testing Strategy
+## 测试策略
 
-Implementation follows test-driven development.
+实现必须遵循测试驱动开发。
 
-### Onboarding tests
+### 安装测试
 
-- The first visible choice is client scope.
-- Artifact language is asked separately and defaults to English.
-- Interaction language never silently overrides artifact language.
-- English and Chinese prose render correctly while IDs and schema keys remain stable.
-- Existing repositories display detected stack evidence and require confirmation or correction.
-- Greenfield repositories record architecture as `not-established`.
+- 第一个可见选择是客户端范围。
+- 治理产物语言单独询问且默认英语。
+- 交互语言不能静默覆盖治理产物语言。
+- 中英文正文正确生成，ID 和 schema 字段保持稳定。
+- 既有项目展示技术栈检测证据，并要求确认或修正。
+- 新项目把架构记录为 `not-established`。
 
-### Artifact contract tests
+### 产物契约测试
 
-- Exact allowlists exist for Minimal, Standard, and Complete fixtures.
-- Minimal never includes release, surface, lifecycle, reviews/reports placeholders, or unselected clients.
-- Checker requirements come from the same selection as generator output.
-- Context and artifact budgets fail deterministically when exceeded.
+- Minimal、Standard 和 Complete fixture 使用精确 allowlist。
+- Minimal 不包含 release、surface、lifecycle、reviews/reports 占位项或未选择客户端。
+- checker 和 generator 使用同一份产物选择结果。
+- 超出上下文或产物预算时确定性失败。
 
-### Routing tests
+### 路由测试
 
-- Cover read-only question, README edit, test-only change, single-file bug fix, business behavior, dependency upgrade, public API, authorization/payment, cross-surface feature, explicit release, and discussion that merely mentions release.
-- Verify a late production diff upgrades a task and cannot reuse a weaker completion receipt.
-- Verify one canonical hash is loaded once even through multiple client adapters.
-- Verify L0 uses zero and L1/L2 use the expected governance process count.
+- 覆盖只读问答、README 修改、test-only、单文件 bugfix、业务行为、依赖升级、公共 API、权限/支付、跨端功能、明确发布，以及只讨论发布的场景。
+- 实际 diff 出现生产变更时，必须升级，且不能复用较弱等级的 completion receipt。
+- 多客户端 adapter 指向同一内容时，每个 canonical hash 只加载一次。
+- L0 使用零治理子进程，L1/L2 符合对应进程数预算。
 
-### Skill growth tests
+### Skill 成长测试
 
-- Read-only and non-reusable changes produce no harvest candidate.
-- Existing skills are updated before new skills are created.
-- A candidate requires evidence and cannot claim adoption.
-- Implementation drift invalidates the previous fingerprint and promotion evidence.
+- 只读和不可复用改动不产生 harvest candidate。
+- 创建新 Skill 前先尝试更新已有 Skill。
+- 候选必须包含证据，且不能冒充 adopted。
+- 实现漂移会使旧 fingerprint 和 promotion evidence 失效。
 
-### Migration and safety tests
+### 迁移与安全测试
 
-- Foreign, forged, future-version, unsafe-path, symlink, CRLF, and user-edited fixtures fail closed or retain content as specified.
-- Ordinary v1/v2-to-v3 sync performs zero automatic deletion.
-- Prune dry-run writes nothing and exposes every action plus plan hash.
-- Missing, wrong, or stale approval exits non-zero with a byte-identical tree and manifest.
-- Transactional rollback restores files, permissions, links, timestamps, and manifest after injected checker failure.
+- foreign、伪造、未来版本、unsafe path、symlink、CRLF 和用户编辑 fixture 按契约 fail closed 或保留内容。
+- v1/v2 到 v3 的普通 sync 自动删除数为零。
+- prune dry-run 不写文件，并展示全部动作和 planHash。
+- 缺失、错误或过期批准必须非零退出，文件树和 manifest 字节完全不变。
+- 注入 checker 故障后，事务回滚恢复文件、权限、链接、时间戳和 manifest。
 
-### Test suite split
+### 测试套件分层
 
-- `test:fast`: argument parsing, onboarding, config, selector, artifact plan/apply, generation, checker, route policy, architecture boundaries, and technical standards.
-- `test:full`: all Node tests; keep `npm test` as a compatibility alias for at least one release.
-- `test:scenarios`: packed greenfield, brownfield, migration, rollback, and cross-client fixtures.
-- `test:perf`: deterministic artifact, context, routing, and filesystem scale benchmarks.
+- `test:fast`：参数、安装引导、配置、选择器、artifact plan/apply、生成器、checker、路由策略、架构边界和技术规范。
+- `test:full`：全部 Node 测试；至少一个版本内保留 `npm test` 作为兼容别名。
+- `test:scenarios`：打包后的新项目、既有项目、迁移、回滚和跨客户端 fixture。
+- `test:perf`：确定性的产物、上下文、路由和文件系统规模基准。
 
-## Delivery Sequence
+## 交付顺序
 
-1. **D0 — Safety contracts:** add trusted-manifest validation and plan-hash approval to any stale-removal/prune path before artifact allowlists can shrink.
-2. **D1 — Zero-delete context reduction:** shorten root and always-on content, remove release/harvest/standards from ordinary routing, and retain all existing artifacts.
-3. **D2 — Onboarding decisions and language:** reorder prompts, separate artifact language from interaction language, default artifacts to English, confirm existing stacks, and record greenfield architecture gaps.
-4. **D3 — Capability and artifact selection:** implement the internal selector, exact preset allowlists, lazy evidence artifacts, and selection-driven checker expectations.
-5. **D4 — Dynamic task routing:** generate route policy and profiles, implement diff-based minimum-level validation, and enforce approval boundaries without duplicating external workflow owners.
-6. **D5 — Local execution and fast feedback:** make new projects prefer a verified project-local CLI, consolidate the normal behavior-change completion path, and split fast/full/scenario/performance tests.
-7. **D6 — Safe legacy compaction:** expose dry-run prune, exact approval, legacy retention states, and rollback scenarios.
-8. **D7 — Capability harvest policy:** scope harvest to verified behavior changes, enforce candidate deduplication/evidence, and test skill-growth budgets.
-9. **D8 — Candidate validation:** run full repository validation, package smoke, greenfield/brownfield fixtures, and platform-specific evidence without claiming unexecuted clients or operating systems.
+1. **D0 — 安全契约：**在允许缩减 allowlist 前，为所有 stale-removal/prune 路径增加可信 manifest 校验和 planHash 批准。
+2. **D1 — 零删除上下文减负：**缩短根入口和常驻规则，把 release/harvest/standards 移出普通路由，保留全部历史产物。
+3. **D2 — 安装决策与语言：**调整提问顺序，分离交互语言与产物语言，默认英语，确认既有栈，并记录新项目架构 gap。
+4. **D3 — 能力与产物选择：**实现内部选择器、精确 preset allowlist、惰性 evidence 产物和选择驱动的 checker 期望。
+5. **D4 — 动态任务路由：**生成路由策略和 profile，根据 diff 校验最低等级，并在不复制外部工作流正典的前提下强制批准边界。
+6. **D5 — 本地执行与快速反馈：**新项目优先使用已验证的 project-local CLI，合并普通行为变更的完成链，并拆分 fast/full/scenario/performance 测试。
+7. **D6 — 安全压缩历史项目：**提供 dry-run prune、精确批准、legacy retention 状态和回滚场景。
+8. **D7 — 能力收割策略：**只对已验证行为变更收割，强制候选去重和证据，并检查 Skill 增长预算。
+9. **D8 — 候选版本验证：**运行完整仓库验证、package smoke、新旧项目 fixture 和平台证据，不宣称未执行客户端或系统已验证。
 
-Each delivery unit must be independently testable and reversible. D0 is a prerequisite for physical artifact reduction. D1 may ship before D2–D8 because it changes routing without deleting legacy files.
+每个交付单元必须能够独立测试和回滚。D0 是物理精简产物的前置条件。D1 只改变路由而不删除历史文件，因此可以先于 D2–D8 单独交付。
 
-## Acceptance Criteria
+## 验收标准
 
-- A new guided installation asks for client scope first and artifact language second.
-- New configurations default `artifactLanguage` to `en`; interaction language remains independent.
-- Existing bilingual configurations remain readable and are not silently rewritten.
-- Existing-project stack detection is displayed with evidence and requires explicit confirmation or correction.
-- Greenfield initialization does not invent architecture or project skills.
-- New Codex-only Minimal installations contain no more than 10 managed files and no release, surface, lifecycle, or placeholder workspace artifacts.
-- Ordinary startup does not load technical standards, capability evolution, harvest, hooks, reviews/reports, or release policy.
-- L0 performs no governance subprocess; L1 performs at most one completion process; L2/L3 require the defined approvals; release still requires exact two-phase approval.
-- Actual production or high-risk diffs cannot complete under a weaker declared route.
-- Multi-agent work is recommended only for independent, non-overlapping tasks with fixed contracts and independent tests.
-- Harvest does not run for ineligible tasks and never promotes a candidate without evidence and approval.
-- An ordinary template upgrade deletes nothing; an approved prune cannot delete seed, unknown, drifted, or untrusted content.
-- Artifact, context, route, process-count, performance, migration, and rollback tests pass.
-- Delivery reports distinguish `stated`, `reachable`, `enforced`, and real-client/platform evidence.
+- 新的引导安装先询问客户端范围，再询问治理产物语言。
+- 新配置的 `artifactLanguage` 默认 `en`，且与交互语言相互独立。
+- 旧双语配置继续可读，不被静默改写。
+- 既有项目展示带证据的技术栈检测结果，并要求用户确认或修正。
+- 新项目初始化不虚构架构或项目 Skill。
+- 新建 Codex-only Minimal 项目不超过 10 个受管文件，且不包含 release、surface、lifecycle 或占位工作区产物。
+- 普通启动链不加载 technical standards、capability evolution、harvest、hook、reviews/reports 或 release policy。
+- L0 不运行治理子进程；L1 最多执行一次完成流程；L2/L3 执行规定批准；发布仍需精确的两阶段批准。
+- 实际生产或高风险 diff 不能在较弱任务等级下完成。
+- 只有独立、不重叠、契约固定且可单独测试的任务才建议多 Agent 执行。
+- 不符合条件的任务不运行 harvest；任何候选都不能无证据、无批准晋升。
+- 普通模板升级不删除文件；获批 prune 不能删除 seed、未知、漂移或不可信内容。
+- 产物、上下文、路由、进程数、性能、迁移和回滚测试全部通过。
+- 交付报告必须区分 `stated`、`reachable`、`enforced` 和真实客户端/平台证据。
 
-## Open Product Boundary
+## 已确定的语言边界
 
-The first-class language selector is English or Simplified Chinese. The existing `bilingual` value is retained for compatibility but excluded from the recommended guided path. Arbitrary-language generation is deferred until the English/Chinese templates, context budgets, and schema-stability tests are proven.
+首批正式语言选择为英语或简体中文。已有 `bilingual` 值只作为兼容能力保留，不进入推荐的引导路径。任意语言生成推迟到中英文模板、上下文预算和 schema 稳定性测试完成之后。
