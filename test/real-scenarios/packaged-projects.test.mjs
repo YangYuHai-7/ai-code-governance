@@ -151,6 +151,12 @@ function installPackedCli(evidence, scenarioRoot) {
   assert.ok(fs.statSync(cli).isFile(), `missing installed CLI ${cli}`);
   const version = runRecorded(evidence, process.execPath, [cli, '--version']);
   expectExit(version, 0, 'installed aicg --version');
+  const offline = runRecorded(evidence, npmExecutable, ['exec', '--', 'aicg', '--version'], {
+    cwd: installDirectory,
+    env: { ...process.env, npm_config_offline: 'true', npm_config_cache: path.join(scenarioRoot, 'empty-offline-cache'), npm_config_update_notifier: 'false' },
+  });
+  expectExit(offline, 0, 'installed offline npm exec with an empty cache');
+  assert.equal(offline.stdout.trim(), version.stdout.trim());
   return {
     cli,
     tarball,
@@ -330,6 +336,21 @@ test('packed AICG passes greenfield and brownfield real-project acceptance', { t
   const bootstrapEvidence = { commands: [] };
   context.after(() => fs.rmSync(scenarioRoot, { recursive: true, force: true }));
   const packed = installPackedCli(bootstrapEvidence, scenarioRoot);
+  const adaptiveRoot = path.join(scenarioRoot, 'adaptive-project');
+  fs.mkdirSync(adaptiveRoot);
+  const answers = path.join(scenarioRoot, 'adaptive-answers.json');
+  writeJson(answers, { clients: ['codex'], stacks: ['generic-unknown'], governanceDepth: 'standard', artifactLanguage: 'en', adaptiveGovernance: {
+    installedRoots: [], decisions: { skills: [], roles: [{ id: 'project-review', action: 'add' }] },
+    projectTeam: { evidence: [{ id: 'owner.scope', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [], roleNeeds: [{ id: 'project-review', title: 'Project evidence review', capabilities: ['evidence-review'], responsibilities: ['Review project evidence.'], outOfScope: ['Product implementation.'], domainNeedIds: [], evidenceIds: ['owner.scope'], skillIds: [], mustRemainIndependentFrom: [] }] },
+  } });
+  const adaptivePreview = run(process.execPath, [packed.cli, 'init', adaptiveRoot, '--yes', '--config', answers, '--dry-run']);
+  expectExit(adaptivePreview, 0, 'packaged adaptive preview');
+  const adaptive = JSON.parse(adaptivePreview.stdout.slice(adaptivePreview.stdout.indexOf('{\n  "dryRun"')));
+  assert.equal(adaptive.adaptiveGovernance.team.teamType, 'project-ai-agent-team');
+  assert.ok(Array.isArray(adaptive.adaptiveGovernance.skills.sourceStatus));
+  assert.deepEqual(fs.readdirSync(adaptiveRoot), []);
+  expectExit(run(process.execPath, [packed.cli, 'init', adaptiveRoot, '--yes', '--config', answers, '--approve', adaptive.planHash]), 0, 'packaged adaptive approval');
+  expectExit(run(process.execPath, [packed.cli, 'check', adaptiveRoot, '--json']), 0, 'packaged adaptive check');
   const evidenceDirectory = path.join(scenarioRoot, 'evidence');
   const greenfield = greenfieldScenario(packed.cli, packed, scenarioRoot);
   const brownfield = brownfieldScenario(packed.cli, packed, scenarioRoot);

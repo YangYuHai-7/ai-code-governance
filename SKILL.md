@@ -10,6 +10,8 @@ Deliver one canonical rule source, the smallest relevant context route, and mach
 
 ## Trigger and scope
 
+For offline Skill discovery and project-AI team onboarding, collect `adaptiveGovernance` through the existing `--config` contract in [initializer.md](references/initializer.md#adaptive-governance-input). Inspect full `sourceStatus`, bounded candidates, add/defer/reject decisions, explicit professional activation and human-review gaps, file actions, permissions, and costs. Nothing is preselected, installed, or activated by a recommendation. A single exact `--approve <planHash>` authorizes the reviewed transaction; `--yes` alone does not. Use `sync . --config decisions.json` for an existing project's preview. Minimal emits no management artifacts; approved Standard/Complete remains inside the existing 26-file, 64/96 KiB and 800-manager-token limits. A `budget-blocked` preview requires separately authorized cleanup; never delete historical seeds automatically. Default English and explicit `zh-CN` retain the same machine contracts. Real-client execution and qualified-human identity remain unverified.
+
 Treat explicit governance phrases such as `AI 编码治理框架`, `代码治理框架`, `Agent 治理框架`, and `aicg init` as task intent. The bare phrase `治理框架` requires repository/coding-agent context. Product AI safety and regulatory questions are outside this Skill.
 
 A vague request does not choose Complete. Scan first, then recommend Minimal or Standard from actual project evidence and owner needs. Respect an explicit preset, client choice, language, or already approved plan. The twelve-layer reference model is a capability catalog; it is not a required task sequence or a promise to generate all layers.

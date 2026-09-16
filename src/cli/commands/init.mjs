@@ -3,13 +3,16 @@ import { deriveArchitectureDecision } from '../../architecture-policy.mjs';
 import { initializationForArchitectureOption, resolveArchitectureApproval } from '../../architecture-assessment.mjs';
 import { runAssist, assistCandidates } from '../../assist.mjs';
 import { checkProject, printCheck } from '../../checker.mjs';
-import { buildArtifacts, defaultConfig, validateConfig } from '../../generator.mjs';
+import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, validateConfig } from '../../generator.mjs';
+import { proposeProjectAgentTeam } from '../../project-agent-team.mjs';
+import { decideSkillCandidates, discoverSkills, serializeSkillDiscovery } from '../../modules/skills/index.mjs';
+import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
-import { chooseAssistAgent, confirmPlan, promptConfig, promptGuidedConfig } from '../prompts.mjs';
-import { initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
+import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
+import { adaptivePreviewGuidance, initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../../project-assessment.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
-import { TOOL_VERSION } from '../../constants.mjs';
+import { SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -67,6 +70,88 @@ function assertInitializationWriteBoundary(plan) {
   if (unexpected.length > 0) {
     throw usageError(`Initialization plan attempted to modify a non-governance path: ${unexpected.sort((left, right) => left.localeCompare(right)).join(', ')}.`);
   }
+}
+
+function adaptiveChoices(items, choices = []) {
+  if (!Array.isArray(choices) || choices.length > items.length || new Set(choices.map((entry) => entry.id)).size !== choices.length
+    || choices.some((entry) => !items.some((item) => item.id === entry.id) || !['add', 'defer', 'reject'].includes(entry.action)
+      || Object.keys(entry).some((key) => !['id', 'action'].includes(key)))) throw usageError('Adaptive decisions require unique known ids and add, defer or reject.');
+  return items.map(({ id }) => ({ id, action: choices.find((entry) => entry.id === id)?.action ?? 'defer' }));
+}
+
+function prepareAdaptiveGovernance(config, scan, request) {
+  const baseConfig = config;
+  if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
+    || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation'].includes(key))
+    || !Array.isArray(request.installedRoots)) throw usageError('adaptiveGovernance requires bounded metadata and explicit installedRoots.');
+  const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog: request.curatedCatalog ?? [], requiredCapabilities: request.requiredCapabilities ?? [] };
+  const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
+  const sourceSnapshot = stableJson(discovery);
+  const projectMode = config.initialization.lifecycle === 'greenfield' ? 'greenfield' : 'brownfield';
+  const team = proposeProjectAgentTeam({ ...(request.projectTeam ?? { evidence: [{ id: 'repository.scan', kind: 'repository-fact' }], confirmedDomainNeeds: [], roleNeeds: [] }), projectMode });
+  const domainCandidates = request.domainCandidates ?? [];
+  if (!Array.isArray(domainCandidates) || domainCandidates.length > 16 || domainCandidates.some((entry) => !entry || typeof entry.id !== 'string' || typeof entry.label !== 'string'
+    || entry.label.length > 512 || !Array.isArray(entry.evidenceIds) || entry.evidenceIds.some((id) => !request.projectTeam?.evidence?.some((item) => item.id === id)))) throw usageError('Domain candidates must cite existing evidence and remain unconfirmed.');
+  if (request.decisions && Object.keys(request.decisions).some((key) => !['skills', 'roles'].includes(key))) throw usageError('Unknown adaptive decision kind.');
+  const decisions = { skills: adaptiveChoices(discovery.candidates, request.decisions?.skills), roles: adaptiveChoices(team.roleProposals, request.decisions?.roles) };
+  const selectedSkills = decisions.skills.filter((entry) => entry.action === 'add').map((entry) => entry.id);
+  const selectedRoles = decisions.roles.filter((entry) => entry.action === 'add').map((entry) => entry.id);
+  const activation = request.activation ?? {};
+  if (!activation || typeof activation !== 'object' || Array.isArray(activation) || Object.keys(activation).some((id) => !selectedRoles.includes(id))) throw usageError('Activation must refer to explicitly selected project roles.');
+  for (const role of team.roleProposals.filter((entry) => selectedRoles.includes(entry.id))) {
+    const mapping = activation[role.id];
+    if (!mapping && !role.professionalBoundaries?.length) continue;
+    if (!mapping || Object.keys(mapping).some((key) => !['signals', 'paths'].includes(key))
+      || !Array.isArray(mapping.signals) || !mapping.signals.length || mapping.signals.length > 16
+      || mapping.signals.some((signal) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(signal) || !config.confirmedRiskSignals.includes(signal))
+      || !Array.isArray(mapping.paths) || !mapping.paths.length || mapping.paths.length > 32
+      || mapping.paths.some((relative) => typeof relative !== 'string' || relative.length > 256 || !isSafeRelative(relative))) throw usageError('Professional activation requires explicit owner-confirmed signals and safe repository paths.');
+  }
+  if (config.artifactLanguage === 'zh-CN') {
+    for (const candidate of discovery.candidates) candidate.reason = '离线元数据候选；实际加载与执行尚未验证。';
+    const localize = (boundary) => ({ ...boundary, reason: '此 AI 角色仅提供辅助；最终专业判断必须由符合资格的真人审核。' });
+    team.professionalBoundaries = team.professionalBoundaries.map(localize);
+    team.roleProposals = team.roleProposals.map((role) => ({ ...role,
+      ...(role.professionalBoundaries ? { professionalBoundaries: role.professionalBoundaries.map(localize) } : {}),
+      ...(role.professionalBoundary ? { professionalBoundary: localize(role.professionalBoundary) } : {}),
+    }));
+  }
+  const summary = {
+    schemaVersion: 1, status: 'recommendation', skills: discovery, team, decisions,
+    domainCandidates: domainCandidates.map((entry) => ({ ...entry, status: 'proposed-unconfirmed' })),
+    professionalReviewGaps: team.professionalBoundaries,
+    skillGaps: discoveryInput.requiredCapabilities.filter((capability) => !discovery.candidates.some((entry) => entry.capabilities.includes(capability))),
+    permissionGaps: discovery.candidates.filter((entry) => selectedSkills.includes(entry.id)).map(({ id, permissions }) => ({ id, permissions, status: 'requires-separate-runtime-approval' })),
+    actionsPerformed: [],
+  };
+  const hasSelection = selectedSkills.length > 0 || selectedRoles.length > 0;
+  if (config.governanceDepth !== 'minimal' && hasSelection) {
+    const evidenceId = `approval.${sha256(stableJson({ discovery, team, decisions, activation }))}`;
+    const roles = team.roleProposals.filter((role) => selectedRoles.includes(role.id)).map((role) => ({ ...role, status: 'approved-available', approval: { source: 'user', evidenceId }, ...(activation[role.id] ? { activation: activation[role.id] } : {}) }));
+    const teamHash = sha256(stableJson({ team, roles, decisions }));
+    const recommended = decideSkillCandidates(discovery, { selectedIds: selectedSkills });
+    config = { ...config, adaptiveDecisions: decisions,
+      skillDiscovery: { enabled: true, decision: decideSkillCandidates(discovery, { selectedIds: selectedSkills, approvalPlanHash: recommended.planHash }) },
+      agentTeam: { ...team, enabled: true, status: 'approved', roleProposals: roles, planHash: teamHash, approval: { planHash: teamHash } },
+    };
+    try {
+      const approval = prepareSkillGovernancePlan(config, scan);
+      config = { ...config, skillDiscovery: { ...approval.skillDiscovery, approvalPlanHash: approval.planHash }, agentTeam: approval.agentTeam };
+    } catch (error) {
+      if (!error.budgetCost) throw error;
+      config = baseConfig;
+      summary.status = 'budget-blocked';
+      summary.budget = { proposedCost: error.budgetCost, maximumFiles: 26, maximumBytes: (config.governanceDepth === 'standard' ? 64 : 96) * 1024, maximumManagerTokens: 800 };
+      summary.manualCleanup = {
+        paths: scan.files.map((entry) => entry.relative).filter((relative) => ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md', '.agents/skills/business-constraints/SKILL.md', '.claude/skills/business-constraints/SKILL.md'].includes(relative)),
+        authorization: 'separate-explicit-approval-required', automaticDeletion: false,
+        reason: config.artifactLanguage === 'zh-CN' ? '历史种子或漂移文件仍计入预算；先人工审查并另行批准清理，再重新预览。' : 'Retained seeds and drifted files still count toward the budget; review and separately authorize cleanup, then preview again.',
+      };
+    }
+  }
+  return { config, summary, assertSourcesFresh: () => {
+    if (sourceSnapshot !== stableJson(serializeSkillDiscovery(discoverSkills(discoveryInput)))) throw usageError('Adaptive Skill sources changed; preview and approve a new exact plan.');
+  } };
 }
 
 export async function prepareInit(target, options, { allowDefaults = false } = {}) {
@@ -173,46 +258,79 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   if (config.features.aiAssist && currentAssessment.codebase.lifecycle.value !== 'greenfield') {
     throw usageError('AI assist is unavailable when the repository has existing or ambiguous product evidence; deterministic initialization must not modify business code.');
   }
+  let request = config.adaptiveGovernance;
+  const explicitAdaptiveRequest = Object.hasOwn(config, 'adaptiveGovernance');
+  if (explicitAdaptiveRequest && (!request || typeof request !== 'object' || Array.isArray(request))) throw usageError('adaptiveGovernance must be an object with explicit installedRoots.');
+  delete config.adaptiveGovernance;
+  if (!request && (options['dry-run'] || options.approve || prompted)) request = { installedRoots: [] };
+  let adaptive;
+  try {
+    adaptive = request ? prepareAdaptiveGovernance(config, scan, request) : null;
+    if (prompted && adaptive) {
+      request = { ...request, decisions: await promptAdaptiveDecisions(adaptive.summary, { locale: config.interactionLanguage }) };
+      adaptive = prepareAdaptiveGovernance(config, scan, request);
+    }
+  } catch (error) {
+    throw error.code === 'AICG_USAGE' ? error : usageError(error.message);
+  }
+  if (adaptive) config = adaptive.config;
   validateConfig(config);
   const artifacts = buildArtifacts(config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
+  if (adaptive) {
+    plan.adaptiveGovernance = adaptive.summary;
+    plan.requireAdaptiveApproval = explicitAdaptiveRequest || Boolean(prompted && [...adaptive.summary.decisions.skills, ...adaptive.summary.decisions.roles].some((entry) => entry.action === 'add'));
+    const ordinary = artifacts.filter((item) => ['AGENTS.md', 'docs/ai/rules/00_always.mdc'].includes(item.path)).map((item) => item.content);
+    const contextMap = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
+    const ordinaryMap = contextMap.slice(0, contextMap.indexOf('profiles:')) + 'profiles:\n' + (contextMap.match(/^  ordinary:[\s\S]*?(?=^  [a-z_]+:|$(?![\s\S]))/m)?.[0] ?? '');
+    plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managerTokens: 0 } } };
+  }
   assertInitializationWriteBoundary(plan);
-  return { scan, config, plan };
+  return { scan, config, plan, assertSourcesFresh: adaptive?.assertSourcesFresh };
 }
 
 export async function initCommand(target, options) {
-  const { scan, config, plan } = await prepareInit(target, options);
-  const executionPlan = buildExecutionPlan({ intent: initIntent(), scan, artifactPlan: plan, config });
+  const { scan, config, plan, assertSourcesFresh } = await prepareInit(target, options);
+  const needsApproval = Boolean(plan.requireAdaptiveApproval || options.requireApproval || config.skillDiscovery?.enabled || config.agentTeam?.enabled);
+  // Plain legacy --yes initialization does not expose or consume an execution digest.
+  const executionPlan = options['dry-run'] || options.approve || needsApproval
+    ? buildExecutionPlan({ intent: options.sync ? { id: 'governance.sync', handler: 'sync', mode: 'write' } : initIntent(), scan, artifactPlan: plan, config })
+    : null;
   if (!options.guided) printScan(scan);
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely initialize:\n- ${plan.conflicts.join('\n- ')}`);
     error.exitCode = 2;
     throw error;
   }
-  if (!options.yes && !options['dry-run']) {
+  if (!options.yes && !options['dry-run'] && !needsApproval) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Applying an initialization plan requires a TTY confirmation or --yes.');
     const ledger = buildDecisionLedger(scan, config);
     const boundary = ledger.decisions.find((decision) => decision.id === 'implementation-boundary')?.value ?? null;
     const confirmed = await confirmPlan(plan.operations, null, config.initialization, boundary);
     if (!confirmed) throw usageError('Initialization cancelled without writing files.');
   }
-  if (options['dry-run']) {
+  if (options['dry-run'] || (needsApproval && !options.approve)) {
     const ledger = buildDecisionLedger(scan, config);
     console.log(JSON.stringify({
       dryRun: true,
+      approvalRequired: needsApproval,
+      guidance: adaptivePreviewGuidance(config.interactionLanguage),
       initialization: config.initialization,
       implementationBoundary: ledger.decisions.find((decision) => decision.id === 'implementation-boundary')?.value ?? null,
       files: plan.operations.map(({ path: relative, changed }) => ({ path: relative, changed })),
       linksToMigrate: plan.links.map((link) => path.relative(scan.root, link)),
       planHash: executionPlan.planHash,
+      ...(plan.adaptiveGovernance ? { adaptiveGovernance: plan.adaptiveGovernance, contextCost: plan.contextCost } : {}),
+      requiredPermissions: executionPlan.requiredPermissions,
+      operations: executionPlan.operations,
     }, null, 2));
     return;
   }
 
   if (options.approve) {
+    if (plan.adaptiveGovernance?.status === 'budget-blocked') throw usageError('Adaptive governance is budget-blocked; cleanup needs separate explicit authorization before a new preview.');
     if (options.approve !== executionPlan.planHash) throw usageError(`Approval does not match the current plan hash ${executionPlan.planHash}. Re-run init --dry-run and approve the displayed hash.`);
-    assertPlanFresh(executionPlan);
-    assertArtifactPlanMatches(executionPlan, scan.root, plan);
+    // Freshness is checked once in the transaction's beforeApply callback, before any mutation.
   }
 
   const applied = applyArtifactPlan(scan.root, plan, {
@@ -221,11 +339,11 @@ export async function initCommand(target, options) {
     beforeApply: options.approve ? () => {
       assertPlanFresh(executionPlan);
       assertArtifactPlanMatches(executionPlan, scan.root, plan);
+      assertSourcesFresh?.();
     } : undefined,
     verify: () => checkProject(scanProject(scan.root)),
   });
   if (!options.guided) console.log(`initialized=${scan.root} changed_files=${applied.changed.length}`);
-  let refreshed = scanProject(scan.root);
   let result = applied.verification;
   if (!options.guided) printCheck(result, false);
   if (!result.ok) {
@@ -244,7 +362,7 @@ export async function initCommand(target, options) {
       const assist = runAssist(agentId, scan.root);
       console.log(`ai_assist=${assist.status} reason=${assist.reason}`);
       if (!assist.ok) console.log(`retry=${assist.retry}`);
-      refreshed = scanProject(scan.root);
+      const refreshed = scanProject(scan.root);
       result = checkProject(refreshed);
       if (!options.guided) printCheck(result, false);
       if (!result.ok) process.exitCode = 1;
