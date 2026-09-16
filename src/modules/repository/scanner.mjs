@@ -88,7 +88,10 @@ function detectStacks(files, registry, facts) {
     if (matched.length === 0) continue;
     const dependencies = pack.detect?.dependency_any ?? [];
     if (dependencies.length > 0 && !dependencies.some((dependency) => facts.some((fact) => matched.some((file) => file.relative === fact.sourcePath)
-      && (fact.name === dependency || (['maven', 'gradle', 'go'].includes(fact.ecosystem) && fact.name.includes(dependency)))))) continue;
+      && (fact.name === dependency
+        || (fact.ecosystem === 'dotnet' && dependency === 'Microsoft.NET.Sdk' && /^Microsoft\.NET\.Sdk\.(?:Web|Razor|Worker|BlazorWebAssembly)$/.test(fact.name))
+        || (fact.ecosystem === 'cmake' && dependency === 'Qt' && /^Qt[56]$/.test(fact.name))
+        || (['maven', 'gradle', 'go'].includes(fact.ecosystem) && fact.name.includes(dependency)))))) continue;
     detected.push({
       id: pack.id,
       evidence: pack.evidence,

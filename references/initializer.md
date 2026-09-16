@@ -93,6 +93,10 @@ Scanner dependency facts report `ecosystem`, `name`, `declaredVersion`, `resolve
 
 Task approval hashes also bind sorted, normalized receipt records and every referenced artifact digest, including Git-ignored references. Replacing referenced requirements, design, plans, or test cases requires a fresh preview and exact approval; updating the receipt's declared digest alone cannot reuse the old approval.
 
+Quick review requires both `implementation` and `targeted-review` approval records. Each record supplies an operator-declared `participantId`, a safe artifact `reference`, and its `sha256`; the two participants, paths, and content digests must all differ. Both records are bound into the receipt hash. This enforces distinct declared evidence, while real participant identity remains unverified.
+
+Structured dependency detection also recognizes Composer requirements, .NET SDK/package/framework references, Android and Java Gradle plugins, Swift framework declarations, CocoaPods, Pipfile packages, Flutter dependencies, and Qt `find_package` declarations. Python arrays are parsed with string/comment boundaries; extras and environment markers remain explicit facts. `go.sum` is checksum history and never proves a selected/resolved dependency version.
+
 Ordinary context is `AGENTS.md`, the selected context-map slice, and always rules. Behavior profiles conditionally add confirmed architecture, stack, and business material. Release policy belongs only to explicit release work. Historical twelve-layer documentation describes capabilities, not an unconditional flow.
 
 - L0: read-only work, direct answer, zero governance subprocesses and no harvest.

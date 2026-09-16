@@ -16,7 +16,7 @@ function fixture(context, overrides = {}) {
   const evidence = {
     schemaVersion: 1, planHash: plan.planHash, reviewEvidence: {}, professionalBoundaries: input.professionalBoundaries,
     approvals: plan.requiredApprovals.map((id) => {
-      const reference = /^(proposal-|referee)/.test(id) ? `${id}.md` : 'approved.md';
+      const reference = /^(proposal-|referee|implementation$|targeted-review$)/.test(id) ? `${id}.md` : 'approved.md';
       if (reference !== 'approved.md') fs.writeFileSync(path.join(root, reference), `# Independent ${id} findings\n`);
       return { id, reference, sha256: sha256(fs.readFileSync(path.join(root, reference))), source: 'operator-declared', participantId: id };
     }),
@@ -39,6 +39,30 @@ test('approval plans have canonical SHA256 bindings and retain mandatory gates',
     assert.notEqual(plan.planHash, approval.buildTaskApprovalPlan({ ...input, ...changed }).planHash);
   }
   assert.throws(() => approval.buildTaskApprovalPlan({ ...input, plannedPaths: ['../escape'] }), /path/);
+});
+
+test('quick review requires implementation evidence and rejects self-review identities or reused artifacts', (context) => {
+  const f = fixture(context, { requiredApprovals: ['implementation'] });
+  assert.equal(f.evaluate().status, 'approved', 'distinct implementation and review evidence is accepted');
+  const implementation = f.evidence.approvals.find((entry) => entry.id === 'implementation');
+  const review = f.evidence.approvals.find((entry) => entry.id === 'targeted-review');
+  const original = { ...review };
+  for (const change of [
+    { participantId: implementation.participantId },
+    { reference: implementation.reference, sha256: implementation.sha256 },
+    { reference: 'copy.md', sha256: implementation.sha256 },
+  ]) {
+    fs.copyFileSync(path.join(f.root, implementation.reference), path.join(f.root, 'copy.md'));
+    Object.assign(review, original, change); f.reapprove();
+    assert.equal(f.evaluate().status, 'independence-gap');
+  }
+  Object.assign(review, original); f.reapprove();
+  const approvedHash = f.evaluate().plan.planHash;
+  implementation.participantId = 'another-implementer'; f.save();
+  assert.notEqual(f.evaluate().plan.planHash, approvedHash);
+  const missing = fixture(context);
+  missing.evidence.approvals = missing.evidence.approvals.filter((entry) => entry.id !== 'implementation'); missing.reapprove();
+  assert.equal(missing.evaluate().status, 'missing-approval');
 });
 
 test('normalized approval receipts bind reference replacements even outside the change digest', (context) => {
