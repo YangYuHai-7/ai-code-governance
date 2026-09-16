@@ -4,8 +4,8 @@ import { readMemoryFile, isMemoryCodePath, changedMemoryBehaviorPaths } from '..
 // Unknown production formats are behavior candidates, never an extension waiver.
 export function isWorkUnitProductionPath(relative) {
   // Like the repository scanner, output-root names cannot hide nested source.
-  return !/^(?:docs?|tests?|__tests__|fixtures?|__fixtures__|dist|build|coverage)(?:\/|$)/i.test(relative)
-    && !/(?:^|\/)node_modules(?:\/|$)/i.test(relative)
+  return !/^(?:docs?|dist|build|coverage)(?:\/|$)/i.test(relative)
+    && !/(?:^|\/)(?:tests?|__tests__|fixtures?|__fixtures__|node_modules)(?:\/|$)/i.test(relative)
     && !/^(?:\.ai-governance|\.agents|\.claude|\.cursor|\.codex|\.superpowers)\//.test(relative)
     && !/\.(?:md|mdx|txt|rst|adoc)$/i.test(relative)
     && !/(?:^|\/)(?:readme|changelog|contributing|license)(?:[.-]|$)/i.test(relative)
