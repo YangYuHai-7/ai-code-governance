@@ -181,9 +181,10 @@ test('explicitly selected capabilities remain available outside ordinary context
     'docs/ai/hooks.md',
     'docs/ai/release-acceptance-policy.json',
     'docs/ai/technical-standards.json',
-    'docs/ai/capability-evolution.json',
-    'docs/ai/lifecycle.md',
+    'docs/memory/INDEX.md',
   ]) {
     assert.ok(paths.has(relative), `missing dormant artifact ${relative}`);
   }
+  assert.equal(paths.has('docs/ai/capability-evolution.json'), false);
+  assert.equal(paths.has('docs/ai/lifecycle.md'), false);
 });

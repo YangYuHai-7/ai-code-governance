@@ -9,8 +9,16 @@ import {
 import { teamRecommendation } from '../src/team-recommendation.mjs';
 import * as projectTeams from '../src/project-agent-team.mjs';
 import { sha256, stableJson } from '../src/shared/index.mjs';
+import { dynamicTeamPlan } from '../src/dynamic-team.mjs';
 
 const root = path.resolve('.');
+
+test('AICG responsibility pairs stay advisory and never become target project roles', () => {
+  const internal = dynamicTeamPlan();
+  assert.deepEqual(internal.responsibilityPairs?.map((pair) => pair.id), ['product-business-analysis', 'governance-architecture', 'agent-skill-engineering', 'cli-cross-platform', 'qa-evaluation', 'independent-audit-domain-risk']);
+  assert.deepEqual(internal.assignment.activeRoles, []);
+  assert.equal(Object.hasOwn(proposeProjectAgentTeam(genericInput()), 'responsibilityPairs'), false);
+});
 const humanContext = {
   teamScope: 'human',
   businessDescription: 'A bounded project delivery context.',
@@ -43,6 +51,19 @@ function genericInput(overrides = {}) {
     ...overrides,
   };
 }
+
+test('confirmed technical capabilities derive unapproved roles without a fixed industry roster', () => {
+  const proposal = proposeProjectAgentTeam({ projectMode: 'brownfield', evidence: [{ id: 'owner.stack', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [],
+    confirmedProjectFacts: [{ id: 'web-ui', label: 'Web interface', capabilities: ['web-ui-delivery'], evidenceIds: ['owner.stack'] }],
+  });
+  assert.equal(proposal.status, 'recommendation');
+  assert.equal(proposal.roleProposals.length, 1);
+  assert.deepEqual(proposal.roleProposals[0].capabilities, ['web-ui-delivery']);
+  assert.equal(proposal.roleProposals[0].status, 'recommended');
+  assert.deepEqual(proposal.professionalBoundaries, []);
+  assert.deepEqual(proposal.actionsPerformed, []);
+  assert.throws(() => proposeProjectAgentTeam({ projectMode: 'brownfield', evidence: [{ id: 'scan.stack', kind: 'repository-fact' }], confirmedDomainNeeds: [], confirmedProjectFacts: [{ id: 'food-safety', label: 'Restaurant', capabilities: ['food-safety'], evidenceIds: ['scan.stack'] }] }), /confirmed/i);
+});
 
 test('approved team hash binds final semantics and shared validation preserves all mandatory boundaries', () => {
   assert.equal(typeof projectTeams.buildApprovedProjectAgentTeam, 'function');

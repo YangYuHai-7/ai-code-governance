@@ -9,6 +9,24 @@ import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules
 import { classifyTaskRoute, minimumTaskLevelFromPaths, taskRoutingPolicy } from '../src/modules/governance/index.mjs';
 import { matchSimpleGlob } from '../src/shared/index.mjs';
 import * as routing from '../src/modules/governance/task-routing.mjs';
+import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
+
+test('only an approved role path and confirmed signal can raise project risk applicability', () => {
+  const proposal = proposeProjectAgentTeam({ projectMode: 'greenfield', evidence: [{ id: 'owner.scope', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [], confirmedProjectFacts: [{ id: 'external-operation', label: 'External operation', capabilities: ['external-operation'], evidenceIds: ['owner.scope'] }] });
+  const agentTeam = buildApprovedProjectAgentTeam(proposal, { selectedIds: ['external-operation'], approvalEvidenceId: 'owner.approval', activation: { 'external-operation': { signals: ['external-side-effect'], paths: ['docs/operations/**'] } } });
+  const config = { agentTeam, confirmedRiskSignals: ['external-side-effect'] };
+  assert.equal(minimumTaskLevelFromPaths(['docs/operations/runbook.md'], config), 'L3');
+  assert.deepEqual(routing.applicableRiskSignals(config, ['DOCS/operations/runbook.md']), ['external-side-effect']);
+  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], config), 'L1');
+  assert.equal(minimumTaskLevelFromPaths(['docs/operations/runbook.md'], { ...config, confirmedRiskSignals: [] }), 'L1');
+  assert.throws(() => minimumTaskLevelFromPaths(['docs/operations/runbook.md'], { ...config, agentTeam: { ...agentTeam, planHash: '0'.repeat(64) } }), /planHash/);
+});
+
+test('ordinary feature requests an independent quick review while unrelated project risks stay task-local', () => {
+  assert.equal(routing.classifyReviewMode({ plannedPaths: ['src/widget.ts'] }).mode, 'quick-review');
+  assert.equal(routing.classifyReviewMode({ plannedPaths: ['src/widget.ts'], behaviorChange: true }).mode, 'quick-review');
+  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }), 'L1');
+});
 
 test('review mode is evidence driven rather than coupled to task level or production roots', () => {
   for (const taskLevel of ['L1', 'L2', 'L3']) {
@@ -35,7 +53,7 @@ test('review mode is evidence driven rather than coupled to task level or produc
     assert.equal(result.mode, mode, JSON.stringify(input));
     assert.equal(result.requiredRoleCount, roles);
     assert.ok(result.triggers.length > 0);
-    assert.equal(result.independenceRequired, mode.includes('pk'));
+    assert.equal(result.independenceRequired, mode !== 'single');
   }
   assert.equal(routing.classifyReviewMode({ plannedPaths: ['docs/medical/guide.md', 'test/finance.test.ts'] }).mode, 'single');
   assert.throws(() => routing.classifyReviewMode({ behaviorChange: 'false' }), /behaviorChange/);
@@ -47,7 +65,7 @@ test('completion routes compare declarations with canonical path and owner risk 
     [['README.md'], {}, 'L0', 'L1', 'upgrade-required'],
     [['src/widget.mjs'], {}, 'L1', 'L2', 'upgrade-required'],
     [['apps/web/widget.mjs', 'apps/api/widget.mjs'], {}, 'L2', 'L3', 'upgrade-required'],
-    [['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }, 'L2', 'L3', 'upgrade-required'],
+    [['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }, 'L2', 'L1', 'verified'],
     [['src/payment.mjs'], {}, 'L3', 'L3', 'verified'],
     [['src/widget.mjs'], {}, null, 'L2', 'unverified-declaration'],
   ]) {
@@ -152,8 +170,8 @@ test('changed paths conservatively raise the minimum task level', () => {
   ]) {
     assert.equal(minimumTaskLevelFromPaths(paths, { confirmedRiskSignals: [] }), expected, paths.join(', '));
   }
-  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['public-api'] }), 'L2');
-  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }), 'L3');
+  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['public-api'] }), 'L1');
+  assert.equal(minimumTaskLevelFromPaths(['docs/guide.md'], { confirmedRiskSignals: ['external-side-effect'] }), 'L1');
 });
 
 test('product source roots and root entrypoints share scanner implementation classification', () => {

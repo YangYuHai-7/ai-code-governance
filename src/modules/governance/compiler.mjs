@@ -109,7 +109,7 @@ export function defaultConfig(scan) {
     skillDiscovery: { enabled: false },
     agentTeam: { enabled: false },
     features: {
-      knowledge: false,
+      knowledge: true,
       taskRuntime: false,
       hooks: false,
       externalWorkflows: false,
@@ -673,7 +673,7 @@ export function artifactDefinitions(config, scan) {
     definitions.at(-1).build = () => capabilityArtifacts().find((artifact) => artifact.path === relative);
   }
   add('docs/ai/lifecycle.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 治理生命周期\n\n将重复出现且有证据支持的指引提升为规则或技能。审查过期资料，停用已被替代的指引，并为每项事实保留唯一维护者。\n' : '# Governance lifecycle\n\nPromote repeated, evidence-backed guidance into rules or Skills. Review stale sources, retire superseded guidance, and keep one owner for every fact.\n', { source: 'template:lifecycle' });
-  add('docs/memory/INDEX.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 项目记忆索引\n\n在此记录当前模块行为和机器可检查的断言。本目录不作为变更日志使用。\n' : '# Project memory index\n\nRecord current module behavior and machine-checkable assertions here. Do not use this directory as a changelog.\n', { requires: [(value) => value.features.knowledge], source: 'template:memory-index' });
+  add('docs/memory/INDEX.md', 'core', () => config.artifactLanguage === 'zh-CN' ? '# 项目记忆索引\n\n记录有证据支持的模块事实，每项事实只指定一个维护者，并关联仓库证据。模块语义尚未验证；不得编造模块事实。本目录不作为变更日志使用，按任务范围加载。\n' : '# Project memory index\n\nAssign one owner per fact and link repository evidence. Module semantics remain unverified; do not invent module facts. This is not a changelog. Load only memory relevant to the task.\n', { requires: [(value) => value.features.knowledge], source: 'template:memory-index' });
   add('docs/ai/long-running/README.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 长期任务状态\n\n每项已批准的长期工作建立一个任务目录。运行时状态引用正典计划与外部变更，不复制这些内容。\n' : '# Long-running task state\n\nCreate one task directory per approved long-running effort. Runtime state references canonical plans and external changes instead of copying them.\n', { requires: [(value) => value.features.taskRuntime], source: 'template:task-runtime' });
 
   add('docs/ai/workflow-integrations.yaml', 'integration', () => 'schema_version: 1\nmode: project-native\nproviders: {}\nauthority:\n  current_product_behavior: project-code-and-tests\n  active_change: project-native\n  project_ai_governance: docs/ai\n  implementation_task_list: project-native\n  runtime_state: docs/ai/long-running\n  delivery_evidence: docs/ai/acceptance-results.json\n', { requires: [(value) => value.features.externalWorkflows] });

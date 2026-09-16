@@ -14,6 +14,18 @@ import { validateApprovedAgentTeam } from '../src/modules/skills/decisions.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions, validateAdaptiveDecisions } from '../src/modules/skills/index.mjs';
 
+test('bounded folded and literal Skill descriptions are discoverable without YAML execution', (context) => {
+  for (const indicator of ['>-', '|-', '>', '|']) {
+    const root = fixture(context);
+    const file = path.join(root, 'docs/ai/skills/block/SKILL.md');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `---\nname: block\ndescription: ${indicator}\n  Review bounded metadata.\n  Preserve safety boundaries.\n---\n# Body\n`);
+    assert.equal(discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] }).length, 1, indicator);
+    fs.writeFileSync(file, `---\nname: block\ndescription: >-\n  ${'x'.repeat(501)}\n---\n`);
+    assert.equal(discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] }).length, 0);
+  }
+});
+
 test('decision receipts bind all Skill metadata and reject malformed remembered state', (context) => {
   const root = fixture(context);
   skill(root, 'docs/ai/skills/review', 'review');

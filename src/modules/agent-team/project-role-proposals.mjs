@@ -276,15 +276,29 @@ function gapsForBoundary(boundary) {
 
 export function proposeProjectAgentTeam(input, options) {
   const request = object(input, 'input');
-  exactKeys(request, 'input', new Set(['projectMode', 'evidence', 'confirmedDomainNeeds', 'roleNeeds', 'approvedRoles']), [
-    'projectMode', 'evidence', 'confirmedDomainNeeds', 'roleNeeds',
+  exactKeys(request, 'input', new Set(['projectMode', 'evidence', 'confirmedDomainNeeds', 'roleNeeds', 'approvedRoles', 'confirmedProjectFacts']), [
+    'projectMode', 'evidence', 'confirmedDomainNeeds',
   ]);
   if (!PROJECT_MODES.has(request.projectMode)) throw usageError('projectMode must be greenfield or brownfield.');
   const normalizedOptions = normalizeOptions(options);
   const evidenceById = normalizeEvidence(request.evidence);
   const domainsById = normalizeDomainNeeds(request.confirmedDomainNeeds, evidenceById);
   const approvedRoles = normalizeApprovedRoles(request.approvedRoles);
-  const roleNeeds = normalizeRoleNeeds(request.roleNeeds, domainsById, evidenceById, approvedRoles, normalizedOptions.maxRecommendations);
+  const derivedNeeds = [];
+  if (request.confirmedProjectFacts !== undefined) {
+    boundedArray(request.confirmedProjectFacts, 'confirmedProjectFacts', { max: MAX_RECOMMENDATIONS });
+    for (const fact of request.confirmedProjectFacts) {
+      object(fact, 'confirmed project fact');
+      exactKeys(fact, 'confirmed project fact', new Set(['id', 'label', 'capabilities', 'evidenceIds']));
+      const id = requiredId(fact.id, 'confirmed project fact id');
+      const label = requiredText(fact.label, 'confirmed project fact label');
+      const evidenceIds = evidenceIdArray(fact.evidenceIds, 'confirmed project fact evidenceIds', { allowEmpty: false });
+      if (!evidenceIds.every((evidenceId) => evidenceById.get(evidenceId)?.kind === 'user-confirmed-project')) throw usageError('Derived roles require user-confirmed project facts.');
+      const capabilities = idArray(fact.capabilities, 'confirmed project fact capabilities', { allowEmpty: false });
+      derivedNeeds.push({ id, title: label, capabilities, responsibilities: [`Deliver the confirmed ${label} scope.`], outOfScope: ['No independent approval, external action, or professional decision authority.'], domainNeedIds: [], evidenceIds, skillIds: [], mustRemainIndependentFrom: [] });
+    }
+  }
+  const roleNeeds = normalizeRoleNeeds([...(request.roleNeeds ?? []), ...derivedNeeds], domainsById, evidenceById, approvedRoles, normalizedOptions.maxRecommendations);
   const policy = loadPolicy();
   const professionalBoundaries = [...domainsById.values()]
     .map((domain) => boundaryForDomain(domain, policy))

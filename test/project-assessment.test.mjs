@@ -13,6 +13,43 @@ import { detectSurfaceSignals, validateSurfaceVerificationContract } from '../sr
 
 const cli = path.resolve('bin/aicg.js');
 
+test('foundation scan excludes worktrees and records exact multi-ecosystem declaration and lock facts', (context) => {
+  const root = fixture('dependency-facts');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    '.worktrees/old/package.json': JSON.stringify({ dependencies: { phantom: '1' } }),
+    'worktrees/old/src/app.ts': 'export const old = true;',
+    'package.json': JSON.stringify({ dependencies: { react: '^19.0.0' }, description: 'vue is not a dependency' }),
+    'package-lock.json': JSON.stringify({ lockfileVersion: 3, packages: { 'node_modules/react': { version: '19.1.0' } } }),
+    'pom.xml': '<project><properties><spring.version>3.5.1</spring.version></properties><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId><version>${spring.version}</version></dependency></dependencies></project>',
+    'build.gradle.kts': 'dependencies { implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.0") }',
+    'go.mod': 'module example.org/app\nrequire (\n github.com/gin-gonic/gin v1.10.0\n)\n',
+    'pyproject.toml': '[project]\nname = "app"\ndependencies = ["fastapi>=0.115", "pydantic==2.10.0"]\n',
+    'requirements.txt': 'requests==2.32.3\n',
+  };
+  for (const [relative, body] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), body);
+  }
+  const scan = scanProject(root);
+  assert.equal(scan.files.some((file) => /^(?:\.worktrees|worktrees)\//.test(file.relative)), false);
+  assert.equal(scan.agents.find((agent) => agent.id === 'codex').availability, 'not-probed');
+  assert.equal(scan.stacks.some((stack) => stack.id === 'frontend-vue'), false);
+  for (const expected of [
+    ['npm', 'react', '^19.0.0', '19.1.0', 'package.json'],
+    ['maven', 'org.springframework.boot:spring-boot-starter-web', '${spring.version}', '3.5.1', 'pom.xml'],
+    ['gradle', 'org.jetbrains.kotlin:kotlin-stdlib', '2.2.0', null, 'build.gradle.kts'],
+    ['go', 'github.com/gin-gonic/gin', 'v1.10.0', null, 'go.mod'],
+    ['python', 'fastapi', '>=0.115', null, 'pyproject.toml'],
+    ['python', 'requests', '==2.32.3', null, 'requirements.txt'],
+  ]) {
+    const fact = scan.dependencyFacts?.find((entry) => entry.ecosystem === expected[0] && entry.name === expected[1]);
+    assert.ok(fact, expected.join(':'));
+    assert.deepEqual([fact.ecosystem, fact.name, fact.declaredVersion, fact.resolvedVersion, fact.sourcePath], expected);
+    assert.equal(fact.evidenceLevel, 'stated');
+  }
+});
+
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-assessment-${name}-`));
 }

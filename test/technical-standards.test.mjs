@@ -158,7 +158,7 @@ test('broad stack evidence and similar package names never select a technical st
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { 'react-router': '7.0.0' } }));
   const scan = scanProject(root);
-  assert.ok(scan.stacks.some((stack) => stack.id === 'frontend-react'));
+  assert.equal(scan.stacks.some((stack) => stack.id === 'frontend-react'), false);
   const summary = technicalStandardsSummary(scan, defaultConfig(scan));
   assert.equal(summary.skills.some((skill) => skill.id === 'react-component-purity'), false);
 

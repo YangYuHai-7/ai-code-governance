@@ -4,6 +4,15 @@ import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 
 const PRODUCT_TEAM_PATH = 'assets/registries/aicg-product-team.json';
+// Internal responsibility lenses, never target-project membership or evidence of participation.
+const RESPONSIBILITY_PAIRS = [
+  ['product-business-analysis', 'Close requirements and user journey.', 'Challenge missing states and contradictions.'],
+  ['governance-architecture', 'Design adaptive flow and ownership.', 'Challenge over-design, latency, and duplication.'],
+  ['agent-skill-engineering', 'Implement client adapters and task routing.', 'Audit Skill provenance, activation, and context cost.'],
+  ['cli-cross-platform', 'Implement deterministic CLI behavior.', 'Audit path, platform, transaction, and compatibility safety.'],
+  ['qa-evaluation', 'Design coverage and acceptance cases.', 'Execute evidence, performance, and negative probes.'],
+  ['independent-audit-domain-risk', 'Review approval and manifest integrity.', 'Review professional boundaries and release claims.'],
+];
 const SAFE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SAFE_TEXT = /^[^\x00-\x1f\x7f]{1,1000}$/;
 const PHASES = new Set(['core', 'specialist', 'specialist-pool', 'scale', 'dynamic']);
@@ -235,6 +244,7 @@ export function dynamicTeamPlan(context = {}, registry = loadAicgProductTeamRegi
   return {
     schemaVersion: 1,
     teamId: normalizedRegistry.teamId,
+    responsibilityPairs: RESPONSIBILITY_PAIRS.map(([id, responsibilityA, responsibilityB]) => ({ id, responsibilityA, responsibilityB, status: 'advisory-not-assigned' })),
     membershipPolicy: normalizedRegistry.membershipPolicy,
     status: uncoveredCapabilities.length > 0
       ? 'needs-role-approval'

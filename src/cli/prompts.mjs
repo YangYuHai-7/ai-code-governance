@@ -256,7 +256,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       initialization,
       features: {
         ...seed.features,
-        knowledge: false,
+        knowledge: seed.features?.knowledge ?? true,
         taskRuntime: false,
         hooks: false,
         externalWorkflows: false,
@@ -335,7 +335,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       { label: 'Windows', value: 'windows' },
       { label: 'Linux', value: 'linux' },
     ], seed.supportedOs, { locale: interactionLanguage });
-    const knowledge = governanceDepth === 'complete' && await yesNo(rl, 'Generate the knowledge-memory layer?', true);
+    const knowledge = governanceDepth === 'complete' ? await yesNo(rl, 'Generate the knowledge-memory layer?', seed.features?.knowledge ?? true) : seed.features?.knowledge ?? true;
     const taskRuntime = governanceDepth === 'complete' && await yesNo(rl, 'Generate the long-running task runtime?', true);
     const hooks = await yesNo(rl, 'Prepare project hooks?', false);
     const externalWorkflows = await yesNo(rl, 'Enable an external workflow provider configuration?', false);

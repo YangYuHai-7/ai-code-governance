@@ -19,6 +19,7 @@ const MINIMAL_CODEX_ALLOWLIST = [
   'docs/ai/README.md',
   'docs/ai/context-map.yaml',
   'docs/ai/rules/00_always.mdc',
+  'docs/memory/INDEX.md',
 ];
 
 function fixture(context) {
@@ -38,9 +39,9 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
-    ['minimal', 6, 24 * 1024],
-    ['standard', 19, 64 * 1024],
-    ['complete', 21, 96 * 1024],
+    ['minimal', 7, 24 * 1024],
+    ['standard', 20, 64 * 1024],
+    ['complete', 22, 96 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -198,7 +199,7 @@ test('lifecycle features remain independent at every depth', (context) => {
     const paths = buildArtifacts({ ...config, governanceDepth, features: { ...config.features, taskRuntime: true } }, scan).map((item) => item.path);
     assert.ok(paths.includes('docs/ai/long-running/README.md'));
     assert.ok(paths.includes('docs/ai/lifecycle.md'));
-    assert.equal(paths.includes('docs/memory/INDEX.md'), false);
+    assert.equal(paths.includes('docs/memory/INDEX.md'), true);
     assert.equal(paths.includes('docs/ai/hooks.md'), false);
     assert.equal(paths.includes('docs/ai/ci-integration.md'), false);
     assert.equal(paths.includes('docs/ai/workflow-integrations.yaml'), false);

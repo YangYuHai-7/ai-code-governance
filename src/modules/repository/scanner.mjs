@@ -6,6 +6,7 @@ import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { commandExists, commandVersion, resolveGitRoot } from '../../adapters/process/index.mjs';
 import { exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 import { matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
+import { dependencyFacts } from './dependencies.mjs';
 
 const GOVERNANCE_PATHS = [
   'AGENTS.md',
@@ -77,7 +78,7 @@ function manifestText(files, patterns) {
   return { matched, text };
 }
 
-function detectStacks(files, registry) {
+function detectStacks(files, registry, facts) {
   const detected = [];
   for (const pack of registry.packs) {
     if (pack.id === 'generic-unknown') continue;
@@ -86,7 +87,8 @@ function detectStacks(files, registry) {
     const { matched, text } = manifestText(files, patterns);
     if (matched.length === 0) continue;
     const dependencies = pack.detect?.dependency_any ?? [];
-    if (dependencies.length > 0 && !dependencies.some((dependency) => text.includes(dependency))) continue;
+    if (dependencies.length > 0 && !dependencies.some((dependency) => facts.some((fact) => matched.some((file) => file.relative === fact.sourcePath)
+      && (fact.name === dependency || (['maven', 'gradle', 'go'].includes(fact.ecosystem) && fact.name.includes(dependency)))))) continue;
     detected.push({
       id: pack.id,
       evidence: pack.evidence,
@@ -172,13 +174,14 @@ export function scanProject(target, options = {}) {
   const scanBudget = { ...DEFAULT_SCAN_BUDGET, ...(options.scanBudget ?? {}) };
   const walked = walkFilesDetailed(root, {
     ...scanBudget,
-    ignoredAtAnyDepth: ['.git', 'node_modules'],
+    ignoredAtAnyDepth: ['.git', '.hg', '.svn', 'node_modules', '.worktrees', 'worktrees', '.venv', '__pycache__', '.gradle', '.mypy_cache', '.pytest_cache'],
     ignoredAtRoot: LOCAL_OUTPUT_PREFIXES.map((prefix) => prefix.replace(/\/$/, '')),
     caseInsensitiveIgnored: true,
   });
   const files = walked.files;
   const factFiles = files.filter((file) => !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix)));
   const capabilityRegistry = loadCapabilityRegistry();
+  const dependencies = dependencyFacts(root, factFiles, scanBudget.maxFileBytes);
   const agentRegistry = loadAgentRegistry();
   const gitCommand = probeEnvironment && commandExists('git');
   const detectedGitRoot = gitCommand ? resolveGitRoot(root) : null;
@@ -219,7 +222,8 @@ export function scanProject(target, options = {}) {
     architecture: os.arch(),
     files,
     scanBudget: walked.budget,
-    stacks: detectStacks(factFiles, capabilityRegistry),
+    stacks: detectStacks(factFiles, capabilityRegistry, dependencies),
+    dependencyFacts: dependencies,
     packageDependencies: detectPackageDependencies(factFiles),
     commands: detectCommands(root),
     agents,
@@ -237,6 +241,7 @@ export function scanSummary(scan) {
     current_os: scan.currentOs,
     detected_stacks: scan.stacks,
     detected_packages: scan.packageDependencies,
+    dependency_facts: scan.dependencyFacts,
     detected_commands: scan.commands,
     agents: scan.agents,
     existing_governance: scan.existingGovernance,
