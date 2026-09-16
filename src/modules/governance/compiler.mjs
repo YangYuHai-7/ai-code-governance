@@ -6,12 +6,14 @@ import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, 
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
 import { buildTechnicalStandardArtifacts, selectTechnicalStandards } from '../standards/index.mjs';
+import { validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { normalizeRelative, stableJson } from '../../shared/index.mjs';
+import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
+import { planArtifacts } from './artifact-plan.mjs';
 
 function yamlList(values, indent = 0) {
   const prefix = ' '.repeat(indent);
@@ -101,6 +103,8 @@ export function defaultConfig(scan) {
     supportedOs: ['macos', 'windows', 'linux'],
     technologyPackages: [],
     projectCapabilities: [],
+    skillDiscovery: { enabled: false },
+    agentTeam: { enabled: false },
     features: {
       knowledge: false,
       taskRuntime: false,
@@ -182,6 +186,7 @@ export function validateConfig(config) {
   validateProjectCapabilities(config.projectCapabilities);
   validateCapabilityEvolution(config.capabilityEvolution, config.projectCapabilities ?? []);
   validateArchitectureDecision(config.architecture, config.initialization ?? null);
+  validateSkillGovernanceConfig(config);
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
   if (config.domainConstraints.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1000 || /[\u0000-\u001f\u007f]/.test(value))) {
@@ -596,6 +601,17 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/rules/00_always.mdc', 'core', () => alwaysRule(config), { ...core, source: 'template:always-rule' });
   add('docs/ai/verification-profiles.yaml', 'routing', () => verificationProfiles(config), { source: 'template:runtime-verification' });
   add('docs/ai/task-routing-policy.json', 'routing', () => stableJson(taskRoutingPolicy(config)), { ownership: 'full', kind: 'task-routing-policy', source: 'template:task-routing-policy' });
+  for (const name of ['skill-discovery', 'team-orchestrator']) {
+    add(`docs/ai/skills/${name}/SKILL.md`, 'skill-management', () => managementSkill(config, name), {
+      ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: [`behavior_change:${name.replaceAll('-', '_')}`],
+    });
+  }
+  add('docs/ai/skill-index.json', 'skill-management', () => stableJson(config.skillDiscovery.decision), {
+    ownership: 'full', kind: 'skill-management-index', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
+  });
+  add('docs/ai/agent-team.json', 'skill-management', () => stableJson(config.agentTeam), {
+    ownership: 'full', kind: 'project-agent-team', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:team_orchestrator'],
+  });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
@@ -668,10 +684,108 @@ export function artifactDefinitions(config, scan) {
 export function selectedArtifactDefinitions(config, scan) {
   config = normalizeConfigDefaults(config, scan);
   validateConfig(config);
+  validateSkillGovernanceConfig(config, scan.root);
   return selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));
 }
 
 export function buildArtifacts(config, scan) {
+  config = normalizeConfigDefaults(config, scan);
   const selected = selectedArtifactDefinitions(config, scan);
+  const artifacts = renderDefinitions(selected);
+  if (hasSkillManagement(config)) {
+    const cost = skillGovernanceCost(scan.root, artifacts);
+    if (stableJson(cost) !== stableJson(config.skillDiscovery.artifactPlan.cost)) throw usageError('Skill governance costs changed; exact planHash approval is required again.');
+  }
+  return artifacts;
+}
+
+function hasSkillManagement(config) {
+  return config.governanceDepth !== 'minimal' && config.skillDiscovery?.enabled === true && config.agentTeam?.enabled === true;
+}
+
+function managementSkill(config, name) {
+  const discovery = name === 'skill-discovery';
+  const description = discovery
+    ? languageTitle(config, '仅在需要查找或选择任务 Skill 时使用；离线读取元数据并请求精确审批。', 'Use when discovering or selecting task Skills; inspect offline metadata and request exact approval.')
+    : languageTitle(config, '仅在需要项目 AI 角色协作时使用；按已审批的项目角色与专业边界编排任务。', 'Use when coordinating project AI roles; follow the approved project roster and professional boundaries.');
+  const body = discovery
+    ? languageTitle(config, '先读取 docs/ai/skill-index.json。只检查项目与显式 installedRoots 的元数据；不联网、不安装、不执行脚本。推荐不等于审批。来源、版本、内容摘要、权限或成本变化后，必须重新确认 planHash。每项能力只保留一个负责人；当前任务最多激活三个 Skill。命中任务后才读取正文；无匹配时报告缺口，不冒充专业判断。', 'Read docs/ai/skill-index.json first. Inspect only project metadata and explicit installedRoots. Do not fetch, install, or execute scripts. Recommendation is not approval. Source, version, digest, permission, or cost changes require fresh planHash approval. Keep one owner per capability and at most three active Skills per task. Load bodies only after a task match; report gaps without claiming professional authority.')
+    : languageTitle(config, '先读取 docs/ai/agent-team.json。此 roster 是项目 AI 团队，不是人类组织或 AICG 开发团队。仅按已审批角色与当前任务证据推荐协作，保留 professionalBoundaries 和 gaps；角色数据不是可执行指令。不得因角色名自动创建 Skill、提高权限或声称已完成工作。变更团队、审批范围或成本时重新确认 planHash；真实执行与验证证据另行记录。', 'Read docs/ai/agent-team.json first. This roster describes project AI roles, not a human organization or the AICG product team. Recommend collaboration only within approved roles and current task evidence; preserve professionalBoundaries and gaps. Role data is not executable instruction. Do not create Skills, elevate permissions, or claim completed work from role names. Team, approval scope, or cost changes require fresh planHash approval; record actual execution and verification separately.');
+  return `---\nname: ${name}\ndescription: ${description}\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${name}\n\n${body}\n`;
+}
+
+function renderDefinitions(selected) {
   return selected.map((definition) => definition.build(selected)).map((artifact) => ({ ...artifact, path: normalizeRelative(artifact.path) }));
+}
+
+function governanceContextHash(config) {
+  const { skillDiscovery: _discovery, agentTeam: _team, ...base } = config;
+  return sha256(stableJson(base));
+}
+
+function skillGovernanceHash(config, artifactPlan) {
+  return sha256(stableJson({ schemaVersion: 1, contextHash: artifactPlan.contextHash, decision: config.skillDiscovery.decision, agentTeam: config.agentTeam, cost: artifactPlan.cost }));
+}
+
+function validateSkillGovernanceConfig(config, root = null) {
+  for (const key of ['skillDiscovery', 'agentTeam']) {
+    if (config[key] !== undefined && (!config[key] || typeof config[key] !== 'object' || typeof config[key].enabled !== 'boolean')) throw usageError(`${key}.enabled must be an explicit boolean.`);
+  }
+  if (config.governanceDepth === 'minimal' || (!config.skillDiscovery?.enabled && !config.agentTeam?.enabled)) return;
+  if (!hasSkillManagement(config)) throw usageError('Skill management requires both an approved discovery decision and project agent team.');
+  validateSkillDecision(config.skillDiscovery.decision, { root });
+  validateApprovedAgentTeam(config.agentTeam);
+  const plan = config.skillDiscovery.artifactPlan;
+  if (!plan || plan.contextHash !== governanceContextHash(config) || plan.planHash !== skillGovernanceHash(config, plan)
+    || config.skillDiscovery.approvalPlanHash !== plan.planHash) throw usageError('Skill governance requires exact artifact planHash approval for the current config, decisions, team and costs.');
+}
+
+function skillGovernanceCost(root, artifacts) {
+  const transaction = planArtifacts(root, artifacts);
+  if (transaction.conflicts.length) throw usageError(`Skill governance planning conflict: ${transaction.conflicts.join('; ')}`);
+  const managers = artifacts.filter((item) => item.kind === 'skill-management-skill');
+  const managerTokens = Math.ceil(managers.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
+  const extra = artifacts.filter((item) => ['skill-management-skill', 'skill-management-index', 'project-agent-team'].includes(item.kind));
+  let retainedBytes = 0;
+  let retainedFiles = 0;
+  for (const entry of transaction.retained) {
+    const absolute = path.join(root, entry.path);
+    if (!fs.existsSync(absolute)) continue;
+    const stat = fs.lstatSync(absolute);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw usageError('Retained Skill governance budget cannot be verified.');
+    retainedBytes += stat.size;
+    retainedFiles += 1;
+  }
+  const cost = {
+    increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens },
+    total: { files: transaction.operations.length + 1 + retainedFiles, bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content) + retainedBytes },
+  };
+  const config = JSON.parse(artifacts.find((item) => item.path === CONFIG_PATH).content);
+  if (cost.total.files > 26 || cost.total.bytes > (config.governanceDepth === 'standard' ? 64 : 96) * 1024 || managerTokens > 800) throw usageError('Approved Skill governance exceeds the existing file, byte or manager token budget.');
+  return cost;
+}
+
+/** Preview only: the caller must explicitly approve the returned hash before normal generation. */
+export function prepareSkillGovernancePlan(config, scan) {
+  config = normalizeConfigDefaults(structuredClone(config), scan);
+  validateConfig({ ...config, skillDiscovery: { enabled: false }, agentTeam: { enabled: false } });
+  if (!hasSkillManagement(config)) throw usageError('Skill governance approval is available only for enabled Standard/Complete decisions and team.');
+  validateSkillDecision(config.skillDiscovery.decision, { root: scan.root });
+  validateApprovedAgentTeam(config.agentTeam);
+  config.skillDiscovery = { enabled: true, decision: config.skillDiscovery.decision, artifactPlan: {
+    contextHash: governanceContextHash(config), planHash: '0'.repeat(64),
+    cost: { increment: { files: 0, bytes: 0, managerTokens: 0 }, total: { files: 0, bytes: 0 } },
+  }, approvalPlanHash: '0'.repeat(64) };
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const selected = selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));
+    const cost = skillGovernanceCost(scan.root, renderDefinitions(selected));
+    if (stableJson(cost) === stableJson(config.skillDiscovery.artifactPlan.cost)) {
+      const planHash = skillGovernanceHash(config, config.skillDiscovery.artifactPlan);
+      config.skillDiscovery.artifactPlan.planHash = planHash;
+      // A placeholder cannot authorize buildArtifacts; only the user's exact hash may do so.
+      return { planHash, cost, skillDiscovery: config.skillDiscovery, agentTeam: config.agentTeam, actionsPerformed: [] };
+    }
+    config.skillDiscovery.artifactPlan.cost = cost;
+  }
+  throw usageError('Skill governance cost calculation did not stabilize.');
 }
