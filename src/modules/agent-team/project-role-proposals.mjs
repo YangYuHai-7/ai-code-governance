@@ -4,8 +4,9 @@ import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 
 const PROFESSIONAL_BOUNDARIES_PATH = 'assets/policies/professional-domain-boundaries.json';
-const ROLE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const EVIDENCE_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+const MAX_IDENTIFIER_BYTES = 128;
+const ROLE_ID = /^(?=.{1,128}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const EVIDENCE_ID = /^(?=.{1,128}$)[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const SAFE_TEXT = /^[^\x00-\x1f\x7f]{1,1000}$/;
 const PROJECT_MODES = new Set(['greenfield', 'brownfield']);
 const EVIDENCE_KINDS = new Set(['repository-fact', 'user-confirmed-domain', 'user-confirmed-project']);
@@ -20,11 +21,11 @@ const MAX_DOMAIN_NEEDS_PER_ROLE = 8;
 const MAX_EVIDENCE_PER_ROLE = 16;
 const MAX_SKILLS_PER_ROLE = 16;
 const MAX_INDEPENDENCE_RELATIONS_PER_ROLE = 16;
-const REQUIRED_PROFESSIONAL_DOMAIN_IDS = new Set([
-  'contract-law',
-  'medical-care',
-  'financial-services',
-  'food-safety',
+const REQUIRED_PROFESSIONAL_QUALIFICATIONS = new Map([
+  ['contract-law', 'licensed-lawyer'],
+  ['medical-care', 'licensed-clinician'],
+  ['financial-services', 'licensed-financial-professional'],
+  ['food-safety', 'qualified-food-safety-professional'],
 ]);
 
 function sortedStrings(values) {
@@ -32,12 +33,12 @@ function sortedStrings(values) {
 }
 
 function requiredId(value, field) {
-  if (typeof value !== 'string' || !ROLE_ID.test(value)) throw usageError(`${field} must be a lowercase kebab-case identifier.`);
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > MAX_IDENTIFIER_BYTES || !ROLE_ID.test(value)) throw usageError(`${field} must be a lowercase kebab-case identifier of at most ${MAX_IDENTIFIER_BYTES} characters and bytes.`);
   return value;
 }
 
 function requiredEvidenceId(value, field) {
-  if (typeof value !== 'string' || !EVIDENCE_ID.test(value)) throw usageError(`${field} must be a stable lowercase evidence identifier.`);
+  if (typeof value !== 'string' || Buffer.byteLength(value, 'utf8') > MAX_IDENTIFIER_BYTES || !EVIDENCE_ID.test(value)) throw usageError(`${field} must be a stable lowercase evidence identifier of at most ${MAX_IDENTIFIER_BYTES} characters and bytes.`);
   return value;
 }
 
@@ -207,15 +208,20 @@ export function validateProfessionalDomainBoundaryPolicy(policy) {
     if (boundary.humanReviewRequired !== true || boundary.jurisdictionRequired !== true || boundary.decisionAuthority !== 'human-only') {
       throw usageError(`Professional domain boundary ${domainNeedId} must retain required human review and human-only authority.`);
     }
+    const qualification = requiredId(boundary.qualification, `professional boundary ${index}.qualification`);
+    const requiredQualification = REQUIRED_PROFESSIONAL_QUALIFICATIONS.get(domainNeedId);
+    if (requiredQualification && qualification !== requiredQualification) {
+      throw usageError(`Professional domain boundary ${domainNeedId} must retain required qualification ${requiredQualification}.`);
+    }
     byDomainNeedId.set(domainNeedId, {
       humanReviewRequired: true,
-      qualification: requiredId(boundary.qualification, `professional boundary ${index}.qualification`),
+      qualification,
       jurisdictionRequired: true,
       decisionAuthority: 'human-only',
       reason: requiredText(boundary.reason, `professional boundary ${index}.reason`),
     });
   }
-  for (const domainNeedId of REQUIRED_PROFESSIONAL_DOMAIN_IDS) {
+  for (const domainNeedId of REQUIRED_PROFESSIONAL_QUALIFICATIONS.keys()) {
     if (!byDomainNeedId.has(domainNeedId)) throw usageError(`Professional domain boundary policy is missing required domain rule: ${domainNeedId}.`);
   }
   return byDomainNeedId;
