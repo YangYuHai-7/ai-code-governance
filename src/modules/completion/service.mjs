@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProject, evaluateCompletionTaskRoute, validateConfig, validateTaskLevel } from '../governance/index.mjs';
+import { checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
@@ -268,7 +268,7 @@ function runVerification(scan, selected) {
   };
 }
 
-function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null }) {
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null }) {
   let { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
@@ -302,15 +302,29 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   } else if (selectedVerification) {
     projectVerification = { status: 'skipped-after-governance-failure', command: selectedVerification.command };
   }
+  // This reads final evidence after an explicitly requested verification command.
+  // In hook mode scan.root is the materialized index, never the live worktree.
+  const taskApproval = evaluateTaskApproval(scan.root, {
+    taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
+    reviewEvidence: {
+      publicContract: config.confirmedRiskSignals?.includes('public-api') ?? false,
+      externalAction: config.confirmedRiskSignals?.includes('external-side-effect') ?? false,
+      confirmedRisk: (config.confirmedRiskSignals?.length ?? 0) > 0,
+    },
+  });
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
-  const ok = taskRoute.status !== 'upgrade-required' && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
+  const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));
+  const ok = routeAccepted && taskApproval.ok && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
   const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
-    : assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
+    : taskApproval.ok && assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
   harvestInput.changedPaths = changeEvidence.paths;
-  const harvest = completionCapabilityHarvestSummary(config, scan, harvestInput);
+  const harvest = completionCapabilityHarvestSummary(config, scan, taskApproval.ok ? harvestInput : { ...harvestInput, changedPaths: [] });
   if (changeEvidence.reason && taskRoute.status !== 'upgrade-required') harvest.reason = changeEvidence.reason;
+  if (!taskApproval.ok && taskRoute.status === 'verified') {
+    Object.assign(harvest, { status: 'skipped', eligible: false, reason: changeEvidence.reason ?? `task-approval-${taskApproval.status}`, candidates: [] });
+  }
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
     schemaVersion: 1,
@@ -319,6 +333,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     stagedFiles,
     ok,
     taskRoute,
+    taskApproval,
     productionReadiness,
     surfaceVerification,
     claimBoundary,
@@ -337,13 +352,14 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   };
 }
 
-export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null } = {}) {
+export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null } = {}) {
   validateTaskLevel(taskLevel);
+  validateReviewMode(reviewMode);
   if (!fromGitHook) {
     const root = resolveGitRepository(target);
     const paths = changedPaths(root);
     const scan = scanProject(target, { probeEnvironment: false });
-    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand });
+    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve });
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
   const root = resolveGitRepository(target);
@@ -354,5 +370,8 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     stagedFiles: paths,
     paths,
     taskLevel,
+    reviewMode,
+    approvalEvidence,
+    approve,
   }));
 }

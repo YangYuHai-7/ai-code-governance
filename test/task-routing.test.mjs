@@ -10,6 +10,37 @@ import { classifyTaskRoute, minimumTaskLevelFromPaths, taskRoutingPolicy } from 
 import { matchSimpleGlob } from '../src/shared/index.mjs';
 import * as routing from '../src/modules/governance/task-routing.mjs';
 
+test('review mode is evidence driven rather than coupled to task level or production roots', () => {
+  for (const taskLevel of ['L1', 'L2', 'L3']) {
+    const result = routing.classifyReviewMode({ taskLevel, plannedPaths: ['src/typo.ts'], behaviorChange: false });
+    assert.equal(result.mode, 'single');
+    assert.equal(result.requiredRoleCount, 1);
+    assert.equal(result.independenceRequired, false);
+  }
+  for (const [input, mode, roles] of [
+    [{ localReview: true }, 'quick-review', 2],
+    [{ behaviorChange: true, multiModule: true }, 'independent-pk', 3],
+    [{ publicContract: true }, 'independent-pk', 3],
+    [{ irreversible: true }, 'independent-pk', 3],
+    [{ governance: true }, 'independent-pk', 3],
+    [{ release: true }, 'independent-pk', 3],
+    [{ multiSurface: true }, 'high-consequence-pk', 4],
+    [{ professionalRisk: 'contract-law' }, 'high-consequence-pk', 4],
+    [{ plannedPaths: ['db/migrations/001.sql'] }, 'high-consequence-pk', 4],
+    [{ plannedPaths: ['contracts/api.proto'] }, 'independent-pk', 3],
+    [{ plannedPaths: ['docs/ai/release-policy.json'] }, 'independent-pk', 3],
+    [{ plannedPaths: ['apps/web/editor.ts', 'apps/api/editor.ts'] }, 'high-consequence-pk', 4],
+  ]) {
+    const result = routing.classifyReviewMode(input);
+    assert.equal(result.mode, mode, JSON.stringify(input));
+    assert.equal(result.requiredRoleCount, roles);
+    assert.ok(result.triggers.length > 0);
+    assert.equal(result.independenceRequired, mode.includes('pk'));
+  }
+  assert.equal(routing.classifyReviewMode({ plannedPaths: ['docs/medical/guide.md', 'test/finance.test.ts'] }).mode, 'single');
+  assert.throws(() => routing.classifyReviewMode({ behaviorChange: 'false' }), /behaviorChange/);
+});
+
 test('completion routes compare declarations with canonical path and owner risk minimums', () => {
   for (const [paths, config, declaredLevel, minimumLevel, status] of [
     [[], {}, 'L0', 'L0', 'verified'],

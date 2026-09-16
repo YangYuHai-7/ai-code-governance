@@ -8,6 +8,7 @@ import { PRE_COMMIT_HOOK_MARKER, runCompletion } from '../src/commit-completion.
 import { buildArtifacts } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
+import { sha256 } from '../src/shared/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -49,6 +50,101 @@ function write(root, relative, content = 'export const value = true;\n') {
   fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
   fs.writeFileSync(path.join(root, relative), content);
 }
+
+// Explicit test-owner approvals, separate from completion itself. Persist the
+// reference paths before requesting the plan so its path binding is exact.
+function approvalOptions(root, options = {}) {
+  const reference = 'docs/ai/task-approval/approved.md';
+  const approvalEvidence = 'docs/ai/task-approval/evidence.json';
+  write(root, reference, '# Test-owner approved requirements, design and plan\n');
+  write(root, approvalEvidence, '{}\n');
+  if (options.fromGitHook) assert.equal(git(root, ['add', reference, approvalEvidence]).status, 0);
+  const preview = runCompletion(root, options);
+  const plan = preview.taskApproval.plan;
+  const evidence = {
+    schemaVersion: 1, planHash: plan.planHash, reviewEvidence: {}, professionalBoundaries: [],
+    approvals: plan.requiredApprovals.map((id) => ({ id, reference, sha256: sha256(fs.readFileSync(path.join(root, reference))), source: 'operator-declared', participantId: id })),
+  };
+  write(root, approvalEvidence, JSON.stringify(evidence));
+  if (options.fromGitHook) assert.equal(git(root, ['add', approvalEvidence]).status, 0);
+  return { taskLevel: plan.taskLevel, reviewMode: plan.reviewMode, approvalEvidence, approve: plan.planHash, ...options };
+}
+
+function runApproved(args) {
+  assert.equal(args[0], 'complete');
+  const options = approvalOptions(args[1]);
+  return run([...args, '--task-level', options.taskLevel, '--review-mode', options.reviewMode, '--approval-evidence', options.approvalEvidence, '--approve', options.approve]);
+}
+
+test('production completion cannot pass with an omitted task declaration or missing approval evidence', (context) => {
+  const root = fixture('required-approval');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  const omitted = runCompletion(root);
+  assert.equal(omitted.ok, false);
+  assert.equal(omitted.taskRoute.status, 'unverified-declaration');
+  const missing = runCompletion(root, { taskLevel: 'L2', reviewMode: 'single' });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.taskApproval.status, 'missing-evidence');
+  assert.equal(missing.taskApproval.review.mode, 'single');
+  assert.equal(missing.harvest.status, 'skipped');
+});
+
+test('complete accepts explicit review and approval flags but rejects stale evidence', (context) => {
+  const root = fixture('approval-flags');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  write(root, 'approval.json', JSON.stringify({ schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [], approvals: [] }));
+  const result = run(['complete', root, '--task-level', 'L2', '--review-mode', 'single', '--approval-evidence', 'approval.json', '--approve', '0'.repeat(64), '--json']);
+  assert.equal(result.status, 1, result.stderr);
+  assert.equal(JSON.parse(result.stdout).taskApproval.status, 'stale-plan');
+});
+
+test('completion rereads final approval references and recomputes path and review bindings', (context) => {
+  const root = fixture('final-approval');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'package.json', JSON.stringify({ scripts: {
+    'test:path': 'node -e "require(\'fs\').writeFileSync(\'README.md\', \'new path\')"',
+    'test:review': 'node -e "require(\'fs\').writeFileSync(\'schema.proto\', \'new contract\')"',
+    'test:reference': 'node -e "require(\'fs\').appendFileSync(\'docs/ai/task-approval/approved.md\', \'stale\')"',
+  } }));
+  assert.equal(run(['sync', root]).status, 0);
+  baseline(root);
+  write(root, 'src/modules/widget/index.mjs');
+  for (const [command, status] of [['test:path', 'stale-plan'], ['test:review', 'review-upgrade-required'], ['test:reference', 'invalid-evidence']]) {
+    const options = approvalOptions(root, { taskLevel: 'L2' });
+    const manifest = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
+    const result = runCompletion(root, { ...options, verificationCommand: `npm run ${command}` });
+    assert.equal(result.projectVerification.status, 'passed');
+    assert.equal(result.taskApproval.status, status);
+    assert.equal(result.ok, false);
+    assert.equal(result.harvest.status, 'skipped');
+    assert.deepEqual(result.harvest.candidates, []);
+    assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/manifest.json')), manifest);
+  }
+});
+
+test('hook approval gate reads only staged evidence and manual gate sees worktree mismatches', (context) => {
+  const root = fixture('staged-approval');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  assert.equal(git(root, ['add', 'src/modules/widget/index.mjs']).status, 0);
+  const options = approvalOptions(root, { taskLevel: 'L2', fromGitHook: true });
+  write(root, options.approvalEvidence, '{');
+  write(root, 'docs/ai/task-approval/approved.md', 'unapproved worktree change');
+  write(root, 'db/migrations/001.sql', 'select 1;');
+  const hook = runCompletion(root, options);
+  assert.equal(hook.ok, true, JSON.stringify(hook));
+  assert.equal(hook.taskApproval.status, 'approved');
+  const manual = runCompletion(root, { ...options, fromGitHook: false });
+  assert.equal(manual.ok, false);
+  assert.equal(manual.taskApproval.status, 'invalid-evidence');
+  assert.equal(manual.taskRoute.minimumLevel, 'L3');
+});
 
 for (const [mutation, body, taskLevel] of [
   ['untracked-risk', "fs.mkdirSync('db/migrations', { recursive: true }); fs.writeFileSync('db/migrations/001.sql', 'select 1;');", 'L1'],
@@ -104,12 +200,13 @@ test('completion returns current verified capability candidates without writing 
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   write(root, 'src/modules/http/index.ts', "import axios from 'axios'; export const client = axios.create({});\n");
+  const approved = approvalOptions(root, { taskLevel: 'L2' });
   const tree = () => Object.fromEntries(fs.readdirSync(root, { recursive: true })
     .filter((relative) => !relative.startsWith(`.git${path.sep}`) && fs.lstatSync(path.join(root, relative)).isFile())
     .sort().map((relative) => [relative, fs.readFileSync(path.join(root, relative), 'base64')]));
   const before = tree();
   const index = git(root, ['ls-files', '--stage']).stdout;
-  const result = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' });
+  const result = runCompletion(root, { ...approved, verificationCommand: 'npm test' });
   assert.equal(result.ok, true, JSON.stringify(result));
   assert.equal(result.harvest?.status, 'dry-run');
   assert.equal(result.harvest.eligible, true);
@@ -129,17 +226,17 @@ test('completion returns current verified capability candidates without writing 
     [{ verificationCommand: 'npm test' }, 'task-route-unverified-declaration'],
     [{ taskLevel: 'L1', verificationCommand: 'npm test' }, 'task-route-upgrade-required'],
   ]) {
-    const skipped = runCompletion(root, options).harvest;
+    const skipped = runCompletion(root, { ...approved, taskLevel: options.taskLevel ?? null, ...options }).harvest;
     assert.equal(skipped.status, 'skipped');
     assert.equal(skipped.reason, reason);
     assert.deepEqual(skipped.candidates, []);
   }
   baseline(root);
   write(root, 'src/modules/unrelated/index.ts');
-  assert.equal(runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' }).harvest.reason, 'no-reusable-public-capability-change');
+  assert.equal(runCompletion(root, { ...approvalOptions(root, { taskLevel: 'L2' }), verificationCommand: 'npm test' }).harvest.reason, 'no-reusable-public-capability-change');
   baseline(root);
   write(root, 'src/modules/http/index.ts', "import axios from 'axios';\n\nexport const client = axios.create({ });\n");
-  const formatOnly = runCompletion(root, { taskLevel: 'L2', verificationCommand: 'npm test' }).harvest;
+  const formatOnly = runCompletion(root, { ...approvalOptions(root, { taskLevel: 'L2' }), verificationCommand: 'npm test' }).harvest;
   assert.equal(formatOnly.status, 'skipped');
   assert.equal(formatOnly.reason, 'no-production-source-change');
 });
@@ -358,7 +455,7 @@ test('manual and hook completion require a commit HEAD on initial and orphan bra
 
   assertMissingCommitFails();
   baseline(root);
-  const valid = runCompletion(root, { fromGitHook: true, taskLevel: 'L3' });
+  const valid = runCompletion(root, approvalOptions(root, { fromGitHook: true, taskLevel: 'L3' }));
   assert.equal(valid.ok, true);
   assert.equal(valid.taskRoute.status, 'verified');
   const tree = git(root, ['rev-parse', 'HEAD^{tree}']).stdout.trim();
@@ -421,11 +518,11 @@ test('manual completion is read-only and runs only an explicitly discovered npm 
   assert.equal(checked.status, 0, `${checked.stderr}\n${checked.stdout}`);
   assert.equal(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), agentsBefore);
 
-  const shorthand = run(['complete', root, '--verify', 'npm test', '--json']);
+  const shorthand = runApproved(['complete', root, '--verify', 'npm test', '--json']);
   assert.equal(shorthand.status, 0, `${shorthand.stderr}\n${shorthand.stdout}`);
   assert.equal(JSON.parse(shorthand.stdout).projectVerification.command, 'npm run test');
 
-  const passed = run(['complete', root, '--verify', 'npm run verify', '--json']);
+  const passed = runApproved(['complete', root, '--verify', 'npm run verify', '--json']);
   assert.equal(passed.status, 0, `${passed.stderr}\n${passed.stdout}`);
   const passedPayload = JSON.parse(passed.stdout);
   assert.equal(passedPayload.mode, 'manual');
@@ -482,7 +579,7 @@ test('completion exposes only verification scripts and never runs implicit npm l
   assert.equal(deploy.status, 2);
   assert.equal(fs.existsSync(marker), false);
 
-  const verified = run(['complete', root, '--verify', 'npm run verify', '--json']);
+  const verified = runApproved(['complete', root, '--verify', 'npm run verify', '--json']);
   assert.equal(verified.status, 0, verified.stderr);
   assert.equal(JSON.parse(verified.stdout).projectVerification.status, 'passed');
 });
@@ -541,7 +638,7 @@ if (response.status !== 200 || body !== 'healthy') process.exit(1);
 console.log('AICG_SURFACE_EVIDENCE ' + JSON.stringify({ schemaVersion: 1, storyId: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', outcome: 'passed' }));
 `);
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node scripts/verify-http.mjs' } }));
-  const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
+  const completed = runApproved(['complete', root, '--verify', 'npm run test:http', '--json']);
   assert.equal(completed.status, 0, `${completed.stderr}\n${completed.stdout}`);
   const completedPayload = JSON.parse(completed.stdout);
   const surface = completedPayload.surfaceVerification;
@@ -620,7 +717,7 @@ test('unavailable browser verification remains unverified instead of passing or 
       command: 'npm run test:browser',
     }],
   }));
-  const completed = run(['complete', root, '--json']);
+  const completed = runApproved(['complete', root, '--json']);
   assert.equal(completed.status, 0, completed.stderr);
   const surface = JSON.parse(completed.stdout).surfaceVerification;
   assert.equal(surface.status, 'unverified');
@@ -635,7 +732,7 @@ test('completion blocks production readiness when confirmed risk signals lack bo
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node --eval "process.exit(0)"' } }));
   assert.equal(run(['sync', root]).status, 0);
 
-  const json = run(['complete', root, '--verify', 'npm run verify', '--json']);
+  const json = runApproved(['complete', root, '--verify', 'npm run verify', '--json']);
   assert.equal(json.status, 0, json.stderr);
   const payload = JSON.parse(json.stdout);
   assert.equal(payload.ok, true);
@@ -644,7 +741,7 @@ test('completion blocks production readiness when confirmed risk signals lack bo
   assert.equal(payload.productionReadiness.constraintEvidence.declared, 1);
   assert.match(payload.claimBoundary, /does not establish production readiness/i);
 
-  const human = run(['complete', root, '--verify', 'npm run verify']);
+  const human = runApproved(['complete', root, '--verify', 'npm run verify']);
   assert.equal(human.status, 0, human.stderr);
   assert.match(human.stdout, /^PRODUCTION_READINESS=blocked constraint_evidence=missing/m);
   assert.equal(human.stdout.trimStart().startsWith('PRODUCTION_READINESS=blocked'), true);
@@ -727,7 +824,7 @@ test('production readiness requires owner-confirmed negative and recovery eviden
       failureOrBoundaryEvidence: 'request-controlled actor was denied',
     }],
   }));
-  const missing = run(['complete', root, '--json']);
+  const missing = runApproved(['complete', root, '--json']);
   assert.equal(missing.status, 0, missing.stderr);
   const missingReadiness = JSON.parse(missing.stdout).productionReadiness;
   assert.equal(missingReadiness.state, 'blocked');
@@ -750,7 +847,7 @@ test('production readiness requires owner-confirmed negative and recovery eviden
       evidenceLevel: 'project-local-unverified',
     }],
   }));
-  const recorded = run(['complete', root, '--json']);
+  const recorded = runApproved(['complete', root, '--json']);
   assert.equal(recorded.status, 0, recorded.stderr);
   const readiness = JSON.parse(recorded.stdout).productionReadiness;
   assert.equal(readiness.state, 'unverified');
@@ -782,7 +879,7 @@ test('business acceptance evidence cannot traverse a symbolic link', (context) =
   }));
   fs.symlinkSync(outsideEvidence, path.join(root, 'docs/ai/business-acceptance-results.json'));
 
-  const completed = run(['complete', root, '--json']);
+  const completed = runApproved(['complete', root, '--json']);
   assert.equal(completed.status, 0, completed.stderr);
   const readiness = JSON.parse(completed.stdout).productionReadiness;
   assert.equal(readiness.state, 'blocked');
@@ -810,7 +907,8 @@ test('chat completion and the managed pre-commit hook validate only when explici
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node --eval "process.exit(0)"' } }));
   assert.equal(run(['sync', root]).status, 0);
   const verifiedCompletion = run(['request', root, '--text', '运行完成门禁', '--config', completionInput, '--json']);
-  assert.equal(verifiedCompletion.status, 0, verifiedCompletion.stderr);
+  assert.equal(verifiedCompletion.status, 1, verifiedCompletion.stderr);
+  assert.equal(JSON.parse(verifiedCompletion.stdout).result.taskRoute.status, 'unverified-declaration');
   assert.equal(JSON.parse(verifiedCompletion.stdout).result.projectVerification.status, 'passed');
 
   const preview = run(['request', root, '--text', '安装 Git 提交门禁', '--dry-run', '--json']);

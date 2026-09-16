@@ -340,6 +340,51 @@ export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = 
   return { declaredLevel, minimumLevel, status, reasons };
 }
 
+export const REVIEW_MODES = Object.freeze(['single', 'quick-review', 'independent-pk', 'high-consequence-pk']);
+
+export function validateReviewMode(mode) {
+  if (mode !== null && !REVIEW_MODES.includes(mode)) throw usageError(`review-mode must be one of: ${REVIEW_MODES.join(', ')}.`);
+  return mode;
+}
+
+// Task levels set verification floors, never team size. Only concrete scope or
+// explicitly declared behavioral/risk evidence can require additional reviewers.
+export function classifyReviewMode(input = {}) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw usageError('review evidence must be an object.');
+  const triggers = [];
+  let rank = 0;
+  const add = (id, value, requiredRank, source) => {
+    rank = Math.max(rank, requiredRank);
+    triggers.push({ id, value, source });
+  };
+  const flags = { localReview: 1, behaviorChange: 2, publicContract: 2, multiModule: 2, irreversible: 2, governance: 2, release: 2, confirmedRisk: 2, multiSurface: 3, migration: 3, externalAction: 3 };
+  for (const [field, requiredRank] of Object.entries(flags)) {
+    if (input[field] !== undefined && typeof input[field] !== 'boolean') throw usageError(`${field} review evidence must be boolean.`);
+    if (input[field]) add(field, true, requiredRank, 'operator-declared');
+  }
+  if (input.professionalRisk !== undefined && input.professionalRisk !== null) {
+    if (typeof input.professionalRisk !== 'string' || !input.professionalRisk.trim() || input.professionalRisk.length > 200) throw usageError('professionalRisk must be a non-empty confirmed risk identifier.');
+    add('professionalRisk', input.professionalRisk, 3, 'operator-declared');
+  }
+  const paths = normalizedChangedPaths(input.plannedPaths ?? []);
+  const scopePaths = [];
+  for (const relative of paths) {
+    if (/^(?:\.ai-governance\/(?:config|manifest)\.json$|docs\/ai\/(?:release-policy|task-routing-policy|context-map|acceptance-contract|surface-verification-profiles)\.)/.test(relative)) add('governance', relative, 2, 'path');
+    const rules = PATH_RULES.filter((rule) => matchesRule(relative, rule));
+    if (rules[0]?.id === 'ordinary-documentation-or-test') continue;
+    scopePaths.push(relative);
+    for (const rule of rules) {
+      if (['public-contract', 'public-contract-artifact'].includes(rule.id)) add('publicContract', relative, 2, 'path');
+      if (['migration-machine-artifact', 'migration-artifact'].includes(rule.id)) add('migration', relative, 3, 'path');
+      if (['deployment-and-publishing', 'architecture-and-external-automation', 'infrastructure'].includes(rule.id)) add('release-or-governance', relative, 2, 'path');
+    }
+  }
+  if (changedSurfaces(scopePaths).size > 1) add('multiSurface', [...changedSurfaces(scopePaths)].sort(), 3, 'path');
+  const modules = new Set(scopePaths.map((relative) => relative.match(/^(?:src\/modules|modules|apps|packages|services|crates)\/([^/]+)\//)?.[0]).filter(Boolean));
+  if (modules.size > 1) add('multiModule', [...modules].sort(), 2, 'path');
+  return { mode: REVIEW_MODES[rank], triggers, requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 2 };
+}
+
 function localized(config, english, chinese) {
   if (config.artifactLanguage === 'zh-CN') return chinese;
   if (config.artifactLanguage === 'bilingual') return `${english} / ${chinese}`;

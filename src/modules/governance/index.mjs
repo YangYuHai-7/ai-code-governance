@@ -6,3 +6,4 @@ export * from './execution-plan.mjs';
 export * from './managed-files.mjs';
 export * from './manifest-trust.mjs';
 export * from './task-routing.mjs';
+export * from './task-approval.mjs';
