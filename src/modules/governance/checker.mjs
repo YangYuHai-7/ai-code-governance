@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import { memoryIssues } from '../memory/index.mjs';
+import { projectConventionIssues } from '../standards/index.mjs';
 import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
@@ -566,6 +568,8 @@ export function checkProject(scan) {
     }
 
     const reviewItems = config.capabilityEvolution?.lastHarvest?.reviewItems ?? [];
+    if (config.features?.knowledge) structureErrors.push(...memoryIssues(scan.root, scan));
+    for (const issue of projectConventionIssues(scan.root)) (issue.status === 'stale' ? warnings : structureErrors).push(`project convention ${issue.reason}`);
     for (const issue of capabilityEvidenceIssues(scan, config.projectCapabilities ?? [])) {
       const reviewed = reviewItems.some((item) => item.id === issue.id && item.status === 'required' && item.code === issue.code && item.observedFingerprint === issue.observedFingerprint);
       if (reviewed) warnings.push(`capability ${issue.id}: ${issue.reason}; owner review is required before promotion or reuse enforcement`);

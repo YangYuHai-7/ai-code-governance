@@ -25,6 +25,7 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'full\0skill-management-skill\0approved-skill-governance-plan',
   'full\0skill-management-index\0approved-skill-governance-plan',
   'full\0project-agent-team\0approved-skill-governance-plan',
+  'full\0project-memory-schema\0project-memory-evidence',
   'gitignore-block\0local-output-ignore\0template:local-output-layout',
   'managed-block\0adapter\0AGENTS.md',
   'managed-block\0entrypoint\0template:agents',
@@ -102,6 +103,7 @@ const FIXED_MANAGED_PATHS = Object.freeze({
   'skill-management-skill': ['docs/ai/skills/skill-discovery/SKILL.md', 'docs/ai/skills/team-orchestrator/SKILL.md'],
   'skill-management-index': ['docs/ai/skill-index.json'],
   'project-agent-team': ['docs/ai/agent-team.json'],
+  'project-memory-schema': ['docs/memory/SCHEMA.md'],
   'local-output-ignore': ['.gitignore'],
   entrypoint: ['AGENTS.md'],
 });

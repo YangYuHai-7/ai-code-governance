@@ -19,7 +19,9 @@ const MINIMAL_CODEX_ALLOWLIST = [
   'docs/ai/README.md',
   'docs/ai/context-map.yaml',
   'docs/ai/rules/00_always.mdc',
-  'docs/memory/INDEX.md',
+  'docs/memory/INDEX.json',
+  'docs/memory/README.md',
+  'docs/memory/SCHEMA.md',
 ];
 
 function fixture(context) {
@@ -39,9 +41,9 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
-    ['minimal', 7, 24 * 1024],
-    ['standard', 20, 64 * 1024],
-    ['complete', 22, 96 * 1024],
+    ['minimal', 9, 24 * 1024],
+    ['standard', 22, 64 * 1024],
+    ['complete', 24, 96 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -73,7 +75,7 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
     const routing = ['.gitignore', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
     assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 20 : 26));
+    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 22 : 26));
   }
 });
 
@@ -199,7 +201,7 @@ test('lifecycle features remain independent at every depth', (context) => {
     const paths = buildArtifacts({ ...config, governanceDepth, features: { ...config.features, taskRuntime: true } }, scan).map((item) => item.path);
     assert.ok(paths.includes('docs/ai/long-running/README.md'));
     assert.ok(paths.includes('docs/ai/lifecycle.md'));
-    assert.equal(paths.includes('docs/memory/INDEX.md'), true);
+    assert.equal(paths.includes('docs/memory/INDEX.json'), true);
     assert.equal(paths.includes('docs/ai/hooks.md'), false);
     assert.equal(paths.includes('docs/ai/ci-integration.md'), false);
     assert.equal(paths.includes('docs/ai/workflow-integrations.yaml'), false);
@@ -255,6 +257,7 @@ for (const scenario of ['business', 'architecture-active', 'architecture-advisor
 
 test('conditional upgrade preserves custom conditions comments order and CRLF bytes', (context) => {
   const { root, config, scan } = fixture(context);
+  config.features.knowledge = false;
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
   const target = path.join(root, 'docs/ai/context-map.yaml');
   const custom = '    conditional:\n      # Owner route before generated additions.\n      local_operations:\n        - docs/owner-runbook.md\n      # Keep this trailing comment.\n';
@@ -276,6 +279,7 @@ test('conditional upgrade preserves custom conditions comments order and CRLF by
 test('untrusted and ambiguous conditional upgrades fail closed without changing files', (context) => {
   for (const scenario of ['foreign', 'duplicate', 'inline-map', 'conflicting-stack']) {
     const { root, config, scan } = fixture(context);
+    config.features.knowledge = false;
     applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
     const target = path.join(root, 'docs/ai/context-map.yaml');
     const manifestPath = path.join(root, '.ai-governance/manifest.json');

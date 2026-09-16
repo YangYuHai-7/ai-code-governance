@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { scanProjectMemoryFacts } from '../../modules/memory/index.mjs';
+import { discoverProjectConventionCandidates } from '../../modules/standards/index.mjs';
 import { deriveArchitectureDecision } from '../../architecture-policy.mjs';
 import { initializationForArchitectureOption, resolveArchitectureApproval } from '../../architecture-assessment.mjs';
 import { runAssist, assistCandidates } from '../../assist.mjs';
@@ -89,6 +91,12 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog: request.curatedCatalog ?? [], requiredCapabilities: request.requiredCapabilities ?? [] };
   const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
   const sourceSnapshot = stableJson(discovery);
+  const conventionDiscovery = config.features.knowledge && config.initialization.lifecycle === 'existing' && config.governanceDepth !== 'minimal'
+    ? discoverProjectConventionCandidates(scan, scanProjectMemoryFacts(scan)) : { candidates: [], gaps: [] };
+  // Convention proposals share the existing evidence-bound decision receipts,
+  // but cannot masquerade as installed/executable Skill metadata.
+  const conventionIds = new Set(conventionDiscovery.candidates.map((entry) => entry.id));
+  const skillChoices = [...discovery.candidates.filter((entry) => !conventionIds.has(entry.id)), ...conventionDiscovery.candidates];
   const projectMode = config.initialization.lifecycle === 'greenfield' ? 'greenfield' : 'brownfield';
   const team = proposeProjectAgentTeam({ ...(request.projectTeam ?? {
     evidence: [{ id: 'owner.required-capabilities', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [],
@@ -102,17 +110,17 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   if (request.decisions && Object.keys(request.decisions).some((key) => !['skills', 'roles'].includes(key))) throw usageError('Unknown adaptive decision kind.');
   const previous = config.adaptiveDecisions === undefined ? { schemaVersion: 1, skills: [], roles: [] } : validateAdaptiveDecisions(config.adaptiveDecisions);
   const decisions = {
-    skills: reconcileAdaptiveDecisions(discovery.candidates, adaptiveChoices(discovery.candidates, request.decisions?.skills), previous.skills),
+    skills: reconcileAdaptiveDecisions(skillChoices, adaptiveChoices(skillChoices, request.decisions?.skills), previous.skills),
     roles: reconcileAdaptiveDecisions(team.roleProposals, adaptiveChoices(team.roleProposals, request.decisions?.roles), previous.roles),
   };
   const suppressed = (kind, item) => !request.decisions?.[kind]?.some((entry) => entry.id === item.id)
     && previous[kind].some((entry) => entry.id === item.id && entry.action === 'reject' && entry.evidenceHash === adaptiveDecisionEvidenceHash(item));
-  const hiddenSkills = new Set(discovery.candidates.filter((item) => suppressed('skills', item)).map((item) => item.id));
+  const hiddenSkills = new Set(skillChoices.filter((item) => suppressed('skills', item)).map((item) => item.id));
   const hiddenRoles = new Set(team.roleProposals.filter((item) => suppressed('roles', item)).map((item) => item.id));
   const receipts = { schemaVersion: 1 };
   for (const kind of ['skills', 'roles']) receipts[kind] = [...previous[kind].filter((entry) => !decisions[kind].some((current) => current.id === entry.id)), ...decisions[kind]].sort((a, b) => a.id.localeCompare(b.id));
   if (receipts.skills.length || receipts.roles.length || config.adaptiveDecisions !== undefined) config = { ...config, adaptiveDecisions: validateAdaptiveDecisions(receipts) };
-  const selectedSkills = decisions.skills.filter((entry) => entry.action === 'add').map((entry) => entry.id);
+  const selectedSkills = decisions.skills.filter((entry) => entry.action === 'add' && !conventionIds.has(entry.id)).map((entry) => entry.id);
   const selectedRoles = decisions.roles.filter((entry) => entry.action === 'add').map((entry) => entry.id);
   let activation = request.activation ?? {};
   if (request.activation === undefined && rememberedTeam?.enabled && selectedRoles.length) {
@@ -140,7 +148,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
     }));
   }
   const summary = {
-    schemaVersion: 1, status: 'recommendation', skills: { ...discovery, candidates: discovery.candidates.filter((item) => !hiddenSkills.has(item.id)) }, team: { ...team, roleProposals: team.roleProposals.filter((item) => !hiddenRoles.has(item.id)) }, decisions,
+    schemaVersion: 1, status: 'recommendation', skills: { ...discovery, candidates: skillChoices.filter((item) => !hiddenSkills.has(item.id)) }, projectConventions: conventionDiscovery, team: { ...team, roleProposals: team.roleProposals.filter((item) => !hiddenRoles.has(item.id)) }, decisions,
     domainCandidates: domainCandidates.map((entry) => ({ ...entry, status: 'proposed-unconfirmed' })),
     professionalReviewGaps: team.professionalBoundaries,
     skillGaps: discoveryInput.requiredCapabilities.filter((capability) => !discovery.candidates.some((entry) => entry.capabilities.includes(capability))),
@@ -186,6 +194,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   }
   return { config, summary, assertSourcesFresh: () => {
     if (sourceSnapshot !== stableJson(serializeSkillDiscovery(discoverSkills(discoveryInput)))) throw usageError('Adaptive Skill sources changed; preview and approve a new exact plan.');
+    if (conventionDiscovery.candidates.length && stableJson(conventionDiscovery) !== stableJson(discoverProjectConventionCandidates(scan, scanProjectMemoryFacts(scan)))) throw usageError('Project convention evidence changed; preview and approve a new exact plan.');
   } };
 }
 
