@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
+import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
@@ -359,12 +359,14 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   }
   // This reads final evidence after an explicitly requested verification command.
   // In hook mode scan.root is the materialized index, never the live worktree.
+  const confirmedRiskSignals = applicableRiskSignals(config, paths);
   const taskApproval = evaluateTaskApproval(scan.root, {
     taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
     changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence),
     ...trustedProfessionalTaskContext(scan.root, config, paths),
-    // Project-wide risk retains the task-level floor, not task-local review applicability.
-    // Paths, trusted explicit activation and supplied task evidence determine review mode.
+    confirmedRiskSignals,
+    reviewEvidence: { confirmedRisk: confirmedRiskSignals.length > 0, publicContract: confirmedRiskSignals.includes('public-api'), externalAction: confirmedRiskSignals.includes('external-side-effect') },
+    // Paths and approved scope mappings determine task-local risk and review applicability.
   });
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));

@@ -37,7 +37,7 @@ function boundaries(values) {
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [] }) {
+export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], approvalReceipt = null, confirmedRiskSignals = [] }) {
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (!taskLevel || !reviewMode) throw usageError('Approval plans require explicit taskLevel and reviewMode.');
@@ -46,6 +46,7 @@ export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, cha
   if (!Array.isArray(requiredApprovals) || requiredApprovals.length > 64) throw usageError('requiredApprovals must contain at most 64 entries before normalization.');
   if (requiredApprovals.some((id) => typeof id !== 'string' || !ID.test(id))) throw usageError('requiredApprovals must contain approval IDs.');
   const professional = boundaries(professionalBoundaries);
+  if (!Array.isArray(confirmedRiskSignals) || confirmedRiskSignals.length > 16 || confirmedRiskSignals.some((signal) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(signal))) throw usageError('Invalid task-local confirmed risk signals.');
   const mergedApprovals = [...new Set([...BASE[taskLevel], ...REVIEW[reviewMode], ...requiredApprovals, ...professional.map((item) => `human:${item.id}`)])].sort();
   if (mergedApprovals.length > 64) throw usageError('Merged requiredApprovals must contain at most 64 entries.');
   const plan = {
@@ -54,6 +55,8 @@ export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, cha
     changeDigest,
     requiredApprovals: mergedApprovals,
     professionalBoundaries: professional,
+    approvalReceiptDigest: approvalReceipt === null ? null : sha256(stableJson(approvalReceipt)),
+    confirmedRiskSignals: [...new Set(confirmedRiskSignals)].sort(),
   };
   return { ...plan, planHash: sha256(stableJson(plan)) };
 }
@@ -92,7 +95,7 @@ function readEvidence(root, relative) {
   return evidence;
 }
 
-export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null }) {
+export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null, confirmedRiskSignals = [] }) {
   validateReviewMode(reviewMode);
   const result = { ok: false, status: 'missing-evidence', evidenceLevel: 'operator-declared', identityVerified: false, review: null, plan: null, gaps: [] };
   const fail = (status, gap) => ({ ...result, status, gaps: [gap] });
@@ -114,11 +117,17 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
   const minimum = [declaredReview, currentReview, boundaryReview].sort((a, b) => REVIEW_MODES.indexOf(b.mode) - REVIEW_MODES.indexOf(a.mode))[0];
   const effectiveMode = reviewMode ?? minimum.mode;
   const rank = REVIEW_MODES.indexOf(effectiveMode);
-  result.review = { mode: effectiveMode, minimumMode: minimum.mode, triggers: [...declaredReview.triggers, ...currentReview.triggers, ...boundaryReview.triggers], requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 2 };
+  result.review = { mode: effectiveMode, minimumMode: minimum.mode, triggers: [...declaredReview.triggers, ...currentReview.triggers, ...boundaryReview.triggers], requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 1 };
   if (!Array.isArray(requiredApprovals) || requiredApprovals.length > 64) throw usageError('requiredApprovals must contain at most 64 entries before merging.');
   const extraApprovals = [...requiredApprovals];
   if (reviewEvidence.externalAction || evidence?.reviewEvidence.externalAction) extraApprovals.push('external-action');
-  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, changeDigest, requiredApprovals: extraApprovals, professionalBoundaries: professional });
+  const approvalReceipt = evidence ? {
+    schemaVersion: evidence.schemaVersion,
+    reviewEvidence: evidence.reviewEvidence,
+    professionalBoundaries: declaredBoundaries,
+    approvals: evidence.approvals.map((record) => ({ ...record, reference: safePath(record.reference) })).sort((a, b) => a.id.localeCompare(b.id)),
+  } : null;
+  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, changeDigest, requiredApprovals: extraApprovals, professionalBoundaries: professional, approvalReceipt, confirmedRiskSignals });
   if (professionalGap) return fail('professional-review-gap', professionalGap);
   if (REVIEW_MODES.indexOf(effectiveMode) < REVIEW_MODES.indexOf(minimum.mode)) return fail('review-upgrade-required', `Review mode requires at least ${minimum.mode}.`);
   if (!evidence && result.plan.requiredApprovals.length === 0 && approve === null) return { ...result, ok: true, status: 'not-required' };

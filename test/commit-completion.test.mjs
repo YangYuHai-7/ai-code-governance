@@ -87,6 +87,27 @@ function runApproved(args) {
   return run([...args, '--task-level', options.taskLevel, '--review-mode', options.reviewMode, '--approval-evidence', options.approvalEvidence, '--approve', options.approve]);
 }
 
+test('ignored reference replacement invalidates exact approval with unchanged Git scope', (context) => {
+  const root = fixture('ignored-approval');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  fs.appendFileSync(path.join(root, '.gitignore'), '\n/docs/ai/task-approval/\n');
+  baseline(root);
+  write(root, 'src/widget.mjs', 'export const value = 1;\n');
+  const options = approvalOptions(root, { taskLevel: 'L2' });
+  const before = runCompletion(root, options);
+  assert.equal(before.taskApproval.status, 'approved');
+  const receipt = JSON.parse(fs.readFileSync(path.join(root, options.approvalEvidence), 'utf8'));
+  const reference = receipt.approvals[0].reference;
+  write(root, reference, '# Replaced ignored requirement, plan and initial tests\n');
+  for (const record of receipt.approvals.filter((item) => item.reference === reference)) record.sha256 = sha256(fs.readFileSync(path.join(root, reference)));
+  write(root, options.approvalEvidence, JSON.stringify(receipt));
+  const after = runCompletion(root, options);
+  assert.equal(after.taskApproval.plan.changeDigest, before.taskApproval.plan.changeDigest);
+  assert.notEqual(after.taskApproval.plan.planHash, before.taskApproval.plan.planHash);
+  assert.equal(after.taskApproval.status, 'stale-plan');
+});
+
 test('approval binds same-path staged unstaged and untracked content plus verification rewrites', (context) => {
   const root = fixture('content-approval');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -160,8 +181,8 @@ for (const scope of [
   write(root, scope.unrelated);
   const unrelated = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
   assert.equal(unrelated.ok, true, JSON.stringify(unrelated));
-  assert.equal(unrelated.taskApproval.review.mode, 'single');
-  assert.deepEqual(unrelated.taskApproval.plan.requiredApprovals, ['plan', 'requirements']);
+  assert.equal(unrelated.taskApproval.review.mode, scope.name === 'production source' ? 'quick-review' : 'single');
+  assert.deepEqual(unrelated.taskApproval.plan.requiredApprovals, scope.name === 'production source' ? ['plan', 'requirements', 'targeted-review'] : ['plan', 'requirements']);
 });
 
 test('trusted professional scope without an explicit applicability mapping cannot silently pass', (context) => {
@@ -183,6 +204,7 @@ test('project public and external risk flags do not request PK for unrelated doc
   write(root, 'docs/unrelated.md', '# Corrected wording\n');
   const docs = runCompletion(root, { taskLevel: 'L3' });
   assert.equal(docs.taskApproval.review.mode, 'single');
+  assert.equal(docs.taskRoute.minimumLevel, 'L1');
   assert.deepEqual(docs.taskApproval.plan.requiredApprovals, ['design', 'plan', 'requirements']);
   baseline(root);
   write(root, 'schema.proto', 'syntax = "proto3";\n');
@@ -259,7 +281,7 @@ test('production completion cannot pass with an omitted task declaration or miss
   assert.equal(omitted.taskRoute.status, 'unverified-declaration');
   const missing = runCompletion(root, { taskLevel: 'L2', reviewMode: 'single' });
   assert.equal(missing.ok, false);
-  assert.equal(missing.taskApproval.status, 'missing-evidence');
+  assert.equal(missing.taskApproval.status, 'review-upgrade-required');
   assert.equal(missing.taskApproval.review.mode, 'single');
   assert.equal(missing.harvest.status, 'skipped');
 });
@@ -270,7 +292,7 @@ test('complete accepts explicit review and approval flags but rejects stale evid
   initialize(root);
   write(root, 'src/modules/widget/index.mjs');
   write(root, 'approval.json', JSON.stringify({ schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [], approvals: [] }));
-  const result = run(['complete', root, '--task-level', 'L2', '--review-mode', 'single', '--approval-evidence', 'approval.json', '--approve', '0'.repeat(64), '--json']);
+  const result = run(['complete', root, '--task-level', 'L2', '--review-mode', 'quick-review', '--approval-evidence', 'approval.json', '--approve', '0'.repeat(64), '--json']);
   assert.equal(result.status, 1, result.stderr);
   assert.equal(JSON.parse(result.stdout).taskApproval.status, 'stale-plan');
 });
@@ -339,11 +361,11 @@ for (const [mutation, body, taskLevel] of [
     const manifest = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
     const result = runCompletion(root, { taskLevel, verificationCommand: 'npm test' });
     assert.equal(result.projectVerification.status, 'passed');
-    assert.equal(result.taskRoute.minimumLevel, 'L3');
-    assert.equal(result.taskRoute.status, 'upgrade-required');
+    assert.equal(result.taskRoute.minimumLevel, mutation === 'configured-risk' ? 'L1' : 'L3');
+    assert.equal(result.taskRoute.status, mutation === 'configured-risk' ? 'verified' : 'upgrade-required');
     assert.equal(result.ok, false);
     assert.equal(result.harvest.status, 'skipped');
-    assert.equal(result.harvest.reason, 'task-route-upgrade-required');
+    assert.equal(result.harvest.reason, mutation === 'configured-risk' ? 'task-approval-missing-evidence' : 'task-route-upgrade-required');
     assert.deepEqual(result.harvest.candidates, []);
     assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/manifest.json')), manifest);
   });
@@ -522,16 +544,18 @@ test('completion verifies sufficient declarations and identifies omitted declara
   assert.match(text.stdout, /task_route=verified.*declared=L1.*minimum=L1/);
 });
 
-test('completion reads owner-confirmed risk from the worktree or staged snapshot', (context) => {
+test('completion ignores unmapped project risk in both worktree and staged snapshot', (context) => {
   const root = fixture('confirmed-risk');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeWithConstraints(root, ['Public API responses retain their documented shape.'], ['public-api']);
-  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L2');
+  write(root, 'docs/unrelated.md', '# Unrelated documentation\n');
+  assert.equal(git(root, ['add', 'docs/unrelated.md']).status, 0);
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L1');
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   write(root, '.ai-governance/config.json', JSON.stringify({ ...config, confirmedRiskSignals: ['external-side-effect'] }));
-  assert.equal(runCompletion(root, { taskLevel: 'L2' }).taskRoute.minimumLevel, 'L3');
+  assert.equal(runCompletion(root, { taskLevel: 'L1' }).taskRoute.minimumLevel, 'L1');
   const hook = runCompletion(root, { taskLevel: 'L2', fromGitHook: true });
-  assert.equal(hook.taskRoute.minimumLevel, 'L2');
+  assert.equal(hook.taskRoute.minimumLevel, 'L1');
   assert.equal(hook.taskRoute.status, 'verified');
 });
 

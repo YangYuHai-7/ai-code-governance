@@ -11,8 +11,8 @@ function fixture(context, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-approval-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'approved.md'), '# Owner-approved requirement and plan\n');
-  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/widget.ts'], changeDigest: '1'.repeat(64), requiredApprovals: ['requirements', 'plan'], professionalBoundaries: [], ...overrides };
-  const plan = approval.buildTaskApprovalPlan(input);
+  const input = { taskLevel: 'L2', reviewMode: 'quick-review', plannedPaths: ['src/widget.ts'], changeDigest: '1'.repeat(64), requiredApprovals: ['requirements', 'plan'], professionalBoundaries: [], ...overrides };
+  let plan = approval.buildTaskApprovalPlan(input);
   const evidence = {
     schemaVersion: 1, planHash: plan.planHash, reviewEvidence: {}, professionalBoundaries: input.professionalBoundaries,
     approvals: plan.requiredApprovals.map((id) => {
@@ -24,7 +24,9 @@ function fixture(context, overrides = {}) {
   const save = () => fs.writeFileSync(path.join(root, 'approval.json'), JSON.stringify(evidence));
   save();
   const evaluate = (options = {}) => approval.evaluateTaskApproval(root, { ...input, approvalEvidence: 'approval.json', approve: plan.planHash, ...options });
-  return { root, input, plan, evidence, save, evaluate };
+  const reapprove = () => { save(); plan = evaluate().plan; evidence.planHash = plan.planHash; save(); };
+  reapprove();
+  return { root, input, plan, evidence, save, reapprove, evaluate };
 }
 
 test('approval plans have canonical SHA256 bindings and retain mandatory gates', () => {
@@ -39,10 +41,24 @@ test('approval plans have canonical SHA256 bindings and retain mandatory gates',
   assert.throws(() => approval.buildTaskApprovalPlan({ ...input, plannedPaths: ['../escape'] }), /path/);
 });
 
+test('normalized approval receipts bind reference replacements even outside the change digest', (context) => {
+  const f = fixture(context, { reviewMode: 'quick-review' });
+  const first = f.evaluate().plan.planHash;
+  fs.writeFileSync(path.join(f.root, 'approved.md'), '# Replaced requirements and test cases\n');
+  for (const record of f.evidence.approvals) record.sha256 = sha256(fs.readFileSync(path.join(f.root, record.reference)));
+  f.save();
+  assert.notEqual(f.evaluate().plan.planHash, first);
+  assert.equal(f.evaluate().status, 'stale-plan');
+  const second = f.evaluate().plan.planHash;
+  f.evidence.approvals.reverse(); f.save();
+  assert.equal(f.evaluate().plan.planHash, second, 'receipt ordering is not semantic');
+});
+
 test('approval plans bind content digests and reject impossible approval counts before normalization', () => {
   const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/widget.ts'], changeDigest: '1'.repeat(64) };
   const first = approval.buildTaskApprovalPlan(input);
   assert.notEqual(first.planHash, approval.buildTaskApprovalPlan({ ...input, changeDigest: '2'.repeat(64) }).planHash);
+  assert.notEqual(first.planHash, approval.buildTaskApprovalPlan({ ...input, confirmedRiskSignals: ['authorization'] }).planHash);
   assert.throws(() => approval.buildTaskApprovalPlan({ ...input, changeDigest: undefined }), /changeDigest/);
   const oversized = Array(65).fill('plan');
   Object.defineProperty(oversized, 0, { get() { throw new Error('normalized-before-limit'); } });
@@ -65,10 +81,10 @@ test('distinct PK participant labels cannot reuse proposal or referee artifacts'
   const f = fixture(context, { reviewMode: 'independent-pk' });
   const first = f.evidence.approvals.find((item) => item.id === 'proposal-1');
   const second = f.evidence.approvals.find((item) => item.id === 'proposal-2');
-  Object.assign(second, { reference: first.reference, sha256: first.sha256 }); f.save();
+  Object.assign(second, { reference: first.reference, sha256: first.sha256 }); f.reapprove();
   assert.equal(f.evaluate().status, 'independence-gap');
   second.reference = 'copied.md';
-  fs.copyFileSync(path.join(f.root, first.reference), path.join(f.root, second.reference)); f.save();
+  fs.copyFileSync(path.join(f.root, first.reference), path.join(f.root, second.reference)); f.reapprove();
   assert.equal(f.evaluate().status, 'independence-gap');
 });
 
@@ -108,7 +124,7 @@ test('approval gate requires current explicit approval and reference digests', (
   assert.equal(f.evaluate({ approve: null }).status, 'approval-required');
   assert.equal(f.evaluate({ approvalEvidence: null }).status, 'missing-evidence');
   assert.equal(f.evaluate({ plannedPaths: ['src/new.ts'] }).status, 'stale-plan');
-  f.evidence.approvals.pop(); f.save();
+  f.evidence.approvals.pop(); f.reapprove();
   assert.equal(f.evaluate().status, 'missing-approval');
   f.evidence.approvals[0].sha256 = '0'.repeat(64); f.save();
   assert.equal(f.evaluate().status, 'invalid-evidence');
@@ -141,7 +157,7 @@ test('PK approval records require distinct declared participants, never verified
   assert.equal(f.evaluate().review.requiredRoleCount, 3);
   assert.equal(f.evaluate().identityVerified, false);
   const proposal = f.evidence.approvals.find((item) => item.id === 'proposal-2');
-  proposal.participantId = 'proposal-1'; f.save();
+  proposal.participantId = 'proposal-1'; f.reapprove();
   assert.equal(f.evaluate().status, 'independence-gap');
 });
 
@@ -160,10 +176,10 @@ test('professional boundaries cannot be removed by single review or AI approvals
   const f = fixture(context, { reviewMode: 'high-consequence-pk', professionalBoundaries: [boundary] });
   assert.equal(f.evaluate().status, 'professional-review-gap');
   const record = f.evidence.approvals.find((item) => item.id === 'human:legal');
-  Object.assign(record, { qualification: 'licensed-lawyer', jurisdiction: 'JP', responsibleHuman: 'Owner-declared reviewer' }); f.save();
+  Object.assign(record, { qualification: 'licensed-lawyer', jurisdiction: 'JP', responsibleHuman: 'Owner-declared reviewer' }); f.reapprove();
   assert.equal(f.evaluate().status, 'approved');
   assert.equal(f.evaluate().identityVerified, false);
   assert.equal(f.evaluate({ reviewMode: 'single' }).status, 'review-upgrade-required');
-  record.jurisdiction = 'open-gap'; f.save();
+  record.jurisdiction = 'open-gap'; f.reapprove();
   assert.equal(f.evaluate().status, 'professional-review-gap');
 });

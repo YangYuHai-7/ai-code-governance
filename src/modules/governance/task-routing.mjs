@@ -2,6 +2,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 import { isSafeRelative, matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
 import { BUILD_CONFIGURATION_NAMES, IMPLEMENTATION_EXTENSIONS, NON_IMPLEMENTATION_PREFIXES } from '../repository/index.mjs';
+import { validateApprovedProjectAgentTeam } from '../agent-team/index.mjs';
 
 const ORDER = ['L0', 'L1', 'L2', 'L3'];
 const DIMENSIONS = {
@@ -267,13 +268,21 @@ function normalizedChangedPaths(paths) {
   });
 }
 
-function confirmedRiskLevel(config) {
+export function applicableRiskSignals(config, paths) {
+  const normalized = normalizedChangedPaths(paths);
   const signals = config?.confirmedRiskSignals ?? [];
   if (!Array.isArray(signals) || signals.some((value) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(value))) {
     throw usageError(`config.confirmedRiskSignals may contain only: ${SUPPORTED_CONFIRMED_RISK_SIGNALS.join(', ')}.`);
   }
-  if (signals.includes('external-side-effect')) return 'L3';
-  return signals.length > 0 ? 'L2' : 'L0';
+  if (!config.agentTeam?.enabled) return [];
+  validateApprovedProjectAgentTeam(config.agentTeam);
+  return signals.filter((signal) => config.agentTeam.roleProposals.some((role) => role.activation?.signals.includes(signal)
+    && normalized.some((relative) => role.activation.paths.some((pattern) => matchSimpleGlob(relative, pattern.toLowerCase())))));
+}
+
+function confirmedRiskLevel(config, paths) {
+  const signals = applicableRiskSignals(config, paths);
+  return signals.includes('external-side-effect') ? 'L3' : signals.length ? 'L2' : 'L0';
 }
 
 function matchesPatterns(relative, patterns = []) {
@@ -303,7 +312,7 @@ function changedSurfaces(paths) {
 
 export function minimumTaskLevelFromPaths(paths, config = {}) {
   const normalized = normalizedChangedPaths(paths);
-  const levels = [confirmedRiskLevel(config)];
+  const levels = [confirmedRiskLevel(config, normalized)];
   const surfaceCandidates = [];
   for (const relative of normalized) {
     const matchingRules = PATH_RULES.filter((candidate) => matchesRule(relative, candidate));
@@ -332,8 +341,9 @@ export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = 
   const status = declaredLevel === null ? 'unverified-declaration'
     : ORDER.indexOf(declaredLevel) < ORDER.indexOf(minimumLevel) ? 'upgrade-required' : 'verified';
   const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths)}.`];
-  if (config.confirmedRiskSignals?.length) {
-    reasons.push(`Owner-confirmed risk signals require at least ${confirmedRiskLevel(config)}: ${config.confirmedRiskSignals.join(', ')}.`);
+  const applicable = applicableRiskSignals(config, normalizedChangedPaths(paths));
+  if (applicable.length) {
+    reasons.push(`Scope-matched owner-confirmed risk signals require at least ${confirmedRiskLevel(config, normalizedChangedPaths(paths))}: ${applicable.join(', ')}.`);
   }
   if (status === 'unverified-declaration') reasons.push('No task level was declared; compatibility completion does not verify a declaration.');
   if (status === 'upgrade-required') reasons.push(`Declared ${declaredLevel} is below minimum ${minimumLevel}; upgrade the task route before completion.`);
@@ -357,7 +367,7 @@ export function classifyReviewMode(input = {}) {
     rank = Math.max(rank, requiredRank);
     triggers.push({ id, value, source });
   };
-  const flags = { localReview: 1, behaviorChange: 2, publicContract: 2, multiModule: 2, irreversible: 2, governance: 2, release: 2, confirmedRisk: 2, multiSurface: 3, migration: 3, externalAction: 3 };
+  const flags = { localReview: 1, behaviorChange: 1, publicContract: 2, multiModule: 2, irreversible: 2, governance: 2, release: 2, confirmedRisk: 2, multiSurface: 3, migration: 3, externalAction: 3 };
   for (const [field, requiredRank] of Object.entries(flags)) {
     if (input[field] !== undefined && typeof input[field] !== 'boolean') throw usageError(`${field} review evidence must be boolean.`);
     if (input[field]) add(field, true, requiredRank, 'operator-declared');
@@ -373,6 +383,7 @@ export function classifyReviewMode(input = {}) {
     const rules = PATH_RULES.filter((rule) => matchesRule(relative, rule));
     if (rules[0]?.id === 'ordinary-documentation-or-test') continue;
     scopePaths.push(relative);
+    if (input.behaviorChange !== false && rules.some((rule) => rule.id === 'production-source')) add('ordinary-feature', relative, 1, 'path');
     for (const rule of rules) {
       if (['public-contract', 'public-contract-artifact'].includes(rule.id)) add('publicContract', relative, 2, 'path');
       if (['migration-machine-artifact', 'migration-artifact'].includes(rule.id)) add('migration', relative, 3, 'path');
@@ -382,7 +393,7 @@ export function classifyReviewMode(input = {}) {
   if (changedSurfaces(scopePaths).size > 1) add('multiSurface', [...changedSurfaces(scopePaths)].sort(), 3, 'path');
   const modules = new Set(scopePaths.map((relative) => relative.match(/^(?:src\/modules|modules|apps|packages|services|crates)\/([^/]+)\//)?.[0]).filter(Boolean));
   if (modules.size > 1) add('multiModule', [...modules].sort(), 2, 'path');
-  return { mode: REVIEW_MODES[rank], triggers, requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 2 };
+  return { mode: REVIEW_MODES[rank], triggers, requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 1 };
 }
 
 function localized(config, english, chinese) {

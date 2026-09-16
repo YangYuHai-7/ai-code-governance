@@ -90,7 +90,12 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
   const sourceSnapshot = stableJson(discovery);
   const projectMode = config.initialization.lifecycle === 'greenfield' ? 'greenfield' : 'brownfield';
-  const team = proposeProjectAgentTeam({ ...(request.projectTeam ?? { evidence: [{ id: 'repository.scan', kind: 'repository-fact' }], confirmedDomainNeeds: [], roleNeeds: [] }), projectMode });
+  const team = proposeProjectAgentTeam({ ...(request.projectTeam ?? {
+    evidence: [{ id: 'owner.required-capabilities', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [],
+    confirmedProjectFacts: [...new Set(request.requiredCapabilities ?? [])].slice(0, 5).map((id) => ({
+      id, label: `${id} delivery`, capabilities: [id], evidenceIds: ['owner.required-capabilities'],
+    })),
+  }), projectMode });
   const domainCandidates = request.domainCandidates ?? [];
   if (!Array.isArray(domainCandidates) || domainCandidates.length > 16 || domainCandidates.some((entry) => !entry || typeof entry.id !== 'string' || typeof entry.label !== 'string'
     || entry.label.length > 512 || !Array.isArray(entry.evidenceIds) || entry.evidenceIds.some((id) => !request.projectTeam?.evidence?.some((item) => item.id === id)))) throw usageError('Domain candidates must cite existing evidence and remain unconfirmed.');

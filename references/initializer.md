@@ -13,7 +13,7 @@ The visible order is:
 3. Lifecycle: confirm greenfield or existing. Existing source requires an explicit existing decision; ambiguous scaffolds need confirmation.
 4. Stack: existing projects confirm/correct detected stacks and their evidence; greenfield selects target stacks. Unknown remains `generic-unknown`/unverified. Greenfield architecture is `not-established` until implementation and owner confirmation provide evidence.
 5. Existing-code strategy: `keep-existing`, `new-code-standard`, or `staged-migration`; no strategy authorizes initialization to rewrite/move/format product code.
-6. Depth/options: recommend Minimal or Standard from scan evidence and owner needs. Guided defaults to Minimal; advanced/config defaults retain Standard. Complete is an explicit choice. Guided memory/runtime/hooks/CI/external workflows/AI assist stay off; advanced prompts/config may explicitly select them.
+6. Depth/options: recommend Minimal or Standard from scan evidence and owner needs. Guided defaults to Minimal; advanced/config defaults retain Standard. Complete is an explicit choice. Memory ownership/index foundations default on at all depths; no module semantics are invented. Runtime/hooks/CI/external workflows/AI assist stay off unless explicitly selected.
 7. Invocation and plan: choose a usable installation, inspect the write/keep/conflict/retention plan, then approve.
 
 `codeDocumentationPolicy` defaults to `inherit-existing` for existing projects and `en` for greenfield. The AICG repository's documentation/comments remain English according to its instructions; selecting Chinese governance in a target project is a separate product decision.
@@ -85,7 +85,13 @@ Project-local mode is recommended only when a valid package/executable is found.
 
 ## Presets and dynamic tasks
 
-Minimal generates the kernel and chosen client adapters. Standard adds routing, policy/standard Skills, decision ledger, verification profiles, and local `reviews/`/`reports/` placeholders. Complete adds selected stack Skills; lifecycle features remain explicit. Evidence policies activate on first use and receipts only when produced. Generator and checker use the same artifact selection definitions.
+Minimal generates the kernel, memory ownership/index foundation, and chosen client adapters. Standard adds routing, policy/standard Skills, decision ledger, verification profiles, and local `reviews/`/`reports/` placeholders. Approved dynamic team and Skill metadata use the exact-plan transaction. Complete adds selected stack Skills; lifecycle features remain explicit. Evidence policies activate on first use and receipts only when produced. Generator and checker use the same artifact selection definitions.
+
+Scanner dependency facts report `ecosystem`, `name`, `declaredVersion`, `resolvedVersion`, `sourcePath`, and `evidenceLevel: stated`. Supported literal npm, Maven, Gradle, Go, and Python declarations and local supported lockfiles are never installed or executed. Unresolved expressions remain declared, and ambiguous lock versions are not guessed. Root and nested worktree/cache directories are excluded from project facts. Agent executable availability remains `not-probed` until `doctor` performs its separate probe.
+
+`adaptiveGovernance.projectTeam.confirmedProjectFacts` can derive role proposals from bounded `{ id, label, capabilities, evidenceIds }` facts citing `user-confirmed-project` evidence. Proposals remain unapproved and follow existing add/defer/reject decisions. No industry roster is inferred from business text. Task risks apply only through matching approved role activation paths/signals. Ordinary source features require a quick independent review; public contracts and broader scopes keep stronger review floors.
+
+Task approval hashes also bind sorted, normalized receipt records and every referenced artifact digest, including Git-ignored references. Replacing referenced requirements, design, plans, or test cases requires a fresh preview and exact approval; updating the receipt's declared digest alone cannot reuse the old approval.
 
 Ordinary context is `AGENTS.md`, the selected context-map slice, and always rules. Behavior profiles conditionally add confirmed architecture, stack, and business material. Release policy belongs only to explicit release work. Historical twelve-layer documentation describes capabilities, not an unconditional flow.
 

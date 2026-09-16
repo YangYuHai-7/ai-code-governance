@@ -162,6 +162,8 @@ test('guided onboarding asks clients first and artifact language second', async 
   assert.equal(config.governanceDepth, 'minimal');
   assert.equal(config.invocationMode, 'npm-exec-pinned');
   assert.equal(config.features.aiAssist, false);
+  assert.equal(config.features.knowledge, true);
+  assert.deepEqual(config.supportedOs, ['macos', 'windows', 'linux']);
   assert.ok(config.initialClassification.requiredDecisions.some((decision) => decision.id === 'architecture-not-established' && decision.status === 'not-established'));
 });
 

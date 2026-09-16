@@ -10,6 +10,7 @@ const GOVERNANCE_PREFIXES = [
   '.claude/',
   '.agents/',
   'docs/ai/',
+  'docs/memory/',
   '.ai-governance/',
   ...LOCAL_OUTPUT_PREFIXES,
 ];

@@ -61,18 +61,40 @@ function metadata(content) {
   if (!frontmatter || Buffer.byteLength(frontmatter) > 8192) throw new Error('Missing or oversized Skill metadata.');
   const values = {};
   let active = null;
+  let block = null;
+  const finishBlock = () => {
+    if (!block) return;
+    let value = block.style === '>' ? block.lines.join('\n').replace(/([^\n])\n(?=[^\n])/g, '$1 ') : block.lines.join('\n');
+    value = block.chomp === '-' ? value.replace(/\n+$/, '') : block.chomp === '+' ? `${value}\n` : `${value.replace(/\n+$/, '')}\n`;
+    values[active] = value;
+    block = null;
+  };
   for (const line of frontmatter.split(/\r?\n/)) {
+    if (block && (/^ +\S/.test(line) || !line.trim())) {
+      if (line.trim()) {
+        const indent = line.match(/^ +/)[0].length;
+        block.indent ??= indent;
+        if (indent !== block.indent) throw new Error('Unsupported Skill block indentation.');
+        block.lines.push(line.slice(indent));
+      } else block.lines.push('');
+      continue;
+    }
+    finishBlock();
     if (!line.trim() || /^\s*#/.test(line)) continue;
     const header = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
     if (header) {
       const [, key, raw] = header;
       if (Object.hasOwn(values, key)) throw new Error('Duplicate Skill metadata key.');
       active = key;
-      values[key] = raw === '' ? [] : raw.startsWith('[') ? JSON.parse(raw) : scalar(raw);
+      if (key === 'description' && /^[>|][-+]?$/.test(raw)) {
+        values[key] = '';
+        block = { style: raw[0], chomp: raw[1], lines: [], indent: null };
+      } else values[key] = raw === '' ? [] : raw.startsWith('[') ? JSON.parse(raw) : scalar(raw);
     } else if (/^\s+-\s+/.test(line) && Array.isArray(values[active])) {
       values[active].push(scalar(line.replace(/^\s+-\s+/, '')));
     } else throw new Error('Unsupported Skill metadata structure.');
   }
+  finishBlock();
   if (typeof values.name !== 'string' || !ID.test(values.name) || typeof values.description !== 'string' || !values.description.trim() || values.description.length > 500) throw new Error('Skill name and bounded description are required.');
   return values;
 }
