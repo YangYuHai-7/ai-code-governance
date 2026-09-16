@@ -14,13 +14,13 @@ import { COMMAND_HANDLERS, COMMAND_REGISTRY } from '../src/cli/command-registry.
 const cli = path.resolve('bin/aicg.js');
 
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
-  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
   assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
   assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
   for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
     const module = await import(new URL(`../src/cli/${definition.module}`, import.meta.url));
     assert.equal(typeof module[definition.exportName], 'function', `${command}: missing export`);
-    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
+    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence', 'work-unit'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
   }
   const registry = fs.readFileSync(new URL('../src/cli/command-registry.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(registry, /^import .* from ['"]\.\/commands\//m, 'help/version must not eagerly load command implementations');

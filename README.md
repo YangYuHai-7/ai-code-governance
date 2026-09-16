@@ -1,5 +1,15 @@
 # AI Code Governance
 
+### Vertical feature completion
+
+Deliver one complete feature in one work unit, including its pages, APIs, public methods, schema/migration, clients and tests. L0 needs no work unit; L1, documentation, tests and formatting keep their lightweight path. L2/L3 production delivery requires a bounded JSON document following [the work-unit contract](assets/contracts/work-unit-schema.json).
+
+`aicg work-unit plan . --work-unit docs/ai/feature.json --json` previews scope, canonical Memory coverage and minimum approved roles. `status` validates the document and referenced files without running commands or writing files. Missing roles remain recommendations; their IDs never prove that an Agent participated.
+
+Run `aicg complete . --task-level L2 --work-unit docs/ai/feature.json --approval-evidence docs/ai/approval.json --approve <planHash> --verify "npm run verify" --json` once at the feature boundary. The existing exact approval hash binds the immutable work-unit plan and references. Initial success/failure cases and applicable abnormal, boundary, extreme and risk additions need results. Each executed case emits `AICG_QA_RESULT {"schemaVersion":1,"workUnitId":"feature","caseId":"case-success","status":"passed"}` on its own output line. Unknown, duplicate, missing or failed required cases block completion. Each changed canonical API/public method maps to a required unit test; unresolved testability gaps block completion. Memory must be synchronized; a bounded no-memory-impact decision cannot waive an actual production behavior change.
+
+After the run, copy `workUnit.recordedEvidence` into the same document's `verification.evidence` and `workUnit.recordedResults` into `qa.results`. Runtime results and status do not change the immutable plan hash. Stage the document and approval references, preview with `--from-git-hook`, and refresh the existing exact approval hash for the staged diff. Set `AICG_WORK_UNIT` along with the existing approval environment variables. The hook validates the stored command, current inputs, plan, case set and digests without a second test run. Stored execution and authorship remain operator-declared; the tool does not authenticate them or certify test quality. A changed input requires a new verification run. No scheduler, Agent launcher, deployment or external action is added.
+
 A repository governance CLI and Agent Skill for Node.js 22+. AICG keeps one canonical rule source, routes tasks to small context profiles, and checks managed artifacts for drift. Governance grows with confirmed project needs and verified implementation evidence.
 
 This checkout is the `0.2.0` source candidate. The commands below describe this source or its candidate tarball; they do not establish which version is currently published on npm. `toolVersion`, capability coverage track, and certification evidence are separate axes.

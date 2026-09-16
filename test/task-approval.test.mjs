@@ -41,6 +41,14 @@ test('approval plans have canonical SHA256 bindings and retain mandatory gates',
   assert.throws(() => approval.buildTaskApprovalPlan({ ...input, plannedPaths: ['../escape'] }), /path/);
 });
 
+test('work-unit immutable plan changes invalidate the existing approval hash', (context) => {
+  const f = fixture(context, { workUnitDigest: 'a'.repeat(64) });
+  assert.equal(f.evaluate().status, 'approved');
+  const changed = f.evaluate({ workUnitDigest: 'b'.repeat(64) });
+  assert.equal(changed.status, 'stale-plan');
+  assert.notEqual(changed.plan.planHash, f.evaluate().plan.planHash);
+});
+
 test('quick review requires implementation evidence and rejects self-review identities or reused artifacts', (context) => {
   const f = fixture(context, { requiredApprovals: ['implementation'] });
   assert.equal(f.evaluate().status, 'approved', 'distinct implementation and review evidence is accepted');

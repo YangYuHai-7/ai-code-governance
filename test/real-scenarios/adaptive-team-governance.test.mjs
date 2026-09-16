@@ -234,6 +234,7 @@ for (const governanceDepth of ['standard', 'complete']) {
     const f = fixture(context);
     const config = selectedConfig({ governanceDepth });
     const result = preview(f, config);
+    assert.ok(result.contextCost.management.total, JSON.stringify(result));
     assert.ok(result.contextCost.management.total.files <= 26);
     assert.ok(result.contextCost.management.total.bytes <= (governanceDepth === 'standard' ? 64 : 96) * 1024);
     assert.ok(result.contextCost.management.increment.managerTokens <= 800);
@@ -382,13 +383,13 @@ test('historical Standard artifacts cause an explicit budget-blocked preview wit
   assert.deepEqual(snapshot(f.root), before);
 });
 
-test('forward routing stays single for ordinary L0/L1 and local L2, with PK only on explicit behavior or contract evidence', () => {
+test('forward routing keeps L0/L1 single and ordinary L2 independently reviewed, with PK for stronger evidence', () => {
   for (const taskLevel of ['L0', 'L1', 'L2']) {
     const review = classifyReviewMode({ taskLevel, plannedPaths: taskLevel === 'L2' ? ['src/local.mjs'] : ['README.md'] });
-    assert.equal(review.mode, 'single');
-    assert.equal(review.requiredRoleCount, 1);
+    assert.equal(review.mode, taskLevel === 'L2' ? 'quick-review' : 'single');
+    assert.equal(review.requiredRoleCount, taskLevel === 'L2' ? 2 : 1);
   }
-  assert.equal(classifyReviewMode({ taskLevel: 'L2', behaviorChange: true }).mode, 'independent-pk');
+  assert.equal(classifyReviewMode({ taskLevel: 'L2', behaviorChange: true }).mode, 'quick-review');
   assert.equal(classifyReviewMode({ taskLevel: 'L2', publicContract: true }).mode, 'independent-pk');
   assert.equal(classifyReviewMode({ taskLevel: 'L3', multiSurface: true }).mode, 'high-consequence-pk');
 });

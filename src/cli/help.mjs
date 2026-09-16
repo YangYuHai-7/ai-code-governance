@@ -15,9 +15,10 @@ Usage:
   aicg evidence <record|status|export> [path] [--config receipt.json] [--yes] [--json]
   aicg standards [path] [--json]
   aicg team [path] [--config team-context.json] [--json]
+  aicg work-unit <plan|status> [path] --work-unit <relative-json> [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
-  aicg complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json]
+  aicg complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json]
   aicg hook <install|status> [path] [--yes] [--json]
   aicg release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--clients all|client,...] [--locale zh-CN|en] [--dry-run] [--approve planHash] [--json]
@@ -34,6 +35,7 @@ Commands:
   evidence  Record or summarize anonymized pilot/real-project receipts; it never certifies automatically.
   standards  Preview the selected technical-standard Skills and their audited source snapshot without changing the repository.
   team  Recommend human delivery and governance responsibility coverage without creating people, agents, tasks, or files.
+  work-unit  Preview or validate one bounded vertical feature document. Never writes files or launches Agents.
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
@@ -42,6 +44,7 @@ Commands:
             Prepare reference digests and evidence with a placeholder planHash, then inspect taskApproval.plan and approve its exact hash. changeDigest binds HEAD, index and final file content; only the evidence planHash field is excluded to avoid self-reference. Do not copy diff/plan bodies into evidence.
             The installed hook reads only AICG_TASK_LEVEL, AICG_REVIEW_MODE, AICG_APPROVAL_EVIDENCE (repository-relative JSON), and AICG_APPROVE (planHash). Stage evidence and references, preview with --from-git-hook, then export those values before git commit; missing or stale approval fails closed. Manual completion ignores these variables.
             PK proposals and referee need distinct reference files and digests. Professional identity and review quality remain operator-declared, never machine-verified.
+            L2/L3 production delivery requires one work unit with canonical Memory coverage and per-case AICG_QA_RESULT markers from one --verify run. Write returned workUnit.recordedEvidence into verification.evidence and recordedResults into qa.results to reuse that run. Hook input AICG_WORK_UNIT points to the staged JSON; recorded evidence is structurally checked and operator-declared, not authenticated execution.
             Approved professional roles in managed docs/ai/agent-team.json require explicit activation.signals (owner-confirmed risk IDs) and activation.paths (repository-relative globs). Relevant missing mappings fail closed; unrelated documentation or mapped out-of-scope tasks do not acquire professional risk.
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
@@ -73,6 +76,8 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg enrich [路径] --config answers.json [--json]
   aicg evidence <record|status|export> [路径] [--config receipt.json] [--yes] [--json]
   aicg standards [路径] [--json]
+  aicg work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json]
+  aicg complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json]
   aicg --version
 
 关键流程：

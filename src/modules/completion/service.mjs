@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import { memoryIssues } from '../memory/index.mjs';
+import { memoryIssues, changedMemoryBehaviorPaths } from '../memory/index.mjs';
+import { readWorkUnit, workUnitPath, workUnitPlanDigest, workUnitPlanProjection, checkWorkUnit, parseWorkUnitResults, workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification } from '../work-units/index.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
@@ -147,7 +148,7 @@ function completionTaskRoute(scan, paths, taskLevel) {
   return { config, taskRoute: evaluateCompletionTaskRoute(paths, config, taskLevel) };
 }
 
-function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvidence) {
+function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvidence, workUnitRelative = null) {
   if (paths.length > 10000) throw usageError('Cannot bind more than 10000 changed paths.');
   const approvalPath = typeof approvalEvidence === 'string' && isSafeRelative(approvalEvidence) ? normalizeRelative(approvalEvidence) : null;
   const records = (args) => {
@@ -167,6 +168,7 @@ function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvid
   const contentHash = (bytes, relative) => {
     totalBytes += bytes.length;
     if (totalBytes > 32 * 1024 * 1024) throw usageError('Changed content exceeds the 32 MiB approval budget.');
+    if (relative === workUnitRelative) return sha256(stableJson(workUnitPlanProjection(JSON.parse(bytes.toString('utf8')))));
     if (relative !== approvalPath) return sha256(bytes);
     // The receipt cannot hash its own planHash. Every other field is bound;
     // malformed receipts are still rejected by the independent evidence parser.
@@ -192,8 +194,8 @@ function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvid
     if (typeof relative !== 'string' || relative.length > 4096 || !isSafeRelative(relative)) throw usageError('Cannot bind unsafe changed paths.');
     let staged = index.get(relative) ?? null;
     if (staged && !/^\d{6} [a-f0-9]{40,64} 0$/.test(staged)) throw usageError('Cannot approve an unresolved index.');
-    if (relative === approvalPath && staged) {
-      const blob = runGit(gitRoot, ['show', `:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 65536 });
+    if ((relative === approvalPath || relative === workUnitRelative) && staged) {
+      const blob = runGit(gitRoot, ['show', `:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 256 * 1024 });
       if (blob.error || blob.status !== 0) throw usageError('Cannot read staged approval evidence.');
       staged = `${staged.slice(0, 6)} ${contentHash(blob.stdout, relative)}`;
     }
@@ -226,10 +228,10 @@ function capabilityChangedPaths(scan, paths) {
   return { paths: changed };
 }
 
-function verificationInputSnapshot(scan, knownPaths = []) {
+function verificationInputSnapshot(scan, knownPaths = [], evidencePaths = []) {
   const unavailable = { reason: 'product-change-evidence-unavailable' };
   if (scan.scanBudget?.complete !== true) return unavailable;
-  const relevant = (relative) => isProductionCapabilityPath(relative) || relative === 'package.json' || relative.endsWith('/package.json');
+  const relevant = (relative) => evidencePaths.includes(relative) || isProductionCapabilityPath(relative) || relative === 'package.json' || relative.endsWith('/package.json');
   try {
     const index = git(scan.root, ['ls-files', '--stage', '-z']).split('\0').filter(Boolean).map((entry) => {
       const separator = entry.indexOf('\t');
@@ -315,17 +317,22 @@ function surfaceMarkers(stdout) {
 
 function runVerification(scan, selected) {
   const result = runNpmScript(scan.root, selected.name);
+  const qa = parseWorkUnitResults(result.stdout);
   return {
     command: selected.command,
     status: result.error || result.status !== 0 ? 'failed' : 'passed',
     exitCode: result.status ?? 1,
     markers: surfaceMarkers(result.stdout),
     outputDigest: sha256(`${result.stdout ?? ''}\0${result.stderr ?? ''}`),
+    qaResults: qa.results,
+    qaError: qa.error,
   };
 }
 
-function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root }) {
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null }) {
   let { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
+  let unit = workUnitRelative ? readWorkUnit(scan.root, workUnitRelative) : null;
+  const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !/^(?:docs|\.ai-governance|\.agents|\.claude|\.cursor|\.github)\//.test(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
@@ -334,7 +341,9 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     projectVerification = { status: 'skipped-after-task-route-failure', command: selectedVerification.command };
   } else if (selectedVerification && governance.ok) {
     const bindHarvest = taskRoute.status === 'verified' && ['L2', 'L3'].includes(taskRoute.declaredLevel);
-    const before = bindHarvest ? verificationInputSnapshot(scan, paths) : null;
+    const before = bindHarvest ? verificationInputSnapshot(scan, paths, unitEvidencePaths) : null;
+    let unitBefore = null;
+    if (unit) try { unitBefore = workUnitVerificationBinding(scan.root, { ...scan, workUnitPath: workUnitRelative, approvalEvidence }, unit); } catch { unitBefore = { unavailable: true }; }
     projectVerification = runVerification(scan, selectedVerification);
     // Manual verification can mutate any path or the routing configuration. Re-read
     // both before claiming a final route; hook mode never runs project commands and
@@ -344,11 +353,15 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     if (before && projectVerification.status === 'passed') {
       let after;
       try {
-        after = verificationInputSnapshot(scanProject(scan.root, { probeEnvironment: false }), before.paths ?? paths);
+        after = verificationInputSnapshot(scanProject(scan.root, { probeEnvironment: false }), before.paths ?? paths, unitEvidencePaths);
       } catch {
         after = { reason: 'product-change-evidence-unavailable' };
       }
       harvestBindingReason = before.reason ?? after.reason ?? (before.fingerprint !== after.fingerprint ? 'verification-input-changed' : null);
+      if (unitBefore) try {
+        const unitAfter = workUnitVerificationBinding(scan.root, { ...scanProject(scan.root, { probeEnvironment: false }), workUnitPath: workUnitRelative, approvalEvidence }, readWorkUnit(scan.root, workUnitRelative));
+        if (unitBefore.unavailable || stableJson(unitBefore) !== stableJson(unitAfter)) harvestBindingReason = 'verification-input-changed';
+      } catch { harvestBindingReason = 'verification-input-changed'; }
       projectVerification.inputEvidence = {
         status: harvestBindingReason ? 'unverified' : 'unchanged',
         beforeFingerprint: before.fingerprint ?? null,
@@ -360,20 +373,41 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   }
   // This reads final evidence after an explicitly requested verification command.
   // In hook mode scan.root is the materialized index, never the live worktree.
-  const confirmedRiskSignals = applicableRiskSignals(config, paths);
+  const confirmedRiskSignals = [...new Set([...applicableRiskSignals(config, paths), ...(unit?.risks ?? [])])];
+  if (unit) unit = readWorkUnit(scan.root, workUnitRelative);
+  const professionalContext = trustedProfessionalTaskContext(scan.root, config, paths);
+  const professionalBoundaries = [...professionalContext.professionalBoundaries];
+  for (const boundary of unit?.professionalBoundaries ?? []) {
+    const existing = professionalBoundaries.find((entry) => entry.id === boundary.id);
+    if (existing && stableJson(existing) !== stableJson(boundary)) professionalContext.professionalGap = 'Work-unit cannot redefine the approved project professional boundary.';
+    if (!existing) professionalBoundaries.push(boundary);
+  }
   const taskApproval = evaluateTaskApproval(scan.root, {
     taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
-    changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence),
-    ...trustedProfessionalTaskContext(scan.root, config, paths),
+    changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence, workUnitRelative),
+    ...professionalContext,
+    professionalBoundaries,
+    workUnitDigest: unit ? workUnitPlanDigest(unit) : null,
     confirmedRiskSignals,
     reviewEvidence: { confirmedRisk: confirmedRiskSignals.length > 0, publicContract: confirmedRiskSignals.includes('public-api'), externalAction: confirmedRiskSignals.includes('external-side-effect') },
     // Paths and approved scope mappings determine task-local risk and review applicability.
   });
-  const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));
-  const memory = { issues: config?.features?.knowledge ? memoryIssues(scan.root, { ...scan, memoryGitRoot: gitRoot }, paths) : [] };
-  memory.status = memory.issues.length ? 'blocked' : config?.features?.knowledge ? 'checked' : 'disabled';
-  const ok = routeAccepted && taskApproval.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
+  const memoryScan = { ...(unit ? scanProject(scan.root, { probeEnvironment: false }) : scan), memoryGitRoot: gitRoot, workUnitPath: workUnitRelative, approvalEvidence };
+  const behaviorPaths = changedMemoryBehaviorPaths(scan.root, memoryScan, paths);
+  const needsWorkUnit = ['L2', 'L3'].includes(taskRoute.declaredLevel ?? taskRoute.minimumLevel) && behaviorPaths.length > 0;
+  const memory = { issues: config?.features?.knowledge || unit ? memoryIssues(scan.root, memoryScan, paths) : [] };
+  memory.status = memory.issues.length ? 'blocked' : config?.features?.knowledge || unit ? 'checked' : 'disabled';
+  if (unit && !selectedVerification && unit.verification.evidence) projectVerification = replayWorkUnitVerification(scan.root, memoryScan, unit);
+  const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
+  const workUnit = unit ? checkWorkUnit(scan.root, unit, { scan: memoryScan, config, changedPaths: paths, behaviorPaths, taskApproval, memory, verification: projectVerification })
+    : { ok: !needsWorkUnit, status: needsWorkUnit ? 'missing' : 'not-required', issues: needsWorkUnit ? ['L2/L3 production delivery requires --work-unit <safe-relative-json>.'] : [] };
+  if (unit && (unit.taskLevel !== taskApproval.plan?.taskLevel || unit.reviewMode !== taskApproval.review?.mode)) { workUnit.ok = false; workUnit.status = 'blocked'; workUnit.issues.push('work-unit route differs from the final approved task route.'); }
+  if (unit && selectedVerification && projectVerification.status === 'passed' && projectVerification.inputEvidence?.status === 'unchanged') {
+    workUnit.recordedEvidence = recordWorkUnitVerification(scan.root, memoryScan, unit, projectVerification);
+    workUnit.recordedResults = projectVerification.qaResults;
+  }
+  const ok = routeAccepted && taskApproval.ok && workUnit.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
   const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
@@ -384,6 +418,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   if (!taskApproval.ok && taskRoute.status === 'verified') {
     Object.assign(harvest, { status: 'skipped', eligible: false, reason: changeEvidence.reason ?? `task-approval-${taskApproval.status}`, candidates: [] });
   }
+  if (!workUnit.ok && harvest.eligible) Object.assign(harvest, { status: 'skipped', eligible: false, reason: 'work-unit-incomplete', candidates: [] });
   const claimBoundary = 'A successful completion gate proves managed governance structure and at most one explicitly selected project command; it does not establish production readiness.';
   return {
     schemaVersion: 1,
@@ -394,6 +429,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     taskRoute,
     taskApproval,
     memory,
+    workUnit,
     productionReadiness,
     surfaceVerification,
     claimBoundary,
@@ -412,22 +448,24 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   };
 }
 
-export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null } = {}) {
+export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null, workUnit = null } = {}) {
   if (fromGitHook) {
     taskLevel ??= process.env.AICG_TASK_LEVEL ?? null;
     reviewMode ??= process.env.AICG_REVIEW_MODE ?? null;
     approvalEvidence ??= process.env.AICG_APPROVAL_EVIDENCE ?? null;
     approve ??= process.env.AICG_APPROVE ?? null;
+    workUnit ??= process.env.AICG_WORK_UNIT ?? null;
     if (approvalEvidence !== null && (typeof approvalEvidence !== 'string' || approvalEvidence.length > 4096 || !isSafeRelative(approvalEvidence))) throw usageError('AICG_APPROVAL_EVIDENCE must be a safe repository-relative path.');
     if (approve !== null && (typeof approve !== 'string' || !/^[a-f0-9]{64}$/.test(approve))) throw usageError('AICG_APPROVE must be a SHA256 plan hash.');
   }
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
+  if (workUnit !== null) workUnitPath(workUnit);
   if (!fromGitHook) {
     const root = resolveGitRepository(target);
     const paths = changedPaths(root);
     const scan = scanProject(target, { probeEnvironment: false });
-    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve });
+    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve, workUnit });
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
   const root = resolveGitRepository(target);
@@ -442,5 +480,6 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     approvalEvidence,
     approve,
     gitRoot: root,
+    workUnit,
   }));
 }

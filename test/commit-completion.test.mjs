@@ -13,6 +13,7 @@ import { minimumTaskLevelFromPaths } from '../src/modules/governance/index.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { memoryFixture } from './helpers/memory-fixture.mjs';
 import { scanProjectMemoryFacts, buildMemoryArtifacts } from '../src/modules/memory/index.mjs';
+import { prepareCompletionUnit } from './helpers/work-unit-fixture.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -87,12 +88,14 @@ function write(root, relative, content = 'export const value = true;\n') {
 // Explicit test-owner approvals, separate from completion itself. Persist the
 // reference paths before requesting the plan so its path binding is exact.
 function approvalOptions(root, options = {}) {
+  const prepared = prepareCompletionUnit(root, options);
+  options = prepared.options;
   const reference = 'docs/ai/task-approval/approved.md';
   const approvalEvidence = 'docs/ai/task-approval/evidence.json';
   write(root, reference, '# Test-owner approved requirements, design and plan\n');
   write(root, approvalEvidence, '{}\n');
   if (options.fromGitHook) assert.equal(git(root, ['add', reference, approvalEvidence]).status, 0);
-  const preview = runCompletion(root, options);
+  const preview = runCompletion(root, { ...options, verificationCommand: null });
   let plan = preview.taskApproval.plan;
   const evidence = {
     schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [],
@@ -105,17 +108,19 @@ function approvalOptions(root, options = {}) {
   };
   write(root, approvalEvidence, JSON.stringify(evidence));
   if (options.fromGitHook) assert.equal(git(root, ['add', approvalEvidence]).status, 0);
-  plan = runCompletion(root, { ...options, approvalEvidence }).taskApproval.plan;
+  plan = runCompletion(root, { ...options, verificationCommand: null, approvalEvidence }).taskApproval.plan;
   evidence.planHash = plan.planHash;
   write(root, approvalEvidence, JSON.stringify(evidence));
   if (options.fromGitHook) assert.equal(git(root, ['add', approvalEvidence]).status, 0);
+  prepared.finalize(plan.planHash);
   return { taskLevel: plan.taskLevel, reviewMode: plan.reviewMode, approvalEvidence, approve: plan.planHash, ...options };
 }
 
 function runApproved(args) {
   assert.equal(args[0], 'complete');
-  const options = approvalOptions(args[1]);
-  return run([...args, '--task-level', options.taskLevel, '--review-mode', options.reviewMode, '--approval-evidence', options.approvalEvidence, '--approve', options.approve]);
+  const verifyIndex = args.indexOf('--verify');
+  const options = approvalOptions(args[1], verifyIndex >= 0 ? { verificationCommand: args[verifyIndex + 1] } : {});
+  return run([...args, '--task-level', options.taskLevel, '--review-mode', options.reviewMode, '--approval-evidence', options.approvalEvidence, '--approve', options.approve, ...(options.workUnit ? ['--work-unit', options.workUnit] : []), ...(verifyIndex < 0 && options.verificationCommand ? ['--verify', options.verificationCommand] : [])]);
 }
 
 test('ignored reference replacement invalidates exact approval with unchanged Git scope', (context) => {
@@ -205,6 +210,11 @@ for (const scope of [
   const current = runCompletion(root, options).taskApproval.plan;
   evidence.planHash = current.planHash;
   fs.writeFileSync(evidencePath, JSON.stringify(evidence));
+  if (options.workUnit) {
+    const unit = JSON.parse(fs.readFileSync(path.join(root, options.workUnit)));
+    unit.approvalPlanHash = current.planHash;
+    write(root, options.workUnit, JSON.stringify(unit));
+  }
   const satisfied = runCompletion(root, { ...options, approve: current.planHash });
   assert.equal(satisfied.ok, true, JSON.stringify(satisfied));
   assert.equal(satisfied.taskApproval.identityVerified, false);
@@ -288,7 +298,7 @@ test('the installed hook accepts only explicit safe approval environment values'
   write(root, 'src/modules/widget/index.mjs');
   assert.equal(git(root, ['add', 'src/modules/widget/index.mjs']).status, 0);
   const options = approvalOptions(root, { taskLevel: 'L2', fromGitHook: true });
-  const env = { ...process.env, AICG_TASK_LEVEL: options.taskLevel, AICG_REVIEW_MODE: options.reviewMode, AICG_APPROVAL_EVIDENCE: options.approvalEvidence, AICG_APPROVE: options.approve };
+  const env = { ...process.env, AICG_TASK_LEVEL: options.taskLevel, AICG_REVIEW_MODE: options.reviewMode, AICG_APPROVAL_EVIDENCE: options.approvalEvidence, AICG_APPROVE: options.approve, AICG_WORK_UNIT: options.workUnit };
   const invoke = (values) => spawnSync(path.join(root, '.git/hooks/pre-commit'), [], { cwd: root, env: values, encoding: 'utf8' });
   const approved = invoke(env);
   assert.equal(approved.status, 0, approved.stdout + approved.stderr);
@@ -447,7 +457,7 @@ test('completion returns current verified capability candidates without writing 
   assert.deepEqual(tree(), before);
   assert.equal(git(root, ['ls-files', '--stage']).stdout, index);
   for (const [options, reason] of [
-    [{ taskLevel: 'L2' }, 'project-verification-not-requested'],
+    [{ taskLevel: 'L2', verificationCommand: null }, 'project-verification-not-requested'],
     [{ taskLevel: 'L2', verificationCommand: 'npm run test:fail' }, 'project-verification-failed'],
     [{ verificationCommand: 'npm test' }, 'task-route-unverified-declaration'],
     [{ taskLevel: 'L1', verificationCommand: 'npm test' }, 'task-route-upgrade-required'],

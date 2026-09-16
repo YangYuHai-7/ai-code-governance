@@ -17,6 +17,14 @@ function unchangedMemoryBehavior(relative, before, after) {
   const terminalLines = (source) => source.replace(/(?:\r?\n[\t ]*)+$/, '\n');
   return terminalLines(before) === terminalLines(after);
 }
+export function changedMemoryBehaviorPaths(root, scan, paths) {
+  return paths.filter(isMemoryCodePath).filter((relative) => {
+    let current;
+    try { current = readMemoryFile(root, relative); } catch { return true; }
+    const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    return before.status !== 0 || !unchangedMemoryBehavior(relative, before.stdout, current);
+  });
+}
 export function memoryIssues(root, scan, changedPaths) {
   const issues = [];
   let memory;

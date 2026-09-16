@@ -12,7 +12,7 @@ import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
-import { conditionalArtifactRoutes, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
+import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
@@ -623,7 +623,8 @@ export function artifactDefinitions(config, scan) {
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
   for (const relative of ['reviews/.gitkeep', 'reports/.gitkeep']) add(relative, 'routing', () => `# ${GENERATED_MARKER}\n`, { requires: [(value) => !hasCompactManagement(value)], kind: 'local-output-directory', source: 'template:local-output-layout' });
 
-  add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { source: 'template:anti-patterns' });
+  const antiPatternsActive = (value, current) => !hasSkillManagement(value) || hasGovernanceUsage(current, 'anti-patterns') || hasArtifactEvidence(current, 'docs/ai/anti-patterns.md');
+  add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { requires: [antiPatternsActive], routeProfiles: ['behavior_change:anti_patterns'], source: 'template:anti-patterns' });
   add('docs/ai/stack-profile.json', 'policy', () => stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), { requires: [stack], ownership: 'full', source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
   add('docs/ai/rules/20_stack.mdc', 'policy', () => stackRule(config, packs), { requires: [stack], source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
   add('docs/ai/architecture-profile.json', 'policy', () => stableJson(architectureProfileDocument(config)), { requires: [architecture], ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['architecture-placement', 'architecture-route'], routeProfiles: ['behavior_change:architecture'] });
@@ -656,8 +657,9 @@ export function artifactDefinitions(config, scan) {
 
   for (const pack of packs) {
     const canonicalPath = `docs/ai/skills/${pack.id}/SKILL.md`;
-    add(canonicalPath, 'policy', () => stackSkill(config, pack), { requires: [complete], kind: 'canonical-skill', source: 'capability-pack-registry' });
-    addSkillAdapters(canonicalPath, () => stackSkill(config, pack), 'policy', [complete]);
+    const stackGuidanceActive = (value, current) => pack.id !== 'generic-unknown' || !hasSkillManagement(value) || hasGovernanceUsage(current, 'stack') || hasArtifactEvidence(current, canonicalPath);
+    add(canonicalPath, 'policy', () => stackSkill(config, pack), { requires: [complete, stackGuidanceActive], routeProfiles: [`behavior_change:pack_${pack.id.replaceAll('-', '_')}`], kind: 'canonical-skill', source: 'capability-pack-registry' });
+    addSkillAdapters(canonicalPath, () => stackSkill(config, pack), 'policy', [complete, stackGuidanceActive]);
   }
 
   let capabilities;
@@ -673,7 +675,7 @@ export function artifactDefinitions(config, scan) {
     add(relative, 'lifecycle', () => capabilityArtifacts().find((artifact) => artifact.path === relative).content, { ownership: 'full', kind: relative === 'docs/ai/capability-evolution.json' ? 'capability-evolution-catalog' : 'project-capability-skill', source: 'project-capability-harvest', gateAssertions: ['capability-evidence'] });
     definitions.at(-1).build = () => capabilityArtifacts().find((artifact) => artifact.path === relative);
   }
-  add('docs/ai/lifecycle.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 治理生命周期\n\n将重复出现且有证据支持的指引提升为规则或技能。审查过期资料，停用已被替代的指引，并为每项事实保留唯一维护者。\n' : '# Governance lifecycle\n\nPromote repeated, evidence-backed guidance into rules or Skills. Review stale sources, retire superseded guidance, and keep one owner for every fact.\n', { source: 'template:lifecycle' });
+  add('docs/ai/lifecycle.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 治理生命周期\n\n一个功能使用一个工作单元，包含页面、API、服务、数据和测试，不按端点拆分。L0 无工作单元；L1 保持轻量。L2/L3 生产交付使用 `aicg work-unit plan . --work-unit <relative-json>` 和 `status` 预览校验，然后 `aicg complete . --work-unit <relative-json>` 绑定精确批准与一次显式验证。\n\n需求、计划、初始测试、QA 补充案例、Memory 实体覆盖和 no-memory-impact 决策均绑定计划。验证输出逐项 `AICG_QA_RESULT`；缺失、重复、失败或 blocked 必需案例阻断完成。验证后把返回的 recordedEvidence 与 recordedResults 写回同一文档，hook 只检查当前输入绑定，不重复执行；重放为 operator-declared 结构证据。行为变更必须同步 Memory。\n\n将重复出现且有证据支持的指引提升为候选规则或技能；保留唯一维护者，不自动提升或执行。\n' : '# Governance lifecycle\n\nOne feature uses one work unit across pages, APIs, services, data and tests, never one task per endpoint. L0 has no unit; L1 stays lightweight. L2/L3 production delivery uses `aicg work-unit plan . --work-unit <relative-json>` and `status` for preview, then `aicg complete . --work-unit <relative-json>` with exact approval and one explicit verification run.\n\nRequirements, plan, initial tests, QA additions, canonical Memory coverage and no-memory-impact decisions bind the plan. Verification emits per-case `AICG_QA_RESULT` markers; missing, duplicate, failed or blocked required cases prevent completion. Copy returned recordedEvidence and recordedResults into the same document after verification. Hooks check current input bindings without rerunning; replay is operator-declared structural evidence. Behavior changes synchronize Memory.\n\nPromote repeated evidence-backed guidance as candidates with one owner; never auto-promote or execute.\n', { source: 'template:lifecycle' });
   if (config.features.knowledge) {
     const memory = buildMemoryArtifacts(config, scan);
     for (const artifact of memory.artifacts) add(artifact.path, 'core', () => artifact.content, {

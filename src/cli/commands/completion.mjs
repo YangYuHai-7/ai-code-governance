@@ -14,6 +14,8 @@ function printCompletion(result, json) {
   for (const reason of result.taskRoute.reasons) console.log(`TASK_ROUTE: ${reason}`);
   console.log(`task_approval=${result.taskApproval.status} review_mode=${result.taskApproval.review?.mode ?? 'unknown'} plan_hash=${result.taskApproval.plan?.planHash ?? 'unavailable'}`);
   for (const gap of result.taskApproval.gaps) console.log(`APPROVAL_GAP: ${gap}`);
+  console.log(`work_unit=${result.workUnit.status}`);
+  for (const issue of result.workUnit.issues) console.log(`WORK_UNIT_GAP: ${issue}`);
   if (result.stagedFiles.length > 0) console.log(`staged_files=${result.stagedFiles.join(',')}`);
   console.log(`governance=${result.governance.ok ? 'pass' : 'fail'} project_verification=${result.projectVerification.status}`);
   for (const warning of result.governance.warnings) console.warn(`WARN: ${warning}`);
@@ -23,7 +25,7 @@ function printCompletion(result, json) {
 }
 
 export function completeCommand(target, options) {
-  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null, taskLevel: options['task-level'] ?? null, reviewMode: options['review-mode'] ?? null, approvalEvidence: options['approval-evidence'] ?? null, approve: options.approve ?? null });
+  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null, taskLevel: options['task-level'] ?? null, reviewMode: options['review-mode'] ?? null, approvalEvidence: options['approval-evidence'] ?? null, approve: options.approve ?? null, workUnit: options['work-unit'] ?? null });
   printCompletion(result, Boolean(options.json));
   if (!result.ok) process.exitCode = 1;
 }
