@@ -1,7 +1,8 @@
 import path from 'node:path';
-import { PACKAGE_ROOT } from '../../constants.mjs';
+import { PACKAGE_ROOT, SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
+import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 
 const PROFESSIONAL_BOUNDARIES_PATH = 'assets/policies/professional-domain-boundaries.json';
 const MAX_IDENTIFIER_BYTES = 128;
@@ -310,9 +311,93 @@ export function proposeProjectAgentTeam(input, options) {
     teamType: 'project-ai-agent-team',
     status: 'recommendation',
     projectMode: request.projectMode,
+    provenance: { evidence: structuredClone(request.evidence), confirmedDomainNeeds: structuredClone(request.confirmedDomainNeeds), approvedRoles: structuredClone(request.approvedRoles ?? []) },
     roleProposals,
     professionalBoundaries,
     gaps,
     actionsPerformed: [],
   };
+}
+
+/** Professional machine rules are invariant across proposal, persistence and task evidence. */
+export function validateProjectProfessionalBoundary(value) {
+  const boundary = object(value, 'professional boundary');
+  exactKeys(boundary, 'professional boundary', new Set(['domainNeedId', 'humanReviewRequired', 'qualification', 'jurisdiction', 'decisionAuthority', 'reason']));
+  requiredId(boundary.domainNeedId, 'professional boundary domainNeedId');
+  const required = REQUIRED_PROFESSIONAL_QUALIFICATIONS.get(boundary.domainNeedId);
+  requiredId(boundary.qualification, 'professional boundary qualification');
+  if (boundary.humanReviewRequired !== true || boundary.decisionAuthority !== 'human-only' || (required && boundary.qualification !== required)) throw usageError('Professional boundary must retain canonical qualification and human-only review.');
+  requiredText(boundary.jurisdiction, 'professional boundary jurisdiction');
+  requiredText(boundary.reason, 'professional boundary reason');
+  return boundary;
+}
+
+/** Only the two top-level digest fields are excluded; nested approvals and activation are semantic. */
+export function approvedProjectAgentTeamHash(team) {
+  const { planHash: _hash, approval: _approval, ...semantic } = object(team, 'approved project team');
+  return sha256(stableJson(semantic));
+}
+
+const ROLE_FIELDS = ['id', 'title', 'capabilities', 'responsibilities', 'outOfScope', 'domainNeedIds', 'evidenceIds', 'skillIds', 'mustRemainIndependentFrom'];
+
+export function validateApprovedProjectAgentTeam(team) {
+  object(team, 'approved project team');
+  exactKeys(team, 'approved project team', new Set(['schemaVersion', 'enabled', 'teamType', 'status', 'projectMode', 'provenance', 'roleProposals', 'professionalBoundaries', 'gaps', 'actionsPerformed', 'planHash', 'approval']));
+  if (team.schemaVersion !== 1 || team.enabled !== true || team.teamType !== 'project-ai-agent-team' || team.status !== 'approved' || !PROJECT_MODES.has(team.projectMode) || Buffer.byteLength(stableJson(team)) > 16384) throw usageError('Approved project team schema or metadata budget is invalid.');
+  object(team.provenance, 'approved project team provenance');
+  exactKeys(team.provenance, 'approved project team provenance', new Set(['evidence', 'confirmedDomainNeeds', 'approvedRoles']));
+  const evidence = normalizeEvidence(team.provenance.evidence);
+  const domains = normalizeDomainNeeds(team.provenance.confirmedDomainNeeds, evidence);
+  const approved = normalizeApprovedRoles(team.provenance.approvedRoles);
+  boundedArray(team.roleProposals, 'approved project team roles', { max: MAX_RECOMMENDATIONS });
+  for (const role of team.roleProposals) {
+    object(role, 'approved project role');
+    exactKeys(role, 'approved project role', new Set([...ROLE_FIELDS, 'origin', 'status', 'approval', 'activation', 'professionalBoundaries', 'professionalBoundary']), [...ROLE_FIELDS, 'origin', 'status', 'approval']);
+    if (role.origin !== 'dynamic-project-role' || role.status !== 'approved-available') throw usageError('Approved project role must retain its origin and approved-available status.');
+    object(role.approval, 'role approval');
+    exactKeys(role.approval, 'role approval', new Set(['source', 'evidenceId']));
+    if (role.approval.source !== 'user') throw usageError('Role approval must reference a user decision.');
+    requiredEvidenceId(role.approval.evidenceId, 'role approval evidenceId');
+    if (role.activation !== undefined) {
+      object(role.activation, 'role activation');
+      exactKeys(role.activation, 'role activation', new Set(['signals', 'paths']));
+      const signals = idArray(role.activation.signals, 'activation signals', { allowEmpty: false, max: 16 });
+      if (signals.some((signal) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(signal))) throw usageError('Invalid professional activation signal.');
+      boundedArray(role.activation.paths, 'activation paths', { allowEmpty: false, max: 32 });
+      if (new Set(role.activation.paths).size !== role.activation.paths.length || role.activation.paths.some((relative) => typeof relative !== 'string' || relative.length > 256 || !isSafeRelative(relative))) throw usageError('Invalid professional activation paths.');
+    }
+  }
+  const roles = normalizeRoleNeeds(team.roleProposals.map((role) => Object.fromEntries(ROLE_FIELDS.map((key) => [key, role[key]]))), domains, evidence, approved, MAX_RECOMMENDATIONS);
+  const policy = loadPolicy();
+  const expectedBoundaries = [...domains.values()].map((domain) => boundaryForDomain(domain, policy)).filter(Boolean).sort((a, b) => a.domainNeedId.localeCompare(b.domainNeedId));
+  boundedArray(team.professionalBoundaries, 'professional boundaries', { max: MAX_DOMAIN_NEEDS });
+  if (team.professionalBoundaries.length !== expectedBoundaries.length) throw usageError('Professional boundary omission or conflict in approved project team.');
+  for (const [index, expected] of expectedBoundaries.entries()) {
+    const actual = validateProjectProfessionalBoundary(team.professionalBoundaries[index]);
+    if (stableJson({ ...actual, reason: expected.reason }) !== stableJson(expected)) throw usageError('Professional boundary conflicts with confirmed domain provenance.');
+  }
+  for (const role of team.roleProposals) {
+    const normalized = roles.find((entry) => entry.id === role.id);
+    if (stableJson(normalized) !== stableJson(Object.fromEntries(ROLE_FIELDS.map((key) => [key, role[key]])))) throw usageError('Approved project role fields must retain normalized bounded semantics.');
+    const expected = team.professionalBoundaries.filter((boundary) => role.domainNeedIds.includes(boundary.domainNeedId));
+    if (stableJson(role.professionalBoundaries ?? []) !== stableJson(expected)) throw usageError('Approved role professional boundaries are missing or conflicting.');
+    if (role.professionalBoundary !== undefined && (expected.length !== 1 || stableJson(role.professionalBoundary) !== stableJson(expected[0]))) throw usageError('Conflicting singular professional boundary.');
+  }
+  const expectedGaps = expectedBoundaries.flatMap(gapsForBoundary).sort((a, b) => a.id.localeCompare(b.id));
+  if (stableJson(team.gaps) !== stableJson(expectedGaps) || !Array.isArray(team.actionsPerformed) || team.actionsPerformed.length) throw usageError('Approved project team gaps or actions are invalid.');
+  object(team.approval, 'team approval');
+  exactKeys(team.approval, 'team approval', new Set(['planHash']));
+  if (!/^[a-f0-9]{64}$/.test(team.planHash ?? '') || team.approval.planHash !== team.planHash || team.planHash !== approvedProjectAgentTeamHash(team)) throw usageError('Approved project team approval planHash does not bind all final semantics.');
+  return team;
+}
+
+export function buildApprovedProjectAgentTeam(proposal, { selectedIds, approvalEvidenceId, activation = {} }) {
+  if (proposal?.status !== 'recommendation' || !Array.isArray(selectedIds) || new Set(selectedIds).size !== selectedIds.length || selectedIds.some((id) => !proposal.roleProposals.some((role) => role.id === id))) throw usageError('Approved project team requires known explicit selections.');
+  requiredEvidenceId(approvalEvidenceId, 'role approval evidenceId');
+  object(activation, 'activation');
+  if (Object.keys(activation).some((id) => !selectedIds.includes(id))) throw usageError('Activation references an unselected project role.');
+  const team = { ...structuredClone(proposal), enabled: true, status: 'approved', roleProposals: proposal.roleProposals.filter((role) => selectedIds.includes(role.id)).map((role) => ({ ...structuredClone(role), status: 'approved-available', approval: { source: 'user', evidenceId: approvalEvidenceId }, ...(activation[role.id] ? { activation: structuredClone(activation[role.id]) } : {}) })) };
+  team.planHash = approvedProjectAgentTeamHash(team);
+  team.approval = { planHash: team.planHash };
+  return validateApprovedProjectAgentTeam(team);
 }

@@ -363,11 +363,8 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
     changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence),
     ...trustedProfessionalTaskContext(scan.root, config, paths),
-    reviewEvidence: {
-      publicContract: config.confirmedRiskSignals?.includes('public-api') ?? false,
-      externalAction: config.confirmedRiskSignals?.includes('external-side-effect') ?? false,
-      confirmedRisk: (config.confirmedRiskSignals?.length ?? 0) > 0,
-    },
+    // Project-wide risk retains the task-level floor, not task-local review applicability.
+    // Paths, trusted explicit activation and supplied task evidence determine review mode.
   });
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));

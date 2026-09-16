@@ -6,6 +6,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { classifyReviewMode, minimumTaskLevelFromPaths, REVIEW_MODES, validateReviewMode, validateTaskLevel } from './task-routing.mjs';
 import { matchSimpleGlob } from '../../shared/index.mjs';
 import { TOOL_NAME, SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
+import { validateApprovedProjectAgentTeam, validateProjectProfessionalBoundary } from '../agent-team/index.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/;
@@ -30,6 +31,8 @@ function boundaries(values) {
     if (typeof value.id !== 'string' || !ID.test(value.id) || ids.has(value.id) || value.humanReviewRequired !== true || value.decisionAuthority !== 'human-only') throw usageError('Professional boundaries must retain distinct IDs and human-only review.');
     ids.add(value.id);
     for (const key of ['qualification', 'jurisdiction', 'reason']) if (typeof value[key] !== 'string' || !value[key].trim() || value[key].length > 2000) throw usageError(`Professional boundary ${key} is required.`);
+    const { id, ...fields } = value;
+    validateProjectProfessionalBoundary({ domainNeedId: id, ...fields });
     return { id: value.id, humanReviewRequired: true, qualification: value.qualification, jurisdiction: value.jurisdiction, decisionAuthority: 'human-only', reason: value.reason };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -137,7 +140,7 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
 }
 
 // Managed project decisions, not the completion operator, own professional scope.
-// Until the full roster schema is integrated, missing applicability is a gap.
+// The shared project-team validator owns all persisted role and boundary semantics.
 export function trustedProfessionalTaskContext(root, config, plannedPaths) {
   const relative = 'docs/ai/agent-team.json';
   const result = { professionalBoundaries: [], professionalGap: null };
@@ -150,15 +153,12 @@ export function trustedProfessionalTaskContext(root, config, plannedPaths) {
     const entries = manifest.files?.filter((entry) => entry?.path === relative);
     if (manifest.schemaVersion !== 1 || manifest.generatedBy !== TOOL_NAME || entries?.length !== 1 || entries[0].ownership !== 'full' || entries[0].sha256 !== sha256(bytes)) throw usageError('Project role roster is not bound to a current managed manifest.');
     const roster = JSON.parse(bytes);
-    if (roster.schemaVersion !== 1 || roster.teamType !== 'project-ai-agent-team' || !Array.isArray(roster.roles) || roster.roles.length > 32) throw usageError('Invalid project role roster.');
-    const ids = new Set();
+    const { roles, ...team } = roster;
+    validateApprovedProjectAgentTeam(team);
+    if (stableJson(roles) !== stableJson(team.roleProposals)) throw usageError('Project roster projection conflicts with its approved team.');
     const known = new Map();
     for (const role of roster.roles) {
-      if (!role || typeof role.id !== 'string' || !ID.test(role.id) || ids.has(role.id) || role.status !== 'approved-available' || role.approval?.source !== 'user' || typeof role.approval.evidenceId !== 'string' || !ID.test(role.approval.evidenceId)) throw usageError('Project roles require distinct approved IDs and user approval references.');
-      ids.add(role.id);
-      const raw = role.professionalBoundaries ?? (role.professionalBoundary ? [role.professionalBoundary] : []);
-      if (!Array.isArray(raw) || raw.length > 16) throw usageError('Invalid professional boundary list.');
-      if (role.professionalBoundaries && role.professionalBoundary && (raw.length !== 1 || stableJson(raw[0]) !== stableJson(role.professionalBoundary))) throw usageError('Conflicting singular and plural professional boundaries.');
+      const raw = role.professionalBoundaries ?? [];
       const normalized = boundaries(raw.map((boundary) => {
         if (!boundary || typeof boundary !== 'object') throw usageError('Invalid professional boundary.');
         const { domainNeedId, ...fields } = boundary;

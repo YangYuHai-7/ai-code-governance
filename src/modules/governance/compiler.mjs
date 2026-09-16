@@ -6,7 +6,7 @@ import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, 
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
 import { buildTechnicalStandardArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
-import { validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
+import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
@@ -152,6 +152,7 @@ function normalizeConfigDefaults(config, scan) {
 }
 
 export function validateConfig(config) {
+  if (config.adaptiveDecisions !== undefined) validateAdaptiveDecisions(config.adaptiveDecisions);
   if (config.codeDocumentationPolicy === undefined) {
     config = { ...config, codeDocumentationPolicy: defaultCodeDocumentationPolicy(config) };
   }
@@ -760,10 +761,10 @@ function validateSkillGovernanceConfig(config, root = null) {
   for (const key of ['skillDiscovery', 'agentTeam']) {
     if (config[key] !== undefined && (!config[key] || typeof config[key] !== 'object' || typeof config[key].enabled !== 'boolean')) throw usageError(`${key}.enabled must be an explicit boolean.`);
   }
+  if (config.agentTeam?.enabled) validateApprovedAgentTeam(config.agentTeam);
   if (config.governanceDepth === 'minimal' || (!config.skillDiscovery?.enabled && !config.agentTeam?.enabled)) return;
   if (!hasSkillManagement(config)) throw usageError('Skill management requires both an approved discovery decision and project agent team.');
   validateSkillDecision(config.skillDiscovery.decision, { root });
-  validateApprovedAgentTeam(config.agentTeam);
   const plan = config.skillDiscovery.artifactPlan;
   if (!plan || plan.contextHash !== governanceContextHash(config) || plan.planHash !== skillGovernanceHash(config, plan)
     || config.skillDiscovery.approvalPlanHash !== plan.planHash) throw usageError('Skill governance requires exact artifact planHash approval for the current config, decisions, team and costs.');

@@ -8,6 +8,8 @@ import { classifyReviewMode } from '../../src/modules/governance/task-routing.mj
 import { trustedProfessionalTaskContext } from '../../src/modules/governance/task-approval.mjs';
 import { checkProject } from '../../src/checker.mjs';
 import { scanProject } from '../../src/scanner.mjs';
+import { decideSkillCandidates } from '../../src/skill-discovery.mjs';
+import { proposeProjectAgentTeam } from '../../src/project-agent-team.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 const managementPaths = ['docs/ai/skills/skill-discovery/SKILL.md', 'docs/ai/skills/team-orchestrator/SKILL.md', 'docs/ai/skill-index.json', 'docs/ai/agent-team.json'];
@@ -67,6 +69,117 @@ function preview(f, config) {
 function selectedConfig(extra = {}) {
   return configFor({ decisions: { skills: [], roles: [{ id: 'project-domain-reviewer', action: 'add' }] }, activation: { 'project-domain-reviewer': { signals: ['sensitive-data'], paths: ['docs/contracts/**'] } } }, extra);
 }
+
+test('external config cannot manufacture an approved legal role without mandatory professional boundaries', (context) => {
+  const f = fixture(context);
+  const team = proposeProjectAgentTeam({ ...roleInput(), projectMode: 'greenfield' });
+  Object.assign(team, { enabled: true, status: 'approved', planHash: 'b'.repeat(64), approval: { planHash: 'b'.repeat(64) }, professionalBoundaries: [] });
+  Object.assign(team.roleProposals[0], { status: 'approved-available', approval: { source: 'user', evidenceId: 'owner.approval' }, professionalBoundaries: [] });
+  delete team.roleProposals[0].professionalBoundary;
+  const decision = decideSkillCandidates([]);
+  const config = configFor({}, { agentTeam: team, skillDiscovery: { enabled: true, decision: decideSkillCandidates([], { approvalPlanHash: decision.planHash }) } });
+  delete config.adaptiveGovernance;
+  writeAnswers(f, config);
+  const before = snapshot(f.root);
+  const result = command(['init', f.root, '--yes', '--config', f.answers, '--dry-run']);
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /professional|boundary|approved project team/i);
+  assert.deepEqual(snapshot(f.root), before);
+});
+
+for (const governanceDepth of ['minimal', 'standard']) test(`${governanceDepth} remembers exact all-reject decisions and reoffers changed evidence only`, (context) => {
+  const f = fixture(context);
+  const installed = path.join(f.parent, 'installed');
+  fs.mkdirSync(path.join(installed, 'review'), { recursive: true });
+  const source = path.join(installed, 'review/SKILL.md');
+  fs.writeFileSync(source, '---\nname: review\ndescription: Review metadata.\nversion: 1.0.0\ncapabilities: ["domain-review"]\npermissions: ["read-project"]\n---\nReview only.\n');
+  const config = configFor({ installedRoots: [installed] }, { governanceDepth });
+  const initial = preview(f, config);
+  const skillId = initial.adaptiveGovernance.skills.candidates[0].id;
+  config.adaptiveGovernance.decisions = { skills: [{ id: skillId, action: 'reject' }], roles: [{ id: 'project-domain-reviewer', action: 'reject' }] };
+  const rejected = preview(f, config);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', rejected.planHash]).status, 0);
+  const stored = JSON.parse(fs.readFileSync(path.join(f.root, '.ai-governance/config.json')));
+  assert.equal(stored.adaptiveDecisions?.skills[0].action, 'reject');
+  assert.equal(stored.adaptiveDecisions?.roles[0].action, 'reject');
+  for (const receipt of [...stored.adaptiveDecisions.skills, ...stored.adaptiveDecisions.roles]) assert.match(receipt.evidenceHash, /^[a-f0-9]{64}$/);
+  assert.equal(managementPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
+  delete config.adaptiveGovernance.decisions;
+  const again = preview(f, config);
+  assert.equal(again.adaptiveGovernance.skills.candidates.some((entry) => entry.id === skillId), false);
+  assert.equal(again.adaptiveGovernance.team.roleProposals.some((entry) => entry.id === 'project-domain-reviewer'), false);
+  fs.appendFileSync(source, '\nNew evidence.\n');
+  config.adaptiveGovernance.projectTeam.roleNeeds[0].responsibilities = ['Review changed scope.'];
+  const changed = preview(f, config);
+  assert.equal(changed.adaptiveGovernance.skills.candidates.some((entry) => entry.id === skillId), true);
+  assert.equal(changed.adaptiveGovernance.team.roleProposals.some((entry) => entry.id === 'project-domain-reviewer'), true);
+  assert.equal(changed.adaptiveGovernance.decisions.skills.find((entry) => entry.id === skillId).action, 'defer');
+  assert.equal(changed.adaptiveGovernance.decisions.roles[0].action, 'defer');
+  const forged = { ...config, adaptiveDecisions: stored.adaptiveDecisions };
+  forged.adaptiveDecisions.roles[0].action = 'add';
+  writeAnswers(f, forged);
+  const before = snapshot(f.root);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--dry-run']).status, 2);
+  assert.deepEqual(snapshot(f.root), before);
+});
+
+test('mixed add and reject decisions survive fresh requests while defer remains visible', (context) => {
+  const f = fixture(context);
+  const installed = path.join(f.parent, 'installed/review');
+  fs.mkdirSync(installed, { recursive: true });
+  fs.writeFileSync(path.join(installed, 'SKILL.md'), '---\nname: review\ndescription: Review metadata.\nversion: 1.0.0\ncapabilities: ["domain-review"]\npermissions: []\n---\nReview.\n');
+  const config = selectedConfig();
+  config.adaptiveGovernance.installedRoots = [path.dirname(installed)];
+  const initial = preview(f, config);
+  const id = initial.adaptiveGovernance.skills.candidates[0].id;
+  config.adaptiveGovernance.decisions.skills = [{ id, action: 'reject' }];
+  const rejected = preview(f, config);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', rejected.planHash]).status, 0);
+  delete config.adaptiveGovernance.decisions;
+  delete config.adaptiveGovernance.activation;
+  const again = preview(f, config);
+  assert.equal(again.adaptiveGovernance.skills.candidates.some((entry) => entry.id === id), false);
+  assert.equal(again.adaptiveGovernance.decisions.roles[0].action, 'add');
+  config.adaptiveGovernance.decisions = { skills: [{ id, action: 'defer' }], roles: [{ id: 'project-domain-reviewer', action: 'add' }] };
+  const deferred = preview(f, config);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', deferred.planHash]).status, 0);
+  delete config.adaptiveGovernance.decisions;
+  assert.equal(preview(f, config).adaptiveGovernance.skills.candidates.some((entry) => entry.id === id), true);
+  config.adaptiveGovernance.projectTeam.roleNeeds[0].responsibilities = ['Review newly changed responsibilities.'];
+  const changed = preview(f, config);
+  assert.equal(changed.adaptiveGovernance.status, 'decision-refresh-required');
+  assert.equal(changed.adaptiveGovernance.existingGovernance, 'unchanged');
+  assert.equal(changed.adaptiveGovernance.team.roleProposals.length, 1);
+  assert.equal(changed.adaptiveGovernance.decisions.roles[0].action, 'defer');
+  assert.equal(changed.files.some((entry) => managementPaths.includes(entry.path)), false);
+  const before = snapshot(f.root);
+  for (const extra of [[], ['--dry-run']]) assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', changed.planHash, ...extra]).status, 2);
+  assert.deepEqual(snapshot(f.root), before);
+  config.adaptiveGovernance.decisions = { skills: [], roles: [{ id: 'project-domain-reviewer', action: 'add' }] };
+  config.adaptiveGovernance.activation = { 'project-domain-reviewer': { signals: ['sensitive-data'], paths: ['docs/contracts/**'] } };
+  const renewed = preview(f, config);
+  assert.equal(renewed.adaptiveGovernance.status, 'recommendation');
+  assert.notEqual(renewed.planHash, changed.planHash);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', renewed.planHash]).status, 0);
+  assert.equal(checkProject(scanProject(f.root)).ok, true);
+});
+
+test('all-defer Minimal approval persists receipts without management artifacts and rejects config drift', (context) => {
+  const f = fixture(context);
+  const config = configFor({}, { governanceDepth: 'minimal' });
+  const plan = preview(f, config);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--approve', plan.planHash]).status, 0);
+  const file = path.join(f.root, '.ai-governance/config.json');
+  const stored = JSON.parse(fs.readFileSync(file));
+  assert.equal(stored.adaptiveDecisions.roles[0].action, 'defer');
+  assert.equal(managementPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
+  assert.equal(preview(f, config).adaptiveGovernance.team.roleProposals.length, 1);
+  stored.adaptiveDecisions.roles[0].action = 'reject';
+  fs.writeFileSync(file, JSON.stringify(stored));
+  const before = snapshot(f.root);
+  assert.equal(command(['init', f.root, '--yes', '--config', f.answers, '--dry-run']).status, 2);
+  assert.deepEqual(snapshot(f.root), before);
+});
 
 test('greenfield preview exposes bounded offline recommendations, open professional gaps and one exact approval without preselection', (context) => {
   const f = fixture(context);

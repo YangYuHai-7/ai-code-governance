@@ -10,6 +10,39 @@ import { scanProject } from '../src/scanner.mjs';
 import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { sha256 } from '../src/shared/index.mjs';
+import { validateApprovedAgentTeam } from '../src/modules/skills/decisions.mjs';
+import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
+import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions, validateAdaptiveDecisions } from '../src/modules/skills/index.mjs';
+
+test('decision receipts bind all Skill metadata and reject malformed remembered state', (context) => {
+  const root = fixture(context);
+  skill(root, 'docs/ai/skills/review', 'review');
+  const [candidate] = discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] });
+  const receipt = { id: candidate.id, action: 'reject', evidenceHash: adaptiveDecisionEvidenceHash(candidate) };
+  assert.equal(reconcileAdaptiveDecisions([candidate], [], [receipt])[0].action, 'reject');
+  for (const change of [{ source: 'another-source' }, { version: '2.0.0' }, { contentSha256: 'e'.repeat(64) }, { permissions: ['network'] }, { availability: 'refresh-due' }, { capabilities: ['review', 'new-risk'] }]) {
+    assert.equal(reconcileAdaptiveDecisions([{ ...candidate, ...change }], [], [receipt])[0].action, 'defer');
+  }
+  for (const value of [null, [], {}, { schemaVersion: 1, skills: [{ ...receipt, evidenceHash: 'bad' }], roles: [] }, { schemaVersion: 1, skills: [receipt, receipt], roles: [] }, { schemaVersion: 1, skills: [{ ...receipt, id: 123 }], roles: [] }, { schemaVersion: 1, skills: Array(33).fill(receipt), roles: [] }]) assert.throws(() => validateAdaptiveDecisions(value), /adaptive|decision/i);
+});
+
+test('direct approved teams cannot bypass professional semantics with matching arbitrary hashes', (context) => {
+  const root = fixture(context);
+  const scan = scanProject(root);
+  const team = proposeProjectAgentTeam({ projectMode: 'greenfield',
+    evidence: [{ id: 'owner.domain', kind: 'user-confirmed-domain' }],
+    confirmedDomainNeeds: [{ id: 'contract-law', label: 'Legal scope', evidenceIds: ['owner.domain'], jurisdiction: 'JP' }],
+    roleNeeds: [{ id: 'legal-reviewer', title: 'Legal review', capabilities: ['legal-review'], responsibilities: ['Review risks.'], outOfScope: ['Final advice.'], domainNeedIds: ['contract-law'], evidenceIds: ['owner.domain'], skillIds: [], mustRemainIndependentFrom: [] }],
+  });
+  Object.assign(team, { enabled: true, status: 'approved', planHash: 'b'.repeat(64), approval: { planHash: 'b'.repeat(64) } });
+  Object.assign(team.roleProposals[0], { status: 'approved-available', approval: { source: 'user', evidenceId: 'owner.approval' }, professionalBoundaries: [], activation: { signals: ['sensitive-data'], paths: ['docs/contracts/**'] } });
+  delete team.roleProposals[0].professionalBoundary;
+  team.professionalBoundaries = [];
+  const config = { ...defaultConfig(scan), clients: ['codex'], skillDiscovery: { enabled: true, decision: approvedDecision([]) }, agentTeam: team };
+  assert.throws(() => validateApprovedAgentTeam(team), /approval|boundary|professional|planHash/i);
+  assert.throws(() => prepareSkillGovernancePlan(config, scan), /approval|boundary|professional|planHash/i);
+  assert.throws(() => buildArtifacts(config, scan), /approval|boundary|professional|planHash/i);
+});
 
 function fixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-discovery-'));
@@ -30,10 +63,8 @@ function approvedDecision(candidates, selectedIds) {
 }
 
 function approvedConfig(config, scan, candidates = [], selectedIds) {
-  const input = { ...config, skillDiscovery: { enabled: true, decision: approvedDecision(candidates, selectedIds) }, agentTeam: {
-    enabled: true, teamType: 'project-ai-agent-team', status: 'approved', planHash: 'b'.repeat(64), approval: { planHash: 'b'.repeat(64) },
-    roleProposals: [], professionalBoundaries: ['AI assistance is not a licensed professional decision.'], gaps: [], actionsPerformed: [],
-  } };
+  const agentTeam = buildApprovedProjectAgentTeam(proposeProjectAgentTeam({ projectMode: 'greenfield', evidence: [{ id: 'owner.scope', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [], roleNeeds: [] }), { selectedIds: [], approvalEvidenceId: 'owner.approval' });
+  const input = { ...config, skillDiscovery: { enabled: true, decision: approvedDecision(candidates, selectedIds) }, agentTeam };
   const plan = prepareSkillGovernancePlan(input, scan);
   return { plan, config: { ...input, skillDiscovery: { ...plan.skillDiscovery, approvalPlanHash: plan.planHash }, agentTeam: plan.agentTeam } };
 }
@@ -230,7 +261,7 @@ test('task activation remains bounded and team, permission and total-cost change
   const base = { ...defaultConfig(scan), clients: ['codex'] };
   const { config } = approvedConfig(base, scan, candidates);
   for (const mutate of [
-    (value) => { value.agentTeam.professionalBoundaries = []; },
+    (value) => { value.agentTeam.planHash = 'e'.repeat(64); },
     (value) => { value.agentTeam.approval.planHash = 'f'.repeat(64); },
     (value) => { value.skillDiscovery.decision.candidates[0].permissions = ['network']; },
   ]) {

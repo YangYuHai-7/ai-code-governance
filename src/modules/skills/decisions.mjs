@@ -1,5 +1,6 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { assertSkillCandidateFresh, serializeSkillDiscovery } from './discovery.mjs';
+import { validateApprovedProjectAgentTeam } from '../agent-team/index.mjs';
 
 const STATES = new Set(['discovered', 'recommended', 'approved', 'applied', 'active-for-task']);
 
@@ -69,11 +70,5 @@ export function validateSkillDecision(decision, { root = null } = {}) {
 }
 
 export function validateApprovedAgentTeam(team) {
-  if (!team || team.teamType !== 'project-ai-agent-team' || team.status !== 'approved'
-    || !/^[a-f0-9]{64}$/.test(team.planHash ?? '') || team.approval?.planHash !== team.planHash
-    || !Array.isArray(team.roleProposals) || !Array.isArray(team.professionalBoundaries)
-    || !Array.isArray(team.gaps) || !Array.isArray(team.actionsPerformed) || team.actionsPerformed.length) throw new Error('Approved project AI agent team and exact approval planHash are required.');
-  // Role semantics are owned by the project-agent-team module, not this integration boundary.
-  if (Buffer.byteLength(stableJson(team)) > 16 * 1024) throw new Error('Agent team metadata budget exceeded.');
-  return team;
+  return validateApprovedProjectAgentTeam(team);
 }

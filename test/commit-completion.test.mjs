@@ -10,6 +10,7 @@ import { scanProject } from '../src/scanner.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { sha256 } from '../src/shared/index.mjs';
 import { minimumTaskLevelFromPaths } from '../src/modules/governance/index.mjs';
+import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -113,11 +114,11 @@ test('approval binds same-path staged unstaged and untracked content plus verifi
 
 function trustedProfessionalRoster(root, activation) {
   const relative = 'docs/ai/agent-team.json';
-  const roster = { schemaVersion: 1, teamType: 'project-ai-agent-team', roles: [{
-    id: 'legal-reviewer', status: 'approved-available', approval: { source: 'user', evidenceId: 'decision.legal' },
-    professionalBoundaries: [{ domainNeedId: 'contract-law', humanReviewRequired: true, qualification: 'licensed-lawyer', jurisdiction: 'JP', decisionAuthority: 'human-only', reason: 'Owner-confirmed legal scope' }],
-    ...(activation ? { activation } : {}),
-  }] };
+  const team = buildApprovedProjectAgentTeam(proposeProjectAgentTeam({ projectMode: 'greenfield', evidence: [{ id: 'owner.domain', kind: 'user-confirmed-domain' }],
+    confirmedDomainNeeds: [{ id: 'contract-law', label: 'Legal scope', evidenceIds: ['owner.domain'], jurisdiction: 'JP' }],
+    roleNeeds: [{ id: 'legal-reviewer', title: 'Legal reviewer', capabilities: ['legal-review'], responsibilities: ['Review risks.'], outOfScope: ['Final advice.'], domainNeedIds: ['contract-law'], evidenceIds: ['owner.domain'], skillIds: [], mustRemainIndependentFrom: [] }],
+  }), { selectedIds: ['legal-reviewer'], approvalEvidenceId: 'decision.legal', activation: activation ? { 'legal-reviewer': activation } : {} });
+  const roster = { ...team, roles: team.roleProposals };
   write(root, relative, JSON.stringify(roster));
   const manifestPath = path.join(root, '.ai-governance/manifest.json');
   const manifest = JSON.parse(fs.readFileSync(manifestPath));
@@ -159,7 +160,8 @@ for (const scope of [
   write(root, scope.unrelated);
   const unrelated = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
   assert.equal(unrelated.ok, true, JSON.stringify(unrelated));
-  assert.notEqual(unrelated.taskApproval.review.mode, 'high-consequence-pk');
+  assert.equal(unrelated.taskApproval.review.mode, 'single');
+  assert.deepEqual(unrelated.taskApproval.plan.requiredApprovals, ['plan', 'requirements']);
 });
 
 test('trusted professional scope without an explicit applicability mapping cannot silently pass', (context) => {
@@ -171,6 +173,23 @@ test('trusted professional scope without an explicit applicability mapping canno
   const result = runCompletion(root, { taskLevel: 'L2' });
   assert.equal(result.ok, false);
   assert.equal(result.taskApproval.status, 'professional-review-gap');
+});
+
+test('project public and external risk flags do not request PK for unrelated docs but real public contracts do', (context) => {
+  const root = fixture('task-risk-applicability');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['External and public operations require approval.'], ['public-api', 'external-side-effect', 'sensitive-data']);
+  trustedProfessionalRoster(root, { signals: ['sensitive-data'], paths: ['docs/contracts/**'] });
+  write(root, 'docs/unrelated.md', '# Corrected wording\n');
+  const docs = runCompletion(root, { taskLevel: 'L3' });
+  assert.equal(docs.taskApproval.review.mode, 'single');
+  assert.deepEqual(docs.taskApproval.plan.requiredApprovals, ['design', 'plan', 'requirements']);
+  baseline(root);
+  write(root, 'schema.proto', 'syntax = "proto3";\n');
+  const contract = runCompletion(root, { taskLevel: 'L3' });
+  assert.equal(contract.taskApproval.review.mode, 'independent-pk');
+  assert.ok(contract.taskApproval.plan.requiredApprovals.includes('proposal-1'));
+  assert.ok(contract.taskApproval.plan.requiredApprovals.includes('referee'));
 });
 
 test('unmapped ordinary documentation keeps its L1 single-review flow', (context) => {
