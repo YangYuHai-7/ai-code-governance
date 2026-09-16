@@ -227,3 +227,54 @@ test('proposal validation rejects duplicate ownership, unconfirmed domain eviden
     /unknown or self independent role/,
   );
 });
+
+test('identifiers are byte-bounded across nested inputs and required policy qualifications cannot be weakened', () => {
+  const policy = JSON.parse(fs.readFileSync(professionalBoundaryPolicyPath, 'utf8'));
+  const requiredQualifications = {
+    'contract-law': 'licensed-lawyer',
+    'medical-care': 'licensed-clinician',
+    'financial-services': 'licensed-financial-professional',
+    'food-safety': 'qualified-food-safety-professional',
+  };
+  for (const [domainNeedId, qualification] of Object.entries(requiredQualifications)) {
+    assert.equal(validateProfessionalDomainBoundaryPolicy(policy).get(domainNeedId).qualification, qualification);
+    for (const replacement of ['unqualified', 'any-person', 'licensed-lawyer']) {
+      if (replacement === qualification) continue;
+      const weakened = structuredClone(policy);
+      weakened.boundaries.find((boundary) => boundary.domainNeedId === domainNeedId).qualification = replacement;
+      assert.throws(() => validateProfessionalDomainBoundaryPolicy(weakened), /must retain required qualification/);
+    }
+  }
+
+  const maxIdentifier = 'a'.repeat(128);
+  assert.equal(proposeProjectAgentTeam(genericInput({
+    roleNeeds: [genericRole(maxIdentifier, 'technical-architecture')],
+  })).roleProposals[0].id, maxIdentifier);
+
+  const oversizedIdentifier = 'a'.repeat(100000);
+  assert.throws(
+    () => proposeProjectAgentTeam(genericInput({
+      roleNeeds: [genericRole(oversizedIdentifier, 'technical-architecture')],
+    })),
+    /at most 128 characters/,
+  );
+  assert.throws(
+    () => proposeProjectAgentTeam(genericInput({
+      evidence: [{ id: oversizedIdentifier, kind: 'user-confirmed-project' }],
+      roleNeeds: [genericRole('technical-architect', 'technical-architecture', { evidenceIds: [oversizedIdentifier] })],
+    })),
+    /at most 128 characters/,
+  );
+  assert.throws(
+    () => proposeProjectAgentTeam(genericInput({
+      roleNeeds: [genericRole('technical-architect', oversizedIdentifier)],
+    })),
+    /at most 128 characters/,
+  );
+  assert.throws(
+    () => proposeProjectAgentTeam(genericInput({
+      roleNeeds: [genericRole('technical-architect', 'technical-architecture', { skillIds: [oversizedIdentifier] })],
+    })),
+    /at most 128 characters/,
+  );
+});
