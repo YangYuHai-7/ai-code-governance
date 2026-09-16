@@ -42,8 +42,8 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
     ['minimal', 9, 24 * 1024],
-    ['standard', 22, 64 * 1024],
-    ['complete', 24, 96 * 1024],
+    ['standard', 20, 64 * 1024],
+    ['complete', 22, 96 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -72,10 +72,10 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
   for (const governanceDepth of ['standard', 'complete']) {
     const paths = buildArtifacts({ ...config, governanceDepth }, scan).map((item) => item.path).sort();
     const policy = ['docs/ai/anti-patterns.md', 'docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md'];
-    const routing = ['.gitignore', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
+    const routing = ['.gitignore', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
     assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 22 : 26));
+    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 20 : 26));
   }
 });
 

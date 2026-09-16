@@ -48,7 +48,8 @@ test('initialization previews convention choices, preserves evidence receipts an
   assert.equal(fs.existsSync(path.join(root, 'docs/memory/INDEX.json')), false);
   applyArtifactPlan(root, prepared.plan);
   const generated = fs.readFileSync(path.join(root, 'docs/ai/skills/project-conventions/project-api-client/SKILL.md'), 'utf8');
-  assert.match(generated, /Current decision: add/);
+  assert.match(generated, /adaptiveDecisions\.skills/);
+  assert.doesNotMatch(generated, /Current decision|Current decision: add/);
   assert.match(generated, /not adopted/);
   write(root, 'src/api/widgets.mjs', "export function listWidgets() { return fetch('/api/widgets', { method: 'GET' }); }\nexport function getWidget() { return fetch('/api/widgets/one'); }\n");
   delete answers.adaptiveGovernance.decisions;

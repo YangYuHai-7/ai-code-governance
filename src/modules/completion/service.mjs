@@ -7,7 +7,7 @@ import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evalu
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
-import { scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
+import { isProductionScopePath, scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
 import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
@@ -137,7 +137,7 @@ function changedPaths(root) {
   return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
 }
 
-function completionTaskRoute(scan, paths, taskLevel) {
+function completionTaskRoute(scan, paths, taskLevel, gitRoot = scan.root) {
   let config;
   try {
     assertNoLinkAncestor(scan.root, CONFIG_PATH);
@@ -145,7 +145,10 @@ function completionTaskRoute(scan, paths, taskLevel) {
   } catch (error) {
     throw usageError(`Cannot read task routing configuration for the completion gate: ${error.message}`);
   }
-  return { config, taskRoute: evaluateCompletionTaskRoute(paths, config, taskLevel) };
+  const behaviorPaths = changedWorkUnitBehaviorPaths(scan.root, { ...scan, memoryGitRoot: gitRoot }, paths);
+  const productionPaths = paths.filter(isProductionScopePath);
+  const trustedBehaviorChange = productionPaths.length > 0 && behaviorPaths.length === 0 ? false : null;
+  return { config, behaviorPaths, trustedBehaviorChange, taskRoute: evaluateCompletionTaskRoute(paths, config, taskLevel, { trustedBehaviorChange }) };
 }
 
 function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvidence, workUnitRelative = null) {
@@ -330,7 +333,7 @@ function runVerification(scan, selected) {
 }
 
 function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null }) {
-  let { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
+  let { config, taskRoute, behaviorPaths, trustedBehaviorChange } = completionTaskRoute(scan, paths, taskLevel, gitRoot);
   let unit = workUnitRelative ? readWorkUnit(scan.root, workUnitRelative) : null;
   const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !/^(?:docs|\.ai-governance|\.agents|\.claude|\.cursor|\.github)\//.test(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
@@ -349,7 +352,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     // both before claiming a final route; hook mode never runs project commands and
     // continues to use only its materialized index snapshot.
     paths = changedPaths(scan.root);
-    ({ config, taskRoute } = completionTaskRoute(scan, paths, taskLevel));
+    ({ config, taskRoute, behaviorPaths, trustedBehaviorChange } = completionTaskRoute(scan, paths, taskLevel, gitRoot));
     if (before && projectVerification.status === 'passed') {
       let after;
       try {
@@ -390,11 +393,11 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     workUnitDigest: unit ? workUnitPlanDigest(unit) : null,
     confirmedRiskSignals,
     reviewEvidence: { confirmedRisk: confirmedRiskSignals.length > 0, publicContract: confirmedRiskSignals.includes('public-api'), externalAction: confirmedRiskSignals.includes('external-side-effect') },
+    trustedBehaviorChange,
     // Paths and approved scope mappings determine task-local risk and review applicability.
   });
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));
   const memoryScan = { ...(unit ? scanProject(scan.root, { probeEnvironment: false }) : scan), memoryGitRoot: gitRoot, workUnitPath: workUnitRelative, approvalEvidence };
-  const behaviorPaths = changedWorkUnitBehaviorPaths(scan.root, memoryScan, paths);
   const needsWorkUnit = ['L2', 'L3'].includes(taskRoute.declaredLevel ?? taskRoute.minimumLevel) && behaviorPaths.length > 0;
   const memory = { issues: config?.features?.knowledge || unit ? memoryIssues(scan.root, memoryScan, paths) : [] };
   memory.status = memory.issues.length ? 'blocked' : config?.features?.knowledge || unit ? 'checked' : 'disabled';

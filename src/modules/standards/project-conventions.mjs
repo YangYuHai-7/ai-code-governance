@@ -40,6 +40,12 @@ export function projectConventionIssues(root) {
         if (sha256(readMemoryFile(root, relative, 128 * 1024)) !== candidate.sourceDigests[relative]) issues.push({ status: 'stale', reason: `${candidate.id}: stale source ${relative}; fresh evidence-bound add/defer/reject decision required` });
       } catch (error) { issues.push({ status: 'invalid', reason: error.message }); }
     }
+    if (typeof candidate.skill === 'string') try {
+      const body = readMemoryFile(root, candidate.skill, 128 * 1024);
+      if (/^(?:Current decision|当前决策):\s*(?:add|defer|reject)\s*$/im.test(body)) issues.push({ status: 'warning', reason: `${candidate.id}: embedded decision text is non-authoritative; use the evidence-bound adaptiveDecisions.skills receipt` });
+    } catch (error) {
+      if (error.code !== 'ENOENT') issues.push({ status: 'invalid', reason: error.message });
+    }
   }
   return issues;
 }
@@ -47,7 +53,6 @@ export function projectConventionIssues(root) {
 export function buildProjectConventionArtifacts(config, scan, memory) {
   const discovery = discoverProjectConventionCandidates(scan, memory);
   const artifacts = discovery.candidates.map((candidate) => {
-    const receipt = config.adaptiveDecisions?.skills?.find((entry) => entry.id === candidate.id && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
     const zh = config.artifactLanguage === 'zh-CN';
     const prose = zh ? {
       trigger: `仅在修改这些路径中的 HTTP 客户端调用时评审：${candidate.evidencePaths.join(', ')}。`,
@@ -57,7 +62,7 @@ export function buildProjectConventionArtifacts(config, scan, memory) {
       staleOnChange: '任一来源摘要变化都会使 add/defer/reject 回执失效；必须根据新证据重新决策。',
     } : candidate;
     return { path: candidate.skill, ownership: 'seed', kind: 'project-convention-candidate', source: 'project-convention-evidence',
-      content: `---\nname: ${candidate.id}\ndescription: ${zh ? '仅在修改证据路径中的 HTTP 客户端调用且审批有效时，评审此项目约定候选。' : candidate.trigger}\n---\n\n# ${zh ? '项目约定候选' : 'Project convention candidate'}\n\n${zh ? '状态：候选，尚未采纳。add/defer/reject 决策必须绑定证据；不得自动执行或提升。' : 'Status: candidate, not adopted. Bind add/defer/reject decisions to evidence; never execute or promote automatically.'}\n\n${zh ? '当前决策' : 'Current decision'}: ${receipt?.action ?? 'defer'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Evidence\n\n${candidate.evidencePaths.map((relative) => `- ${relative}: ${candidate.sourceDigests[relative]}`).join('\n')}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
+      content: `---\nname: ${candidate.id}\ndescription: ${zh ? '仅在修改证据路径中的 HTTP 客户端调用且审批有效时，评审此项目约定候选。' : candidate.trigger}\n---\n\n# ${zh ? '项目约定候选' : 'Project convention candidate'}\n\n${zh ? '状态：候选，尚未采纳。add/defer/reject 决策必须绑定证据；不得自动执行或提升。' : 'Status: candidate, not adopted. Bind add/defer/reject decisions to evidence; never execute or promote automatically.'}\n\n${zh ? '决策来源：以 .ai-governance/config.json 中证据绑定的 adaptiveDecisions.skills 回执为准；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound adaptiveDecisions.skills receipt in .ai-governance/config.json is authoritative; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Evidence\n\n${candidate.evidencePaths.map((relative) => `- ${relative}: ${candidate.sourceDigests[relative]}`).join('\n')}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
   });
   if (discovery.candidates.length || discovery.gaps.length) artifacts.unshift({ path: 'docs/ai/project-conventions.json', content: stableJson(discovery), ownership: 'seed', kind: 'project-convention-index', source: 'project-convention-evidence' });
   return { ...discovery, artifacts };

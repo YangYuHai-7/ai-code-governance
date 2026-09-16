@@ -10,6 +10,7 @@ import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { buildMemoryArtifacts, scanProjectMemoryFacts } from '../src/modules/memory/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -26,6 +27,15 @@ function initialize(root, overrides = {}) {
   const config = { ...defaultConfig(scan), clients: ['codex'], ...overrides };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)), { transactional: true });
   return config;
+}
+
+function refreshMemoryEvidence(config, scan) {
+  const memory = buildMemoryArtifacts(config, scan, scanProjectMemoryFacts(scan));
+  for (const artifact of memory.artifacts.filter((entry) => entry.path === 'docs/memory/INDEX.json' || entry.path.startsWith('docs/memory/modules/') || entry.path.startsWith('docs/memory/sources/'))) {
+    const target = path.join(scan.root, artifact.path);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, artifact.content);
+  }
 }
 
 test('Chinese capability Skills localize generated instructions and preserve discovered evidence', (context) => {
@@ -570,6 +580,8 @@ test('a review receipt cannot satisfy a later adopted implementation drift', (co
   };
   fs.writeFileSync(source, "import axios from 'axios';\nexport const httpClient = axios.create({ timeout: 2000 });\n");
   const firstDrift = prepareCapabilityHarvest(adopted, scanProject(root));
+  const firstDriftScan = scanProject(root);
+  refreshMemoryEvidence(firstDrift.config, firstDriftScan);
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(firstDrift.config, scanProject(root))), { transactional: true });
   assert.equal(checkProject(scanProject(root)).ok, true);
 
@@ -579,6 +591,8 @@ test('a review receipt cannot satisfy a later adopted implementation drift', (co
   assert.match(staleReview.errors.join('\n'), /implementation fingerprint no longer matches/);
 
   const refreshed = prepareCapabilityHarvest(firstDrift.config, scanProject(root));
+  const refreshedScan = scanProject(root);
+  refreshMemoryEvidence(refreshed.config, refreshedScan);
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(refreshed.config, scanProject(root))), { transactional: true });
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

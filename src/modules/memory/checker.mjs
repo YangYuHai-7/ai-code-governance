@@ -1,4 +1,5 @@
 import { runGit } from '../../adapters/process/index.mjs';
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { capabilitySourceChanged } from '../capabilities/index.mjs';
 import { MEMORY_INDEX, readMemoryFile, safeMemoryPath, validateMemoryShape } from './schema.mjs';
@@ -17,12 +18,19 @@ function unchangedMemoryBehavior(relative, before, after) {
   const terminalLines = (source) => source.replace(/(?:\r?\n[\t ]*)+$/, '\n');
   return terminalLines(before) === terminalLines(after);
 }
+function unchangedBehaviorBytes(relative, before, after) {
+  if (!/\.(?:[cm]?js|ts|py|go|rs|java|kt|cs|swift|dart|sql|prisma)$/.test(relative)) return before.equals(after);
+  const prior = before.toString('utf8'), next = after.toString('utf8');
+  return Buffer.from(prior, 'utf8').equals(before) && Buffer.from(next, 'utf8').equals(after)
+    && unchangedMemoryBehavior(relative, prior, next);
+}
 export function changedMemoryBehaviorPaths(root, scan, paths) {
   return paths.filter(isMemoryCodePath).filter((relative) => {
     let current;
-    try { current = readMemoryFile(root, relative); } catch { return true; }
-    const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
-    return before.status !== 0 || !unchangedMemoryBehavior(relative, before.stdout, current);
+    try { current = readBoundedRepositoryFile(root, relative).bytes; } catch { return true; }
+    const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    if (before.status !== 0) return true;
+    return !unchangedBehaviorBytes(relative, before.stdout, current);
   });
 }
 export function memoryIssues(root, scan, changedPaths) {
@@ -32,6 +40,10 @@ export function memoryIssues(root, scan, changedPaths) {
   catch (error) { return [`memory: ${error.message}`]; }
   const checkFile = (relative, label = 'evidence') => {
     try { return readMemoryFile(root, relative); }
+    catch (error) { issues.push(`memory ${label}: ${error.message}`); return null; }
+  };
+  const checkRawFile = (relative, label = 'evidence') => {
+    try { return readBoundedRepositoryFile(root, relative).bytes; }
     catch (error) { issues.push(`memory ${label}: ${error.message}`); return null; }
   };
   const owners = new Map();
@@ -52,12 +64,12 @@ export function memoryIssues(root, scan, changedPaths) {
       if (!safeMemoryPath(relative) || !isMemoryCodePath(relative)) issues.push(`memory unsafe owning code path: ${relative}`);
       if (owners.has(relative)) issues.push(`memory duplicate owner: ${relative}`);
       owners.set(relative, module);
-      checkFile(relative);
+      checkRawFile(relative);
     }
     if (!module.summary || module.summary.status !== 'unverified' || typeof module.summary.text !== 'string' || !Array.isArray(module.summary.verifiedFrom)
       || (module.summary.text.trim() && module.summary.verifiedFrom.length === 0)) issues.push(`memory semantic summary needs unverified evidence: ${module.id}`);
     else for (const relative of module.summary.verifiedFrom) checkFile(relative);
-    for (const relative of module.verifiedFrom) checkFile(relative);
+    for (const relative of module.verifiedFrom) checkRawFile(relative);
   }
   for (const kind of ['pages', 'apis', 'methods', 'dataSources', 'callSites']) for (const entry of memory[kind]) {
     if (!entry || !entities.has(entry.moduleId) || !Array.isArray(entry.verifiedFrom) || !entry.verifiedFrom.length) { issues.push(`memory invalid owner/evidence for ${kind}`); continue; }
@@ -100,6 +112,11 @@ export function memoryIssues(root, scan, changedPaths) {
     const record = checkFile(source.record);
     try { if (record !== null && stableJson(JSON.parse(record)) !== stableJson(source)) issues.push(`memory source record does not match index: ${source.path}`); }
     catch { issues.push(`memory invalid source JSON: ${source.record}`); }
+    const bytes = checkRawFile(source.path, 'source');
+    if (bytes !== null && sha256(bytes) !== source.sha256) {
+      const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${source.path}`], { encoding: null, timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+      if (before.status !== 0 || sha256(before.stdout) !== source.sha256 || !unchangedBehaviorBytes(source.path, before.stdout, bytes)) issues.push(`memory source digest mismatch: ${source.path}`);
+    }
   }
   for (const relative of owners.keys()) if (!sources.has(relative)) issues.push(`memory missing source evidence: ${relative}`);
   let previous = null;
@@ -109,13 +126,19 @@ export function memoryIssues(root, scan, changedPaths) {
   }
   if (Array.isArray(changedPaths)) for (const relative of changedPaths.filter(isMemoryCodePath)) {
     const owner = owners.get(relative);
-    let current;
-    try { current = readMemoryFile(root, relative); } catch { current = null; }
-    const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
-    if (before.status === 0 && current !== null && unchangedMemoryBehavior(relative, before.stdout, current)) continue;
+    let current = null, missing = false;
+    try { current = readBoundedRepositoryFile(root, relative).bytes; }
+    catch (error) {
+      if (error.code === 'ENOENT') missing = true;
+      else { issues.push(`memory changed source unreadable: ${relative}: ${error.message}`); continue; }
+    }
+    const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    if (before.status === 0 && current !== null) {
+      if (unchangedBehaviorBytes(relative, before.stdout, current)) continue;
+    }
     const digest = current === null ? null : sha256(current);
     const previousOwner = previous?.modules.find((entry) => entry.owns?.includes(relative));
-    if (current === null && !owner && previousOwner && changedPaths.includes(MEMORY_INDEX) && changedPaths.includes(previousOwner.memoryPage)) continue;
+    if (missing && !owner && previousOwner && changedPaths.includes(MEMORY_INDEX) && changedPaths.includes(previousOwner.memoryPage)) continue;
     if (!owner) { issues.push(`memory unowned behavior ${relative}: update the owning module page and ${MEMORY_INDEX}`); continue; }
     if (!changedPaths.includes(owner.memoryPage) || !changedPaths.includes(MEMORY_INDEX) || !digest || sources.get(relative)?.sha256 !== digest) issues.push(`memory stale owning code ${relative}: update ${owner.memoryPage}, ${MEMORY_INDEX} and source evidence`);
   }
