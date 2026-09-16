@@ -3,7 +3,9 @@ import path from 'node:path';
 import { assertNoLinkAncestor } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { classifyReviewMode, REVIEW_MODES, validateReviewMode, validateTaskLevel } from './task-routing.mjs';
+import { classifyReviewMode, minimumTaskLevelFromPaths, REVIEW_MODES, validateReviewMode, validateTaskLevel } from './task-routing.mjs';
+import { matchSimpleGlob } from '../../shared/index.mjs';
+import { TOOL_NAME, SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/;
@@ -25,30 +27,35 @@ function boundaries(values) {
   const ids = new Set();
   return values.map((value) => {
     object(value, ['id', 'humanReviewRequired', 'qualification', 'jurisdiction', 'decisionAuthority', 'reason'], 'professional boundary');
-    if (!ID.test(value.id) || ids.has(value.id) || value.humanReviewRequired !== true || value.decisionAuthority !== 'human-only') throw usageError('Professional boundaries must retain distinct IDs and human-only review.');
+    if (typeof value.id !== 'string' || !ID.test(value.id) || ids.has(value.id) || value.humanReviewRequired !== true || value.decisionAuthority !== 'human-only') throw usageError('Professional boundaries must retain distinct IDs and human-only review.');
     ids.add(value.id);
     for (const key of ['qualification', 'jurisdiction', 'reason']) if (typeof value[key] !== 'string' || !value[key].trim() || value[key].length > 2000) throw usageError(`Professional boundary ${key} is required.`);
     return { id: value.id, humanReviewRequired: true, qualification: value.qualification, jurisdiction: value.jurisdiction, decisionAuthority: 'human-only', reason: value.reason };
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, requiredApprovals = [], professionalBoundaries = [] }) {
+export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [] }) {
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (!taskLevel || !reviewMode) throw usageError('Approval plans require explicit taskLevel and reviewMode.');
   if (!Array.isArray(plannedPaths) || plannedPaths.length > 10000) throw usageError('plannedPaths must be a bounded path array.');
-  if (!Array.isArray(requiredApprovals) || requiredApprovals.some((id) => typeof id !== 'string' || !ID.test(id))) throw usageError('requiredApprovals must contain approval IDs.');
+  if (typeof changeDigest !== 'string' || !HASH.test(changeDigest)) throw usageError('changeDigest must bind the current change content with SHA256.');
+  if (!Array.isArray(requiredApprovals) || requiredApprovals.length > 64) throw usageError('requiredApprovals must contain at most 64 entries before normalization.');
+  if (requiredApprovals.some((id) => typeof id !== 'string' || !ID.test(id))) throw usageError('requiredApprovals must contain approval IDs.');
   const professional = boundaries(professionalBoundaries);
+  const mergedApprovals = [...new Set([...BASE[taskLevel], ...REVIEW[reviewMode], ...requiredApprovals, ...professional.map((item) => `human:${item.id}`)])].sort();
+  if (mergedApprovals.length > 64) throw usageError('Merged requiredApprovals must contain at most 64 entries.');
   const plan = {
     schemaVersion: 1, taskLevel, reviewMode,
     plannedPaths: [...new Set(plannedPaths.map(safePath))].sort(),
-    requiredApprovals: [...new Set([...BASE[taskLevel], ...REVIEW[reviewMode], ...requiredApprovals, ...professional.map((item) => `human:${item.id}`)])].sort(),
+    changeDigest,
+    requiredApprovals: mergedApprovals,
     professionalBoundaries: professional,
   };
   return { ...plan, planHash: sha256(stableJson(plan)) };
 }
 
-function readBounded(root, relative, limit) {
+export function readBoundedTaskFile(root, relative, limit) {
   const safe = safePath(relative);
   assertNoLinkAncestor(root, safe);
   const absolute = path.join(root, safe);
@@ -66,7 +73,7 @@ function readBounded(root, relative, limit) {
 }
 
 function readEvidence(root, relative) {
-  const evidence = JSON.parse(readBounded(root, relative, 65536).toString('utf8'));
+  const evidence = JSON.parse(readBoundedTaskFile(root, relative, 65536).toString('utf8'));
   object(evidence, ['schemaVersion', 'planHash', 'reviewEvidence', 'professionalBoundaries', 'approvals'], 'approval evidence');
   if (evidence.schemaVersion !== 1 || !HASH.test(evidence.planHash) || !Array.isArray(evidence.approvals) || evidence.approvals.length > 64) throw usageError('Malformed approval evidence.');
   object(evidence.reviewEvidence, REVIEW_FIELDS, 'review evidence');
@@ -77,12 +84,12 @@ function readEvidence(root, relative) {
     object(record, ['id', 'reference', 'sha256', 'source', 'participantId', 'qualification', 'jurisdiction', 'responsibleHuman'], 'approval reference');
     if (typeof record.id !== 'string' || !ID.test(record.id) || ids.has(record.id) || !HASH.test(record.sha256) || record.source !== 'operator-declared') throw usageError('Approval references require distinct IDs, digests and operator-declared provenance.');
     ids.add(record.id);
-    if (sha256(readBounded(root, record.reference, 1024 * 1024)) !== record.sha256) throw usageError('Approval reference digest mismatch.');
+    if (sha256(readBoundedTaskFile(root, record.reference, 1024 * 1024)) !== record.sha256) throw usageError('Approval reference digest mismatch.');
   }
   return evidence;
 }
 
-export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null }) {
+export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null }) {
   validateReviewMode(reviewMode);
   const result = { ok: false, status: 'missing-evidence', evidenceLevel: 'operator-declared', identityVerified: false, review: null, plan: null, gaps: [] };
   const fail = (status, gap) => ({ ...result, status, gaps: [gap] });
@@ -105,9 +112,11 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
   const effectiveMode = reviewMode ?? minimum.mode;
   const rank = REVIEW_MODES.indexOf(effectiveMode);
   result.review = { mode: effectiveMode, minimumMode: minimum.mode, triggers: [...declaredReview.triggers, ...currentReview.triggers, ...boundaryReview.triggers], requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 2 };
+  if (!Array.isArray(requiredApprovals) || requiredApprovals.length > 64) throw usageError('requiredApprovals must contain at most 64 entries before merging.');
   const extraApprovals = [...requiredApprovals];
   if (reviewEvidence.externalAction || evidence?.reviewEvidence.externalAction) extraApprovals.push('external-action');
-  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, requiredApprovals: extraApprovals, professionalBoundaries: professional });
+  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, changeDigest, requiredApprovals: extraApprovals, professionalBoundaries: professional });
+  if (professionalGap) return fail('professional-review-gap', professionalGap);
   if (REVIEW_MODES.indexOf(effectiveMode) < REVIEW_MODES.indexOf(minimum.mode)) return fail('review-upgrade-required', `Review mode requires at least ${minimum.mode}.`);
   if (!evidence && result.plan.requiredApprovals.length === 0 && approve === null) return { ...result, ok: true, status: 'not-required' };
   if (!evidence) return fail('missing-evidence', 'Provide a repository-relative approval JSON file containing reference digests.');
@@ -117,6 +126,7 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
   if (result.plan.requiredApprovals.some((id) => !records.has(id))) return fail('missing-approval', 'One or more required approval references are missing.');
   const reviewers = REVIEW[effectiveMode].map((id) => records.get(id));
   if (reviewers.some((record) => typeof record.participantId !== 'string' || !ID.test(record.participantId)) || new Set(reviewers.map((record) => record.participantId)).size !== reviewers.length) return fail('independence-gap', 'Required review participants must have distinct operator-declared IDs; identity is not verified.');
+  if (rank >= 2 && (new Set(reviewers.map((record) => safePath(record.reference))).size !== reviewers.length || new Set(reviewers.map((record) => record.sha256)).size !== reviewers.length)) return fail('independence-gap', 'Independent proposals and referee records require distinct reference paths and content digests.');
   if ((evidence.reviewEvidence.professionalRisk || reviewEvidence.professionalRisk) && professional.length === 0) return fail('professional-review-gap', 'Confirmed professional risk requires a human-review boundary with qualification and jurisdiction.');
   for (const boundary of professional) {
     const record = records.get(`human:${boundary.id}`);
@@ -124,4 +134,55 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
     if (!resolved(boundary.qualification) || !resolved(boundary.jurisdiction) || record.qualification !== boundary.qualification || record.jurisdiction !== boundary.jurisdiction || !resolved(record.responsibleHuman)) return fail('professional-review-gap', 'Qualified human review, jurisdiction and responsible person remain an operator-declared requirement.');
   }
   return { ...result, ok: true, status: 'approved' };
+}
+
+// Managed project decisions, not the completion operator, own professional scope.
+// Until the full roster schema is integrated, missing applicability is a gap.
+export function trustedProfessionalTaskContext(root, config, plannedPaths) {
+  const relative = 'docs/ai/agent-team.json';
+  const result = { professionalBoundaries: [], professionalGap: null };
+  const scopeNeedsMapping = ['L2', 'L3'].includes(minimumTaskLevelFromPaths(plannedPaths)) || plannedPaths.includes(relative);
+  try {
+    assertNoLinkAncestor(root, relative);
+    if (!fs.existsSync(path.join(root, relative))) return result;
+    const bytes = readBoundedTaskFile(root, relative, 65536);
+    const manifest = JSON.parse(readBoundedTaskFile(root, '.ai-governance/manifest.json', 1024 * 1024));
+    const entries = manifest.files?.filter((entry) => entry?.path === relative);
+    if (manifest.schemaVersion !== 1 || manifest.generatedBy !== TOOL_NAME || entries?.length !== 1 || entries[0].ownership !== 'full' || entries[0].sha256 !== sha256(bytes)) throw usageError('Project role roster is not bound to a current managed manifest.');
+    const roster = JSON.parse(bytes);
+    if (roster.schemaVersion !== 1 || roster.teamType !== 'project-ai-agent-team' || !Array.isArray(roster.roles) || roster.roles.length > 32) throw usageError('Invalid project role roster.');
+    const ids = new Set();
+    const known = new Map();
+    for (const role of roster.roles) {
+      if (!role || typeof role.id !== 'string' || !ID.test(role.id) || ids.has(role.id) || role.status !== 'approved-available' || role.approval?.source !== 'user' || typeof role.approval.evidenceId !== 'string' || !ID.test(role.approval.evidenceId)) throw usageError('Project roles require distinct approved IDs and user approval references.');
+      ids.add(role.id);
+      const raw = role.professionalBoundaries ?? (role.professionalBoundary ? [role.professionalBoundary] : []);
+      if (!Array.isArray(raw) || raw.length > 16) throw usageError('Invalid professional boundary list.');
+      if (role.professionalBoundaries && role.professionalBoundary && (raw.length !== 1 || stableJson(raw[0]) !== stableJson(role.professionalBoundary))) throw usageError('Conflicting singular and plural professional boundaries.');
+      const normalized = boundaries(raw.map((boundary) => {
+        if (!boundary || typeof boundary !== 'object') throw usageError('Invalid professional boundary.');
+        const { domainNeedId, ...fields } = boundary;
+        return { ...fields, id: domainNeedId ?? fields.id };
+      }));
+      if (normalized.length === 0 || !scopeNeedsMapping) continue;
+      const activation = role.activation;
+      if (!activation || !Array.isArray(activation.signals) || activation.signals.length === 0 || activation.signals.length > 16 || activation.signals.some((id) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(id)) || !Array.isArray(activation.paths) || activation.paths.length === 0 || activation.paths.length > 32 || activation.paths.some((value) => typeof value !== 'string' || value.length > 256 || !isSafeRelative(value))) {
+        result.professionalGap = 'Approved professional scope lacks an explicit risk-signal/path mapping; record owner-confirmed applicability before completion.';
+        continue;
+      }
+      if (!plannedPaths.some((value) => activation.paths.some((pattern) => matchSimpleGlob(value, pattern)))) continue;
+      if (!activation.signals.some((signal) => config.confirmedRiskSignals?.includes(signal))) {
+        result.professionalGap = 'Changed professional scope needs its mapped owner-confirmed risk signal; operator omission cannot waive applicability.';
+        continue;
+      }
+      for (const boundary of normalized) {
+        if (known.has(boundary.id) && stableJson(known.get(boundary.id)) !== stableJson(boundary)) throw usageError('Conflicting professional boundaries.');
+        known.set(boundary.id, boundary);
+      }
+    }
+    result.professionalBoundaries = [...known.values()];
+    return result;
+  } catch {
+    return { ...result, professionalGap: 'Cannot safely verify the managed, approved project professional scope and boundaries.' };
+  }
 }

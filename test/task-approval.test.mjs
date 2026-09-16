@@ -10,11 +10,15 @@ function fixture(context, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-approval-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'approved.md'), '# Owner-approved requirement and plan\n');
-  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/widget.ts'], requiredApprovals: ['requirements', 'plan'], professionalBoundaries: [], ...overrides };
+  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/widget.ts'], changeDigest: '1'.repeat(64), requiredApprovals: ['requirements', 'plan'], professionalBoundaries: [], ...overrides };
   const plan = approval.buildTaskApprovalPlan(input);
   const evidence = {
     schemaVersion: 1, planHash: plan.planHash, reviewEvidence: {}, professionalBoundaries: input.professionalBoundaries,
-    approvals: plan.requiredApprovals.map((id) => ({ id, reference: 'approved.md', sha256: sha256(fs.readFileSync(path.join(root, 'approved.md'))), source: 'operator-declared', participantId: id })),
+    approvals: plan.requiredApprovals.map((id) => {
+      const reference = /^(proposal-|referee)/.test(id) ? `${id}.md` : 'approved.md';
+      if (reference !== 'approved.md') fs.writeFileSync(path.join(root, reference), `# Independent ${id} findings\n`);
+      return { id, reference, sha256: sha256(fs.readFileSync(path.join(root, reference))), source: 'operator-declared', participantId: id };
+    }),
   };
   const save = () => fs.writeFileSync(path.join(root, 'approval.json'), JSON.stringify(evidence));
   save();
@@ -23,7 +27,7 @@ function fixture(context, overrides = {}) {
 }
 
 test('approval plans have canonical SHA256 bindings and retain mandatory gates', () => {
-  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/b.ts', 'src/a.ts'], requiredApprovals: [], professionalBoundaries: [] };
+  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/b.ts', 'src/a.ts'], changeDigest: '1'.repeat(64), requiredApprovals: [], professionalBoundaries: [] };
   const plan = approval.buildTaskApprovalPlan(input);
   assert.match(plan.planHash, /^[a-f0-9]{64}$/);
   assert.deepEqual(plan.requiredApprovals, ['plan', 'requirements']);
@@ -32,6 +36,68 @@ test('approval plans have canonical SHA256 bindings and retain mandatory gates',
     assert.notEqual(plan.planHash, approval.buildTaskApprovalPlan({ ...input, ...changed }).planHash);
   }
   assert.throws(() => approval.buildTaskApprovalPlan({ ...input, plannedPaths: ['../escape'] }), /path/);
+});
+
+test('approval plans bind content digests and reject impossible approval counts before normalization', () => {
+  const input = { taskLevel: 'L2', reviewMode: 'single', plannedPaths: ['src/widget.ts'], changeDigest: '1'.repeat(64) };
+  const first = approval.buildTaskApprovalPlan(input);
+  assert.notEqual(first.planHash, approval.buildTaskApprovalPlan({ ...input, changeDigest: '2'.repeat(64) }).planHash);
+  assert.throws(() => approval.buildTaskApprovalPlan({ ...input, changeDigest: undefined }), /changeDigest/);
+  const oversized = Array(65).fill('plan');
+  Object.defineProperty(oversized, 0, { get() { throw new Error('normalized-before-limit'); } });
+  assert.throws(() => approval.buildTaskApprovalPlan({ ...input, requiredApprovals: oversized }), /64/);
+  assert.throws(() => approval.buildTaskApprovalPlan({ ...input, requiredApprovals: Array.from({ length: 64 }, (_, i) => `custom-${i}`) }), /64/);
+  const boundary = { humanReviewRequired: true, qualification: 'licensed-lawyer', jurisdiction: 'JP', decisionAuthority: 'human-only', reason: 'Confirmed risk' };
+  assert.throws(() => approval.buildTaskApprovalPlan({ ...input, professionalBoundaries: [boundary] }), /IDs/);
+});
+
+test('a reference file over 1 MiB fails closed even with its correct declared digest', (context) => {
+  const f = fixture(context);
+  const oversized = Buffer.alloc(1024 * 1024 + 1, 'a');
+  fs.writeFileSync(path.join(f.root, 'approved.md'), oversized);
+  for (const record of f.evidence.approvals) record.sha256 = sha256(oversized);
+  f.save();
+  assert.equal(f.evaluate().status, 'invalid-evidence');
+});
+
+test('distinct PK participant labels cannot reuse proposal or referee artifacts', (context) => {
+  const f = fixture(context, { reviewMode: 'independent-pk' });
+  const first = f.evidence.approvals.find((item) => item.id === 'proposal-1');
+  const second = f.evidence.approvals.find((item) => item.id === 'proposal-2');
+  Object.assign(second, { reference: first.reference, sha256: first.sha256 }); f.save();
+  assert.equal(f.evaluate().status, 'independence-gap');
+  second.reference = 'copied.md';
+  fs.copyFileSync(path.join(f.root, first.reference), path.join(f.root, second.reference)); f.save();
+  assert.equal(f.evaluate().status, 'independence-gap');
+});
+
+test('managed professional roster cannot use unsafe unapproved malformed or drifted evidence', (context) => {
+  const f = fixture(context);
+  const relative = 'docs/ai/agent-team.json';
+  fs.mkdirSync(path.join(f.root, 'docs/ai'), { recursive: true });
+  fs.mkdirSync(path.join(f.root, '.ai-governance'));
+  const roster = { schemaVersion: 1, teamType: 'project-ai-agent-team', roles: [{
+    id: 'legal', status: 'approved-available', approval: { source: 'user', evidenceId: 'decision.legal' },
+    professionalBoundaries: [{ domainNeedId: 'contract-law', humanReviewRequired: true, qualification: 'licensed-lawyer', jurisdiction: 'JP', decisionAuthority: 'human-only', reason: 'Confirmed scope' }],
+    activation: { signals: ['authorization'], paths: ['src/**'] },
+  }] };
+  const writeRoster = (value) => {
+    fs.writeFileSync(path.join(f.root, relative), typeof value === 'string' ? value : JSON.stringify(value));
+    fs.writeFileSync(path.join(f.root, '.ai-governance/manifest.json'), JSON.stringify({ schemaVersion: 1, generatedBy: 'AI Code Governance', files: [{ path: relative, ownership: 'full', sha256: sha256(fs.readFileSync(path.join(f.root, relative))) }] }));
+  };
+  const evaluate = () => approval.trustedProfessionalTaskContext(f.root, { confirmedRiskSignals: ['authorization'] }, ['src/widget.ts']);
+  writeRoster(roster);
+  assert.equal(evaluate().professionalBoundaries[0].qualification, 'licensed-lawyer');
+  for (const value of ['{', ' '.repeat(65537), { ...roster, teamType: 'human-delivery-and-governance' }, { ...roster, roles: [{ ...roster.roles[0], status: 'recommended' }] }]) {
+    writeRoster(value);
+    assert.ok(evaluate().professionalGap);
+  }
+  writeRoster(roster);
+  fs.appendFileSync(path.join(f.root, relative), ' ');
+  assert.ok(evaluate().professionalGap);
+  fs.unlinkSync(path.join(f.root, relative));
+  fs.symlinkSync(path.join(f.root, 'approved.md'), path.join(f.root, relative));
+  assert.ok(evaluate().professionalGap);
 });
 
 test('approval gate requires current explicit approval and reference digests', (context) => {
