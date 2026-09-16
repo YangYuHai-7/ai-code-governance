@@ -4,8 +4,8 @@ import { initializationForArchitectureOption, resolveArchitectureApproval } from
 import { runAssist, assistCandidates } from '../../assist.mjs';
 import { checkProject, printCheck } from '../../checker.mjs';
 import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, validateConfig } from '../../generator.mjs';
-import { proposeProjectAgentTeam } from '../../project-agent-team.mjs';
-import { decideSkillCandidates, discoverSkills, serializeSkillDiscovery } from '../../modules/skills/index.mjs';
+import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprovedProjectAgentTeam } from '../../project-agent-team.mjs';
+import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
@@ -14,7 +14,7 @@ import { buildDecisionLedger, classifyProject, resolveInitializationDecision } f
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
-import { readJson } from '../../adapters/filesystem/index.mjs';
+import { readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
 
@@ -76,11 +76,13 @@ function adaptiveChoices(items, choices = []) {
   if (!Array.isArray(choices) || choices.length > items.length || new Set(choices.map((entry) => entry.id)).size !== choices.length
     || choices.some((entry) => !items.some((item) => item.id === entry.id) || !['add', 'defer', 'reject'].includes(entry.action)
       || Object.keys(entry).some((key) => !['id', 'action'].includes(key)))) throw usageError('Adaptive decisions require unique known ids and add, defer or reject.');
-  return items.map(({ id }) => ({ id, action: choices.find((entry) => entry.id === id)?.action ?? 'defer' }));
+  return choices;
 }
 
-function prepareAdaptiveGovernance(config, scan, request) {
+function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const baseConfig = config;
+  const rememberedTeam = rememberedConfig?.agentTeam;
+  if (config.agentTeam?.enabled) validateApprovedProjectAgentTeam(config.agentTeam);
   if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
     || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation'].includes(key))
     || !Array.isArray(request.installedRoots)) throw usageError('adaptiveGovernance requires bounded metadata and explicit installedRoots.');
@@ -93,10 +95,26 @@ function prepareAdaptiveGovernance(config, scan, request) {
   if (!Array.isArray(domainCandidates) || domainCandidates.length > 16 || domainCandidates.some((entry) => !entry || typeof entry.id !== 'string' || typeof entry.label !== 'string'
     || entry.label.length > 512 || !Array.isArray(entry.evidenceIds) || entry.evidenceIds.some((id) => !request.projectTeam?.evidence?.some((item) => item.id === id)))) throw usageError('Domain candidates must cite existing evidence and remain unconfirmed.');
   if (request.decisions && Object.keys(request.decisions).some((key) => !['skills', 'roles'].includes(key))) throw usageError('Unknown adaptive decision kind.');
-  const decisions = { skills: adaptiveChoices(discovery.candidates, request.decisions?.skills), roles: adaptiveChoices(team.roleProposals, request.decisions?.roles) };
+  const previous = config.adaptiveDecisions === undefined ? { schemaVersion: 1, skills: [], roles: [] } : validateAdaptiveDecisions(config.adaptiveDecisions);
+  const decisions = {
+    skills: reconcileAdaptiveDecisions(discovery.candidates, adaptiveChoices(discovery.candidates, request.decisions?.skills), previous.skills),
+    roles: reconcileAdaptiveDecisions(team.roleProposals, adaptiveChoices(team.roleProposals, request.decisions?.roles), previous.roles),
+  };
+  const suppressed = (kind, item) => !request.decisions?.[kind]?.some((entry) => entry.id === item.id)
+    && previous[kind].some((entry) => entry.id === item.id && entry.action === 'reject' && entry.evidenceHash === adaptiveDecisionEvidenceHash(item));
+  const hiddenSkills = new Set(discovery.candidates.filter((item) => suppressed('skills', item)).map((item) => item.id));
+  const hiddenRoles = new Set(team.roleProposals.filter((item) => suppressed('roles', item)).map((item) => item.id));
+  const receipts = { schemaVersion: 1 };
+  for (const kind of ['skills', 'roles']) receipts[kind] = [...previous[kind].filter((entry) => !decisions[kind].some((current) => current.id === entry.id)), ...decisions[kind]].sort((a, b) => a.id.localeCompare(b.id));
+  if (receipts.skills.length || receipts.roles.length || config.adaptiveDecisions !== undefined) config = { ...config, adaptiveDecisions: validateAdaptiveDecisions(receipts) };
   const selectedSkills = decisions.skills.filter((entry) => entry.action === 'add').map((entry) => entry.id);
   const selectedRoles = decisions.roles.filter((entry) => entry.action === 'add').map((entry) => entry.id);
-  const activation = request.activation ?? {};
+  let activation = request.activation ?? {};
+  if (request.activation === undefined && rememberedTeam?.enabled && selectedRoles.length) {
+    validateApprovedProjectAgentTeam(rememberedTeam);
+    activation = Object.fromEntries(rememberedTeam.roleProposals.filter((role) => role.activation && selectedRoles.includes(role.id)
+      && previous.roles.some((receipt) => receipt.id === role.id && receipt.action === 'add' && decisions.roles.some((current) => current.id === role.id && current.evidenceHash === receipt.evidenceHash))).map((role) => [role.id, role.activation]));
+  }
   if (!activation || typeof activation !== 'object' || Array.isArray(activation) || Object.keys(activation).some((id) => !selectedRoles.includes(id))) throw usageError('Activation must refer to explicitly selected project roles.');
   for (const role of team.roleProposals.filter((entry) => selectedRoles.includes(entry.id))) {
     const mapping = activation[role.id];
@@ -117,7 +135,7 @@ function prepareAdaptiveGovernance(config, scan, request) {
     }));
   }
   const summary = {
-    schemaVersion: 1, status: 'recommendation', skills: discovery, team, decisions,
+    schemaVersion: 1, status: 'recommendation', skills: { ...discovery, candidates: discovery.candidates.filter((item) => !hiddenSkills.has(item.id)) }, team: { ...team, roleProposals: team.roleProposals.filter((item) => !hiddenRoles.has(item.id)) }, decisions,
     domainCandidates: domainCandidates.map((entry) => ({ ...entry, status: 'proposed-unconfirmed' })),
     professionalReviewGaps: team.professionalBoundaries,
     skillGaps: discoveryInput.requiredCapabilities.filter((capability) => !discovery.candidates.some((entry) => entry.capabilities.includes(capability))),
@@ -125,14 +143,26 @@ function prepareAdaptiveGovernance(config, scan, request) {
     actionsPerformed: [],
   };
   const hasSelection = selectedSkills.length > 0 || selectedRoles.length > 0;
+  if (!hasSelection && (rememberedTeam?.enabled || rememberedConfig?.skillDiscovery?.enabled)) {
+    validateApprovedProjectAgentTeam(rememberedTeam);
+    summary.status = 'decision-refresh-required';
+    summary.invalidatedDecisions = ['skills', 'roles'].flatMap((kind) => previous[kind].filter((receipt) => receipt.action === 'add').map((receipt) => ({
+      kind, id: receipt.id, previousEvidenceHash: receipt.evidenceHash,
+      currentEvidenceHash: decisions[kind].find((entry) => entry.id === receipt.id)?.evidenceHash ?? null,
+      reason: 'previous-add-no-longer-selected-for-current-evidence',
+    })));
+    summary.existingGovernance = 'unchanged';
+    summary.refreshRequired = config.artifactLanguage === 'zh-CN'
+      ? '旧 add 授权不适用于当前候选。现有治理保持不变；重新选择并精确审批后才能原子刷新，当前预览不能授权写入。'
+      : 'Previous add approval does not cover the current candidates. Existing governance stays unchanged; select again and exactly approve an atomic refresh. This blocked preview cannot authorize writes.';
+    config = rememberedConfig;
+  }
   if (config.governanceDepth !== 'minimal' && hasSelection) {
     const evidenceId = `approval.${sha256(stableJson({ discovery, team, decisions, activation }))}`;
-    const roles = team.roleProposals.filter((role) => selectedRoles.includes(role.id)).map((role) => ({ ...role, status: 'approved-available', approval: { source: 'user', evidenceId }, ...(activation[role.id] ? { activation: activation[role.id] } : {}) }));
-    const teamHash = sha256(stableJson({ team, roles, decisions }));
     const recommended = decideSkillCandidates(discovery, { selectedIds: selectedSkills });
-    config = { ...config, adaptiveDecisions: decisions,
+    config = { ...config,
       skillDiscovery: { enabled: true, decision: decideSkillCandidates(discovery, { selectedIds: selectedSkills, approvalPlanHash: recommended.planHash }) },
-      agentTeam: { ...team, enabled: true, status: 'approved', roleProposals: roles, planHash: teamHash, approval: { planHash: teamHash } },
+      agentTeam: buildApprovedProjectAgentTeam(team, { selectedIds: selectedRoles, approvalEvidenceId: evidenceId, activation }),
     };
     try {
       const approval = prepareSkillGovernancePlan(config, scan);
@@ -168,6 +198,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   let prompted = false;
   if (options.config) {
     const supplied = readJson(path.resolve(options.config));
+    if (Object.hasOwn(supplied, 'adaptiveDecisions') && (!existing?.adaptiveDecisions || stableJson(supplied.adaptiveDecisions) !== stableJson(existing.adaptiveDecisions))) throw usageError('adaptiveDecisions must come from the trusted managed config; submit new decisions through adaptiveGovernance and exact approval.');
     if (supplied.codeDocumentationPolicy !== undefined) codeDocumentationPolicyExplicit = true;
     if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
     const { initialClassification: _ignoredClassification, architecture: _ignoredArchitecture, projectMode: _ignoredProjectMode, ...safeSupplied } = supplied;
@@ -265,21 +296,30 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   if (!request && (options['dry-run'] || options.approve || prompted)) request = { installedRoots: [] };
   let adaptive;
   try {
-    adaptive = request ? prepareAdaptiveGovernance(config, scan, request) : null;
+    adaptive = request ? prepareAdaptiveGovernance(config, scan, request, existing) : null;
     if (prompted && adaptive) {
       request = { ...request, decisions: await promptAdaptiveDecisions(adaptive.summary, { locale: config.interactionLanguage }) };
-      adaptive = prepareAdaptiveGovernance(config, scan, request);
+      adaptive = prepareAdaptiveGovernance(config, scan, request, existing);
     }
   } catch (error) {
     throw error.code === 'AICG_USAGE' ? error : usageError(error.message);
   }
   if (adaptive) config = adaptive.config;
   validateConfig(config);
+  if (adaptive?.summary.status === 'decision-refresh-required') {
+    // A blocked preview never recompiles stale approvals or proposes governance mutations.
+    const plan = planArtifacts(scan.root, []);
+    plan.manifest = { ...plan.manifest, content: readText(path.join(scan.root, '.ai-governance/manifest.json')), changed: false };
+    plan.adaptiveGovernance = adaptive.summary;
+    plan.requireAdaptiveApproval = true;
+    plan.contextCost = { status: 'not-recomputed-blocked', proposedIncrement: { files: 0, bytes: 0, managerTokens: 0 }, previouslyApprovedManagement: config.skillDiscovery?.artifactPlan?.cost ?? null };
+    return { scan, config, plan, assertSourcesFresh: adaptive.assertSourcesFresh };
+  }
   const artifacts = buildArtifacts(config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
   if (adaptive) {
     plan.adaptiveGovernance = adaptive.summary;
-    plan.requireAdaptiveApproval = explicitAdaptiveRequest || Boolean(prompted && [...adaptive.summary.decisions.skills, ...adaptive.summary.decisions.roles].some((entry) => entry.action === 'add'));
+    plan.requireAdaptiveApproval = true;
     const ordinary = artifacts.filter((item) => ['AGENTS.md', 'docs/ai/rules/00_always.mdc'].includes(item.path)).map((item) => item.content);
     const contextMap = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
     const ordinaryMap = contextMap.slice(0, contextMap.indexOf('profiles:')) + 'profiles:\n' + (contextMap.match(/^  ordinary:[\s\S]*?(?=^  [a-z_]+:|$(?![\s\S]))/m)?.[0] ?? '');
@@ -296,6 +336,7 @@ export async function initCommand(target, options) {
   const executionPlan = options['dry-run'] || options.approve || needsApproval
     ? buildExecutionPlan({ intent: options.sync ? { id: 'governance.sync', handler: 'sync', mode: 'write' } : initIntent(), scan, artifactPlan: plan, config })
     : null;
+  if (options.approve && plan.adaptiveGovernance?.status === 'decision-refresh-required') throw usageError('Adaptive decisions require a fresh selection before exact approval; existing governance is unchanged.');
   if (!options.guided) printScan(scan);
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely initialize:\n- ${plan.conflicts.join('\n- ')}`);

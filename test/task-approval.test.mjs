@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import * as approval from '../src/modules/governance/index.mjs';
+import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { sha256 } from '../src/shared/index.mjs';
 
 function fixture(context, overrides = {}) {
@@ -76,11 +77,11 @@ test('managed professional roster cannot use unsafe unapproved malformed or drif
   const relative = 'docs/ai/agent-team.json';
   fs.mkdirSync(path.join(f.root, 'docs/ai'), { recursive: true });
   fs.mkdirSync(path.join(f.root, '.ai-governance'));
-  const roster = { schemaVersion: 1, teamType: 'project-ai-agent-team', roles: [{
-    id: 'legal', status: 'approved-available', approval: { source: 'user', evidenceId: 'decision.legal' },
-    professionalBoundaries: [{ domainNeedId: 'contract-law', humanReviewRequired: true, qualification: 'licensed-lawyer', jurisdiction: 'JP', decisionAuthority: 'human-only', reason: 'Confirmed scope' }],
-    activation: { signals: ['authorization'], paths: ['src/**'] },
-  }] };
+  const team = buildApprovedProjectAgentTeam(proposeProjectAgentTeam({ projectMode: 'greenfield', evidence: [{ id: 'owner.domain', kind: 'user-confirmed-domain' }],
+    confirmedDomainNeeds: [{ id: 'contract-law', label: 'Legal scope', evidenceIds: ['owner.domain'], jurisdiction: 'JP' }],
+    roleNeeds: [{ id: 'legal', title: 'Legal review', capabilities: ['legal-review'], responsibilities: ['Review risks.'], outOfScope: ['Final advice.'], domainNeedIds: ['contract-law'], evidenceIds: ['owner.domain'], skillIds: [], mustRemainIndependentFrom: [] }],
+  }), { selectedIds: ['legal'], approvalEvidenceId: 'decision.legal', activation: { legal: { signals: ['authorization'], paths: ['src/**'] } } });
+  const roster = { ...team, roles: team.roleProposals };
   const writeRoster = (value) => {
     fs.writeFileSync(path.join(f.root, relative), typeof value === 'string' ? value : JSON.stringify(value));
     fs.writeFileSync(path.join(f.root, '.ai-governance/manifest.json'), JSON.stringify({ schemaVersion: 1, generatedBy: 'AI Code Governance', files: [{ path: relative, ownership: 'full', sha256: sha256(fs.readFileSync(path.join(f.root, relative))) }] }));

@@ -1,11 +1,12 @@
 import path from 'node:path';
-import { CONFIG_PATH } from '../constants.mjs';
+import { CONFIG_PATH, TOOL_NAME } from '../constants.mjs';
 import { defaultConfig, validateConfig } from '../generator.mjs';
 import { loadManifest } from '../managed-files.mjs';
 import { scanSummary } from '../scanner.mjs';
 import { readJson, readText } from '../adapters/filesystem/index.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { sha256 } from '../shared/index.mjs';
+import { assertNoLinkAncestor } from '../preconditions.mjs';
 
 const BUILT_IN_CLIENTS = ['codex', 'claude-code', 'cursor'];
 
@@ -57,12 +58,18 @@ export function configForStandards(scan) {
 }
 
 export function assertManagedArchitectureConfigTrusted(root, config) {
-  if (!config?.architecture) return;
+  if (!config?.architecture && config?.adaptiveDecisions === undefined) return;
+  if (config?.adaptiveDecisions !== undefined) {
+    assertNoLinkAncestor(root, CONFIG_PATH);
+    assertNoLinkAncestor(root, '.ai-governance/manifest.json');
+  }
   const manifest = loadManifest(root);
-  const entry = manifest?.files?.find((candidate) => candidate?.path === CONFIG_PATH && candidate.ownership === 'full');
+  const entries = manifest?.files?.filter((candidate) => candidate?.path === CONFIG_PATH && candidate.ownership === 'full');
+  const entry = entries?.length === 1 ? entries[0] : null;
+  if (config.adaptiveDecisions !== undefined && (manifest?.schemaVersion !== 1 || manifest.generatedBy !== TOOL_NAME || entry?.kind !== 'configuration' || entry.source !== 'confirmed-decisions')) throw usageError('Adaptive decision receipts require a trusted managed configuration manifest.');
   const content = readText(path.join(root, CONFIG_PATH), '');
   if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') || sha256(content) !== entry.sha256) {
-    throw usageError('The managed architecture configuration drifted from its recorded manifest. Refuse to reuse or rewrite its baseline; restore the known-good config before running aicg write commands.');
+    throw usageError('The managed architecture or adaptive decision configuration drifted from its recorded manifest. Refuse to reuse or rewrite its baseline; restore the known-good config before running aicg write commands.');
   }
 }
 

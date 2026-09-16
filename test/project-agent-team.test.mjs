@@ -7,6 +7,8 @@ import {
   validateProfessionalDomainBoundaryPolicy,
 } from '../src/project-agent-team.mjs';
 import { teamRecommendation } from '../src/team-recommendation.mjs';
+import * as projectTeams from '../src/project-agent-team.mjs';
+import { sha256, stableJson } from '../src/shared/index.mjs';
 
 const root = path.resolve('.');
 const humanContext = {
@@ -41,6 +43,53 @@ function genericInput(overrides = {}) {
     ...overrides,
   };
 }
+
+test('approved team hash binds final semantics and shared validation preserves all mandatory boundaries', () => {
+  assert.equal(typeof projectTeams.buildApprovedProjectAgentTeam, 'function');
+  const domains = ['contract-law', 'medical-care', 'financial-services', 'food-safety'];
+  const proposal = proposeProjectAgentTeam({ projectMode: 'greenfield',
+    evidence: [{ id: 'owner.domain', kind: 'user-confirmed-domain' }],
+    confirmedDomainNeeds: domains.map((id) => ({ id, label: id, evidenceIds: ['owner.domain'], jurisdiction: 'JP' })),
+    roleNeeds: [genericRole('regulated-reviewer', 'regulated-review', { domainNeedIds: domains, evidenceIds: ['owner.domain'] })],
+  });
+  const team = projectTeams.buildApprovedProjectAgentTeam(proposal, { selectedIds: ['regulated-reviewer'], approvalEvidenceId: 'owner.approval', activation: { 'regulated-reviewer': { signals: ['sensitive-data'], paths: ['docs/regulated/**'] } } });
+  const resign = (value) => { const { planHash, approval, ...semantic } = value; value.planHash = sha256(stableJson(semantic)); value.approval = { planHash: value.planHash }; return value; };
+  assert.equal(team.planHash, resign(structuredClone(team)).planHash);
+  assert.equal(projectTeams.validateApprovedProjectAgentTeam(team), team);
+  assert.deepEqual(team.roleProposals[0].professionalBoundaries.map((entry) => entry.qualification).sort(), ['licensed-clinician', 'licensed-financial-professional', 'licensed-lawyer', 'qualified-food-safety-professional'].sort());
+  for (const mutate of [
+    (v) => { v.planHash = 'b'.repeat(64); v.approval.planHash = v.planHash; },
+    (v) => { v.roleProposals[0].title += ' changed'; },
+    (v) => { v.roleProposals[0].approval.evidenceId = 'owner.other'; },
+    (v) => { v.roleProposals[0].activation.paths = ['docs/other/**']; },
+    (v) => { v.professionalBoundaries[0].reason += ' changed'; },
+    (v) => { v.gaps = []; },
+  ]) {
+    const changed = structuredClone(team); mutate(changed);
+    assert.throws(() => projectTeams.validateApprovedProjectAgentTeam(changed), /approval|planHash|boundar|gap/i);
+  }
+  for (const mutate of [
+    (v) => { v.roleProposals[0].professionalBoundaries = []; },
+    (v) => { v.professionalBoundaries = []; },
+    (v) => { v.roleProposals[0].professionalBoundaries.pop(); },
+    (v) => { v.roleProposals[0].professionalBoundaries[0].qualification = 'any-person'; },
+    (v) => { v.roleProposals[0].professionalBoundaries[0].humanReviewRequired = false; },
+    (v) => { v.roleProposals[0].professionalBoundaries[0].decisionAuthority = 'ai'; },
+    (v) => { v.roleProposals[0].professionalBoundaries[0].jurisdiction = ''; },
+    (v) => { v.roleProposals[0].status = 'recommended'; },
+    (v) => { v.roleProposals[0].approval.source = 'model'; },
+    (v) => { v.roleProposals[0].capabilities = Array(17).fill('same'); },
+    (v) => { v.roleProposals[0].title = 'x'.repeat(1001); },
+    (v) => { v.roleProposals[0].domainNeedIds = ['unknown-domain']; },
+    (v) => { v.provenance.evidence[0].kind = 'repository-fact'; },
+    (v) => { v.gaps = []; },
+  ]) {
+    const changed = structuredClone(team); mutate(changed);
+    assert.throws(() => projectTeams.validateApprovedProjectAgentTeam(resign(changed)), undefined, 'recomputed arbitrary hashes cannot waive semantic validation');
+  }
+  const generic = projectTeams.buildApprovedProjectAgentTeam(proposeProjectAgentTeam(genericInput()), { selectedIds: ['technical-architect'], approvalEvidenceId: 'owner.approval' });
+  assert.equal(projectTeams.validateApprovedProjectAgentTeam(generic), generic);
+});
 
 test('project roles are dynamic, evidence-bound, professionally bounded, and isolated from other teams', () => {
   const contract = proposeProjectAgentTeam({
