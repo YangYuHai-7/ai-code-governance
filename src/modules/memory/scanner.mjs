@@ -20,7 +20,7 @@ function callableExpression(tokens, closes, start, end) {
     if (tokens[cursor]?.kind === 'identifier') cursor += 1;
     if (tokens[cursor]?.value !== '(' || !closes.has(cursor)) return false;
     const body = implementationBodyAfter(tokens, closes, closes.get(cursor) + 1);
-    return body >= 0 && closes.get(body) < end;
+    return body >= 0 && closes.get(body) + 1 === end;
   }
   if (tokens[cursor]?.value === '(' && closes.has(cursor)) cursor = closes.get(cursor) + 1;
   else if (tokens[cursor]?.kind === 'identifier') cursor += 1;
@@ -105,10 +105,19 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
     if (tokens.length > 12000) { gap(relative, 'syntax token budget exceeded; only file ownership is stated'); continue; }
     if (tokens.some((token) => ['opaque', 'template'].includes(token.kind))) gap(relative, 'opaque or dynamic syntax is not interpreted');
     for (const entry of declarations.declarations) {
+      const initializerLimit = ['const', 'let', 'var'].includes(entry.kind)
+        ? initializerEnd(tokens, declarations.depths, entry.initializer, entry.endIndex)
+        : entry.endIndex;
       const callable = entry.kind === 'function' || entry.kind === 'class'
         || (['const', 'let', 'var'].includes(entry.kind) && callableExpression(tokens, declarations.closes, entry.initializer,
-          initializerEnd(tokens, declarations.depths, entry.initializer, entry.endIndex)));
-      if (!callable) continue;
+          initializerLimit));
+      if (!callable) {
+        if (['const', 'let', 'var'].includes(entry.kind)
+          && tokens.slice(entry.initializer, initializerLimit).some((token) => token.value === '=>')) {
+          gap(relative, 'unsupported exported callable declaration; provide source-bound manual coverage');
+        }
+        continue;
+      }
       if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
       const method = fact('method', entry.exportedAs, { path: relative, symbol: entry.symbol, exportedAs: entry.exportedAs, kind: entry.kind });
       memory.methods.push(method); module.methodIds.push(method.id);
@@ -116,7 +125,19 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
         if (declarations.depths[i] !== declarations.depths[entry.bodyStartIndex] + 1 || tokens[i].kind !== 'identifier') continue;
         let prefix = i - 1;
         while (['public', 'private', 'protected', 'static', 'async', 'override', 'abstract', 'get', 'set'].includes(values[prefix])) prefix -= 1;
-        if (values[prefix] === '#' || values.slice(prefix + 1, i).some((value) => ['private', 'protected', 'abstract'].includes(value))) continue;
+        const modifiers = values.slice(prefix + 1, i);
+        const hidden = values[prefix] === '#' || modifiers.some((value) => ['private', 'protected', 'abstract'].includes(value));
+        if (values[i + 1] === ':') {
+          let end = i + 2;
+          while (end < entry.endIndex - 1 && !(declarations.depths[end] === declarations.depths[i] && values[end] === ';')) end += 1;
+          const assignment = values.slice(i + 2, end).findIndex((value, offset) => value === '=' && declarations.depths[i + 2 + offset] === declarations.depths[i]);
+          if (!hidden && assignment >= 0 && callableExpression(tokens, declarations.closes, i + 3 + assignment, end)) {
+            gap(relative, 'unsupported typed public class callable field; provide source-bound manual coverage');
+          }
+          i = end;
+          continue;
+        }
+        if (hidden) continue;
         let memberKind = 'method';
         if (values[i + 1] === '(') {
           const close = declarations.closes?.get(i + 1);
@@ -129,7 +150,6 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
         } else continue;
         if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
         const symbol = `${entry.symbol}.${values[i]}`;
-        const modifiers = values.slice(prefix + 1, i);
         const scope = modifiers.includes('static') ? 'static' : 'instance';
         if (memberKind === 'method') memberKind = modifiers.find((value) => ['get', 'set'].includes(value)) ?? 'method';
         // Export alias, receiver scope and accessor kind are distinct public
@@ -137,6 +157,11 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
         const identity = `${entry.exportedAs}:${scope}:${memberKind}:${values[i]}`;
         const member = fact('method', identity, { path: relative, symbol, exportedAs: `${entry.exportedAs}.${values[i]}`, kind: 'public-method', scope, memberKind });
         memory.methods.push(member); module.methodIds.push(member.id);
+      }
+    }
+    for (let i = 0; i < tokens.length - 3; i += 1) {
+      if (declarations.depths[i] === 0 && values.slice(i, i + 3).join(' ') === 'export default function' && values[i + 3] === '(') {
+        gap(relative, 'unsupported anonymous default callable; provide source-bound manual coverage');
       }
     }
     for (const entry of declarations.defaultExpressions) {

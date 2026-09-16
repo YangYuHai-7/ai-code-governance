@@ -51,6 +51,41 @@ test('final audit: all stable exported callable forms receive canonical coverage
   assert.equal(new Set(callables.map((entry) => entry.id)).size, callables.length);
 });
 
+test('final audit follow-up: ambiguous callable boundaries never silently disappear or become false methods', (t) => {
+  const root = memoryFixture(t);
+  const samples = new Map([
+    ['src/server/anonymous-default.ts', 'export default function () { return 1; }\n'],
+    ['src/server/parenthesized-arrow.ts', 'export const wrapped = (() => 1);\n'],
+    ['src/server/typed-arrow.ts', 'export const typed: () => number = () => 1;\n'],
+    ['src/server/mixed-declaration.ts', 'export const ordinary = 1, callable = () => 2;\n'],
+    ['src/server/iife.ts', 'export const ordinary = function () { return 1; }();\n'],
+    ['src/server/typed-class-field.ts', 'export class Handler { field: () => number = () => 1; }\n'],
+  ]);
+  for (const [relative, source] of samples) write(root, relative, source);
+
+  const facts = scanProjectMemoryFacts(scanProject(root));
+  const coveredOrGapped = (relative, exportedAs) => facts.methods.some((entry) => entry.path === relative && entry.exportedAs === exportedAs)
+    || facts.gaps.some((entry) => entry.path === relative && /callable|class field/i.test(entry.reason));
+
+  assert.deepEqual({
+    anonymousDefault: coveredOrGapped('src/server/anonymous-default.ts', 'default'),
+    parenthesizedArrow: coveredOrGapped('src/server/parenthesized-arrow.ts', 'wrapped'),
+    typedArrow: coveredOrGapped('src/server/typed-arrow.ts', 'typed'),
+    mixedCallable: coveredOrGapped('src/server/mixed-declaration.ts', 'callable'),
+    iifeFalsePositive: facts.methods.some((entry) => entry.path === 'src/server/iife.ts' && entry.exportedAs === 'ordinary'),
+    typedClassField: coveredOrGapped('src/server/typed-class-field.ts', 'Handler.field'),
+    typedClassNumberFalsePositive: facts.methods.some((entry) => entry.path === 'src/server/typed-class-field.ts' && entry.exportedAs === 'Handler.number'),
+  }, {
+    anonymousDefault: true,
+    parenthesizedArrow: true,
+    typedArrow: true,
+    mixedCallable: true,
+    iifeFalsePositive: false,
+    typedClassField: true,
+    typedClassNumberFalsePositive: false,
+  });
+});
+
 test('final audit: unknown production formats receive raw Memory ownership, gaps and add/modify freshness', (t) => {
   const root = memoryFixture(t);
   const samples = [
