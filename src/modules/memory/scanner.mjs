@@ -9,6 +9,32 @@ const TEST = /(?:^|\/)(?:tests?|__tests__|fixtures?)(?:\/|$)|\.(?:test|spec)\./;
 const DATA = /(?:\.schema\.json|\.prisma|\.sql)$/;
 const METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
 const id = (kind, value) => `${kind}-${sha256(value).slice(0, 16)}`;
+
+function literalFetchMethod({ tokens, closes }, start, callEnd) {
+  const objectEnd = closes.get(start);
+  if (tokens[start]?.value !== '{' || objectEnd === undefined
+    || !(objectEnd + 1 === callEnd || (tokens[objectEnd + 1]?.value === ',' && objectEnd + 2 === callEnd))) return null;
+  let method = 'GET';
+  let seenMethod = false;
+  for (let cursor = start + 1; cursor < objectEnd;) {
+    const key = tokens[cursor];
+    if (!['identifier', 'string'].includes(key.kind) || key.raw.includes('\\') || key.value === '__proto__' || tokens[cursor + 1]?.value !== ':') return null;
+    const valueStart = cursor + 2;
+    let valueEnd = valueStart;
+    while (valueEnd < objectEnd && tokens[valueEnd].value !== ',') {
+      valueEnd = closes.has(valueEnd) ? closes.get(valueEnd) + 1 : valueEnd + 1;
+    }
+    if (key.value === 'method') {
+      const value = tokens[valueStart];
+      if (seenMethod || valueEnd !== valueStart + 1 || value?.kind !== 'string' || value.raw.includes('\\') || !METHODS.has(value.value.toLowerCase())) return null;
+      method = value.value.toUpperCase();
+      seenMethod = true;
+    }
+    if (valueEnd === valueStart) return null;
+    cursor = valueEnd + 1;
+  }
+  return method;
+}
 export function isMemoryCodePath(relative) {
   return !TEST.test(relative) && !/^(?:docs|\.ai-governance|\.agents|\.claude|node_modules|dist|build|coverage)\//.test(relative) && (CODE.test(relative) || DATA.test(relative));
 }
@@ -63,7 +89,13 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
         if (close === undefined || implementationBodyAfter(tokens, declarations.closes, close + 1) < 0) { gap(relative, 'unsupported class method syntax'); continue; }
         if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
         const symbol = `${entry.symbol}.${values[i]}`;
-        const member = fact('method', symbol, { path: relative, symbol, exportedAs: `${entry.exportedAs}.${values[i]}`, kind: 'public-method' });
+        const modifiers = values.slice(prefix + 1, i);
+        const scope = modifiers.includes('static') ? 'static' : 'instance';
+        const memberKind = modifiers.find((value) => ['get', 'set'].includes(value)) ?? 'method';
+        // Export alias, receiver scope and accessor kind are distinct public
+        // identities; source offsets would make formatting change their IDs.
+        const identity = `${entry.exportedAs}:${scope}:${memberKind}:${values[i]}`;
+        const member = fact('method', identity, { path: relative, symbol, exportedAs: `${entry.exportedAs}.${values[i]}`, kind: 'public-method', scope, memberKind });
         memory.methods.push(member); module.methodIds.push(member.id);
       }
     }
@@ -111,13 +143,8 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
       if (tokens[argument]?.kind !== 'string' || tokens[argument].raw.includes('\\') || !values[argument].startsWith('/') || values[argument].length > 1024 || ![',', ')'].includes(values[argument + 1])) { gap(relative, 'dynamic, escaped or oversized HTTP path is unresolved'); continue; }
       let method = isFetch ? 'GET' : values[i + 2].toUpperCase();
       if (isFetch && values[argument + 1] === ',') {
-        const end = declarations.closes?.get(i + 1);
-        const options = tokens.slice(argument + 2, end);
-        const position = options.findIndex((token) => token.value === 'method');
-        if (values[argument + 2] !== '{' || position < 0 || options.some((token) => ['...', '['].includes(token.value))
-          || options.filter((token) => token.value === 'method').length !== 1 || options[position + 1]?.value !== ':' || options[position + 2]?.kind !== 'string'
-          || !METHODS.has(options[position + 2].value.toLowerCase())) { gap(relative, 'dynamic fetch options or method are unresolved'); continue; }
-        method = options[position + 2].value.toUpperCase();
+        method = literalFetchMethod(declarations, argument + 2, declarations.closes.get(i + 1));
+        if (method === null) { gap(relative, 'dynamic fetch options or method are unresolved'); continue; }
       }
       const example = text.slice(tokens[i].start, tokens[declarations.closes?.get(i + (isFetch ? 1 : 3)) ?? argument].end);
       if (example.length > 2048) { gap(relative, 'HTTP example budget exceeded'); continue; }

@@ -137,3 +137,65 @@ test('exported service class records implemented public methods without private 
   assert.ok(facts.methods.some((entry) => entry.symbol === 'WidgetService.list'));
   assert.equal(facts.methods.some((entry) => /WidgetService\.(secret|hidden)/.test(entry.symbol)), false);
 });
+
+test('review: fetch method comes only from one complete top-level literal property', (t) => {
+  const root = memoryFixture(t);
+  write(root, 'src/api/options.mjs', `
+export function calls(suffix) {
+  fetch('/nested', { headers: { method: 'POST' } });
+  fetch('/top-level', { headers: { method: 'POST' }, method: 'PUT' });
+  fetch('/composed', { method: 'GET' + suffix });
+  fetch('/duplicate', { method: 'GET', method: 'POST' });
+  fetch('/computed', { ['method']: 'POST' });
+  fetch('/object-expression', { method: 'GET' } || { method: 'POST' });
+  fetch('/trailing-comma', { method: 'PATCH', headers: { method: 'POST' }, });
+}
+`);
+  const facts = scanProjectMemoryFacts(scanProject(root));
+  const calls = facts.callSites.filter((entry) => entry.path === 'src/api/options.mjs');
+  assert.deepEqual(calls.map(({ apiPath, method }) => [apiPath, method]), [
+    ['/nested', 'GET'], ['/top-level', 'PUT'], ['/trailing-comma', 'PATCH'],
+  ]);
+  assert.ok(facts.gaps.some((entry) => entry.path === 'src/api/options.mjs' && /method|options/.test(entry.reason)));
+});
+
+test('review: accessors, member scope and export aliases have stable distinct method identities', (t) => {
+  const root = memoryFixture(t);
+  const relative = 'src/server/AliasedService.mjs';
+  const source = `class Service {
+  get value() { return 1; }
+  set value(next) { this.current = next; }
+  create() { return 1; }
+  static create() { return 2; }
+}
+export { Service, Service as ServiceAlias };
+`;
+  write(root, relative, source);
+  const { index } = initialize(root);
+  const methods = index.methods.filter((entry) => entry.path === relative);
+  assert.equal(methods.length, 10);
+  assert.equal(new Set(methods.map((entry) => entry.id)).size, methods.length);
+  assert.deepEqual(memoryIssues(root, scanProject(root)), []);
+  const members = methods.filter((entry) => entry.kind === 'public-method');
+  assert.equal(members.filter((entry) => entry.memberKind === 'get').length, 2);
+  assert.equal(members.filter((entry) => entry.memberKind === 'set').length, 2);
+  assert.equal(members.filter((entry) => entry.scope === 'static').length, 2);
+  write(root, relative, source.replaceAll('  ', '    '));
+  assert.deepEqual(scanProjectMemoryFacts(scanProject(root)).methods.filter((entry) => entry.path === relative).map((entry) => entry.id), methods.map((entry) => entry.id));
+});
+
+test('review: Python terminal blank lines are exempt but significant indentation is not', (t) => {
+  const root = memoryFixture(t);
+  const relative = 'src/server/handler.py';
+  const source = 'def choose(flag):\n    if flag:\n        value = 1\n        return value\n';
+  write(root, relative, source);
+  initialize(root); baseline(root);
+  for (const content of [source + '\n', source + '\n\n', source + '  \n\t\n']) {
+    write(root, relative, content);
+    assert.deepEqual(memoryIssues(root, scanProject(root), [relative]), []);
+  }
+  write(root, relative, source.replace('        return', '    return'));
+  assert.ok(memoryIssues(root, scanProject(root), [relative]).some((issue) => /stale/.test(issue)));
+  write(root, relative, source.replace('value = 1', 'value = 2'));
+  assert.ok(memoryIssues(root, scanProject(root), [relative]).some((issue) => /stale/.test(issue)));
+});
