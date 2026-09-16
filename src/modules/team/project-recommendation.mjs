@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PACKAGE_ROOT } from '../../constants.mjs';
-import { dynamicTeamPlan, normalizeDynamicTeamContext } from './product-team-plan.mjs';
 import { readJson, walkFiles } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/index.mjs';
@@ -115,14 +114,12 @@ export function validateTeamContext(context, registry = loadTeamRoleRegistry()) 
   if (context.technologyPackages !== undefined && (!Array.isArray(context.technologyPackages) || context.technologyPackages.some((name) => typeof name !== 'string' || !PACKAGE_NAME.test(name)))) {
     throw usageError('technologyPackages must contain valid exact package names.');
   }
-  const dynamicTeamContext = normalizeDynamicTeamContext(context);
   return {
     teamScope: context.teamScope,
     businessDescription: context.businessDescription.trim(),
     confirmedSignals: sortedStrings(context.confirmedSignals),
     ...(context.stage ? { stage: context.stage } : {}),
     technologyPackages: sortedStrings(context.technologyPackages),
-    ...dynamicTeamContext,
   };
 }
 
@@ -332,7 +329,6 @@ function needsInputResult() {
     target: '.',
     status: 'needs-user-input',
     requiredInputs: ['teamScope', 'businessDescription'],
-    productTeam: dynamicTeamPlan(),
     actionsPerformed: [],
     boundary: 'No people, agents, permissions, tasks, files, or external messages were created or changed.',
   };
@@ -390,7 +386,6 @@ export function teamRecommendation(root, context = null, registry = loadTeamRole
   if (!verifiedContext.stage) openQuestions.push('Confirm the delivery stage before treating platform and operations coverage as needed now.');
   if (verifiedContext.confirmedSignals.length === 0) openQuestions.push('Confirm whether authorization, tenancy, payment, sensitive data, regulated data, or realtime media are in scope before assigning specialist review coverage.');
   if (repositoryPackages.size === 0 && verifiedContext.technologyPackages.length === 0) openQuestions.push('Confirm the intended technology packages; no exact package evidence was available for stack-specific coverage.');
-  const productTeam = dynamicTeamPlan(verifiedContext);
   return {
     schemaVersion: 1,
     mode: 'read-only-advice',
@@ -416,7 +411,6 @@ export function teamRecommendation(root, context = null, registry = loadTeamRole
     },
     responsibilityCoverageMatrix: recommendations,
     recommendations,
-    productTeam,
     variants: [
       {
         id: 'minimum',
