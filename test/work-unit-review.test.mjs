@@ -12,6 +12,18 @@ import { checkWorkUnit, planWorkUnit, workUnitPlanDigest, recordWorkUnitVerifica
 import { readMemoryFile } from '../src/modules/memory/index.mjs';
 import { sha256 } from '../src/shared/index.mjs';
 
+test('nested test-only sources keep the lightweight path even with an L2 declaration', (t) => {
+  const root = memoryFixture(t), scan = scanProject(root);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(defaultConfig(scan), scan)));
+  baseline(root);
+  const relative = 'src/__tests__/widget.mjs';
+  write(root, relative, 'export function testWidget() { return true; }\n');
+  const result = runCompletion(root, { taskLevel: 'L2' });
+  assert.equal(result.taskRoute.minimumLevel, 'L1');
+  assert.equal(result.workUnit.status, 'not-required');
+  assert.deepEqual(changedWorkUnitBehaviorPaths(root, scanProject(root), [relative]), []);
+});
+
 for (const relative of ['src/build/compiler.mjs', 'src/tools/dist/runtime.mjs']) test(`nested production source ${relative} cannot use a root-output exemption`, (t) => {
   const root = memoryFixture(t);
   write(root, relative, 'export function compile() { return 1; }\n');
