@@ -1,6 +1,5 @@
 import { readMemoryFile } from '../memory/index.mjs';
-import fs from 'node:fs';
-import path from 'node:path';
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { workUnitPlanDigest, HASH, fields } from './schema.mjs';
 
@@ -12,10 +11,10 @@ export function workUnitVerificationBinding(root, scan, unit) {
   let size = 0;
   const sources = paths.map((relative) => {
     try {
-      const bytes = readMemoryFile(root, relative);
-      size += Buffer.byteLength(bytes);
+      const { bytes, mode } = readBoundedRepositoryFile(root, relative);
+      size += bytes.length;
       if (size > 32 * 1024 * 1024) throw new Error('Work-unit verification inputs exceed 32 MiB.');
-      return { path: relative, sha256: sha256(bytes), executable: (fs.lstatSync(path.join(root, relative)).mode & 0o111) !== 0 };
+      return { path: relative, sha256: sha256(bytes), executable: (mode & 0o111) !== 0 };
     } catch (error) { if (error.code === 'ENOENT') return { path: relative, missing: true }; throw error; }
   });
   const packageDigest = sha256(readMemoryFile(root, 'package.json'));

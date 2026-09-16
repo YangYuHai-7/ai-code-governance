@@ -39,3 +39,28 @@ export function assertNoLinkAncestor(root, relative, { allowFinalLink = false } 
     }
   }
 }
+
+// Read bytes without decoding them. Evidence consumers choose their own format.
+export function readBoundedRepositoryFile(root, relative, limit = 2 * 1024 * 1024) {
+  if (typeof relative !== 'string' || !isSafeRelative(relative) || normalizeRelative(relative) !== relative || relative.split('/').some((part) => part.toLowerCase() === '.git')) throw new Error(`unsafe evidence path: ${relative}`);
+  if (!Number.isSafeInteger(limit) || limit < 0 || limit > 32 * 1024 * 1024) throw new Error('Invalid evidence byte budget.');
+  assertNoLinkAncestor(root, relative);
+  const absolute = path.join(root, relative), stat = fs.lstatSync(absolute);
+  if (!stat.isFile() || stat.size > limit) throw new Error(`evidence must be a bounded regular file: ${relative}`);
+  const fd = fs.openSync(absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
+  try {
+    const current = fs.fstatSync(fd);
+    const same = (left, right) => left.isFile() && left.dev === right.dev && left.ino === right.ino && left.size === right.size && left.mode === right.mode && left.mtimeMs === right.mtimeMs && left.ctimeMs === right.ctimeMs;
+    if (!same(current, stat) || current.size > limit) throw new Error(`evidence changed while reading: ${relative}`);
+    const bytes = Buffer.alloc(limit + 1);
+    let size = 0;
+    while (size < bytes.length) {
+      const count = fs.readSync(fd, bytes, size, bytes.length - size, null);
+      if (!count) break;
+      size += count;
+    }
+    assertNoLinkAncestor(root, relative);
+    if (size > limit || size !== current.size || !same(fs.fstatSync(fd), current) || !same(fs.lstatSync(absolute), current)) throw new Error(`evidence changed or exceeds budget: ${relative}`);
+    return { bytes: bytes.subarray(0, size), mode: current.mode };
+  } finally { fs.closeSync(fd); }
+}

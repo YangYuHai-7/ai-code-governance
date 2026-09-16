@@ -2,3 +2,4 @@ export { readWorkUnit, validateWorkUnit, workUnitPlanDigest, workUnitPlanProject
 export { planWorkUnit, selectWorkUnitRoles } from './planner.mjs';
 export { checkWorkUnit, parseWorkUnitResults, QA_MARKER_PREFIX } from './checker.mjs';
 export { workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification } from './verification.mjs';
+export { changedWorkUnitBehaviorPaths } from './behavior.mjs';
