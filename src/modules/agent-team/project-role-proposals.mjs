@@ -10,6 +10,22 @@ const SAFE_TEXT = /^[^\x00-\x1f\x7f]{1,1000}$/;
 const PROJECT_MODES = new Set(['greenfield', 'brownfield']);
 const EVIDENCE_KINDS = new Set(['repository-fact', 'user-confirmed-domain', 'user-confirmed-project']);
 const MAX_RECOMMENDATIONS = 5;
+const MAX_EVIDENCE = 32;
+const MAX_DOMAIN_NEEDS = 16;
+const MAX_APPROVED_ROLES = 32;
+const MAX_CAPABILITIES_PER_ROLE = 16;
+const MAX_RESPONSIBILITIES_PER_ROLE = 16;
+const MAX_OUT_OF_SCOPE_PER_ROLE = 16;
+const MAX_DOMAIN_NEEDS_PER_ROLE = 8;
+const MAX_EVIDENCE_PER_ROLE = 16;
+const MAX_SKILLS_PER_ROLE = 16;
+const MAX_INDEPENDENCE_RELATIONS_PER_ROLE = 16;
+const REQUIRED_PROFESSIONAL_DOMAIN_IDS = new Set([
+  'contract-law',
+  'medical-care',
+  'financial-services',
+  'food-safety',
+]);
 
 function sortedStrings(values) {
   return [...values].sort((left, right) => left.localeCompare(right));
@@ -30,22 +46,28 @@ function requiredText(value, field) {
   return value.trim();
 }
 
-function idArray(value, field, { allowEmpty = true } = {}) {
+function boundedArray(value, field, { allowEmpty = true, max } = {}) {
   if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) throw usageError(`${field} must be ${allowEmpty ? 'an array' : 'a non-empty array'}.`);
+  if (value.length > max) throw usageError(`${field} must contain at most ${max} entries.`);
+  return value;
+}
+
+function idArray(value, field, { allowEmpty = true, max = MAX_CAPABILITIES_PER_ROLE } = {}) {
+  boundedArray(value, field, { allowEmpty, max });
   const ids = value.map((entry) => requiredId(entry, field));
   if (new Set(ids).size !== ids.length) throw usageError(`${field} must not contain duplicate identifiers.`);
   return sortedStrings(ids);
 }
 
-function evidenceIdArray(value, field, { allowEmpty = true } = {}) {
-  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) throw usageError(`${field} must be ${allowEmpty ? 'an array' : 'a non-empty array'}.`);
+function evidenceIdArray(value, field, { allowEmpty = true, max = MAX_EVIDENCE_PER_ROLE } = {}) {
+  boundedArray(value, field, { allowEmpty, max });
   const ids = value.map((entry) => requiredEvidenceId(entry, field));
   if (new Set(ids).size !== ids.length) throw usageError(`${field} must not contain duplicate identifiers.`);
   return sortedStrings(ids);
 }
 
-function textArray(value, field) {
-  if (!Array.isArray(value) || value.length === 0) throw usageError(`${field} must be a non-empty array.`);
+function textArray(value, field, max) {
+  boundedArray(value, field, { allowEmpty: false, max });
   return value.map((entry) => requiredText(entry, field));
 }
 
@@ -61,7 +83,7 @@ function exactKeys(value, field, allowed, required = allowed) {
 }
 
 function normalizeEvidence(evidence) {
-  if (!Array.isArray(evidence) || evidence.length === 0) throw usageError('evidence must be a non-empty array.');
+  boundedArray(evidence, 'evidence', { allowEmpty: false, max: MAX_EVIDENCE });
   const byId = new Map();
   for (const [index, raw] of evidence.entries()) {
     const item = object(raw, `evidence[${index}]`);
@@ -75,7 +97,7 @@ function normalizeEvidence(evidence) {
 }
 
 function normalizeDomainNeeds(domainNeeds, evidenceById) {
-  if (!Array.isArray(domainNeeds)) throw usageError('confirmedDomainNeeds must be an array.');
+  boundedArray(domainNeeds, 'confirmedDomainNeeds', { max: MAX_DOMAIN_NEEDS });
   const byId = new Map();
   for (const [index, raw] of domainNeeds.entries()) {
     const item = object(raw, `confirmedDomainNeeds[${index}]`);
@@ -96,7 +118,7 @@ function normalizeDomainNeeds(domainNeeds, evidenceById) {
 
 function normalizeApprovedRoles(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw usageError('approvedRoles must be an array.');
+  boundedArray(value, 'approvedRoles', { max: MAX_APPROVED_ROLES });
   const ids = new Set();
   const capabilities = new Set();
   const roles = value.map((raw, index) => {
@@ -105,7 +127,7 @@ function normalizeApprovedRoles(value) {
     const id = requiredId(role.id, `approvedRoles[${index}].id`);
     if (ids.has(id)) throw usageError(`approvedRoles contains duplicate id: ${id}.`);
     ids.add(id);
-    const normalizedCapabilities = idArray(role.capabilities, `approvedRoles[${index}].capabilities`, { allowEmpty: false });
+    const normalizedCapabilities = idArray(role.capabilities, `approvedRoles[${index}].capabilities`, { allowEmpty: false, max: MAX_CAPABILITIES_PER_ROLE });
     for (const capability of normalizedCapabilities) {
       if (capabilities.has(capability)) throw usageError(`approvedRoles assigns capability ${capability} more than once.`);
       capabilities.add(capability);
@@ -115,8 +137,9 @@ function normalizeApprovedRoles(value) {
   return roles.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function normalizeRoleNeeds(roleNeeds, domainsById, evidenceById, approvedRoles) {
+function normalizeRoleNeeds(roleNeeds, domainsById, evidenceById, approvedRoles, maxRecommendations) {
   if (!Array.isArray(roleNeeds)) throw usageError('roleNeeds must be an array.');
+  if (roleNeeds.length > maxRecommendations) throw usageError(`roleNeeds exceeds the maximum of ${maxRecommendations} recommendations.`);
   const approvedIds = new Set(approvedRoles.map((role) => role.id));
   const approvedCapabilities = new Set(approvedRoles.flatMap((role) => role.capabilities));
   const ids = new Set();
@@ -129,16 +152,16 @@ function normalizeRoleNeeds(roleNeeds, domainsById, evidenceById, approvedRoles)
     const id = requiredId(role.id, `roleNeeds[${index}].id`);
     if (ids.has(id) || approvedIds.has(id)) throw usageError(`roleNeeds contains a duplicate or already approved role id: ${id}.`);
     ids.add(id);
-    const normalizedCapabilities = idArray(role.capabilities, `roleNeeds[${index}].capabilities`, { allowEmpty: false });
+    const normalizedCapabilities = idArray(role.capabilities, `roleNeeds[${index}].capabilities`, { allowEmpty: false, max: MAX_CAPABILITIES_PER_ROLE });
     for (const capability of normalizedCapabilities) {
       if (capabilities.has(capability)) throw usageError(`roleNeeds assigns capability ${capability} more than once.`);
       capabilities.add(capability);
     }
-    const domainNeedIds = idArray(role.domainNeedIds, `roleNeeds[${index}].domainNeedIds`, { allowEmpty: false });
+    const domainNeedIds = idArray(role.domainNeedIds, `roleNeeds[${index}].domainNeedIds`, { max: MAX_DOMAIN_NEEDS_PER_ROLE });
     for (const domainNeedId of domainNeedIds) {
       if (!domainsById.has(domainNeedId)) throw usageError(`roleNeeds.${id} references an unconfirmed domain need: ${domainNeedId}.`);
     }
-    const evidenceIds = evidenceIdArray(role.evidenceIds, `roleNeeds[${index}].evidenceIds`, { allowEmpty: false });
+    const evidenceIds = evidenceIdArray(role.evidenceIds, `roleNeeds[${index}].evidenceIds`, { allowEmpty: false, max: MAX_EVIDENCE_PER_ROLE });
     for (const evidenceId of evidenceIds) {
       if (!evidenceById.has(evidenceId)) throw usageError(`roleNeeds.${id} references unknown evidence: ${evidenceId}.`);
     }
@@ -146,12 +169,12 @@ function normalizeRoleNeeds(roleNeeds, domainsById, evidenceById, approvedRoles)
       id,
       title: requiredText(role.title, `roleNeeds[${index}].title`),
       capabilities: normalizedCapabilities,
-      responsibilities: textArray(role.responsibilities, `roleNeeds[${index}].responsibilities`),
-      outOfScope: textArray(role.outOfScope, `roleNeeds[${index}].outOfScope`),
+      responsibilities: textArray(role.responsibilities, `roleNeeds[${index}].responsibilities`, MAX_RESPONSIBILITIES_PER_ROLE),
+      outOfScope: textArray(role.outOfScope, `roleNeeds[${index}].outOfScope`, MAX_OUT_OF_SCOPE_PER_ROLE),
       domainNeedIds,
       evidenceIds,
-      skillIds: idArray(role.skillIds, `roleNeeds[${index}].skillIds`),
-      mustRemainIndependentFrom: idArray(role.mustRemainIndependentFrom, `roleNeeds[${index}].mustRemainIndependentFrom`),
+      skillIds: idArray(role.skillIds, `roleNeeds[${index}].skillIds`, { max: MAX_SKILLS_PER_ROLE }),
+      mustRemainIndependentFrom: idArray(role.mustRemainIndependentFrom, `roleNeeds[${index}].mustRemainIndependentFrom`, { max: MAX_INDEPENDENCE_RELATIONS_PER_ROLE }),
     };
   });
   const knownRoleIds = new Set([...approvedIds, ...ids]);
@@ -159,12 +182,17 @@ function normalizeRoleNeeds(roleNeeds, domainsById, evidenceById, approvedRoles)
     for (const relatedId of role.mustRemainIndependentFrom) {
       if (relatedId === role.id || !knownRoleIds.has(relatedId)) throw usageError(`roleNeeds.${role.id} references an unknown or self independent role: ${relatedId}.`);
     }
+    if (role.domainNeedIds.length === 0 && !role.evidenceIds.some((evidenceId) => evidenceById.get(evidenceId)?.kind === 'user-confirmed-project')) {
+      throw usageError(`roleNeeds.${role.id} without domain needs must cite user-confirmed-project evidence.`);
+    }
+    if (role.domainNeedIds.length > 0 && !role.evidenceIds.some((evidenceId) => evidenceById.get(evidenceId)?.kind === 'user-confirmed-domain')) {
+      throw usageError(`roleNeeds.${role.id} with domain needs must cite user-confirmed-domain evidence.`);
+    }
   }
   return roles.sort((left, right) => left.id.localeCompare(right.id));
 }
 
-function loadPolicy(policyPath = path.join(PACKAGE_ROOT, PROFESSIONAL_BOUNDARIES_PATH)) {
-  const policy = readJson(policyPath);
+export function validateProfessionalDomainBoundaryPolicy(policy) {
   if (!policy || policy.schemaVersion !== 1 || policy.policyType !== 'professional-domain-boundaries' || !Array.isArray(policy.boundaries)) {
     throw usageError('Professional domain boundary policy is invalid.');
   }
@@ -187,7 +215,14 @@ function loadPolicy(policyPath = path.join(PACKAGE_ROOT, PROFESSIONAL_BOUNDARIES
       reason: requiredText(boundary.reason, `professional boundary ${index}.reason`),
     });
   }
+  for (const domainNeedId of REQUIRED_PROFESSIONAL_DOMAIN_IDS) {
+    if (!byDomainNeedId.has(domainNeedId)) throw usageError(`Professional domain boundary policy is missing required domain rule: ${domainNeedId}.`);
+  }
   return byDomainNeedId;
+}
+
+function loadPolicy(policyPath = path.join(PACKAGE_ROOT, PROFESSIONAL_BOUNDARIES_PATH)) {
+  return validateProfessionalDomainBoundaryPolicy(readJson(policyPath));
 }
 
 function normalizeOptions(options) {
@@ -242,10 +277,7 @@ export function proposeProjectAgentTeam(input, options) {
   const evidenceById = normalizeEvidence(request.evidence);
   const domainsById = normalizeDomainNeeds(request.confirmedDomainNeeds, evidenceById);
   const approvedRoles = normalizeApprovedRoles(request.approvedRoles);
-  const roleNeeds = normalizeRoleNeeds(request.roleNeeds, domainsById, evidenceById, approvedRoles);
-  if (roleNeeds.length > normalizedOptions.maxRecommendations) {
-    throw usageError(`roleNeeds exceeds the maximum of ${normalizedOptions.maxRecommendations} recommendations.`);
-  }
+  const roleNeeds = normalizeRoleNeeds(request.roleNeeds, domainsById, evidenceById, approvedRoles, normalizedOptions.maxRecommendations);
   const policy = loadPolicy();
   const professionalBoundaries = [...domainsById.values()]
     .map((domain) => boundaryForDomain(domain, policy))
@@ -253,14 +285,15 @@ export function proposeProjectAgentTeam(input, options) {
     .sort((left, right) => left.domainNeedId.localeCompare(right.domainNeedId));
   const boundariesByDomain = new Map(professionalBoundaries.map((boundary) => [boundary.domainNeedId, boundary]));
   const roleProposals = roleNeeds.map((role) => {
-    const professionalBoundary = role.domainNeedIds
+    const roleProfessionalBoundaries = role.domainNeedIds
       .map((domainNeedId) => boundariesByDomain.get(domainNeedId))
-      .find(Boolean);
+      .filter(Boolean);
     return {
       ...role,
       status: 'recommended',
       origin: 'dynamic-project-role',
-      ...(professionalBoundary ? { professionalBoundary } : {}),
+      ...(roleProfessionalBoundaries.length > 0 ? { professionalBoundaries: roleProfessionalBoundaries } : {}),
+      ...(roleProfessionalBoundaries.length === 1 ? { professionalBoundary: roleProfessionalBoundaries[0] } : {}),
     };
   });
   const gaps = professionalBoundaries
