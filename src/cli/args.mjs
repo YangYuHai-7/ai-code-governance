@@ -13,7 +13,10 @@ export function parseArgs(argv) {
   if (!COMMAND_NAMES.includes(command)) throw usageError(`Unknown command: ${command}`);
 
   let action = null;
-  if (command === 'hook') {
+  if (command === 'work-unit') {
+    action = args.shift() ?? null;
+    if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');
+  } else if (command === 'hook') {
     action = args.shift() ?? null;
     if (!['install', 'status'].includes(action)) throw usageError('hook requires an action: install or status.');
   } else if (command === 'evidence') {

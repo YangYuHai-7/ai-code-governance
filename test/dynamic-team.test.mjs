@@ -11,6 +11,20 @@ import {
   validateAicgProductTeamRegistry,
 } from '../src/dynamic-team.mjs';
 import { loadTeamRoleRegistry } from '../src/team-recommendation.mjs';
+import { selectWorkUnitRoles } from '../src/modules/work-units/index.mjs';
+import { proposeProjectAgentTeam, buildApprovedProjectAgentTeam } from '../src/modules/agent-team/index.mjs';
+
+test('vertical feature roles use minimum approved project capabilities and keep missing roles advisory', () => {
+  const role = (id, capability) => ({ id, title: id, capabilities: [capability], responsibilities: ['Deliver the confirmed scope'], outOfScope: ['No external authority'], domainNeedIds: [], evidenceIds: ['owner.project'], skillIds: [], mustRemainIndependentFrom: [] });
+  const proposal = proposeProjectAgentTeam({ projectMode: 'brownfield', evidence: [{ id: 'owner.project', kind: 'user-confirmed-project' }], confirmedDomainNeeds: [], roleNeeds: [role('project-builder', 'implementation'), role('project-reviewer', 'independent-review'), role('unused-designer', 'design')] });
+  const agentTeam = buildApprovedProjectAgentTeam(proposal, { selectedIds: proposal.roleProposals.map((entry) => entry.id), approvalEvidenceId: 'owner.roles' });
+  const unit = { taskLevel: 'L2', scope: [{ id: 'feature', paths: ['src/feature.mjs'] }], risks: [] };
+  const result = selectWorkUnitRoles({ agentTeam }, unit);
+  assert.deepEqual(result.selected, ['project-builder', 'project-reviewer']);
+  assert.deepEqual(result.recommendations, []);
+  assert.equal(result.participation, 'not-evidenced');
+  assert.deepEqual(selectWorkUnitRoles({ agentTeam }, { ...unit, taskLevel: 'L3' }).recommendations, ['qa']);
+});
 
 const cli = path.resolve('bin/aicg.js');
 

@@ -413,6 +413,7 @@ export function taskRoutingPolicy(config) {
     schemaVersion: 1,
     input: Object.fromEntries(Object.entries(DIMENSIONS).map(([field, values]) => [field, Object.keys(values)])),
     output: ['level', 'profile', 'requiredApprovals', 'verificationClass', 'overlays', 'reasonCodes'],
+    workUnits: { L0: 'none', L1: 'lightweight', L2: 'one-vertical-feature', L3: 'one-vertical-feature', verification: 'one-consolidated-command', completionInput: '--work-unit <relative-json>', ordinaryReview: 'quick-review', evidence: 'canonical-memory-coverage-and-per-case-qa' },
     levels: ORDER.map((id) => ({
       id,
       profile: PROFILE[id],

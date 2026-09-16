@@ -36,6 +36,10 @@ Configuration carries decisions. Noninteractive writes require `--yes`; request-
 
 ## Runtime routing: L0, L1, L2, L3
 
+For L2/L3 production delivery, keep one vertical feature work unit across UI, API, service, data and tests. Read the bounded [work-unit schema](assets/contracts/work-unit-schema.json) only on that route. Preview with `aicg work-unit plan . --work-unit <relative-json>` and validate with `status`; neither command launches Agents or writes files. Bind initial success/failure cases, QA abnormal/boundary/extreme/risk applicability, canonical Memory API/public-method unit-test coverage, exact references and memory impact to the existing approval hash. A missing testability mapping, required failed/blocked/missing result, stale input or unsynchronized behavior Memory blocks completion. Missing approved roles remain recommendations; role IDs do not prove participation.
+
+Execute one selected `complete --verify` command at the work-unit boundary, with per-case `AICG_QA_RESULT` markers. Store returned `workUnit.recordedEvidence` in `verification.evidence` and `recordedResults` in `qa.results` in that same document. Hook `AICG_WORK_UNIT` points to its staged path; the hook checks stored evidence against current inputs without rerunning tests. Replay is operator-declared structural evidence, never authenticated execution. The immutable plan excludes runtime results/status to avoid a circular hash; changing requirements, cases, scope or command invalidates approval. L0/L1 and docs/test/format-only paths stay lightweight. Do not turn endpoints or individual tests into separate tasks.
+
 | Level | Required flow |
 | --- | --- |
 | L0 | Read-only explanation/review/status: inspect minimum evidence and answer, zero governance subprocesses, no harvest |

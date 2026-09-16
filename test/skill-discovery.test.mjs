@@ -13,6 +13,33 @@ import { sha256 } from '../src/shared/index.mjs';
 import { validateApprovedAgentTeam } from '../src/modules/skills/decisions.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions, validateAdaptiveDecisions } from '../src/modules/skills/index.mjs';
+import { artifactDefinitions, selectArtifactDefinitions } from '../src/modules/governance/index.mjs';
+
+test('adaptive generic guidance stays lazy and first-use requires fresh approval while retaining existing files', (context) => {
+  const root = fixture(context), scan = scanProject(root);
+  const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' };
+  const { config, plan } = approvedConfig(base, scan);
+  const initial = buildArtifacts(config, scan);
+  const paths = ['docs/ai/anti-patterns.md', 'docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'];
+  for (const relative of paths) assert.equal(initial.some((entry) => entry.path === relative), false);
+  const used = { ...scan, governanceUsage: ['anti-patterns'] };
+  assert.throws(() => buildArtifacts(config, used), /cost|planHash|approval/i);
+  const upgraded = approvedConfig(base, used);
+  assert.notEqual(upgraded.plan.planHash, plan.planHash);
+  const artifacts = buildArtifacts(upgraded.config, used);
+  assert.ok(artifacts.some((entry) => entry.path === paths[0]));
+  applyArtifactPlan(root, planArtifacts(root, artifacts));
+  const preserved = fs.readFileSync(path.join(root, paths[0]), 'utf8');
+  const omission = planArtifacts(root, initial);
+  assert.equal(omission.operations.some((entry) => entry.path === paths[0] && entry.remove), false);
+  applyArtifactPlan(root, omission);
+  assert.equal(fs.readFileSync(path.join(root, paths[0]), 'utf8'), preserved);
+  const definitions = artifactDefinitions(config, scan);
+  const stack = selectArtifactDefinitions(config, { ...scan, governanceUsage: ['stack'] }, definitions);
+  for (const relative of paths.slice(1)) assert.ok(stack.some((entry) => entry.path === relative));
+  const retained = selectArtifactDefinitions(config, scanProject(root), definitions);
+  assert.ok(retained.some((entry) => entry.path === paths[0]));
+});
 
 test('bounded folded and literal Skill descriptions are discoverable without YAML execution', (context) => {
   for (const indicator of ['>-', '|-', '>', '|']) {
@@ -373,6 +400,8 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth, artifactLanguage };
       const { config, plan } = approvedConfig(base, scan);
       const artifacts = buildArtifacts(config, scan);
+      assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/anti-patterns.md'), false);
+      assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/skills/generic-unknown/SKILL.md'), false);
       const transaction = planArtifacts(root, artifacts);
       const bytes = transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content);
       assert.equal(transaction.operations.length + 1, plan.cost.total.files);

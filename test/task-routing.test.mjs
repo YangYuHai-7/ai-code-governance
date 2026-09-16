@@ -411,7 +411,7 @@ test('generated routing policy keeps stable English fields and localizes prose',
   const english = JSON.parse(generate('en').find((artifact) => artifact.path === 'docs/ai/task-routing-policy.json').content);
   const chinese = JSON.parse(generate('zh-CN').find((artifact) => artifact.path === 'docs/ai/task-routing-policy.json').content);
 
-  assert.deepEqual(Object.keys(english), ['schemaVersion', 'input', 'output', 'levels', 'escalation', 'pathRules']);
+  assert.deepEqual(Object.keys(english), ['schemaVersion', 'input', 'output', 'workUnits', 'levels', 'escalation', 'pathRules']);
   assert.deepEqual(Object.keys(chinese), Object.keys(english));
   assert.deepEqual(english.input, chinese.input);
   assert.deepEqual(english.output, chinese.output);
