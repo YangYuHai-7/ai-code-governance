@@ -308,7 +308,18 @@ test('task activation remains bounded and team, permission and total-cost change
     mutate(changed);
     assert.throws(() => buildArtifacts(changed, scan), /approval|planHash/);
   }
-  assert.throws(() => approvedConfig({ ...base, governanceDepth: 'complete', clients: ['codex', 'claude-code', 'cursor'] }, scan), /budget/);
+  for (const relative of ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md']) {
+    const target = path.join(root, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, 'retained historical governance seed\n');
+  }
+  const overBudgetScan = { ...scan, governanceUsage: ['anti-patterns'] };
+  assert.throws(() => approvedConfig(
+    { ...base, governanceDepth: 'complete', clients: ['codex', 'claude-code', 'cursor'] },
+    overBudgetScan,
+    candidates,
+    candidates.map((candidate) => candidate.id),
+  ), /budget/);
 });
 
 test('exact decisions bind source, version, digest, permissions and task activation without doing work', (context) => {

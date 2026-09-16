@@ -620,8 +620,7 @@ export function artifactDefinitions(config, scan) {
   });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
-  add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
-  for (const relative of ['reviews/.gitkeep', 'reports/.gitkeep']) add(relative, 'routing', () => `# ${GENERATED_MARKER}\n`, { requires: [(value) => !hasCompactManagement(value)], kind: 'local-output-directory', source: 'template:local-output-layout' });
+  add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reports/\n/reports/*', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
 
   const antiPatternsActive = (value, current) => !hasSkillManagement(value) || hasGovernanceUsage(current, 'anti-patterns') || hasArtifactEvidence(current, 'docs/ai/anti-patterns.md');
   add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { requires: [antiPatternsActive], routeProfiles: ['behavior_change:anti_patterns'], source: 'template:anti-patterns' });

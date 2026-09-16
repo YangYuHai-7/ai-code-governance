@@ -4,8 +4,24 @@ import { sha256 } from '../../shared/index.mjs';
 import { validateWorkUnit, QA_CATEGORIES, HASH } from './schema.mjs';
 import { workUnitCoverage, selectWorkUnitRoles } from './planner.mjs';
 import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
+import { runGit } from '../../adapters/process/index.mjs';
 
 export const QA_MARKER_PREFIX = 'AICG_QA_RESULT ';
+
+function manualCoverageBytes(root, scan, relative) {
+  try { return { ...readBoundedRepositoryFile(root, relative), tombstone: false }; }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    const gitRoot = scan.memoryGitRoot ?? root;
+    const tree = runGit(gitRoot, ['ls-tree', '-z', 'HEAD', '--', relative], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    const record = tree.status === 0 ? tree.stdout.split('\0').find(Boolean) : null;
+    const match = record?.match(/^(100644|100755) blob [a-f0-9]{40,64}\t(.+)$/);
+    if (!match || match[2] !== relative) throw error;
+    const blob = runGit(gitRoot, ['show', `HEAD:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    if (blob.error || blob.status !== 0 || blob.stdout.length > 2 * 1024 * 1024) throw new Error(`cannot read bounded regular HEAD tombstone: ${relative}`);
+    return { bytes: blob.stdout, mode: match[1] === '100755' ? 0o100755 : 0o100644, tombstone: true };
+  }
+}
 export function parseWorkUnitResults(stdout) {
   const results = [];
   for (const line of String(stdout ?? '').split(/\r?\n/)) if (line.startsWith(QA_MARKER_PREFIX)) {
@@ -42,7 +58,11 @@ export function checkWorkUnit(root, unit, { scan = null, config = {}, changedPat
   }
   for (const coverage of unit.coverage) if (!entries.some((entry) => entry.id === coverage.entityId)) issues.push(`work-unit coverage uses unknown canonical entity: ${coverage.entityId}`);
   for (const entry of [...(unit.manualCoverage ?? []), ...(unit.testabilityGaps ?? [])]) {
-    try { if (sha256(readBoundedRepositoryFile(root, entry.path).bytes) !== entry.sourceSha256) issues.push(`work-unit manual coverage source digest mismatch: ${entry.path}`); } catch (error) { issues.push(`work-unit manual coverage source: ${error.message}`); }
+    try {
+      const source = manualCoverageBytes(root, scan, entry.path);
+      if (sha256(source.bytes) !== entry.sourceSha256) issues.push(`work-unit manual coverage source digest mismatch: ${entry.path}`);
+      if (source.tombstone && entry.noPublicSurface) issues.push(`work-unit deleted production source requires deletion-impact unit cases: ${entry.path}`);
+    } catch (error) { issues.push(`work-unit manual coverage source: ${error.message}`); }
     if (entry.referenceIds.some((id) => !unit.references.some((reference) => reference.id === id))) issues.push(`work-unit manual coverage needs bound evidence references: ${entry.path}`);
     for (const surface of entry.entries ?? []) if (surface.testCaseIds.some((id) => cases.get(id)?.kind !== 'unit' || !cases.get(id)?.required)) issues.push(`work-unit manual coverage requires required unit-test cases: ${entry.path}`);
     if (entry.noPublicSurface && entries.some((known) => (known.implementationPath ?? known.path) === entry.path)) issues.push(`work-unit manual no-public-surface contradicts canonical coverage: ${entry.path}`);

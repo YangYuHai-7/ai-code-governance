@@ -1,6 +1,4 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { assertNoLinkAncestor } from '../../adapters/filesystem/index.mjs';
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/index.mjs';
 
 export const MEMORY_INDEX = 'docs/memory/INDEX.json';
@@ -12,27 +10,10 @@ export function safeMemoryPath(value) {
 }
 export function readMemoryFile(root, relative, limit = MEMORY_LIMIT) {
   if (!safeMemoryPath(relative)) throw new Error(`unsafe memory/evidence path: ${relative}`);
-  assertNoLinkAncestor(root, relative);
-  const absolute = path.join(root, relative);
-  const stat = fs.lstatSync(absolute);
-  if (!stat.isFile() || stat.size > limit) throw new Error(`memory evidence must be a bounded regular file: ${relative}`);
-  const fd = fs.openSync(absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | (fs.constants.O_NONBLOCK ?? 0));
-  try {
-    const current = fs.fstatSync(fd);
-    if (!current.isFile() || current.dev !== stat.dev || current.ino !== stat.ino || current.size > limit) throw new Error(`memory evidence changed while reading: ${relative}`);
-    const bytes = Buffer.alloc(limit + 1);
-    let size = 0;
-    while (size < bytes.length) {
-      const count = fs.readSync(fd, bytes, size, bytes.length - size, null);
-      if (!count) break;
-      size += count;
-    }
-    const after = fs.fstatSync(fd);
-    if (size > limit || after.size !== current.size || after.mtimeMs !== current.mtimeMs) throw new Error(`memory evidence changed or exceeds budget: ${relative}`);
-    const content = bytes.subarray(0, size).toString('utf8');
-    if (!Buffer.from(content, 'utf8').equals(bytes.subarray(0, size))) throw new Error(`memory evidence must be UTF-8: ${relative}`);
-    return content;
-  } finally { fs.closeSync(fd); }
+  const { bytes } = readBoundedRepositoryFile(root, relative, limit);
+  const content = bytes.toString('utf8');
+  if (!Buffer.from(content, 'utf8').equals(bytes)) throw new Error(`memory evidence must be UTF-8: ${relative}`);
+  return content;
 }
 export function emptyMemory() {
   return { schemaVersion: 1, ...Object.fromEntries(MEMORY_COLLECTIONS.map((key) => [key, []])) };

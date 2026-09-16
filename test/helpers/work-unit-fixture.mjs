@@ -58,7 +58,9 @@ export function prepareCompletionUnit(root, options = {}) {
   const noPublicSurface = { 'package.json': 'Fixture npm command configuration has no public API or method.', 'index.html': 'Fixture static button markup has no exported API or method.', 'scripts/verify-http.mjs': 'Fixture HTTP verification client has no public exported method or server route.' };
   unit.manualCoverage = unit.scope[0].paths.filter((relative) => relative in noPublicSurface).map((relative) => ({ path: relative, sourceSha256: sha256(fs.readFileSync(path.join(root, relative))), evidenceLevel: 'operator-declared', reason: noPublicSurface[relative], referenceIds: ['feature'], noPublicSurface: true, entries: [] }));
   const current = scanProject(root), config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json')));
-  const artifacts = buildMemoryArtifacts(config, current, scanProjectMemoryFacts(current)).artifacts;
+  const currentFacts = scanProjectMemoryFacts(current);
+  unit.memory.updatedOwners = currentFacts.modules.filter((module) => module.owns.some((relative) => unit.memory.paths.includes(relative))).map((module) => module.id);
+  const artifacts = buildMemoryArtifacts(config, current, currentFacts).artifacts;
   for (const artifact of artifacts) write(root, artifact.path, artifact.content);
   const relative = 'docs/ai/feature-work-unit.json';
   write(root, relative, JSON.stringify(unit));

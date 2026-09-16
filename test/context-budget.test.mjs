@@ -176,8 +176,6 @@ test('explicitly selected capabilities remain available outside ordinary context
   const paths = new Set(artifacts.map((artifact) => artifact.path));
 
   for (const relative of [
-    'reviews/.gitkeep',
-    'reports/.gitkeep',
     'docs/ai/hooks.md',
     'docs/ai/release-acceptance-policy.json',
     'docs/ai/technical-standards.json',

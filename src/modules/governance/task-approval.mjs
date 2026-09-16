@@ -97,7 +97,7 @@ function readEvidence(root, relative) {
   return evidence;
 }
 
-export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null, confirmedRiskSignals = [], workUnitDigest = null }) {
+export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null, confirmedRiskSignals = [], workUnitDigest = null, trustedBehaviorChange = null }) {
   validateReviewMode(reviewMode);
   const result = { ok: false, status: 'missing-evidence', evidenceLevel: 'operator-declared', identityVerified: false, review: null, plan: null, gaps: [] };
   const fail = (status, gap) => ({ ...result, status, gaps: [gap] });
@@ -113,8 +113,10 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
   }
   const professional = boundaries([...mergedBoundaries.values()]);
   // Independent caller evidence and path-derived facts can only raise the minimum.
-  const declaredReview = classifyReviewMode({ ...evidence?.reviewEvidence, plannedPaths });
-  const currentReview = classifyReviewMode({ ...reviewEvidence, plannedPaths });
+  const declaredBehavior = evidence?.reviewEvidence?.behaviorChange === true ? true : trustedBehaviorChange;
+  const currentBehavior = reviewEvidence.behaviorChange === true ? true : trustedBehaviorChange;
+  const declaredReview = classifyReviewMode({ ...evidence?.reviewEvidence, ...(declaredBehavior === null ? {} : { behaviorChange: declaredBehavior }), plannedPaths });
+  const currentReview = classifyReviewMode({ ...reviewEvidence, ...(currentBehavior === null ? {} : { behaviorChange: currentBehavior }), plannedPaths });
   const boundaryReview = classifyReviewMode(professional.length ? { professionalRisk: 'human-review-boundary' } : {});
   const minimum = [declaredReview, currentReview, boundaryReview].sort((a, b) => REVIEW_MODES.indexOf(b.mode) - REVIEW_MODES.indexOf(a.mode))[0];
   const effectiveMode = reviewMode ?? minimum.mode;

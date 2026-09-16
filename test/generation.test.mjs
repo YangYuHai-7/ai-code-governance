@@ -184,23 +184,21 @@ test('initialization creates local review and report workspaces without ignoring
   assert.match(ignoreContent, /^# ai-code-governance:local-output:start$/m);
   assert.match(ignoreContent, /^!\/reviews\/$/m);
   assert.match(ignoreContent, /^\/reviews\/\*$/m);
-  assert.match(ignoreContent, /^!\/reviews\/\.gitkeep$/m);
   assert.match(ignoreContent, /^\/reports\/\*$/m);
   assert.match(ignoreContent, /^!\/reports\/$/m);
-  assert.match(ignoreContent, /^!\/reports\/\.gitkeep$/m);
   assert.match(ignoreContent, /^# ai-code-governance:local-output:end$/m);
   assert.doesNotMatch(ignoreContent, /<!-- ai-code-governance:/);
-  assert.ok(fs.statSync(path.join(root, 'reviews/.gitkeep')).isFile());
-  assert.ok(fs.statSync(path.join(root, 'reports/.gitkeep')).isFile());
+  assert.equal(fs.existsSync(path.join(root, 'reviews/.gitkeep')), false);
+  assert.equal(fs.existsSync(path.join(root, 'reports/.gitkeep')), false);
 
+  fs.mkdirSync(path.join(root, 'reviews'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'reports'), { recursive: true });
   fs.writeFileSync(path.join(root, 'reviews', 'architecture-review.mjs'), 'export const reviewSnippet = "axios.create()";\n');
   fs.writeFileSync(path.join(root, 'reports', 'task-report.tsx'), 'export const Diagnostic = () => <main>local</main>;\n');
   fs.mkdirSync(path.join(root, 'docs/ai/release-evidence'), { recursive: true });
   fs.writeFileSync(path.join(root, 'docs/ai/release-evidence/0.2.0.json'), '{}\n');
   assert.equal(git(root, ['check-ignore', '-q', 'reviews/architecture-review.mjs']).status, 0);
   assert.equal(git(root, ['check-ignore', '-q', 'reports/task-report.tsx']).status, 0);
-  assert.notEqual(git(root, ['check-ignore', '-q', 'reviews/.gitkeep']).status, 0);
-  assert.notEqual(git(root, ['check-ignore', '-q', 'reports/.gitkeep']).status, 0);
   assert.notEqual(git(root, ['check-ignore', '-q', 'docs/ai/release-evidence/0.2.0.json']).status, 0);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
@@ -271,8 +269,8 @@ test('sync upgrades a v1 manifest to the current local output layout without mov
   assert.match(ignoreContent, /^# user-owned rule$/m);
   assert.match(ignoreContent, /^\*\.local$/m);
   assert.match(ignoreContent, /^# ai-code-governance:local-output:start$/m);
-  assert.ok(fs.statSync(path.join(root, 'reviews/.gitkeep')).isFile());
-  assert.ok(fs.statSync(path.join(root, 'reports/.gitkeep')).isFile());
+  assert.equal(fs.existsSync(path.join(root, 'reviews')), false);
+  assert.equal(fs.existsSync(path.join(root, 'reports')), false);
   const upgradedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   assert.equal(upgradedManifest.templateVersion, 3);
   assert.equal(upgradedManifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
@@ -290,10 +288,10 @@ test('local output directory name conflicts preserve existing root files', (cont
     assert.doesNotThrow(() => {
       plan = planArtifacts(root, buildArtifacts(defaultConfig(scan), scan));
     });
-    assert.ok(plan.conflicts.some((item) => item.includes(`${name}: expected a directory ancestor`)));
-    assert.throws(() => applyArtifactPlan(root, plan), /Cannot safely generate governance/);
+    assert.equal(plan.conflicts.some((item) => item.includes(`${name}: expected a directory ancestor`)), false);
+    assert.doesNotThrow(() => applyArtifactPlan(root, plan));
     assert.equal(fs.readFileSync(path.join(root, name), 'utf8'), `user-owned ${name} file\n`);
-    assert.equal(fs.existsSync(path.join(root, '.ai-governance/config.json')), false);
+    assert.equal(fs.existsSync(path.join(root, '.ai-governance/config.json')), true);
   }
 });
 

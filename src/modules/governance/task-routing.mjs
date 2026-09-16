@@ -310,7 +310,7 @@ function changedSurfaces(paths) {
   return surfaces;
 }
 
-export function minimumTaskLevelFromPaths(paths, config = {}) {
+export function minimumTaskLevelFromPaths(paths, config = {}, { trustedBehaviorChange = null } = {}) {
   const normalized = normalizedChangedPaths(paths);
   const levels = [confirmedRiskLevel(config, normalized)];
   const surfaceCandidates = [];
@@ -321,7 +321,10 @@ export function minimumTaskLevelFromPaths(paths, config = {}) {
       levels.push('L1');
       continue;
     }
-    levels.push(maxLevel('L1', ...matchingRules.map((rule) => rule.level)));
+    const effectiveRules = trustedBehaviorChange === false
+      ? matchingRules.filter((rule) => rule.id !== 'production-source')
+      : matchingRules;
+    levels.push(maxLevel('L1', ...effectiveRules.map((rule) => rule.level)));
     surfaceCandidates.push(relative);
   }
   if (changedSurfaces(surfaceCandidates).size > 1) levels.push('L3');
@@ -335,12 +338,13 @@ export function validateTaskLevel(taskLevel) {
   return taskLevel;
 }
 
-export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = null) {
+export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = null, { trustedBehaviorChange = null } = {}) {
   validateTaskLevel(declaredLevel);
-  const minimumLevel = minimumTaskLevelFromPaths(paths, config);
+  const minimumLevel = minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange });
   const status = declaredLevel === null ? 'unverified-declaration'
     : ORDER.indexOf(declaredLevel) < ORDER.indexOf(minimumLevel) ? 'upgrade-required' : 'verified';
-  const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths)}.`];
+  const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange })}.`];
+  if (trustedBehaviorChange === false) reasons.push('Trusted source comparison proves every ordinary production change is non-behavior; machine-sensitive and risk routes remain enforced.');
   const applicable = applicableRiskSignals(config, normalizedChangedPaths(paths));
   if (applicable.length) {
     reasons.push(`Scope-matched owner-confirmed risk signals require at least ${confirmedRiskLevel(config, normalizedChangedPaths(paths))}: ${applicable.join(', ')}.`);

@@ -1,6 +1,8 @@
 import path from 'node:path';
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { sha256 } from '../../shared/index.mjs';
 import { publicDeclarations, implementationBodyAfter } from '../capabilities/index.mjs';
+import { isProductionScopePath } from '../repository/index.mjs';
 import { emptyMemory, readMemoryFile } from './schema.mjs';
 
 const JS = /\.(?:[cm]?js|ts)$/;
@@ -9,6 +11,29 @@ const TEST = /(?:^|\/)(?:tests?|__tests__|fixtures?)(?:\/|$)|\.(?:test|spec)\./;
 const DATA = /(?:\.schema\.json|\.prisma|\.sql)$/;
 const METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
 const id = (kind, value) => `${kind}-${sha256(value).slice(0, 16)}`;
+
+function callableExpression(tokens, closes, start, end) {
+  let cursor = start;
+  if (tokens[cursor]?.value === 'async') cursor += 1;
+  if (tokens[cursor]?.value === 'function') {
+    cursor += 1;
+    if (tokens[cursor]?.kind === 'identifier') cursor += 1;
+    if (tokens[cursor]?.value !== '(' || !closes.has(cursor)) return false;
+    const body = implementationBodyAfter(tokens, closes, closes.get(cursor) + 1);
+    return body >= 0 && closes.get(body) < end;
+  }
+  if (tokens[cursor]?.value === '(' && closes.has(cursor)) cursor = closes.get(cursor) + 1;
+  else if (tokens[cursor]?.kind === 'identifier') cursor += 1;
+  else return false;
+  return tokens[cursor]?.value === '=>' && cursor + 1 < end;
+}
+
+function initializerEnd(tokens, depths, start, fallback) {
+  for (let cursor = start + 1; cursor < tokens.length; cursor += 1) {
+    if (depths[cursor] === depths[start] && tokens[cursor].value === ';') return cursor;
+  }
+  return fallback;
+}
 
 function literalFetchMethod({ tokens, closes }, start, callEnd) {
   const objectEnd = closes.get(start);
@@ -36,7 +61,7 @@ function literalFetchMethod({ tokens, closes }, start, callEnd) {
   return method;
 }
 export function isMemoryCodePath(relative) {
-  return !TEST.test(relative) && !/^(?:docs|\.ai-governance|\.agents|\.claude|node_modules|dist|build|coverage)\//.test(relative) && (CODE.test(relative) || DATA.test(relative));
+  return isProductionScopePath(relative);
 }
 
 /** Bounded static recognizers: ESM declarations/imports, Express Router literals,
@@ -55,16 +80,19 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
   for (const file of files.slice(budget, budget + 160)) gap(file.relative, 'memory scan file budget exceeded');
   for (const file of files.slice(0, budget)) {
     const relative = file.relative;
-    let text;
-    try { text = readMemoryFile(scan.root, relative, 128 * 1024); } catch (error) { gap(relative, error.message); continue; }
+    let bytes;
+    try { bytes = readBoundedRepositoryFile(scan.root, relative, 128 * 1024).bytes; } catch (error) { gap(relative, error.message); continue; }
     const directory = path.posix.dirname(relative);
     const moduleId = id('module', directory);
     if (!modules.has(directory)) modules.set(directory, { id: moduleId, path: directory, memoryPage: `docs/memory/modules/${moduleId}.md`, owns: [], codeGlobs: [], status: 'stated', summary: { status: 'unverified', text: '', verifiedFrom: [] }, pageIds: [], apiIds: [], methodIds: [], dataSourceIds: [], callSiteIds: [], verifiedFrom: [] });
     const module = modules.get(directory);
     module.owns.push(relative); module.codeGlobs.push(relative); module.verifiedFrom.push(relative);
     const sourceId = id('source', relative);
-    memory.sources.push({ id: sourceId, path: relative, record: `docs/memory/sources/${sourceId}.json`, sha256: sha256(text), status: 'stated' });
+    memory.sources.push({ id: sourceId, path: relative, record: `docs/memory/sources/${sourceId}.json`, sha256: sha256(bytes), status: 'stated' });
     const fact = (kind, key, details) => ({ id: id(kind, `${relative}:${key}`), moduleId, ...details, verifiedFrom: [relative], status: 'stated' });
+    if (!CODE.test(relative) && !DATA.test(relative)) { gap(relative, 'unsupported syntax; raw file ownership and digest only'); continue; }
+    let text;
+    try { text = readMemoryFile(scan.root, relative, 128 * 1024); } catch (error) { gap(relative, error.message); continue; }
     if (DATA.test(relative)) {
       const data = fact('data', relative, { path: relative });
       memory.dataSources.push(data); module.dataSourceIds.push(data.id);
@@ -76,28 +104,46 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
     const values = tokens.map((token) => token.value);
     if (tokens.length > 12000) { gap(relative, 'syntax token budget exceeded; only file ownership is stated'); continue; }
     if (tokens.some((token) => ['opaque', 'template'].includes(token.kind))) gap(relative, 'opaque or dynamic syntax is not interpreted');
-    for (const entry of declarations.declarations.filter((entry) => entry.kind === 'function' || entry.kind === 'class')) {
+    for (const entry of declarations.declarations) {
+      const callable = entry.kind === 'function' || entry.kind === 'class'
+        || (['const', 'let', 'var'].includes(entry.kind) && callableExpression(tokens, declarations.closes, entry.initializer,
+          initializerEnd(tokens, declarations.depths, entry.initializer, entry.endIndex)));
+      if (!callable) continue;
       if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
       const method = fact('method', entry.exportedAs, { path: relative, symbol: entry.symbol, exportedAs: entry.exportedAs, kind: entry.kind });
       memory.methods.push(method); module.methodIds.push(method.id);
       if (entry.kind === 'class') for (let i = entry.bodyStartIndex + 1; i < entry.endIndex - 1; i += 1) {
-        if (declarations.depths[i] !== declarations.depths[entry.bodyStartIndex] + 1 || tokens[i].kind !== 'identifier' || values[i + 1] !== '(') continue;
+        if (declarations.depths[i] !== declarations.depths[entry.bodyStartIndex] + 1 || tokens[i].kind !== 'identifier') continue;
         let prefix = i - 1;
         while (['public', 'private', 'protected', 'static', 'async', 'override', 'abstract', 'get', 'set'].includes(values[prefix])) prefix -= 1;
         if (values[prefix] === '#' || values.slice(prefix + 1, i).some((value) => ['private', 'protected', 'abstract'].includes(value))) continue;
-        const close = declarations.closes?.get(i + 1);
-        if (close === undefined || implementationBodyAfter(tokens, declarations.closes, close + 1) < 0) { gap(relative, 'unsupported class method syntax'); continue; }
+        let memberKind = 'method';
+        if (values[i + 1] === '(') {
+          const close = declarations.closes?.get(i + 1);
+          if (close === undefined || implementationBodyAfter(tokens, declarations.closes, close + 1) < 0) { gap(relative, 'unsupported class method syntax'); continue; }
+        } else if (values[i + 1] === '=') {
+          let end = i + 2;
+          while (end < entry.endIndex - 1 && !(declarations.depths[end] === declarations.depths[i] && values[end] === ';')) end += 1;
+          if (!callableExpression(tokens, declarations.closes, i + 2, end)) continue;
+          memberKind = 'callable-field';
+        } else continue;
         if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
         const symbol = `${entry.symbol}.${values[i]}`;
         const modifiers = values.slice(prefix + 1, i);
         const scope = modifiers.includes('static') ? 'static' : 'instance';
-        const memberKind = modifiers.find((value) => ['get', 'set'].includes(value)) ?? 'method';
+        if (memberKind === 'method') memberKind = modifiers.find((value) => ['get', 'set'].includes(value)) ?? 'method';
         // Export alias, receiver scope and accessor kind are distinct public
         // identities; source offsets would make formatting change their IDs.
         const identity = `${entry.exportedAs}:${scope}:${memberKind}:${values[i]}`;
         const member = fact('method', identity, { path: relative, symbol, exportedAs: `${entry.exportedAs}.${values[i]}`, kind: 'public-method', scope, memberKind });
         memory.methods.push(member); module.methodIds.push(member.id);
       }
+    }
+    for (const entry of declarations.defaultExpressions) {
+      if (!callableExpression(tokens, declarations.closes, entry.initializer, entry.endIndex)) continue;
+      if (memory.methods.length >= 1000) { gap(relative, 'public declaration budget exceeded'); break; }
+      const method = fact('method', 'default', { path: relative, symbol: 'default', exportedAs: 'default', kind: 'callable-expression' });
+      memory.methods.push(method); module.methodIds.push(method.id);
     }
     if (/(?:^|\/)(?:pages|views)\//.test(relative) && declarations.declarations.length) {
       const page = fact('page', relative, { path: relative, apiIds: [], callSiteIds: [] });
