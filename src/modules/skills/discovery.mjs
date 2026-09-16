@@ -145,6 +145,24 @@ export function assertSkillCandidateFresh(item, root = null) {
   }
 }
 
+/** Return the JSON wire contract without dropping array-attached source diagnostics. */
+export function serializeSkillDiscovery(discovery) {
+  const candidates = Array.isArray(discovery) ? discovery : discovery?.candidates;
+  const sourceStatus = Array.isArray(discovery) ? discovery.sourceStatus ?? [] : discovery?.sourceStatus;
+  if (!Array.isArray(candidates) || candidates.length > 5 || !Array.isArray(sourceStatus)
+    || sourceStatus.length > 8192) throw new Error('Skill discovery requires at most five candidates and bounded sourceStatus diagnostics.');
+  for (const item of sourceStatus) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)
+      || typeof item.source !== 'string' || !item.source || item.source.length > 2048
+      || !['available', 'unavailable', 'skipped-unsafe'].includes(item.status)
+      || (item.reason !== undefined && (typeof item.reason !== 'string' || item.reason.length > 4096))
+      || Object.keys(item).some((key) => !['source', 'status', 'reason'].includes(key))) throw new Error('Invalid sourceStatus diagnostic.');
+  }
+  const result = { candidates: candidates.map((item) => structuredClone(item)), sourceStatus: structuredClone(sourceStatus) };
+  if (Buffer.byteLength(stableJson(result.sourceStatus)) > 256 * 1024) throw new Error('Skill sourceStatus metadata budget exceeded.');
+  return result;
+}
+
 /** Discover metadata only. installedRoots is mandatory even when intentionally empty. */
 export function discoverSkills({ root, installedRoots, curatedCatalog = [], requiredCapabilities = [] } = {}) {
   if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('root must be an explicit absolute project directory.');
@@ -226,6 +244,9 @@ export function discoverSkills({ root, installedRoots, curatedCatalog = [], requ
     }
   }
   const result = [...owners.values()].slice(0, 5);
-  Object.defineProperty(result, 'sourceStatus', { value: sourceStatus, enumerable: false });
+  Object.defineProperties(result, {
+    sourceStatus: { value: sourceStatus, enumerable: false },
+    toJSON: { value: () => serializeSkillDiscovery(result), enumerable: false },
+  });
   return result;
 }

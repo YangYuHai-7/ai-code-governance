@@ -1,5 +1,5 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
-import { assertSkillCandidateFresh } from './discovery.mjs';
+import { assertSkillCandidateFresh, serializeSkillDiscovery } from './discovery.mjs';
 
 const STATES = new Set(['discovered', 'recommended', 'approved', 'applied', 'active-for-task']);
 
@@ -24,19 +24,20 @@ function candidateSnapshot(candidate) {
   return snapshot;
 }
 
-/** Pure state transitions record caller evidence; they never install or activate client code. */
+/** Accept a discovery array or its JSON envelope; revalidate all indexed sources before approval. */
 export function decideSkillCandidates(candidates, decisions = {}) {
-  if (!Array.isArray(candidates) || candidates.length > 5) throw new Error('At most five Skill candidates can be decided.');
-  const snapshots = candidates.map(candidateSnapshot);
+  const discovery = serializeSkillDiscovery(candidates);
+  const snapshots = discovery.candidates.map(candidateSnapshot);
   if (new Set(snapshots.map((item) => item.id)).size !== snapshots.length || new Set(snapshots.map((item) => item.capabilityOwner)).size !== snapshots.length) throw new Error('Skill decisions require unique candidates and capability owners.');
   const selectedIds = decisions.selectedIds ?? snapshots.map((item) => item.id);
   if (!Array.isArray(selectedIds) || new Set(selectedIds).size !== selectedIds.length || selectedIds.some((id) => !snapshots.some((item) => item.id === id))) throw new Error('Unknown or duplicate Skill selection.');
-  const payload = { schemaVersion: 1, candidates: snapshots, selectedIds: [...selectedIds].sort() };
+  const payload = { schemaVersion: 1, candidates: snapshots, sourceStatus: discovery.sourceStatus, selectedIds: [...selectedIds].sort() };
   const planHash = sha256(stableJson(payload));
   const approved = decisions.approvalPlanHash !== undefined;
   if (approved && decisions.approvalPlanHash !== planHash) throw new Error('Skill approval planHash does not match the exact candidate decision.');
   if (approved && snapshots.some((item) => selectedIds.includes(item.id) && ['needs-user-decision', 'refresh-due'].includes(item.availability))) throw new Error('Resolve candidate conflict or refresh the offline catalog before approval.');
-  if (approved) for (const item of snapshots.filter((candidate) => selectedIds.includes(candidate.id))) assertSkillCandidateFresh(item);
+  // Unselected candidates are still persisted into the index and covered by this approval.
+  if (approved) for (const item of snapshots) assertSkillCandidateFresh(item);
   const appliedIds = decisions.applied?.ids ?? [];
   const activeIds = decisions.activeForTask?.ids ?? [];
   if (decisions.applied && decisions.applied.planHash !== planHash) throw new Error('Applied evidence requires the approved planHash.');
@@ -57,10 +58,10 @@ export function decideSkillCandidates(candidates, decisions = {}) {
 
 export function validateSkillDecision(decision, { root = null } = {}) {
   if (decision?.status !== 'approved' || !decision.approval || !Array.isArray(decision.actionsPerformed) || decision.actionsPerformed.length) throw new Error('Approved Skill decision is required.');
-  const expected = decideSkillCandidates(decision.candidates, { selectedIds: decision.selectedIds, approvalPlanHash: decision.approval.planHash, applied: decision.applied, activeForTask: decision.activeForTask });
+  const expected = decideSkillCandidates({ candidates: decision.candidates, sourceStatus: decision.sourceStatus }, { selectedIds: decision.selectedIds, approvalPlanHash: decision.approval.planHash, applied: decision.applied, activeForTask: decision.activeForTask });
   if (stableJson(expected) !== stableJson(decision)) throw new Error('Skill decision approval planHash or state is stale.');
   if (root) {
-    for (const item of decision.candidates.filter((candidate) => decision.selectedIds.includes(candidate.id))) {
+    for (const item of decision.candidates) {
       assertSkillCandidateFresh(item, root);
     }
   }
