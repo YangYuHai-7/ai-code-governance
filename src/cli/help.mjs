@@ -39,8 +39,10 @@ Commands:
   complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
             Review modes: single, quick-review, independent-pk, high-consequence-pk. Production changes require a declared level and bound approval references.
             Approval JSON: schemaVersion:1, planHash, reviewEvidence:{}, professionalBoundaries:[], approvals:[{id,reference,sha256,source:"operator-declared",participantId}].
-            First inspect taskApproval.plan, then supply reference digests and approve that exact hash. Reference files are repository-relative; do not copy plan bodies into evidence.
-            Hook evidence must be staged; an unconfigured hook cannot approve production changes. Professional identity and review quality are never machine-verified.
+            Prepare reference digests and evidence with a placeholder planHash, then inspect taskApproval.plan and approve its exact hash. changeDigest binds HEAD, index and final file content; only the evidence planHash field is excluded to avoid self-reference. Do not copy diff/plan bodies into evidence.
+            The installed hook reads only AICG_TASK_LEVEL, AICG_REVIEW_MODE, AICG_APPROVAL_EVIDENCE (repository-relative JSON), and AICG_APPROVE (planHash). Stage evidence and references, preview with --from-git-hook, then export those values before git commit; missing or stale approval fails closed. Manual completion ignores these variables.
+            PK proposals and referee need distinct reference files and digests. Professional identity and review quality remain operator-declared, never machine-verified.
+            Approved professional roles in managed docs/ai/agent-team.json require explicit activation.signals (owner-confirmed risk IDs) and activation.paths (repository-relative globs). Relevant missing mappings fail closed; unrelated documentation or mapped out-of-scope tasks do not acquire professional risk.
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.

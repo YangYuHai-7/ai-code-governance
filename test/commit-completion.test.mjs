@@ -60,11 +60,20 @@ function approvalOptions(root, options = {}) {
   write(root, approvalEvidence, '{}\n');
   if (options.fromGitHook) assert.equal(git(root, ['add', reference, approvalEvidence]).status, 0);
   const preview = runCompletion(root, options);
-  const plan = preview.taskApproval.plan;
+  let plan = preview.taskApproval.plan;
   const evidence = {
-    schemaVersion: 1, planHash: plan.planHash, reviewEvidence: {}, professionalBoundaries: [],
-    approvals: plan.requiredApprovals.map((id) => ({ id, reference, sha256: sha256(fs.readFileSync(path.join(root, reference))), source: 'operator-declared', participantId: id })),
+    schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [],
+    approvals: plan.requiredApprovals.map((id) => {
+      const selected = /^(proposal-|referee)/.test(id) ? `docs/ai/task-approval/${id}.md` : reference;
+      if (selected !== reference) write(root, selected, `# Independent ${id} findings\n`);
+      if (options.fromGitHook) assert.equal(git(root, ['add', selected]).status, 0);
+      return { id, reference: selected, sha256: sha256(fs.readFileSync(path.join(root, selected))), source: 'operator-declared', participantId: id };
+    }),
   };
+  write(root, approvalEvidence, JSON.stringify(evidence));
+  if (options.fromGitHook) assert.equal(git(root, ['add', approvalEvidence]).status, 0);
+  plan = runCompletion(root, { ...options, approvalEvidence }).taskApproval.plan;
+  evidence.planHash = plan.planHash;
   write(root, approvalEvidence, JSON.stringify(evidence));
   if (options.fromGitHook) assert.equal(git(root, ['add', approvalEvidence]).status, 0);
   return { taskLevel: plan.taskLevel, reviewMode: plan.reviewMode, approvalEvidence, approve: plan.planHash, ...options };
@@ -75,6 +84,141 @@ function runApproved(args) {
   const options = approvalOptions(args[1]);
   return run([...args, '--task-level', options.taskLevel, '--review-mode', options.reviewMode, '--approval-evidence', options.approvalEvidence, '--approve', options.approve]);
 }
+
+test('approval binds same-path staged unstaged and untracked content plus verification rewrites', (context) => {
+  const root = fixture('content-approval');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  write(root, 'src/modules/widget/index.mjs');
+  write(root, 'package.json', JSON.stringify({ scripts: { test: 'node -e "require(\'fs\').appendFileSync(\'src/modules/widget/index.mjs\', \'\\n// rewritten\')"' } }));
+  assert.equal(run(['sync', root]).status, 0);
+  baseline(root);
+  for (const kind of ['unstaged', 'staged', 'untracked']) {
+    const relative = kind === 'untracked' ? 'src/modules/widget/new.mjs' : 'src/modules/widget/index.mjs';
+    write(root, relative, 'export const n = 1;\n');
+    if (kind === 'staged') assert.equal(git(root, ['add', relative]).status, 0);
+    const options = approvalOptions(root, { taskLevel: 'L2' });
+    assert.match(runCompletion(root, options).taskApproval.plan.changeDigest, /^[a-f0-9]{64}$/);
+    write(root, relative, 'export const n = 2;\n');
+    if (kind === 'staged') assert.equal(git(root, ['add', relative]).status, 0);
+    assert.equal(runCompletion(root, options).taskApproval.status, 'stale-plan', kind);
+  }
+  const options = approvalOptions(root, { taskLevel: 'L2' });
+  const verified = runCompletion(root, { ...options, verificationCommand: 'npm test' });
+  assert.equal(verified.projectVerification.status, 'passed');
+  assert.equal(verified.taskApproval.status, 'stale-plan');
+  assert.equal(verified.ok, false);
+});
+
+function trustedProfessionalRoster(root, activation) {
+  const relative = 'docs/ai/agent-team.json';
+  const roster = { schemaVersion: 1, teamType: 'project-ai-agent-team', roles: [{
+    id: 'legal-reviewer', status: 'approved-available', approval: { source: 'user', evidenceId: 'decision.legal' },
+    professionalBoundaries: [{ domainNeedId: 'contract-law', humanReviewRequired: true, qualification: 'licensed-lawyer', jurisdiction: 'JP', decisionAuthority: 'human-only', reason: 'Owner-confirmed legal scope' }],
+    ...(activation ? { activation } : {}),
+  }] };
+  write(root, relative, JSON.stringify(roster));
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath));
+  manifest.files.push({ path: relative, ownership: 'full', kind: 'agent-team', source: 'approved-project-roles', sha256: sha256(fs.readFileSync(path.join(root, relative))) });
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  baseline(root);
+}
+
+test('trusted professional scope is mandatory without an operator risk declaration and does not cover unrelated paths', (context) => {
+  const root = fixture('trusted-professional');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Only approved actors may edit contracts.'], ['authorization']);
+  trustedProfessionalRoster(root, { signals: ['authorization'], paths: ['src/modules/legal/**'] });
+  write(root, 'src/modules/legal/index.mjs');
+  const options = approvalOptions(root, { taskLevel: 'L2' });
+  const result = runCompletion(root, options);
+  assert.equal(result.ok, false);
+  assert.equal(result.taskApproval.status, 'professional-review-gap');
+  assert.equal(result.taskApproval.plan.professionalBoundaries[0].qualification, 'licensed-lawyer');
+  const evidencePath = path.join(root, options.approvalEvidence);
+  const evidence = JSON.parse(fs.readFileSync(evidencePath));
+  Object.assign(evidence.approvals.find((record) => record.id === 'human:contract-law'), {
+    qualification: 'licensed-lawyer', jurisdiction: 'JP', responsibleHuman: 'Owner-declared licensed reviewer',
+  });
+  fs.writeFileSync(evidencePath, JSON.stringify(evidence));
+  const current = runCompletion(root, options).taskApproval.plan;
+  evidence.planHash = current.planHash;
+  fs.writeFileSync(evidencePath, JSON.stringify(evidence));
+  const satisfied = runCompletion(root, { ...options, approve: current.planHash });
+  assert.equal(satisfied.ok, true, JSON.stringify(satisfied));
+  assert.equal(satisfied.taskApproval.identityVerified, false);
+  baseline(root);
+  write(root, 'src/modules/widget/index.mjs');
+  const unrelated = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
+  assert.equal(unrelated.ok, true, JSON.stringify(unrelated));
+  assert.notEqual(unrelated.taskApproval.review.mode, 'high-consequence-pk');
+});
+
+test('trusted professional scope without an explicit applicability mapping cannot silently pass', (context) => {
+  const root = fixture('unmapped-professional');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Confirmed professional project.'], ['authorization']);
+  trustedProfessionalRoster(root);
+  write(root, 'src/modules/widget/index.mjs');
+  const result = runCompletion(root, { taskLevel: 'L2' });
+  assert.equal(result.ok, false);
+  assert.equal(result.taskApproval.status, 'professional-review-gap');
+});
+
+test('professional roster ambiguity blocks product changes but not an unrelated documentation task', (context) => {
+  const root = fixture('professional-docs');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initializeWithConstraints(root, ['Confirmed professional project.'], ['authorization']);
+  trustedProfessionalRoster(root);
+  write(root, 'README.md', '# Local documentation fix\n');
+  const result = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.taskApproval.plan.professionalBoundaries.length, 0);
+});
+
+test('trusted professional roster rejects conflicting singular and plural boundaries', (context) => {
+  const root = fixture('professional-conflict');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  trustedProfessionalRoster(root, { signals: ['authorization'], paths: ['src/modules/legal/**'] });
+  const relative = 'docs/ai/agent-team.json';
+  const roster = JSON.parse(fs.readFileSync(path.join(root, relative)));
+  roster.roles[0].professionalBoundary = roster.roles[0].professionalBoundaries[0];
+  roster.roles[0].professionalBoundaries = [];
+  write(root, relative, JSON.stringify(roster));
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath));
+  manifest.files.find((entry) => entry.path === relative).sha256 = sha256(fs.readFileSync(path.join(root, relative)));
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest));
+  baseline(root);
+  write(root, 'src/modules/legal/index.mjs');
+  const result = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
+  assert.equal(result.ok, false);
+  assert.equal(result.taskApproval.status, 'professional-review-gap');
+});
+
+test('the installed hook accepts only explicit safe approval environment values', (context) => {
+  const root = fixture('hook-approval-env');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root);
+  assert.equal(run(['hook', 'install', root, '--yes', '--json']).status, 0);
+  write(root, 'src/modules/widget/index.mjs');
+  assert.equal(git(root, ['add', 'src/modules/widget/index.mjs']).status, 0);
+  const options = approvalOptions(root, { taskLevel: 'L2', fromGitHook: true });
+  const env = { ...process.env, AICG_TASK_LEVEL: options.taskLevel, AICG_REVIEW_MODE: options.reviewMode, AICG_APPROVAL_EVIDENCE: options.approvalEvidence, AICG_APPROVE: options.approve };
+  const invoke = (values) => spawnSync(path.join(root, '.git/hooks/pre-commit'), [], { cwd: root, env: values, encoding: 'utf8' });
+  const approved = invoke(env);
+  assert.equal(approved.status, 0, approved.stdout + approved.stderr);
+  assert.notEqual(invoke({ ...env, AICG_APPROVE: '0'.repeat(64) }).status, 0);
+  assert.notEqual(invoke({ ...env, AICG_TASK_LEVEL: '' }).status, 0);
+  assert.notEqual(invoke({ ...env, AICG_APPROVAL_EVIDENCE: '$(touch env-injection)' }).status, 0);
+  assert.equal(fs.existsSync(path.join(root, 'env-injection')), false);
+  write(root, 'src/modules/widget/index.mjs', 'export const changed = true;\n');
+  assert.equal(invoke(env).status, 0, 'unstaged source must not alter hook approval');
+  assert.equal(git(root, ['add', 'src/modules/widget/index.mjs']).status, 0);
+  assert.notEqual(invoke(env).status, 0, 'staging changed bytes invalidates the old plan');
+});
 
 test('production completion cannot pass with an omitted task declaration or missing approval evidence', (context) => {
   const root = fixture('required-approval');

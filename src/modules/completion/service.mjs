@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
+import { checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
 import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { sha256, stableJson } from '../../shared/index.mjs';
+import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { evaluateProductionReadiness } from './production-readiness.mjs';
 import { evaluateSurfaceVerification } from './surface-verification.mjs';
 import { assessHarvestEligibility, capabilitySourceChanged, completionCapabilityHarvestSummary, isProductionCapabilityPath } from '../capabilities/index.mjs';
@@ -146,6 +146,61 @@ function completionTaskRoute(scan, paths, taskLevel) {
   return { config, taskRoute: evaluateCompletionTaskRoute(paths, config, taskLevel) };
 }
 
+function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvidence) {
+  if (paths.length > 10000) throw usageError('Cannot bind more than 10000 changed paths.');
+  const approvalPath = typeof approvalEvidence === 'string' && isSafeRelative(approvalEvidence) ? normalizeRelative(approvalEvidence) : null;
+  const records = (args) => {
+    const map = new Map();
+    for (const record of git(gitRoot, args).split('\0').filter(Boolean)) {
+      const separator = record.indexOf('\t');
+      if (separator < 0) throw usageError('Cannot read bounded change identity.');
+      const relative = record.slice(separator + 1);
+      if (map.has(relative)) throw usageError('Cannot approve an unresolved index.');
+      map.set(relative, record.slice(0, separator));
+    }
+    return map;
+  };
+  const head = records(['ls-tree', '-r', '-z', 'HEAD']);
+  const index = records(['ls-files', '--stage', '-z']);
+  let totalBytes = 0;
+  const contentHash = (bytes, relative) => {
+    totalBytes += bytes.length;
+    if (totalBytes > 32 * 1024 * 1024) throw usageError('Changed content exceeds the 32 MiB approval budget.');
+    if (relative !== approvalPath) return sha256(bytes);
+    // The receipt cannot hash its own planHash. Every other field is bound;
+    // malformed receipts are still rejected by the independent evidence parser.
+    try {
+      const value = JSON.parse(bytes.toString('utf8'));
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        delete value.planHash;
+        return sha256(stableJson(value));
+      }
+    } catch { /* Preserve malformed bytes for fail-closed evidence validation. */ }
+    return sha256(bytes);
+  };
+  const snapshot = (relative) => {
+    assertNoLinkAncestor(snapshotRoot, relative, { allowFinalLink: true });
+    const absolute = path.join(snapshotRoot, relative);
+    let stat;
+    try { stat = fs.lstatSync(absolute); } catch (error) { if (error.code === 'ENOENT') return { kind: 'missing' }; throw error; }
+    if (stat.isSymbolicLink()) return { kind: 'link', sha256: sha256(fs.readlinkSync(absolute)) };
+    if (!stat.isFile()) throw usageError('Approval changed paths must be files or links, not directories or devices.');
+    return { kind: 'file', executable: (stat.mode & 0o111) !== 0, sha256: contentHash(readBoundedTaskFile(snapshotRoot, relative, 2 * 1024 * 1024), relative) };
+  };
+  const changes = [...new Set(paths)].sort().map((relative) => {
+    if (typeof relative !== 'string' || relative.length > 4096 || !isSafeRelative(relative)) throw usageError('Cannot bind unsafe changed paths.');
+    let staged = index.get(relative) ?? null;
+    if (staged && !/^\d{6} [a-f0-9]{40,64} 0$/.test(staged)) throw usageError('Cannot approve an unresolved index.');
+    if (relative === approvalPath && staged) {
+      const blob = runGit(gitRoot, ['show', `:${relative}`], { encoding: null, timeout: 15000, maxBuffer: 65536 });
+      if (blob.error || blob.status !== 0) throw usageError('Cannot read staged approval evidence.');
+      staged = `${staged.slice(0, 6)} ${contentHash(blob.stdout, relative)}`;
+    }
+    return { path: relative, before: head.get(relative) ?? null, staged, ...(mode === 'manual' ? { worktree: snapshot(relative) } : {}) };
+  });
+  return digest({ schemaVersion: 1, mode, head: git(gitRoot, ['rev-parse', '--verify', 'HEAD^{commit}']), changes });
+}
+
 function capabilityChangedPaths(scan, paths) {
   const sources = new Map(scan.files.filter((file) => file.type === 'file' && file.contentScannable !== false).map((file) => [file.relative, file]));
   const changed = [];
@@ -268,7 +323,7 @@ function runVerification(scan, selected) {
   };
 }
 
-function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null }) {
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root }) {
   let { config, taskRoute } = completionTaskRoute(scan, paths, taskLevel);
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
@@ -306,6 +361,8 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   // In hook mode scan.root is the materialized index, never the live worktree.
   const taskApproval = evaluateTaskApproval(scan.root, {
     taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
+    changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence),
+    ...trustedProfessionalTaskContext(scan.root, config, paths),
     reviewEvidence: {
       publicContract: config.confirmedRiskSignals?.includes('public-api') ?? false,
       externalAction: config.confirmedRiskSignals?.includes('external-side-effect') ?? false,
@@ -353,6 +410,14 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
 }
 
 export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null } = {}) {
+  if (fromGitHook) {
+    taskLevel ??= process.env.AICG_TASK_LEVEL ?? null;
+    reviewMode ??= process.env.AICG_REVIEW_MODE ?? null;
+    approvalEvidence ??= process.env.AICG_APPROVAL_EVIDENCE ?? null;
+    approve ??= process.env.AICG_APPROVE ?? null;
+    if (approvalEvidence !== null && (typeof approvalEvidence !== 'string' || approvalEvidence.length > 4096 || !isSafeRelative(approvalEvidence))) throw usageError('AICG_APPROVAL_EVIDENCE must be a safe repository-relative path.');
+    if (approve !== null && (typeof approve !== 'string' || !/^[a-f0-9]{64}$/.test(approve))) throw usageError('AICG_APPROVE must be a SHA256 plan hash.');
+  }
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (!fromGitHook) {
@@ -373,5 +438,6 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     reviewMode,
     approvalEvidence,
     approve,
+    gitRoot: root,
   }));
 }
