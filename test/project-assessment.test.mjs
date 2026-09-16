@@ -16,6 +16,7 @@ const cli = path.resolve('bin/aicg.js');
 for (const [family, relative, content, ecosystem, dependency] of [
   ['backend-php', 'composer.json', JSON.stringify({ require: { 'laravel/framework': '^12.0' }, description: 'symfony/framework-bundle is not installed' }), 'composer', 'laravel/framework'],
   ['platform-dotnet', 'App.csproj', '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup></Project>', 'dotnet', 'Microsoft.NET.Sdk.Web'],
+  ['platform-dotnet', 'WpfApp.csproj', '<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop"><PropertyGroup><TargetFramework>net8.0-windows</TargetFramework><UseWPF>true</UseWPF></PropertyGroup></Project>', 'dotnet', 'Microsoft.NET.Sdk.WindowsDesktop'],
   ['platform-desktop', 'App.csproj', '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="Avalonia" Version="11.3.0" /></ItemGroup></Project>', 'dotnet', 'Avalonia'],
   ['platform-ios', 'Package.swift', 'import PackageDescription\nlet package = Package(name: "App", targets: [.target(name: "App", linkerSettings: [.linkedFramework("UIKit")])])', 'swift', 'UIKit'],
   ['platform-ios', 'Podfile', "platform :ios, '16.0'\npod 'UIKit', '~> 1.0'\n", 'cocoapods', 'UIKit'],
