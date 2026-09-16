@@ -13,6 +13,54 @@ import { detectSurfaceSignals, validateSurfaceVerificationContract } from '../sr
 
 const cli = path.resolve('bin/aicg.js');
 
+for (const [family, relative, content, ecosystem, dependency] of [
+  ['backend-php', 'composer.json', JSON.stringify({ require: { 'laravel/framework': '^12.0' }, description: 'symfony/framework-bundle is not installed' }), 'composer', 'laravel/framework'],
+  ['platform-dotnet', 'App.csproj', '<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><FrameworkReference Include="Microsoft.AspNetCore.App" /></ItemGroup></Project>', 'dotnet', 'Microsoft.NET.Sdk.Web'],
+  ['platform-desktop', 'App.csproj', '<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="Avalonia" Version="11.3.0" /></ItemGroup></Project>', 'dotnet', 'Avalonia'],
+  ['platform-ios', 'Package.swift', 'import PackageDescription\nlet package = Package(name: "App", targets: [.target(name: "App", linkerSettings: [.linkedFramework("UIKit")])])', 'swift', 'UIKit'],
+  ['platform-ios', 'Podfile', "platform :ios, '16.0'\npod 'UIKit', '~> 1.0'\n", 'cocoapods', 'UIKit'],
+  ['platform-android', 'settings.gradle.kts', 'plugins { id("com.android.application") version "8.9.0" apply false }', 'gradle-plugin', 'com.android.application'],
+  ['platform-android', 'build.gradle', "plugins { id 'com.android.library' version '8.9.0' }", 'gradle-plugin', 'com.android.library'],
+  ['backend-java', 'build.gradle', "plugins { id 'org.springframework.boot' version '3.5.1' }", 'gradle-plugin', 'org.springframework.boot'],
+  ['backend-python', 'Pipfile', '[packages]\nfastapi = "*"\n', 'python', 'fastapi'],
+  ['backend-python', 'manage.py', 'from django.core.management import execute_from_command_line\n', 'python', 'django'],
+  ['platform-hybrid-mobile', 'pubspec.yaml', 'name: app\ndependencies:\n  flutter:\n    sdk: flutter\n', 'dart', 'flutter'],
+  ['platform-desktop', 'CMakeLists.txt', 'find_package(Qt6 REQUIRED COMPONENTS Widgets)\n', 'cmake', 'Qt6'],
+]) test(`structured stack compatibility: ${family} from ${relative} and ${dependency}`, (context) => {
+  const root = fixture('stack-compatibility');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, relative), content);
+  const scan = scanProject(root);
+  assert.ok(scan.stacks.some((stack) => stack.id === family), JSON.stringify(scan.stacks));
+  assert.ok(scan.dependencyFacts.some((fact) => fact.ecosystem === ecosystem && fact.name === dependency));
+  // Comments/descriptions do not establish a dependency declaration.
+  fs.writeFileSync(path.join(root, relative), relative === 'composer.json' ? JSON.stringify({ description: dependency }) : `# ${dependency}\n// ${dependency}\n<!-- ${dependency} -->\n`);
+  assert.equal(scanProject(root).dependencyFacts.some((fact) => fact.name === dependency), false);
+});
+
+test('Python dependency arrays preserve extras and markers while excluding commented strings', (context) => {
+  const root = fixture('python-array');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'pyproject.toml'), `[project]\nname = "example"\ndependencies = [\n  # "django>=5"\n  "requests[socks]>=2.32; python_version >= '3.11'", # "flask"\n  'fastapi[standard]>=0.115',\n]\n[project.optional-dependencies]\nqa = ["pytest>=8; sys_platform != 'win32'"]\n`);
+  const facts = scanProject(root).dependencyFacts;
+  assert.deepEqual(facts.map((fact) => fact.name), ['fastapi', 'pytest', 'requests']);
+  const request = facts.find((fact) => fact.name === 'requests');
+  assert.equal(request.declaredVersion, '>=2.32');
+  assert.deepEqual(request.extras, ['socks']);
+  assert.equal(request.environmentMarker, "python_version >= '3.11'");
+});
+
+test('historical Go checksums cannot replace the declared selected version', (context) => {
+  const root = fixture('go-sum-history');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'go.mod'), 'module example.org/app\nrequire github.com/gin-gonic/gin v1.10.0\n');
+  fs.writeFileSync(path.join(root, 'go.sum'), 'github.com/gin-gonic/gin v1.8.0 h1:historical\n');
+  const fact = scanProject(root).dependencyFacts[0];
+  assert.equal(fact.declaredVersion, 'v1.10.0');
+  assert.equal(fact.resolvedVersion, null);
+  assert.equal(fact.resolvedSourcePath, undefined);
+});
+
 test('foundation scan excludes worktrees and records exact multi-ecosystem declaration and lock facts', (context) => {
   const root = fixture('dependency-facts');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

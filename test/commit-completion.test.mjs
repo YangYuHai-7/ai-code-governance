@@ -66,7 +66,7 @@ function approvalOptions(root, options = {}) {
   const evidence = {
     schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [],
     approvals: plan.requiredApprovals.map((id) => {
-      const selected = /^(proposal-|referee)/.test(id) ? `docs/ai/task-approval/${id}.md` : reference;
+      const selected = /^(proposal-|referee|implementation$|targeted-review$)/.test(id) ? `docs/ai/task-approval/${id}.md` : reference;
       if (selected !== reference) write(root, selected, `# Independent ${id} findings\n`);
       if (options.fromGitHook) assert.equal(git(root, ['add', selected]).status, 0);
       return { id, reference: selected, sha256: sha256(fs.readFileSync(path.join(root, selected))), source: 'operator-declared', participantId: id };
@@ -182,7 +182,7 @@ for (const scope of [
   const unrelated = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
   assert.equal(unrelated.ok, true, JSON.stringify(unrelated));
   assert.equal(unrelated.taskApproval.review.mode, scope.name === 'production source' ? 'quick-review' : 'single');
-  assert.deepEqual(unrelated.taskApproval.plan.requiredApprovals, scope.name === 'production source' ? ['plan', 'requirements', 'targeted-review'] : ['plan', 'requirements']);
+  assert.deepEqual(unrelated.taskApproval.plan.requiredApprovals, scope.name === 'production source' ? ['implementation', 'plan', 'requirements', 'targeted-review'] : ['plan', 'requirements']);
 });
 
 test('trusted professional scope without an explicit applicability mapping cannot silently pass', (context) => {

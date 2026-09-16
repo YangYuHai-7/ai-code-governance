@@ -77,11 +77,13 @@ test('filesystem root-only ignores do not hide nested directories with the same 
 test('detects Java and monorepo evidence', (context) => {
   const root = fixture('java-monorepo');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(root, 'pom.xml'), '<dependency>spring-boot</dependency>');
+  fs.writeFileSync(path.join(root, 'pom.xml'), '<project><dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId><version>3.5.1</version></dependency></dependencies></project>');
   fs.writeFileSync(path.join(root, 'pnpm-workspace.yaml'), 'packages:\n  - apps/*\n');
   const scan = scanProject(root);
   assert.equal(scan.projectMode, 'monorepo');
   assert.ok(scan.stacks.some((stack) => stack.id === 'backend-java'));
+  fs.writeFileSync(path.join(root, 'pom.xml'), '<dependency>spring-boot</dependency>');
+  assert.equal(scanProject(root).stacks.some((stack) => stack.id === 'backend-java'), false, 'unstructured dependency text is not a Maven coordinate');
 });
 
 test('keeps scanning when a project manifest is invalid', (context) => {

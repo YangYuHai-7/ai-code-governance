@@ -11,7 +11,7 @@ import { validateApprovedProjectAgentTeam, validateProjectProfessionalBoundary }
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/;
 const BASE = { L0: [], L1: [], L2: ['requirements', 'plan'], L3: ['requirements', 'design', 'plan'] };
-const REVIEW = { single: [], 'quick-review': ['targeted-review'], 'independent-pk': ['proposal-1', 'proposal-2', 'referee'], 'high-consequence-pk': ['proposal-1', 'proposal-2', 'proposal-3', 'referee'] };
+const REVIEW = { single: [], 'quick-review': ['implementation', 'targeted-review'], 'independent-pk': ['proposal-1', 'proposal-2', 'referee'], 'high-consequence-pk': ['proposal-1', 'proposal-2', 'proposal-3', 'referee'] };
 const REVIEW_FIELDS = ['localReview', 'behaviorChange', 'publicContract', 'multiModule', 'irreversible', 'governance', 'release', 'confirmedRisk', 'multiSurface', 'migration', 'externalAction', 'professionalRisk'];
 
 function object(value, keys, label) {
@@ -138,7 +138,7 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
   if (result.plan.requiredApprovals.some((id) => !records.has(id))) return fail('missing-approval', 'One or more required approval references are missing.');
   const reviewers = REVIEW[effectiveMode].map((id) => records.get(id));
   if (reviewers.some((record) => typeof record.participantId !== 'string' || !ID.test(record.participantId)) || new Set(reviewers.map((record) => record.participantId)).size !== reviewers.length) return fail('independence-gap', 'Required review participants must have distinct operator-declared IDs; identity is not verified.');
-  if (rank >= 2 && (new Set(reviewers.map((record) => safePath(record.reference))).size !== reviewers.length || new Set(reviewers.map((record) => record.sha256)).size !== reviewers.length)) return fail('independence-gap', 'Independent proposals and referee records require distinct reference paths and content digests.');
+  if (rank >= 1 && (new Set(reviewers.map((record) => safePath(record.reference))).size !== reviewers.length || new Set(reviewers.map((record) => record.sha256)).size !== reviewers.length)) return fail('independence-gap', 'Implementation/review participants and independent proposals require distinct reference paths and content digests.');
   if ((evidence.reviewEvidence.professionalRisk || reviewEvidence.professionalRisk) && professional.length === 0) return fail('professional-review-gap', 'Confirmed professional risk requires a human-review boundary with qualification and jurisdiction.');
   for (const boundary of professional) {
     const record = records.get(`human:${boundary.id}`);
