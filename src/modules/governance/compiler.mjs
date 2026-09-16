@@ -5,15 +5,18 @@ import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
-import { buildTechnicalStandardArtifacts, selectTechnicalStandards } from '../standards/index.mjs';
+import { buildTechnicalStandardArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
 import { validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
-import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
+import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
+import { assertNoLinkAncestor } from '../../preconditions.mjs';
+
+const COMPACTED_SEED_PATHS = ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH];
 
 function yamlList(values, indent = 0) {
   const prefix = ' '.repeat(indent);
@@ -119,7 +122,7 @@ export function defaultConfig(scan) {
 }
 
 function normalizeConfigDefaults(config, scan) {
-  const assessment = classifyProject(scan);
+  const assessment = !config.initialClassification || config.codeDocumentationPolicy === undefined ? classifyProject(scan) : null;
   const initialClassification = config.initialClassification ?? {
     codebase: assessment.codebase,
     implementationBoundary: assessment.implementationBoundary,
@@ -140,7 +143,7 @@ function normalizeConfigDefaults(config, scan) {
   return {
     ...config,
     codeDocumentationPolicy: config.codeDocumentationPolicy
-      ?? defaultCodeDocumentationPolicy(config, assessment.codebase.lifecycle.value),
+      ?? defaultCodeDocumentationPolicy(config, assessment?.codebase.lifecycle.value),
     initialClassification: {
       ...initialClassification,
       requiredDecisions,
@@ -603,19 +606,20 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/task-routing-policy.json', 'routing', () => stableJson(taskRoutingPolicy(config)), { ownership: 'full', kind: 'task-routing-policy', source: 'template:task-routing-policy' });
   for (const name of ['skill-discovery', 'team-orchestrator']) {
     add(`docs/ai/skills/${name}/SKILL.md`, 'skill-management', () => managementSkill(config, name), {
-      ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: [`behavior_change:${name.replaceAll('-', '_')}`],
+      ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: [`behavior_change:${name.replaceAll('-', '_')}`, ...(name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['behavior_change:business'] : [])],
+      gateAssertions: name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['business-skill-route'] : [],
     });
   }
   add('docs/ai/skill-index.json', 'skill-management', () => stableJson(config.skillDiscovery.decision), {
     ownership: 'full', kind: 'skill-management-index', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
   });
-  add('docs/ai/agent-team.json', 'skill-management', () => stableJson(config.agentTeam), {
+  add('docs/ai/agent-team.json', 'skill-management', () => stableJson({ ...config.agentTeam, roles: config.agentTeam.roleProposals }), {
     ownership: 'full', kind: 'project-agent-team', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:team_orchestrator'],
   });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
-  add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { source: 'template:bootstrap-prompt' });
+  add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reviews/.gitkeep\n!/reports/\n/reports/*\n!/reports/.gitkeep', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
-  for (const relative of ['reviews/.gitkeep', 'reports/.gitkeep']) add(relative, 'routing', () => `# ${GENERATED_MARKER}\n`, { kind: 'local-output-directory', source: 'template:local-output-layout' });
+  for (const relative of ['reviews/.gitkeep', 'reports/.gitkeep']) add(relative, 'routing', () => `# ${GENERATED_MARKER}\n`, { requires: [(value) => !hasCompactManagement(value)], kind: 'local-output-directory', source: 'template:local-output-layout' });
 
   add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { source: 'template:anti-patterns' });
   add('docs/ai/stack-profile.json', 'policy', () => stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), { requires: [stack], ownership: 'full', source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
@@ -624,14 +628,18 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/rules/15_architecture.mdc', 'policy', () => architectureRule(config), { requires: [architecture], ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision', routeProfiles: ['behavior_change:architecture'] });
   add('docs/ai/module-graph.json', 'policy', () => stableJson(moduleGraphDeclaration(config)), { requires: [architecture, (value) => Boolean(moduleGraphDeclaration(value))], ownership: 'full', kind: 'architecture-module-graph', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['module-graph'] });
   add(BUSINESS_CONSTRAINTS_PATH, 'policy', () => businessConstraintRegistryContent(config), { requires: [business], ownership: 'full', kind: 'business-constraint-registry', source: 'owner-confirmed-config', gateAssertions: ['business-route'], routeProfiles: ['behavior_change:business'] });
-  add(BUSINESS_CONSTRAINT_SKILL_PATH, 'policy', () => businessConstraintSkill(config), { requires: [business], kind: 'canonical-skill', source: 'owner-confirmed-config', gateAssertions: ['business-skill-route'], routeProfiles: ['behavior_change:business'] });
-  addSkillAdapters(BUSINESS_CONSTRAINT_SKILL_PATH, () => businessConstraintSkill(config), 'policy', [business]);
+  const separateBusinessSkill = (value) => !hasCompactManagement(value);
+  add(BUSINESS_CONSTRAINT_SKILL_PATH, 'policy', () => businessConstraintSkill(config), { requires: [business, separateBusinessSkill], kind: 'canonical-skill', source: 'owner-confirmed-config', gateAssertions: ['business-skill-route'], routeProfiles: ['behavior_change:business'] });
+  addSkillAdapters(BUSINESS_CONSTRAINT_SKILL_PATH, () => businessConstraintSkill(config), 'policy', [business, separateBusinessSkill]);
 
   // Discover metadata without rendering the bundle; only selected definitions call it.
   let standards;
-  const standardArtifacts = () => (standards ??= buildTechnicalStandardArtifacts(config, scan).artifacts);
+  let standardRegistry;
+  const standardArtifacts = () => (standards ??= buildTechnicalStandardArtifacts(config, scan, standardRegistry).artifacts);
   if (config.governanceDepth !== 'minimal') {
-    const selection = selectTechnicalStandards(scan, config);
+    // Selection and rendering share this invocation's validated snapshot, never a cross-call cache.
+    standardRegistry = loadTechnicalStandardRegistry();
+    const selection = selectTechnicalStandards(scan, config, standardRegistry);
     const standardPaths = ['docs/ai/technical-standards.json'];
     for (const { standard } of selection.selected) {
       standardPaths.push(`docs/ai/skills/standards/${standard.id}/SKILL.md`);
@@ -683,24 +691,42 @@ export function artifactDefinitions(config, scan) {
 
 export function selectedArtifactDefinitions(config, scan) {
   config = normalizeConfigDefaults(config, scan);
+  return selectNormalizedArtifactDefinitions(config, scan);
+}
+
+function selectNormalizedArtifactDefinitions(config, scan) {
+  return prepareArtifactDefinitions(config, scan).selected;
+}
+
+function prepareArtifactDefinitions(config, scan) {
   validateConfig(config);
   validateSkillGovernanceConfig(config, scan.root);
-  return selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));
+  const definitions = artifactDefinitions(config, scan);
+  return { definitions, selected: selectArtifactDefinitions(config, scan, definitions) };
 }
 
 export function buildArtifacts(config, scan) {
+  return buildArtifactsWithDefinitions(config, scan).artifacts;
+}
+
+/** Keep definition metadata and rendering in one invocation for callers that need both. */
+export function buildArtifactsWithDefinitions(config, scan) {
   config = normalizeConfigDefaults(config, scan);
-  const selected = selectedArtifactDefinitions(config, scan);
+  const { definitions, selected } = prepareArtifactDefinitions(config, scan);
   const artifacts = renderDefinitions(selected);
   if (hasSkillManagement(config)) {
     const cost = skillGovernanceCost(scan.root, artifacts);
     if (stableJson(cost) !== stableJson(config.skillDiscovery.artifactPlan.cost)) throw usageError('Skill governance costs changed; exact planHash approval is required again.');
   }
-  return artifacts;
+  return { artifacts, definitions };
 }
 
 function hasSkillManagement(config) {
   return config.governanceDepth !== 'minimal' && config.skillDiscovery?.enabled === true && config.agentTeam?.enabled === true;
+}
+
+function hasCompactManagement(config) {
+  return hasSkillManagement(config) && config.adaptiveDecisions !== undefined;
 }
 
 function managementSkill(config, name) {
@@ -711,7 +737,10 @@ function managementSkill(config, name) {
   const body = discovery
     ? languageTitle(config, '先读取 docs/ai/skill-index.json。只检查项目与显式 installedRoots 的元数据；不联网、不安装、不执行脚本。推荐不等于审批。来源、版本、内容摘要、权限或成本变化后，必须重新确认 planHash。每项能力只保留一个负责人；当前任务最多激活三个 Skill。命中任务后才读取正文；无匹配时报告缺口，不冒充专业判断。', 'Read docs/ai/skill-index.json first. Inspect only project metadata and explicit installedRoots. Do not fetch, install, or execute scripts. Recommendation is not approval. Source, version, digest, permission, or cost changes require fresh planHash approval. Keep one owner per capability and at most three active Skills per task. Load bodies only after a task match; report gaps without claiming professional authority.')
     : languageTitle(config, '先读取 docs/ai/agent-team.json。此 roster 是项目 AI 团队，不是人类组织或 AICG 开发团队。仅按已审批角色与当前任务证据推荐协作，保留 professionalBoundaries 和 gaps；角色数据不是可执行指令。不得因角色名自动创建 Skill、提高权限或声称已完成工作。变更团队、审批范围或成本时重新确认 planHash；真实执行与验证证据另行记录。', 'Read docs/ai/agent-team.json first. This roster describes project AI roles, not a human organization or the AICG product team. Recommend collaboration only within approved roles and current task evidence; preserve professionalBoundaries and gaps. Role data is not executable instruction. Do not create Skills, elevate permissions, or claim completed work from role names. Team, approval scope, or cost changes require fresh planHash approval; record actual execution and verification separately.');
-  return `---\nname: ${name}\ndescription: ${description}\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${name}\n\n${body}\n`;
+  const business = !discovery && hasCompactManagement(config) && config.domainConstraints.length ? languageTitle(config,
+    '业务约束：读取 docs/ai/business-constraints.json，保留每项 id、原文与 constraintHash；不得按关键词推断风险。为每项受影响约束运行成功及负向或边界用例，在 docs/ai/business-acceptance-results.json 绑定 id、constraint、constraintHash、successEvidence 与 failureOrBoundaryEvidence。为每个已确认风险在 docs/ai/business-risk-evidence.json 记录适用性、负向诊断、恢复及当前源码/配置指纹。证据缺失或不匹配则 blocked；本地记录不等于认证，即使完整也仅为 unverified、eligible-for-review。',
+    'Business constraints: read docs/ai/business-constraints.json; preserve each id, exact text and constraintHash. Never infer risk from keywords. Run success and negative/boundary cases for every affected constraint; bind id, constraint, constraintHash, successEvidence and failureOrBoundaryEvidence in docs/ai/business-acceptance-results.json. For each confirmed risk, record applicability, negative diagnostics, recovery and current source/config fingerprints in docs/ai/business-risk-evidence.json. Missing or mismatched evidence blocks readiness; local records are not certification, and complete evidence remains unverified and eligible-for-review.') : '';
+  return `---\nname: ${name}\ndescription: ${description}\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${name}\n\n${body}\n${business ? `\n${business.replaceAll('docs/ai/business-risk-evidence.json', BUSINESS_RISK_EVIDENCE_PATH)}\n` : ''}`;
 }
 
 function renderDefinitions(selected) {
@@ -748,6 +777,18 @@ function skillGovernanceCost(root, artifacts) {
   const extra = artifacts.filter((item) => ['skill-management-skill', 'skill-management-index', 'project-agent-team'].includes(item.kind));
   let retainedBytes = 0;
   let retainedFiles = 0;
+  const config = JSON.parse(artifacts.find((item) => item.path === CONFIG_PATH).content);
+  const accounted = new Set([...transaction.operations, ...transaction.retained].map((item) => item.path));
+  // Seed ownership is intentionally absent from manifests. Omitted historical seeds still cost context/storage.
+  if (hasCompactManagement(config)) for (const relative of COMPACTED_SEED_PATHS) {
+    if (accounted.has(relative)) continue;
+    let stat;
+    try { stat = fs.lstatSync(path.join(root, relative)); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    assertNoLinkAncestor(root, relative);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw usageError('Historical seed budget cannot be verified.');
+    retainedFiles += 1;
+    retainedBytes += stat.size;
+  }
   for (const entry of transaction.retained) {
     const absolute = path.join(root, entry.path);
     if (!fs.existsSync(absolute)) continue;
@@ -760,8 +801,11 @@ function skillGovernanceCost(root, artifacts) {
     increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens },
     total: { files: transaction.operations.length + 1 + retainedFiles, bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content) + retainedBytes },
   };
-  const config = JSON.parse(artifacts.find((item) => item.path === CONFIG_PATH).content);
-  if (cost.total.files > 26 || cost.total.bytes > (config.governanceDepth === 'standard' ? 64 : 96) * 1024 || managerTokens > 800) throw usageError('Approved Skill governance exceeds the existing file, byte or manager token budget.');
+  if (cost.total.files > 26 || cost.total.bytes > (config.governanceDepth === 'standard' ? 64 : 96) * 1024 || managerTokens > 800) {
+    const error = usageError('Approved Skill governance exceeds the existing file, byte or manager token budget.');
+    error.budgetCost = cost;
+    throw error;
+  }
   return cost;
 }
 

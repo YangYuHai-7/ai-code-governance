@@ -5,6 +5,32 @@ import { classifyProject } from '../project-assessment.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { loadCapabilityRegistry } from '../registry.mjs';
 
+/** Recommendations start deferred; inspecting metadata never approves a candidate. */
+export async function promptAdaptiveDecisions(summary, { readline, locale = 'en' } = {}) {
+  const rl = readline ?? createInterface({ input, output });
+  const decisions = { skills: [], roles: [] };
+  try {
+    for (const [kind, items] of [['skills', summary.skills.candidates], ['roles', summary.team.roleProposals]]) {
+      for (const item of items) {
+        let action;
+        do {
+          action = await chooseOne(rl, `${kind}: ${item.title ?? item.id}`, [
+            { value: 'defer', label: locale === 'zh-CN' ? '暂缓（默认）' : 'Defer (default)' },
+            { value: 'add', label: locale === 'zh-CN' ? '加入精确审批计划' : 'Add to exact approval plan' },
+            { value: 'reject', label: locale === 'zh-CN' ? '拒绝' : 'Reject' },
+            { value: 'details', label: locale === 'zh-CN' ? '查看元数据' : 'Inspect metadata' },
+          ], 0, locale);
+          if (action === 'details') console.log(JSON.stringify(item, null, 2));
+        } while (action === 'details');
+        decisions[kind].push({ id: item.id, action });
+      }
+    }
+    return decisions;
+  } finally {
+    if (!readline) rl.close();
+  }
+}
+
 function indexes(value, size) {
   const result = value.split(',').map((item) => Number.parseInt(item.trim(), 10) - 1).filter((item) => Number.isInteger(item) && item >= 0 && item < size);
   return [...new Set(result)].sort((left, right) => left - right);

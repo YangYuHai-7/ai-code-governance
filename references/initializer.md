@@ -20,6 +20,43 @@ The visible order is:
 
 ## Commands and authority
 
+### Adaptive governance input
+
+Use the existing `--config` JSON, alongside normal client, stack, lifecycle and depth decisions:
+
+```json
+{
+  "clients": ["codex"],
+  "stacks": ["generic-unknown"],
+  "governanceDepth": "standard",
+  "artifactLanguage": "en",
+  "adaptiveGovernance": {
+    "installedRoots": [],
+    "curatedCatalog": [],
+    "requiredCapabilities": [],
+    "projectTeam": {
+      "evidence": [{ "id": "owner.scope", "kind": "user-confirmed-project" }],
+      "confirmedDomainNeeds": [],
+      "roleNeeds": []
+    },
+    "decisions": { "skills": [], "roles": [] },
+    "activation": {}
+  }
+}
+```
+
+`installedRoots` is mandatory and contains only explicitly supplied absolute directories. Offline discovery returns at most five metadata candidates, deduplicates capability owners, and preserves every `sourceStatus` diagnostic; unavailable/unsafe sources must not be described as simply "no matches". Curated records are offline snapshots, not a promise of current remote availability. No scripts, network discovery, installation or global/home traversal run.
+
+`projectTeam` uses `proposeProjectAgentTeam`'s evidence-bound input contract: bounded role IDs, titles, capabilities, responsibilities, outOfScope, domainNeedIds, evidenceIds, skillIds and mustRemainIndependentFrom. It describes project AI agents, not human staffing or the AICG development team. Greenfield and brownfield produce the same schema; repository facts and optional `domainCandidates` remain unconfirmed and cannot substitute for `user-confirmed-domain` or `user-confirmed-project` evidence. Domain candidates require id, label and evidenceIds. Do not infer licensed roles from a restaurant website or from job titles.
+
+Each decision is `{ "id": "<displayed-id>", "action": "add|defer|reject" }`; absent entries default to defer. Guided metadata inspection is not approval. For each selected professional role, `activation[roleId]` must explicitly provide nonempty `signals` from the owner-confirmed `confirmedRiskSignals` and safe repository-relative `paths`/globs. Titles and descriptions never define activation. Human-review qualification, jurisdiction, boundaries and approval references remain in the full-ownership roster.
+
+Run `aicg init . --yes --config decisions.json --dry-run`, inspect all recommendations, diagnostics, professional gaps, file actions, context/permission costs and the single exact `planHash`, then repeat without `--dry-run` using `--approve <planHash>`. With adaptive inputs, omitting approval previews and writes nothing even with `--yes`. Existing governance uses `aicg sync . --config decisions.json` and then `aicg sync . --config decisions.json --approve <planHash>`; config-less ordinary sync retains its existing behavior. Config changes and prune are separate approvals. All candidate snapshots, including unselected indexed candidates, source diagnostics, decisions, explicit activation, files and costs are hash-bound; stale approval writes nothing.
+
+Minimal emits zero management artifacts. Exact-approved Standard/Complete emits `docs/ai/skills/skill-discovery/SKILL.md`, `docs/ai/skills/team-orchestrator/SKILL.md`, `docs/ai/skill-index.json`, and `docs/ai/agent-team.json` through the existing transaction and post-apply checker. The approved projection omits bootstrap prompts and empty reports/reviews placeholders. If business constraints are selected, their machine registry remains and the team manager carries the business evidence workflow; no redundant business Skill/adapter is generated. Defaults without this approved selection remain unchanged. Ordinary context stays 3 files / 900 estimated tokens, two manager bodies stay within 800 tokens, and all files including manifest and retained history stay within 26 files and 64 KiB Standard / 96 KiB Complete. `budget-blocked` explicitly lists retained cleanup candidates; seeds, drifted files and protected content require separate manual review and explicit cleanup authorization. Repeated prune never authorizes automatic seed deletion.
+
+Generation uses English by default; explicit `artifactLanguage: "zh-CN"` localizes generated manager and professional-boundary prose without translating machine keys, IDs, qualifications or paths. Owner-supplied text remains owner evidence. Generated availability is not task activation, independent-review evidence, real-client loading, or professional certification.
+
 | Command | Contract |
 | --- | --- |
 | `aicg init [path] --guided` | Scan, collect decisions, preview, generate, check |

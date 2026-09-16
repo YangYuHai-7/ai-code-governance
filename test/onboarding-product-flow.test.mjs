@@ -5,12 +5,45 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { assessArchitecture } from '../src/architecture-assessment.mjs';
-import { buildArtifacts, defaultConfig, governanceCommand, validateConfig } from '../src/generator.mjs';
+import { artifactDefinitions, buildArtifacts, buildArtifactsWithDefinitions, defaultConfig, governanceCommand, validateConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
-import { promptConfig, promptGuidedConfig } from '../src/cli/prompts.mjs';
+import { promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../src/cli/prompts.mjs';
 import { addReadOnlyGuidance, initSuccessGuidance, printHumanGuidance } from '../src/cli/read-only-guidance.mjs';
+import { COMMAND_HANDLERS, COMMAND_REGISTRY } from '../src/cli/command-registry.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+
+test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
+  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
+  assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
+  for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
+    const module = await import(new URL(`../src/cli/${definition.module}`, import.meta.url));
+    assert.equal(typeof module[definition.exportName], 'function', `${command}: missing export`);
+    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
+  }
+  const registry = fs.readFileSync(new URL('../src/cli/command-registry.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(registry, /^import .* from ['"]\.\/commands\//m, 'help/version must not eagerly load command implementations');
+});
+
+test('adaptive prompts keep recommendations deferred and metadata inspection does not approve', async () => {
+  const answers = ['4', '', '3'];
+  const choices = await promptAdaptiveDecisions({ skills: { candidates: [{ id: 'offline-skill', permissions: ['read-project'] }] }, team: { roleProposals: [{ id: 'domain-review', title: 'Domain review' }] } }, {
+    readline: { question: async () => answers.shift() }, locale: 'en',
+  });
+  assert.deepEqual(choices, { skills: [{ id: 'offline-skill', action: 'defer' }], roles: [{ id: 'domain-review', action: 'reject' }] });
+});
+
+test('single-pass compilation preserves every artifact and deselected seed definition used by prune', (context) => {
+  const root = fixture('single-pass-compiler');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'] };
+  const compiled = buildArtifactsWithDefinitions(config, scan);
+  assert.deepEqual(compiled.artifacts, buildArtifacts(config, scan));
+  assert.deepEqual(compiled.definitions.map(({ path, ownership }) => ({ path, ownership })), artifactDefinitions(config, scan).map(({ path, ownership }) => ({ path, ownership })));
+  assert.ok(compiled.definitions.some((entry) => entry.path === 'docs/ai/skills/generic-unknown/SKILL.md' && entry.ownership === 'seed'));
+});
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-onboarding-${name}-`));
@@ -155,13 +188,8 @@ test('guided onboarding only recommends project-local when the package and execu
   const scan = scanProject(root);
   assert.equal(defaultConfig(scan).invocationMode, 'project-local');
   assert.equal((await prompt()).invocationMode, 'project-local');
-  const npmArgs = ['exec', '--', 'aicg', '--version'];
-  const offline = spawnSync(process.env.npm_execpath ? process.execPath : 'npm', process.env.npm_execpath ? [process.env.npm_execpath, ...npmArgs] : npmArgs, {
-    cwd: root, encoding: 'utf8', timeout: 10_000, shell: !process.env.npm_execpath && process.platform === 'win32',
-    env: { ...process.env, npm_config_offline: 'true', npm_config_cache: path.join(root, 'empty-npm-cache'), npm_config_update_notifier: 'false' },
-  });
-  assert.equal(offline.status, 0, `${offline.error ?? ''}\n${offline.stderr}`);
-  assert.match(offline.stdout, /0\.2\.0/);
+  // The real offline npm execution probe shares the installed package fixture in packaged-projects.
+  // This fast test isolates filesystem availability, including the missing-bin regressions below.
   const config = { ...defaultConfig(scan), invocationMode: 'project-local' };
   assert.equal(governanceCommand(config, 'check .'), 'npm exec -- aicg check .');
   for (const artifact of buildArtifacts(config, scan)) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);

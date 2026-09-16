@@ -62,6 +62,14 @@ Only verified eligible product changes receive a candidate-only completion harve
 
 ## Safe maintenance and explicit release
 
+### Offline Skill and project-agent recommendations
+
+`init . --yes --config decisions.json --dry-run` previews at most five offline Skill candidates, dynamic project-AI roles, complete `sourceStatus`, add/defer/reject decisions, professional-human gaps, file actions, permissions, context costs, and one exact `planHash`. Put optional inputs under `adaptiveGovernance`; `installedRoots` must be an explicit array (use `[]` for project-only discovery). No home/global scan, network lookup, installation, role creation, or task execution occurs. Recommendations are not preselected. See the [input contract](references/initializer.md#adaptive-governance-input).
+
+Review the preview, then repeat the command without `--dry-run` and with `--approve <planHash>`. `--yes` is not adaptive approval. Source, permissions, selection, activation, or cost changes invalidate the hash, including unselected candidates included in the index. Existing projects use `sync . --config decisions.json` to preview and the same exact approval to apply; ordinary sync without adaptive changes remains compatible.
+
+Minimal generates no management artifacts. An approved Standard/Complete selection adds two management Skills, a discovery index, and a trusted project roster. Ordinary context remains three files / at most 900 estimated tokens; the two manager bodies remain at most 800 tokens, total files at most 26, and Standard/Complete bytes at most 64/96 KiB. Only the approved combination omits bootstrap/directory placeholders and folds business workflow guidance into the team manager; machine constraints and technical/architecture rules remain. Historical seeds are never auto-deleted: `budget-blocked` previews require separately authorized manual review/cleanup. AI roles do not replace qualified professionals or prove real-client execution.
+
 Ordinary `aicg sync .` is zero-delete, including preset downgrade and template upgrades. It retains historical, seed, unknown, edited, and dormant evidence content. Inspect retained legacy artifacts before requesting physical pruning:
 
 ```bash

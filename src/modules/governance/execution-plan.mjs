@@ -93,6 +93,7 @@ export function buildExecutionPlan({ intent, scan, artifactPlan = null, config =
     manualCleanupCandidates: artifactPlan?.manualCleanupCandidates ?? [],
     linksToMigrate,
     requiredPermissions,
+    ...(artifactPlan?.adaptiveGovernance ? { adaptiveGovernance: artifactPlan.adaptiveGovernance, contextCost: artifactPlan.contextCost } : {}),
     verification: intent.mode === 'write' ? 'governance.validate' : intent.id,
     unverifiedBoundaries: intent.mode === 'write'
       ? ['A structural check does not prove real agent loading or project behavior.']

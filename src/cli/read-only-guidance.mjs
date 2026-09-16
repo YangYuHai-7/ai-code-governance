@@ -19,6 +19,12 @@ function localized(locale, zh, en) {
   return locale === 'zh-CN' ? zh : en;
 }
 
+export function adaptivePreviewGuidance(locale = 'en') {
+  return localized(locale,
+    '只读推荐：add/defer/reject 不会自动安装或启用。检查完整 sourceStatus、角色边界、文件动作和成本后，使用 --approve <planHash> 批准这一精确计划。专业结论仍需符合资格的真人审核。',
+    'Read-only recommendations: add/defer/reject never install or activate automatically. Inspect complete sourceStatus, role boundaries, file actions and costs, then use --approve <planHash> for this exact plan. Professional conclusions still require qualified-human review.');
+}
+
 function invocationPrerequisites(config, locale) {
   if (config?.invocationMode !== 'npm-exec-pinned') return {};
   return {

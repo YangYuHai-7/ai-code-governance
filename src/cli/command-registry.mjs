@@ -1,33 +1,37 @@
 import { TOOL_VERSION } from '../constants.mjs';
-import { harvestCommand, promoteCommand } from './commands/capabilities.mjs';
-import { completeCommand, hookCommand, releaseCheckCommand } from './commands/completion.mjs';
-import { syncCommand } from './commands/governance.mjs';
-import { initCommand } from './commands/init.mjs';
-import { enrichCommand } from './commands/enrich.mjs';
-import { evidenceCommand } from './commands/evidence.mjs';
-import { architectureCommand, assessCommand, checkCommand, doctorCommand, standardsCommand, teamCommand } from './commands/read-only.mjs';
-import { requestCommand } from './commands/request.mjs';
 import { helpFor } from './help.mjs';
+
+function handler(module, exportName, argumentKeys = ['target', 'options']) {
+  return Object.freeze({ module, exportName, argumentKeys: Object.freeze(argumentKeys) });
+}
+
+// Declarative dispatch metadata is checked against every real module export in the fast suite.
+export const COMMAND_HANDLERS = Object.freeze({
+  request: handler('./commands/request.mjs', 'requestCommand'),
+  init: handler('./commands/init.mjs', 'initCommand'),
+  enrich: handler('./commands/enrich.mjs', 'enrichCommand'),
+  evidence: handler('./commands/evidence.mjs', 'evidenceCommand', ['target', 'action', 'options']),
+  team: handler('./commands/read-only.mjs', 'teamCommand'),
+  complete: handler('./commands/completion.mjs', 'completeCommand'),
+  hook: handler('./commands/completion.mjs', 'hookCommand', ['target', 'action', 'options']),
+  'release-check': handler('./commands/completion.mjs', 'releaseCheckCommand'),
+  doctor: handler('./commands/read-only.mjs', 'doctorCommand'),
+  assess: handler('./commands/read-only.mjs', 'assessCommand'),
+  architecture: handler('./commands/read-only.mjs', 'architectureCommand'),
+  standards: handler('./commands/read-only.mjs', 'standardsCommand', ['target']),
+  harvest: handler('./commands/capabilities.mjs', 'harvestCommand'),
+  promote: handler('./commands/capabilities.mjs', 'promoteCommand'),
+  check: handler('./commands/read-only.mjs', 'checkCommand'),
+  sync: handler('./commands/governance.mjs', 'syncCommand'),
+});
 
 export const COMMAND_REGISTRY = Object.freeze({
   help: ({ options }) => console.log(helpFor(options.locale)),
   version: () => console.log(TOOL_VERSION),
-  request: ({ target, options }) => requestCommand(target, options),
-  init: ({ target, options }) => initCommand(target, options),
-  enrich: ({ target, options }) => enrichCommand(target, options),
-  evidence: ({ target, action, options }) => evidenceCommand(target, action, options),
-  team: ({ target, options }) => teamCommand(target, options),
-  complete: ({ target, options }) => completeCommand(target, options),
-  hook: ({ target, action, options }) => hookCommand(target, action, options),
-  'release-check': ({ target, options }) => releaseCheckCommand(target, options),
-  doctor: ({ target, options }) => doctorCommand(target, options),
-  assess: ({ target, options }) => assessCommand(target, options),
-  architecture: ({ target, options }) => architectureCommand(target, options),
-  standards: ({ target }) => standardsCommand(target),
-  harvest: ({ target, options }) => harvestCommand(target, options),
-  promote: ({ target, options }) => promoteCommand(target, options),
-  check: ({ target, options }) => checkCommand(target, options),
-  sync: ({ target, options }) => syncCommand(target, options),
+  ...Object.fromEntries(Object.entries(COMMAND_HANDLERS).map(([command, definition]) => [command, async (context) => {
+    const module = await import(definition.module);
+    return module[definition.exportName](...definition.argumentKeys.map((key) => context[key]));
+  }])),
 });
 
 export function dispatchCommand(parsed) {

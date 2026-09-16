@@ -5,7 +5,7 @@ export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided
 export const COMMAND_FLAGS = Object.freeze({
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'no-assist', 'migrate-links', 'approve', 'clients', 'locale', 'help']),
   check: new Set(['json', 'help']),
-  sync: new Set(['dry-run', 'force', 'migrate-links', 'prune', 'approve', 'help']),
+  sync: new Set(['dry-run', 'force', 'migrate-links', 'prune', 'approve', 'config', 'help']),
   doctor: new Set(['json', 'locale', 'help']),
   assess: new Set(['json', 'locale', 'help']),
   architecture: new Set(['json', 'locale', 'help']),
