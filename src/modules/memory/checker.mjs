@@ -6,6 +6,17 @@ import { isMemoryCodePath, scanProjectMemoryFacts } from './scanner.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^(?:module|page|api|method|data|call|source)-[a-f0-9]{16}$/;
+
+function unchangedMemoryBehavior(relative, before, after) {
+  if (/\.(?:[cm]?js|ts)$/.test(relative)) return !capabilitySourceChanged(before, after);
+  if (before === after) return true;
+  // Only terminal empty physical lines are normalized in these code-only
+  // grammars. Preserve every nonempty line, including Python indentation.
+  // Embedded markup/data formats (PHP, Ruby, Vue, etc.) remain byte-sensitive.
+  if (!/\.(?:py|go|rs|java|kt|cs|swift|dart|sql|prisma)$/.test(relative)) return false;
+  const terminalLines = (source) => source.replace(/(?:\r?\n[\t ]*)+$/, '\n');
+  return terminalLines(before) === terminalLines(after);
+}
 export function memoryIssues(root, scan, changedPaths) {
   const issues = [];
   let memory;
@@ -93,7 +104,7 @@ export function memoryIssues(root, scan, changedPaths) {
     let current;
     try { current = readMemoryFile(root, relative); } catch { current = null; }
     const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${relative}`], { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
-    if (before.status === 0 && current !== null && (/\.(?:[cm]?js|ts)$/.test(relative) ? !capabilitySourceChanged(before.stdout, current) : before.stdout === current)) continue;
+    if (before.status === 0 && current !== null && unchangedMemoryBehavior(relative, before.stdout, current)) continue;
     const digest = current === null ? null : sha256(current);
     const previousOwner = previous?.modules.find((entry) => entry.owns?.includes(relative));
     if (current === null && !owner && previousOwner && changedPaths.includes(MEMORY_INDEX) && changedPaths.includes(previousOwner.memoryPage)) continue;
