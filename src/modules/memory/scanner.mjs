@@ -10,6 +10,8 @@ const CODE = /\.(?:[cm]?js|jsx|tsx?|py|go|rs|java|kt|vue|svelte|cs|php|rb|swift|
 const TEST = /(?:^|\/)(?:tests?|__tests__|fixtures?)(?:\/|$)|\.(?:test|spec)\./;
 const DATA = /(?:\.schema\.json|\.prisma|\.sql)$/;
 const METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options']);
+const STATEMENT_BOUNDARIES = new Set(['export', 'import', 'const', 'let', 'var', 'class', 'function']);
+const CLASS_MEMBER_PREFIXES = new Set(['public', 'private', 'protected', 'static', 'async', 'override', 'abstract', 'get', 'set']);
 const id = (kind, value) => `${kind}-${sha256(value).slice(0, 16)}`;
 
 function callableExpression(tokens, closes, start, end) {
@@ -30,7 +32,21 @@ function callableExpression(tokens, closes, start, end) {
 
 function initializerEnd(tokens, depths, start, fallback) {
   for (let cursor = start + 1; cursor < tokens.length; cursor += 1) {
-    if (depths[cursor] === depths[start] && tokens[cursor].value === ';') return cursor;
+    if (depths[cursor] !== depths[start]) continue;
+    if (tokens[cursor].value === ';') return cursor;
+    if (tokens[cursor].lineBreakBefore && STATEMENT_BOUNDARIES.has(tokens[cursor].value)) return cursor;
+  }
+  return fallback;
+}
+
+function classMemberEnd(tokens, depths, start, fallback) {
+  let assigned = false;
+  for (let cursor = start + 1; cursor < fallback; cursor += 1) {
+    if (depths[cursor] !== depths[start]) continue;
+    if (tokens[cursor].value === ';') return cursor;
+    if (tokens[cursor].value === '=') { assigned = true; continue; }
+    if (assigned && tokens[cursor].lineBreakBefore && tokens[cursor].kind === 'identifier'
+      && (CLASS_MEMBER_PREFIXES.has(tokens[cursor].value) || ['(', ':', '='].includes(tokens[cursor + 1]?.value))) return cursor;
   }
   return fallback;
 }
@@ -128,13 +144,12 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
         const modifiers = values.slice(prefix + 1, i);
         const hidden = values[prefix] === '#' || modifiers.some((value) => ['private', 'protected', 'abstract'].includes(value));
         if (values[i + 1] === ':') {
-          let end = i + 2;
-          while (end < entry.endIndex - 1 && !(declarations.depths[end] === declarations.depths[i] && values[end] === ';')) end += 1;
+          const end = classMemberEnd(tokens, declarations.depths, i, entry.endIndex - 1);
           const assignment = values.slice(i + 2, end).findIndex((value, offset) => value === '=' && declarations.depths[i + 2 + offset] === declarations.depths[i]);
           if (!hidden && assignment >= 0 && callableExpression(tokens, declarations.closes, i + 3 + assignment, end)) {
             gap(relative, 'unsupported typed public class callable field; provide source-bound manual coverage');
           }
-          i = end;
+          i = values[end] === ';' || end === entry.endIndex - 1 ? end : end - 1;
           continue;
         }
         if (hidden) continue;
