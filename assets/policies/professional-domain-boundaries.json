@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "policyType": "professional-domain-boundaries",
+  "boundaries": [
+    {
+      "domainNeedId": "contract-law",
+      "humanReviewRequired": true,
+      "qualification": "licensed-lawyer",
+      "jurisdictionRequired": true,
+      "decisionAuthority": "human-only",
+      "reason": "AI output is issue spotting and analysis, not final legal advice."
+    },
+    {
+      "domainNeedId": "financial-services",
+      "humanReviewRequired": true,
+      "qualification": "licensed-financial-professional",
+      "jurisdictionRequired": true,
+      "decisionAuthority": "human-only",
+      "reason": "AI output may support analysis but cannot make a regulated financial decision."
+    },
+    {
+      "domainNeedId": "food-safety",
+      "humanReviewRequired": true,
+      "qualification": "qualified-food-safety-professional",
+      "jurisdictionRequired": true,
+      "decisionAuthority": "human-only",
+      "reason": "AI output cannot approve food-safety controls, compliance, or operational release."
+    },
+    {
+      "domainNeedId": "medical-care",
+      "humanReviewRequired": true,
+      "qualification": "licensed-clinician",
+      "jurisdictionRequired": true,
+      "decisionAuthority": "human-only",
+      "reason": "AI output cannot diagnose, prescribe, or make final clinical decisions."
+    }
+  ]
+}

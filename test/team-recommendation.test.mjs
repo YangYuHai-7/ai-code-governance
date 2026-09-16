@@ -73,6 +73,7 @@ test('team command is deterministic, evidence-bound, and has no repository side 
   const result = JSON.parse(first.stdout);
   assert.equal(result.mode, 'read-only-advice');
   assert.equal(result.teamType, 'human-delivery-and-governance');
+  assert.equal(Object.hasOwn(result, 'productTeam'), false);
   assert.deepEqual(result.actionsPerformed, []);
   assert.equal(result.target, '.');
   assert.equal(result.businessDescription.status, 'provided-not-returned');
@@ -95,6 +96,7 @@ test('team needs explicit user context and never turns a compound write request 
   const direct = run(['team', root, '--json']);
   assert.equal(direct.status, 0, direct.stderr);
   assert.equal(JSON.parse(direct.stdout).status, 'needs-user-input');
+  assert.equal(Object.hasOwn(JSON.parse(direct.stdout), 'productTeam'), false);
   const chat = run(['request', root, '--text', '给我团队建议', '--json']);
   assert.equal(chat.status, 0, chat.stderr);
   assert.equal(JSON.parse(chat.stdout).intent.id, 'team.recommend');

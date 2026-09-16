@@ -187,7 +187,7 @@ test('role approval cannot be inferred, forged by omission, or overlap an existi
   assert.equal(unknown.roleProposals[0].id, null);
 });
 
-test('the CLI exposes the dynamic team plan without modifying the repository', (context) => {
+test('the human-team CLI output excludes the internal product-team roster without modifying the repository', (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-dynamic-team-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: {} }));
@@ -202,20 +202,15 @@ test('the CLI exposes the dynamic team plan without modifying the repository', (
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(snapshot(root), before);
   const output = JSON.parse(result.stdout);
-  assert.equal(output.productTeam.status, 'ready');
-  assert.deepEqual(output.productTeam.assignment.activeRoles.map((role) => role.id), [
-    'adversarial-evaluation-release-engineer',
-    'agent-integration-engineer',
-  ]);
-  assert.equal(output.productTeam.actionsPerformed.length, 0);
+  assert.equal(output.teamType, 'human-delivery-and-governance');
+  assert.equal(Object.hasOwn(output, 'productTeam'), false);
 
   const rosterOnly = spawnSync(process.execPath, [cli, 'team', root, '--json'], { encoding: 'utf8' });
   assert.equal(rosterOnly.status, 0, rosterOnly.stderr);
   const rosterOutput = JSON.parse(rosterOnly.stdout);
   assert.equal(rosterOutput.status, 'needs-user-input');
-  assert.equal(rosterOutput.productTeam.status, 'no-requirement-provided');
-  assert.equal(rosterOutput.productTeam.availableRoles.length, 16);
-  assert.deepEqual(rosterOutput.productTeam.assignment.activeRoles, []);
+  assert.equal(rosterOutput.teamType, 'human-delivery-and-governance');
+  assert.equal(Object.hasOwn(rosterOutput, 'productTeam'), false);
   assert.deepEqual(snapshot(root), before);
 });
 
