@@ -8,9 +8,24 @@ import { defaultConfig, buildArtifacts } from '../src/generator.mjs';
 import { planArtifacts, applyArtifactPlan } from '../src/managed-files.mjs';
 import { scanProject } from '../src/modules/repository/index.mjs';
 import { runCompletion } from '../src/modules/completion/index.mjs';
-import { checkWorkUnit, planWorkUnit, workUnitPlanDigest, recordWorkUnitVerification, replayWorkUnitVerification } from '../src/modules/work-units/index.mjs';
+import { checkWorkUnit, planWorkUnit, workUnitPlanDigest, recordWorkUnitVerification, replayWorkUnitVerification, changedWorkUnitBehaviorPaths } from '../src/modules/work-units/index.mjs';
 import { readMemoryFile } from '../src/modules/memory/index.mjs';
 import { sha256 } from '../src/shared/index.mjs';
+
+for (const relative of ['src/build/compiler.mjs', 'src/tools/dist/runtime.mjs']) test(`nested production source ${relative} cannot use a root-output exemption`, (t) => {
+  const root = memoryFixture(t);
+  write(root, relative, 'export function compile() { return 1; }\n');
+  const scan = scanProject(root);
+  assert.ok(scan.files.some((entry) => entry.relative === relative));
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(defaultConfig(scan), scan)));
+  baseline(root);
+  write(root, 'build/generated.mjs', 'export const generated = 1;\n');
+  write(root, 'dist/generated.mjs', 'export const generated = 1;\n');
+  assert.equal(runCompletion(root, { taskLevel: 'L2' }).workUnit.status, 'not-required', 'root outputs keep their existing exemption');
+  write(root, relative, 'export function compile() { return 2; }\n');
+  assert.deepEqual(changedWorkUnitBehaviorPaths(root, scanProject(root), [relative]), [relative]);
+  assert.equal(runCompletion(root, { taskLevel: 'L2' }).workUnit.status, 'missing');
+});
 
 test('L2 completion requires a unit for C, configuration and unknown production syntax', (t) => {
   const root = memoryFixture(t), scan = scanProject(root);
