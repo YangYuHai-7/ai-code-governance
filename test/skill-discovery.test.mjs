@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { discoverSkills, decideSkillCandidates } from '../src/skill-discovery.mjs';
+import * as discoveryApi from '../src/skill-discovery.mjs';
 import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { checkProject } from '../src/checker.mjs';
@@ -23,13 +24,13 @@ function skill(root, relative, capability = 'contract-clause-risk-review', extra
   return file;
 }
 
-function approvedDecision(candidates) {
-  const recommendation = decideSkillCandidates(candidates);
-  return decideSkillCandidates(candidates, { approvalPlanHash: recommendation.planHash });
+function approvedDecision(candidates, selectedIds) {
+  const recommendation = decideSkillCandidates(candidates, { selectedIds });
+  return decideSkillCandidates(candidates, { selectedIds, approvalPlanHash: recommendation.planHash });
 }
 
-function approvedConfig(config, scan, candidates = []) {
-  const input = { ...config, skillDiscovery: { enabled: true, decision: approvedDecision(candidates) }, agentTeam: {
+function approvedConfig(config, scan, candidates = [], selectedIds) {
+  const input = { ...config, skillDiscovery: { enabled: true, decision: approvedDecision(candidates, selectedIds) }, agentTeam: {
     enabled: true, teamType: 'project-ai-agent-team', status: 'approved', planHash: 'b'.repeat(64), approval: { planHash: 'b'.repeat(64) },
     roleProposals: [], professionalBoundaries: ['AI assistance is not a licensed professional decision.'], gaps: [], actionsPerformed: [],
   } };
@@ -72,6 +73,73 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.doesNotMatch(map.slice(map.indexOf('  ordinary:'), map.indexOf('  behavior_change:')), /skill-discovery|team-orchestrator|agent-team|skill-index/);
   assert.match(map.slice(map.indexOf('  behavior_change:')), /skill-discovery/);
 });
+
+test('discovery remains array-compatible while direct JSON and the public serializer retain diagnostics', (context) => {
+  const root = fixture(context);
+  skill(root, 'docs/ai/skills/read-safe', 'read-safe');
+  const candidates = discoverSkills({ root, installedRoots: [path.join(root, 'unavailable')], curatedCatalog: [], requiredCapabilities: [] });
+  assert.equal(Array.isArray(candidates), true);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates.map((item) => item.id)[0], candidates[0].id);
+  const parsed = JSON.parse(JSON.stringify(candidates));
+  assert.ok(parsed.sourceStatus?.some((item) => item.status === 'unavailable'));
+  assert.deepEqual(parsed.candidates, [...candidates]);
+  assert.deepEqual(discoveryApi.serializeSkillDiscovery(candidates), parsed);
+  assert.deepEqual(discoveryApi.serializeSkillDiscovery(parsed), parsed);
+  assert.equal(decideSkillCandidates(parsed).planHash, decideSkillCandidates(candidates).planHash);
+  const empty = discoverSkills({ root: fixture(context), installedRoots: [path.join(root, 'missing')], curatedCatalog: [], requiredCapabilities: [] });
+  const emptyParsed = JSON.parse(JSON.stringify(empty));
+  assert.deepEqual(emptyParsed.candidates, []);
+  assert.ok(emptyParsed.sourceStatus.some((item) => item.status === 'unavailable'));
+});
+
+test('sourceStatus is part of the exact decision and persisted artifact approval', (context) => {
+  const root = fixture(context);
+  skill(root, 'docs/ai/skills/read-safe', 'read-safe');
+  const candidates = discoverSkills({ root, installedRoots: [path.join(root, 'missing')], curatedCatalog: [], requiredCapabilities: [] });
+  const scan = scanProject(root);
+  const { config } = approvedConfig({ ...defaultConfig(scan), clients: ['codex'] }, scan, candidates);
+  const approved = config.skillDiscovery.decision;
+  candidates.sourceStatus[0].status = 'unavailable';
+  const changed = decideSkillCandidates(candidates);
+  assert.notEqual(changed.planHash, approved.planHash);
+  assert.throws(() => decideSkillCandidates(candidates, { approvalPlanHash: approved.planHash }), /planHash|approval/);
+  const artifacts = buildArtifacts(config, scan);
+  const index = JSON.parse(artifacts.find((item) => item.path === 'docs/ai/skill-index.json').content);
+  assert.deepEqual(index.sourceStatus, approved.sourceStatus);
+  assert.ok(index.sourceStatus.some((item) => item.status === 'unavailable'));
+  const tampered = structuredClone(config);
+  tampered.skillDiscovery.decision.sourceStatus[0].status = 'unavailable';
+  assert.throws(() => buildArtifacts(tampered, scan), /planHash|approval/);
+});
+
+for (const [change, mutate] of [
+  ['digest', (source) => fs.appendFileSync(source, '\nChanged unselected body.\n')],
+  ['version', (source) => fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('version: 1.0.0', 'version: 2.0.0'))],
+  ['permissions', (source) => fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('["read-project"]', '["network"]'))],
+  ['source', (source) => fs.renameSync(source, `${source}.moved`)],
+  ['availability', (source) => { fs.unlinkSync(source); fs.mkdirSync(source); }],
+]) {
+  test(`unselected indexed candidate ${change} changes invalidate decision, artifacts and checker`, (context) => {
+    const root = fixture(context);
+    skill(root, 'docs/ai/skills/one', 'cap-one');
+    const unselectedSource = skill(root, 'docs/ai/skills/two', 'cap-two');
+    const candidates = discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] });
+    const selectedIds = [candidates[0].id];
+    const scan = scanProject(root);
+    const { config } = approvedConfig({ ...defaultConfig(scan), clients: ['codex'] }, scan, candidates, selectedIds);
+    const artifacts = buildArtifacts(config, scan);
+    const index = JSON.parse(artifacts.find((item) => item.path === 'docs/ai/skill-index.json').content);
+    assert.equal(index.candidates.length, 2);
+    assert.equal(index.candidates[1].decision, 'discovered');
+    applyArtifactPlan(root, planArtifacts(root, artifacts));
+    assert.equal(checkProject(scanProject(root)).ok, true);
+    mutate(unselectedSource);
+    assert.throws(() => decideSkillCandidates(candidates, { selectedIds, approvalPlanHash: config.skillDiscovery.decision.planHash }), /stale|source|digest|ENOENT/i);
+    assert.throws(() => buildArtifacts(config, scanProject(root)), /stale|source|digest|ENOENT/i);
+    assert.equal(checkProject(scanProject(root)).ok, false);
+  });
+}
 
 test('discovery requires explicit roots, rejects links and oversized metadata, and never executes content', (context) => {
   const root = fixture(context);
