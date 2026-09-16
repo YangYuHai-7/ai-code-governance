@@ -86,6 +86,41 @@ test('final audit follow-up: ambiguous callable boundaries never silently disapp
   });
 });
 
+test('final audit follow-up: semicolonless callable boundaries stop at the next declaration or class member', (t) => {
+  const root = memoryFixture(t);
+  const samples = new Map([
+    ['src/server/semicolonless-function.ts', 'export const fn = function() {}\nexport const ordinary = 3;\n'],
+    ['src/server/typed-class-boundary.ts', 'export class Handler {\n  field: number = 1\n  method() { return 2; }\n}\n'],
+    ['src/server/typed-constant.ts', 'export const ordinary: number = 3;\n'],
+    ['src/server/semicolonless-arrow.ts', 'export const arrow = () => 1\nexport const ordinary = 3;\n'],
+  ]);
+  for (const [relative, source] of samples) write(root, relative, source);
+
+  const facts = scanProjectMemoryFacts(scanProject(root));
+  const coveredOrGapped = (relative, exportedAs) => facts.methods.some((entry) => entry.path === relative && entry.exportedAs === exportedAs)
+    || facts.gaps.some((entry) => entry.path === relative && /callable|class field/i.test(entry.reason));
+
+  assert.deepEqual({
+    functionExpression: coveredOrGapped('src/server/semicolonless-function.ts', 'fn'),
+    laterOrdinaryFunctionFile: facts.methods.some((entry) => entry.path === 'src/server/semicolonless-function.ts' && entry.exportedAs === 'ordinary'),
+    laterClassMethod: facts.methods.some((entry) => entry.path === 'src/server/typed-class-boundary.ts' && entry.exportedAs === 'Handler.method'),
+    typedConstantFieldFalsePositive: facts.methods.some((entry) => entry.path === 'src/server/typed-class-boundary.ts' && ['Handler.field', 'Handler.number'].includes(entry.exportedAs)),
+    typedConstantFalsePositive: facts.methods.some((entry) => entry.path === 'src/server/typed-constant.ts' && entry.exportedAs === 'ordinary'),
+    typedConstantGap: facts.gaps.some((entry) => entry.path === 'src/server/typed-constant.ts' && /callable|class field/i.test(entry.reason)),
+    arrow: coveredOrGapped('src/server/semicolonless-arrow.ts', 'arrow'),
+    laterOrdinaryArrowFile: facts.methods.some((entry) => entry.path === 'src/server/semicolonless-arrow.ts' && entry.exportedAs === 'ordinary'),
+  }, {
+    functionExpression: true,
+    laterOrdinaryFunctionFile: false,
+    laterClassMethod: true,
+    typedConstantFieldFalsePositive: false,
+    typedConstantFalsePositive: false,
+    typedConstantGap: false,
+    arrow: true,
+    laterOrdinaryArrowFile: false,
+  });
+});
+
 test('final audit: unknown production formats receive raw Memory ownership, gaps and add/modify freshness', (t) => {
   const root = memoryFixture(t);
   const samples = [
