@@ -5,14 +5,46 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { PRE_COMMIT_HOOK_MARKER, runCompletion } from '../src/commit-completion.mjs';
-import { buildArtifacts } from '../src/generator.mjs';
+import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { sha256 } from '../src/shared/index.mjs';
 import { minimumTaskLevelFromPaths } from '../src/modules/governance/index.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
+import { memoryFixture } from './helpers/memory-fixture.mjs';
+import { scanProjectMemoryFacts, buildMemoryArtifacts } from '../src/modules/memory/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+
+test('completion reports stale owning memory and exempts test-only and formatting changes', (context) => {
+  const root = memoryFixture(context);
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' } };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  baseline(root);
+  write(root, 'test/widgets.test.mjs', '// test-only refinement\n');
+  assert.deepEqual(runCompletion(root, { taskLevel: 'L1' }).memory.issues, []);
+  write(root, 'src/server/service.mjs', 'export function listWidgets( ) {\n return [];\n}\n');
+  assert.deepEqual(runCompletion(root, { taskLevel: 'L2' }).memory.issues, []);
+  write(root, 'src/server/service.mjs', 'export function listWidgets() { return [1]; }\n');
+  const result = runCompletion(root, { taskLevel: 'L2' });
+  assert.equal(result.ok, false);
+  assert.ok(result.memory.issues.some((issue) => /stale/.test(issue)));
+});
+
+test('default memory blocks unowned implementation and accepts the correct evidence update', (context) => {
+  const root = fixture('new-memory-owner');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = defaultConfig(scan);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  baseline(root);
+  write(root, 'src/new.mjs', 'export function value() { return 1; }\n');
+  assert.ok(runCompletion(root, { taskLevel: 'L2' }).memory.issues.some((issue) => /unowned/.test(issue)));
+  const current = scanProject(root);
+  for (const artifact of buildMemoryArtifacts(config, current, scanProjectMemoryFacts(current)).artifacts) write(root, artifact.path, artifact.content);
+  assert.deepEqual(runCompletion(root, { taskLevel: 'L2' }).memory.issues, []);
+});
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-completion-${name}-`));
@@ -27,12 +59,11 @@ function git(root, args) {
 }
 
 function initialize(root, artifactLanguage) {
-  const options = [];
-  if (artifactLanguage) {
-    const answersPath = path.join(root, 'answers.json');
-    fs.writeFileSync(answersPath, JSON.stringify({ artifactLanguage, initialization: { lifecycle: 'greenfield', existingCodeStrategy: null } }));
-    options.push('--config', answersPath);
-  }
+  // These fixtures isolate unrelated approval/verification gates. Dedicated tests
+  // above exercise the default memory contract and its full implementation diff.
+  const answersPath = path.join(root, 'answers.json');
+  fs.writeFileSync(answersPath, JSON.stringify({ ...(artifactLanguage ? { artifactLanguage } : {}), features: { knowledge: false }, initialization: { lifecycle: 'greenfield', existingCodeStrategy: null } }));
+  const options = ['--config', answersPath];
   const result = run(['init', root, '--clients', 'all', '--yes', '--no-assist', ...options]);
   assert.equal(result.status, 0, result.stderr);
   baseline(root);
@@ -683,6 +714,7 @@ function initializeWithConstraints(root, constraints, confirmedRiskSignals = ['a
   const configPath = path.join(os.tmpdir(), `aicg-completion-config-${process.pid}-${Date.now()}-${Math.random()}.json`);
   fs.writeFileSync(configPath, JSON.stringify({
     governanceDepth: 'standard',
+    features: { knowledge: false },
     domainConstraints: constraints,
     confirmedRiskSignals,
   }));

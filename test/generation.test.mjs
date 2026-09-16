@@ -58,7 +58,7 @@ test('Chinese artifacts localize generated body instructions across selected dep
       ['docs/ai/rules/15_architecture.mdc', /当前.*架构/],
       ['docs/ai/skills/business-constraints/SKILL.md', /成功用例/],
       ['docs/ai/lifecycle.md', /证据.*规则/],
-      ['docs/memory/INDEX.md', /记录.*模块/],
+      ['docs/memory/README.md', /记录.*模块/],
       ['docs/ai/long-running/README.md', /任务目录/],
       ['docs/ai/hooks.md', /真实客户端/],
       ['docs/ai/ci-integration.md', /验证.*恢复/],

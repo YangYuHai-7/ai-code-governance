@@ -195,6 +195,9 @@ export function discoverSkills({ root, installedRoots, curatedCatalog = [], requ
   const sourceStatus = [];
   let visited = 0;
   const scan = (sourceRoot, relative, sourceKind, label, depth = 0) => {
+    // Candidate-only convention bodies are discovered through their source-
+    // digest-aware proposal flow, never as a second executable Skill owner.
+    if (sourceKind === 'project' && relative === 'docs/ai/skills/project-conventions') return;
     const source = `${label}:${relative || '.'}`;
     try {
       const absolute = path.join(sourceRoot, relative);

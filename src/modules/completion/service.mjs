@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { memoryIssues } from '../memory/index.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
@@ -370,7 +371,9 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   });
   const surfaceVerification = evaluateSurfaceVerification(scan, projectVerification);
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));
-  const ok = routeAccepted && taskApproval.ok && governance.ok && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
+  const memory = { issues: config?.features?.knowledge ? memoryIssues(scan.root, { ...scan, memoryGitRoot: gitRoot }, paths) : [] };
+  memory.status = memory.issues.length ? 'blocked' : config?.features?.knowledge ? 'checked' : 'disabled';
+  const ok = routeAccepted && taskApproval.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
   const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
@@ -390,6 +393,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     ok,
     taskRoute,
     taskApproval,
+    memory,
     productionReadiness,
     surfaceVerification,
     claimBoundary,

@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { scanProjectMemoryFacts } from '../../modules/memory/index.mjs';
+import { discoverProjectConventionCandidates } from '../../modules/standards/index.mjs';
 import { buildExecutionPlan } from '../../execution-plan.mjs';
 import { classifyProject } from '../../project-assessment.mjs';
 import { governanceCommand } from '../../generator.mjs';
@@ -25,6 +27,7 @@ export async function enrichCommand(target, options) {
   const plan = buildExecutionPlan({ intent: INTENT, scan: prepared.scan, artifactPlan: prepared.plan, config: prepared.config });
   const configArgument = JSON.stringify(path.resolve(options.config));
   const targetArgument = JSON.stringify(prepared.scan.root);
+  const memory = prepared.config.features.knowledge ? scanProjectMemoryFacts(prepared.scan) : null;
   const applyArgs = `init ${targetArgument} --config ${configArgument} --yes --approve ${plan.planHash}`;
   console.log(JSON.stringify({
     schemaVersion: 1,
@@ -33,6 +36,8 @@ export async function enrichCommand(target, options) {
     candidates: {
       governanceFiles: plan.operations.filter((operation) => operation.action !== 'keep').map((operation) => ({ path: operation.path, action: operation.action })),
       architectureApproval: prepared.config.architectureApproval ?? null,
+      memory,
+      projectConventions: memory ? discoverProjectConventionCandidates(prepared.scan, memory) : null,
     },
     plan,
     cta: {
