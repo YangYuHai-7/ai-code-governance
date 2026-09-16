@@ -526,7 +526,11 @@ test('post-init source and scripts produce read-only rescan CTAs without mutatin
   assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
 
   const completed = run(['complete', root, '--verify', 'npm test', '--json']);
-  assert.equal(completed.status, 0, `${completed.stderr}\n${completed.stdout}`);
-  assert.equal(JSON.parse(completed.stdout).projectVerification.command, 'npm run test');
+  assert.equal(completed.status, 1, `${completed.stderr}\n${completed.stdout}`);
+  const completion = JSON.parse(completed.stdout);
+  assert.equal(completion.ok, false);
+  assert.equal(completion.taskRoute.status, 'unverified-declaration');
+  assert.equal(completion.projectVerification.command, 'npm run test');
+  assert.equal(completion.projectVerification.status, 'passed');
   assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
 });

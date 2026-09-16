@@ -17,7 +17,7 @@ Usage:
   aicg team [path] [--config team-context.json] [--json]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
-  aicg complete [path] [--task-level L0|L1|L2|L3] [--verify <discovered-command>] [--json]
+  aicg complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json]
   aicg hook <install|status> [path] [--yes] [--json]
   aicg release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json]
   aicg request [path] --text <exact-supported-request> [--config answers.json] [--clients all|client,...] [--locale zh-CN|en] [--dry-run] [--approve planHash] [--json]
@@ -37,6 +37,10 @@ Commands:
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
+            Review modes: single, quick-review, independent-pk, high-consequence-pk. Production changes require a declared level and bound approval references.
+            Approval JSON: schemaVersion:1, planHash, reviewEvidence:{}, professionalBoundaries:[], approvals:[{id,reference,sha256,source:"operator-declared",participantId}].
+            First inspect taskApproval.plan, then supply reference digests and approve that exact hash. Reference files are repository-relative; do not copy plan bodies into evidence.
+            Hook evidence must be staged; an unconfigured hook cannot approve production changes. Professional identity and review quality are never machine-verified.
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
