@@ -26,6 +26,7 @@ export function resolveGovernanceCapabilities(config, scan) {
   if ((config.clients?.length ?? 0) > 0 || config.features?.hooks || config.features?.externalWorkflows || config.features?.ciIntegration) active.add('integration');
   if (config.features?.knowledge || config.features?.taskRuntime || (config.projectCapabilities?.length ?? 0) > 0 || config.capabilityEvolution) active.add('lifecycle');
   if (Object.keys(EVIDENCE_PATHS).some((usage) => hasGovernanceUsage(scan, usage))) active.add('evidence');
+  if (config.governanceDepth !== 'minimal' && config.skillDiscovery?.enabled === true && config.agentTeam?.enabled === true) active.add('skill-management');
   return active;
 }
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
-import { selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { buildArtifacts, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
 import { conditionalArtifactRoutes } from './artifact-selection.mjs';
 import {
   extractManagedBlock,
@@ -432,7 +432,9 @@ export function checkProject(scan) {
     try {
       selected = selectedArtifactDefinitions(config, scan);
       for (const assertion of selected.flatMap((definition) => definition.gateAssertions)) gateAssertions.add(assertion);
-      expected = selected.map((definition) => definition.build(selected));
+      expected = config.skillDiscovery?.enabled && config.agentTeam?.enabled
+        ? buildArtifacts(config, scan)
+        : selected.map((definition) => definition.build(selected));
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
     }
