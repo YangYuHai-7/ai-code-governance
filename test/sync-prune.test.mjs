@@ -77,6 +77,9 @@ function addManifestArtifact(root, manifest, artifact) {
   writeManifest(root, manifest);
 }
 
+const part = new URL(import.meta.url).searchParams.get('part') ?? 'prune';
+
+if (part === 'prune') {
 test('custom Skill slugs cannot acquire prune authority from matching source and adapter paths', (context) => {
   const { root, manifest } = legacyFixture(context);
   const originalFiles = structuredClone(manifest.files);
@@ -370,7 +373,9 @@ test('approved CLI prune rolls back when the real checker rejects user-owned con
   assert.match(approved.stderr, /Post-apply verification failed/);
   assert.deepEqual(snapshotTree(root), before);
 });
+}
 
+if (part === 'retention') {
 test('ordinary sync retains stale artifacts and foreign manifests have no removal authority', (context) => {
   const root = fixture('ordinary-retention');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -618,3 +623,4 @@ test('real sync never launders foreign retained records into its trusted manifes
   assert.equal(persisted.files.some((entry) => entry.path === stalePath), false);
   assert.ok(fs.existsSync(path.join(root, stalePath)));
 });
+}

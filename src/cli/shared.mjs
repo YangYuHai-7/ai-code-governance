@@ -69,7 +69,7 @@ export function assertManagedArchitectureConfigTrusted(root, config) {
   if (config.adaptiveDecisions !== undefined && (manifest?.schemaVersion !== 1 || manifest.generatedBy !== TOOL_NAME || entry?.kind !== 'configuration' || entry.source !== 'confirmed-decisions')) throw usageError('Adaptive decision receipts require a trusted managed configuration manifest.');
   const content = readText(path.join(root, CONFIG_PATH), '');
   if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') || sha256(content) !== entry.sha256) {
-    throw usageError('The managed architecture or adaptive decision configuration drifted from its recorded manifest. Refuse to reuse or rewrite its baseline; restore the known-good config before running aicg write commands.');
+    throw usageError('The managed architecture configuration drifted, or adaptive decision receipts drifted, from the recorded manifest. Refuse to reuse or rewrite the baseline; restore the known-good config before running aicg write commands.');
   }
 }
 
