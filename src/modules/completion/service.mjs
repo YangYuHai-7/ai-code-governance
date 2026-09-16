@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import { memoryIssues, changedMemoryBehaviorPaths } from '../memory/index.mjs';
-import { readWorkUnit, workUnitPath, workUnitPlanDigest, workUnitPlanProjection, checkWorkUnit, parseWorkUnitResults, workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification } from '../work-units/index.mjs';
+import { memoryIssues } from '../memory/index.mjs';
+import { readWorkUnit, workUnitPath, workUnitPlanDigest, workUnitPlanProjection, checkWorkUnit, parseWorkUnitResults, workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification, changedWorkUnitBehaviorPaths } from '../work-units/index.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
@@ -394,7 +394,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   });
   const routeAccepted = taskRoute.status === 'verified' || (taskRoute.status === 'unverified-declaration' && ['L0', 'L1'].includes(taskRoute.minimumLevel));
   const memoryScan = { ...(unit ? scanProject(scan.root, { probeEnvironment: false }) : scan), memoryGitRoot: gitRoot, workUnitPath: workUnitRelative, approvalEvidence };
-  const behaviorPaths = changedMemoryBehaviorPaths(scan.root, memoryScan, paths);
+  const behaviorPaths = changedWorkUnitBehaviorPaths(scan.root, memoryScan, paths);
   const needsWorkUnit = ['L2', 'L3'].includes(taskRoute.declaredLevel ?? taskRoute.minimumLevel) && behaviorPaths.length > 0;
   const memory = { issues: config?.features?.knowledge || unit ? memoryIssues(scan.root, memoryScan, paths) : [] };
   memory.status = memory.issues.length ? 'blocked' : config?.features?.knowledge || unit ? 'checked' : 'disabled';

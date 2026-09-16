@@ -5,6 +5,7 @@ import { validateApprovedProjectAgentTeam } from '../agent-team/index.mjs';
 import { readMemoryFile } from '../memory/index.mjs';
 import { matchSimpleGlob } from '../../shared/index.mjs';
 import { validateWorkUnit, workUnitPlanDigest } from './schema.mjs';
+import { isWorkUnitProductionPath } from './behavior.mjs';
 
 export function selectWorkUnitRoles(config, unit) {
   const paths = unit.scope.flatMap((group) => group.paths);
@@ -24,7 +25,11 @@ export function selectWorkUnitRoles(config, unit) {
 
 export function workUnitCoverage(scan, paths) {
   const facts = scanProjectMemoryFacts(scan);
-  return { facts, entries: [...facts.apis.map((entry) => ({ ...entry, kind: 'api' })), ...facts.methods.map((entry) => ({ ...entry, kind: 'method' }))].filter((entry) => paths.includes(entry.implementationPath ?? entry.path)) };
+  const gaps = facts.gaps.filter((entry) => paths.includes(entry.path));
+  for (const relative of paths.filter(isWorkUnitProductionPath)) {
+    if (!facts.sources.some((entry) => entry.path === relative) && !gaps.some((entry) => entry.path === relative)) gaps.push({ path: relative, reason: 'unsupported or unscanned production input', status: 'unverified' });
+  }
+  return { facts, gaps, entries: [...facts.apis.map((entry) => ({ ...entry, kind: 'api' })), ...facts.methods.map((entry) => ({ ...entry, kind: 'method' }))].filter((entry) => paths.includes(entry.implementationPath ?? entry.path)) };
 }
 
 export function planWorkUnit(root, unit, { scan = null, config = null } = {}) {
@@ -35,10 +40,11 @@ export function planWorkUnit(root, unit, { scan = null, config = null } = {}) {
   if (!config) try { config = validateConfig(JSON.parse(readMemoryFile(root, '.ai-governance/config.json'))); } catch (error) { if (error.code !== 'ENOENT') throw error; config = {}; }
   const paths = unit.scope.flatMap((group) => group.paths);
   const roles = selectWorkUnitRoles(config, unit);
+  const coverage = workUnitCoverage(scan, paths);
   return {
     workUnit: structuredClone(unit), planDigest: workUnitPlanDigest(unit), roles,
     minimumTaskLevel: minimumTaskLevelFromPaths(paths, config), minimumReviewMode: classifyReviewMode({ plannedPaths: paths }).mode,
-    coverage: workUnitCoverage(scan, paths).entries, actionsPerformed: [],
+    coverage: coverage.entries, coverageGaps: coverage.gaps, manualCoverage: unit.manualCoverage ?? [], actionsPerformed: [],
     boundary: config.artifactLanguage === 'zh-CN' ? '仅预览一个完整功能工作单元；不启动 Agent、不运行测试、不修改业务代码。' : 'Preview one vertical feature only; no Agent launch, test execution or business code writes.',
   };
 }

@@ -28,7 +28,7 @@ function strings(value, label, check = text) {
   if (new Set(value).size !== value.length) throw usageError(`Duplicate work-unit ${label}.`);
 }
 export function validateWorkUnit(value) {
-  fields(value, ['schemaVersion', 'id', 'intent', 'taskLevel', 'reviewMode', 'status', 'requirements', 'design', 'scope', 'risks', 'professionalBoundaries', 'roles', 'plan', 'testCases', 'coverage', 'qa', 'verification', 'memory', 'references', 'approvalPlanHash'], 'document');
+  fields(value, ['schemaVersion', 'id', 'intent', 'taskLevel', 'reviewMode', 'status', 'requirements', 'design', 'scope', 'risks', 'professionalBoundaries', 'roles', 'plan', 'testCases', 'coverage', 'manualCoverage', 'testabilityGaps', 'qa', 'verification', 'memory', 'references', 'approvalPlanHash'], 'document');
   if (Buffer.byteLength(stableJson(value)) > WORK_UNIT_LIMIT || value.schemaVersion !== 1) throw usageError('Invalid bounded work-unit schema.');
   id(value.id); text(value.intent, 'intent');
   if (!['L2', 'L3'].includes(value.taskLevel) || !['single', 'quick-review', 'independent-pk', 'high-consequence-pk'].includes(value.reviewMode) || !WORK_UNIT_STATES.includes(value.status)) throw usageError('Invalid work-unit lifecycle route.');
@@ -68,6 +68,34 @@ export function validateWorkUnit(value) {
     fields(entry, ['entityId', 'testCaseIds', 'gap'], 'coverage'); id(entry.entityId); strings(entry.testCaseIds, 'coverage case IDs', id);
     if (covered.has(entry.entityId)) throw usageError('Duplicate work-unit coverage.'); covered.add(entry.entityId);
     if (entry.gap !== null) text(entry.gap, 'testability gap');
+  }
+  for (const field of ['manualCoverage', 'testabilityGaps']) {
+    if (value[field] === undefined) continue;
+    array(value[field], field, 160);
+    const seen = new Set();
+    for (const entry of value[field]) {
+      fields(entry, ['path', 'sourceSha256', 'reason', 'referenceIds', ...(field === 'manualCoverage' ? ['evidenceLevel', 'noPublicSurface', 'entries'] : [])], field);
+      workUnitPath(entry.path); text(entry.reason, `${field} reason`); strings(entry.referenceIds, `${field} reference IDs`, id);
+      if (!paths.has(entry.path) || seen.has(entry.path) || !HASH.test(entry.sourceSha256 ?? '') || !entry.referenceIds.length) throw usageError(`Invalid source-bound work-unit ${field}.`);
+      seen.add(entry.path);
+      if (field !== 'manualCoverage') continue;
+      array(entry.entries, 'manual public surface', 1000);
+      if (entry.evidenceLevel !== 'operator-declared' || typeof entry.noPublicSurface !== 'boolean' || entry.noPublicSurface !== (entry.entries.length === 0)) throw usageError('Manual coverage needs an explicit public-surface inventory or no-public-surface declaration.');
+      const identities = new Set();
+      for (const surface of entry.entries) {
+        fields(surface, ['kind', 'testCaseIds', ...(surface.kind === 'api' ? ['method', 'apiPath'] : ['symbol'])], 'manual public surface');
+        strings(surface.testCaseIds, 'manual unit case IDs', id);
+        if (!surface.testCaseIds.length) throw usageError('Manual public surfaces require unit cases.');
+        if (surface.kind === 'api') {
+          text(surface.apiPath, 'manual API path');
+          if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].includes(surface.method) || !surface.apiPath.startsWith('/')) throw usageError('Invalid manual API method/path.');
+        } else if (surface.kind === 'public-method') text(surface.symbol, 'manual public symbol');
+        else throw usageError('Invalid manual public surface kind.');
+        const identity = JSON.stringify([surface.kind, surface.symbol ?? surface.method, surface.apiPath ?? null]);
+        if (identities.has(identity)) throw usageError('Duplicate manual public surface.');
+        identities.add(identity);
+      }
+    }
   }
   fields(value.qa, ['additions', 'applicability', 'results'], 'QA'); strings(value.qa.additions, 'QA additions', id); array(value.qa.applicability, 'QA applicability', 4); array(value.qa.results, 'QA results');
   const categories = new Set();

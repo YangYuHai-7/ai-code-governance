@@ -5,7 +5,8 @@ import { write } from './memory-fixture.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { buildMemoryArtifacts, changedMemoryBehaviorPaths } from '../../src/modules/memory/index.mjs';
+import { buildMemoryArtifacts } from '../../src/modules/memory/index.mjs';
+import { changedWorkUnitBehaviorPaths } from '../../src/modules/work-units/index.mjs';
 import { runCompletion } from '../../src/modules/completion/index.mjs';
 
 export function unitFixture(root, paths, { taskLevel = 'L2', reviewMode = 'quick-review' } = {}) {
@@ -40,18 +41,22 @@ export function prepareCompletionUnit(root, options = {}) {
     ['diff', '--cached', '--name-only', '--no-renames', 'HEAD'], ['diff', '--name-only', '--no-renames'], ['ls-files', '--others', '--exclude-standard'],
   ].flatMap((args) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean)))];
   const scan = scanProject(root);
-  const changed = changedMemoryBehaviorPaths(root, scan, paths);
+  const changed = changedWorkUnitBehaviorPaths(root, scan, paths);
   if (!changed.length) return { options, finalize() {} };
   const preview = runCompletion(root, { ...options, verificationCommand: null });
   const pkg = fs.existsSync(path.join(root, 'package.json')) ? JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) : {};
   pkg.scripts ??= {};
   if (!Object.keys(pkg.scripts).length) pkg.scripts.verify = 'node --eval "process.exit(0)"';
   const command = options.verificationCommand === 'npm test' ? 'npm run test' : options.verificationCommand ?? `npm run ${pkg.scripts.test ? 'test' : pkg.scripts.verify ? 'verify' : Object.keys(pkg.scripts)[0]}`;
-  const unit = unitFixture(root, changed, { taskLevel: options.taskLevel ?? preview.taskRoute.minimumLevel, reviewMode: options.reviewMode ?? preview.taskApproval.review.mode });
+  const unit = unitFixture(root, [...new Set([...changed, 'package.json'])], { taskLevel: options.taskLevel ?? preview.taskRoute.minimumLevel, reviewMode: options.reviewMode ?? preview.taskApproval.review.mode });
   unit.verification.command = command;
   write(root, 'test/aicg-qa.mjs', qaMarkers(unit).map((entry) => `console.log(${JSON.stringify(`AICG_QA_RESULT ${JSON.stringify(entry)}`)});`).join('\n'));
   for (const [name, body] of Object.entries(pkg.scripts)) if (!body.includes('node test/aicg-qa.mjs')) pkg.scripts[name] = `${body} && node test/aicg-qa.mjs`;
   write(root, 'package.json', JSON.stringify(pkg));
+  // These fixture-owned files are configuration, static markup and an internal
+  // verification client, not public APIs. Declare that exact reviewed inventory.
+  const noPublicSurface = { 'package.json': 'Fixture npm command configuration has no public API or method.', 'index.html': 'Fixture static button markup has no exported API or method.', 'scripts/verify-http.mjs': 'Fixture HTTP verification client has no public exported method or server route.' };
+  unit.manualCoverage = unit.scope[0].paths.filter((relative) => relative in noPublicSurface).map((relative) => ({ path: relative, sourceSha256: sha256(fs.readFileSync(path.join(root, relative))), evidenceLevel: 'operator-declared', reason: noPublicSurface[relative], referenceIds: ['feature'], noPublicSurface: true, entries: [] }));
   const current = scanProject(root), config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json')));
   const artifacts = buildMemoryArtifacts(config, current, scanProjectMemoryFacts(current)).artifacts;
   for (const artifact of artifacts) write(root, artifact.path, artifact.content);

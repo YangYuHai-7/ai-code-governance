@@ -3,6 +3,7 @@ import { loadProjectMemory, readMemoryFile } from '../memory/index.mjs';
 import { sha256 } from '../../shared/index.mjs';
 import { validateWorkUnit, QA_CATEGORIES, HASH } from './schema.mjs';
 import { workUnitCoverage, selectWorkUnitRoles } from './planner.mjs';
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 
 export const QA_MARKER_PREFIX = 'AICG_QA_RESULT ';
 export function parseWorkUnitResults(stdout) {
@@ -27,7 +28,8 @@ export function checkWorkUnit(root, unit, { scan = null, config = {}, changedPat
   const paths = unit.scope.flatMap((group) => group.paths);
   for (const relative of behaviorPaths) if (!paths.includes(relative)) issues.push(`work-unit scope omits changed behavior: ${relative}`);
   for (const reference of unit.references) try { if (sha256(readMemoryFile(root, reference.path, 1024 * 1024)) !== reference.sha256) issues.push(`work-unit reference digest mismatch: ${reference.id}`); } catch (error) { issues.push(`work-unit reference: ${error.message}`); }
-  const { entries, facts } = workUnitCoverage(scan, paths);
+  const { entries, facts, gaps } = workUnitCoverage(scan, paths);
+  if (scan.scanBudget?.complete !== true) issues.push('work-unit coverage incomplete: repository scan budget was exhausted.');
   const cases = new Map(unit.testCases.map((entry) => [entry.id, entry]));
   for (const category of ['success', 'failure']) if (!unit.testCases.some((entry) => entry.category === category && entry.required)) issues.push(`work-unit requires initial ${category} case`);
   for (const entry of unit.testCases) try {
@@ -39,6 +41,15 @@ export function checkWorkUnit(root, unit, { scan = null, config = {}, changedPat
     if (!coverage || coverage.gap || !coverage.testCaseIds.length || coverage.testCaseIds.some((id) => cases.get(id)?.kind !== 'unit' || !cases.get(id)?.required)) issues.push(`work-unit missing unit-test coverage or testability gap: ${entry.id}`);
   }
   for (const coverage of unit.coverage) if (!entries.some((entry) => entry.id === coverage.entityId)) issues.push(`work-unit coverage uses unknown canonical entity: ${coverage.entityId}`);
+  for (const entry of [...(unit.manualCoverage ?? []), ...(unit.testabilityGaps ?? [])]) {
+    try { if (sha256(readBoundedRepositoryFile(root, entry.path).bytes) !== entry.sourceSha256) issues.push(`work-unit manual coverage source digest mismatch: ${entry.path}`); } catch (error) { issues.push(`work-unit manual coverage source: ${error.message}`); }
+    if (entry.referenceIds.some((id) => !unit.references.some((reference) => reference.id === id))) issues.push(`work-unit manual coverage needs bound evidence references: ${entry.path}`);
+    for (const surface of entry.entries ?? []) if (surface.testCaseIds.some((id) => cases.get(id)?.kind !== 'unit' || !cases.get(id)?.required)) issues.push(`work-unit manual coverage requires required unit-test cases: ${entry.path}`);
+    if (entry.noPublicSurface && entries.some((known) => (known.implementationPath ?? known.path) === entry.path)) issues.push(`work-unit manual no-public-surface contradicts canonical coverage: ${entry.path}`);
+  }
+  for (const gap of gaps) if (!unit.manualCoverage?.some((entry) => entry.path === gap.path)) issues.push(`work-unit coverage unverified: ${gap.path}: ${gap.reason}; provide a source-bound manual inventory.`);
+  for (const gap of unit.testabilityGaps ?? []) issues.push(`work-unit unresolved testability gap: ${gap.path}: ${gap.reason}`);
+  const coverageEvidence = { coverageGaps: gaps, manualCoverage: unit.manualCoverage ?? [], coverageBoundary: 'Manual inventories are operator-declared and approval-bound; they do not establish static scan completeness.' };
   for (const category of QA_CATEGORIES) {
     const applicability = unit.qa.applicability.find((entry) => entry.category === category);
     if (!applicability) issues.push(`work-unit missing QA applicability: ${category}`);
@@ -55,7 +66,7 @@ export function checkWorkUnit(root, unit, { scan = null, config = {}, changedPat
     const owners = current?.modules ?? facts.modules;
     for (const owner of owners.filter((entry) => entry.owns.some((relative) => behaviorPaths.includes(relative)))) if (!unit.memory.updatedOwners.includes(owner.id)) issues.push(`work-unit memory owner not updated: ${owner.id}`);
   }
-  if (!completion) return { ...result(), roles };
+  if (!completion) return { ...result(), roles, ...coverageEvidence };
   if (!['verified', 'memory-synced', 'complete'].includes(unit.status)) issues.push('work-unit must reach verified and synchronized memory before completion.');
   if (!taskApproval?.ok || unit.approvalPlanHash !== taskApproval.plan?.planHash) issues.push('work-unit approval does not bind the current plan.');
   if (!memory || memory.issues?.length || memory.status === 'disabled' && behaviorPaths.length) issues.push('work-unit requires synchronized project memory.');
@@ -74,5 +85,5 @@ export function checkWorkUnit(root, unit, { scan = null, config = {}, changedPat
     if (entry.status === 'not-applicable' && (typeof entry.reason !== 'string' || !entry.reason.trim() || !unit.qa.applicability.some((item) => item.category === expected.category && item.status === 'not-applicable'))) issues.push(`work-unit QA not-applicable needs approved reason: ${entry.caseId}`);
   }
   for (const entry of unit.testCases) if (!seen.has(entry.id)) issues.push(`work-unit missing QA result: ${entry.id}`);
-  return { ...result(), roles, caseResults: results.filter(Boolean).map((entry) => ({ ...entry, command: verification.command, outputDigest: verification.outputDigest })), verification: verification ? { command: verification.command, status: verification.status, outputDigest: verification.outputDigest, inputEvidence: verification.inputEvidence } : null };
+  return { ...result(), roles, ...coverageEvidence, caseResults: results.filter(Boolean).map((entry) => ({ ...entry, command: verification.command, outputDigest: verification.outputDigest })), verification: verification ? { command: verification.command, status: verification.status, outputDigest: verification.outputDigest, inputEvidence: verification.inputEvidence } : null };
 }
