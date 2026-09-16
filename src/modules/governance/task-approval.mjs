@@ -164,12 +164,13 @@ export function trustedProfessionalTaskContext(root, config, plannedPaths) {
         const { domainNeedId, ...fields } = boundary;
         return { ...fields, id: domainNeedId ?? fields.id };
       }));
-      if (normalized.length === 0 || !scopeNeedsMapping) continue;
+      if (normalized.length === 0) continue;
       const activation = role.activation;
       if (!activation || !Array.isArray(activation.signals) || activation.signals.length === 0 || activation.signals.length > 16 || activation.signals.some((id) => !SUPPORTED_CONFIRMED_RISK_SIGNALS.includes(id)) || !Array.isArray(activation.paths) || activation.paths.length === 0 || activation.paths.length > 32 || activation.paths.some((value) => typeof value !== 'string' || value.length > 256 || !isSafeRelative(value))) {
-        result.professionalGap = 'Approved professional scope lacks an explicit risk-signal/path mapping; record owner-confirmed applicability before completion.';
+        if (scopeNeedsMapping) result.professionalGap = 'Approved professional scope lacks an explicit risk-signal/path mapping; record owner-confirmed applicability before completion.';
         continue;
       }
+      // Explicit owner-confirmed scope applies even to otherwise ordinary documents.
       if (!plannedPaths.some((value) => activation.paths.some((pattern) => matchSimpleGlob(value, pattern)))) continue;
       if (!activation.signals.some((signal) => config.confirmedRiskSignals?.includes(signal))) {
         result.professionalGap = 'Changed professional scope needs its mapped owner-confirmed risk signal; operator omission cannot waive applicability.';

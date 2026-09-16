@@ -9,6 +9,7 @@ import { buildArtifacts } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { sha256 } from '../src/shared/index.mjs';
+import { minimumTaskLevelFromPaths } from '../src/modules/governance/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -125,16 +126,22 @@ function trustedProfessionalRoster(root, activation) {
   baseline(root);
 }
 
-test('trusted professional scope is mandatory without an operator risk declaration and does not cover unrelated paths', (context) => {
+for (const scope of [
+  { name: 'production source', path: 'src/modules/legal/index.mjs', pattern: 'src/modules/legal/**', level: 'L2', unrelated: 'src/modules/widget/index.mjs' },
+  { name: 'L1 contract document', path: 'docs/contracts/terms.md', pattern: 'docs/contracts/**', level: 'L1', unrelated: 'docs/guide.md' },
+]) test(`explicit professional activation on ${scope.name} requires qualified human approval without an operator risk declaration`, (context) => {
   const root = fixture('trusted-professional');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeWithConstraints(root, ['Only approved actors may edit contracts.'], ['authorization']);
-  trustedProfessionalRoster(root, { signals: ['authorization'], paths: ['src/modules/legal/**'] });
-  write(root, 'src/modules/legal/index.mjs');
+  trustedProfessionalRoster(root, { signals: ['authorization'], paths: [scope.pattern] });
+  write(root, scope.path);
+  assert.equal(minimumTaskLevelFromPaths([scope.path]), scope.level);
   const options = approvalOptions(root, { taskLevel: 'L2' });
   const result = runCompletion(root, options);
   assert.equal(result.ok, false);
   assert.equal(result.taskApproval.status, 'professional-review-gap');
+  assert.equal(result.taskApproval.review.mode, 'high-consequence-pk');
+  assert.ok(result.taskApproval.plan.requiredApprovals.includes('human:contract-law'));
   assert.equal(result.taskApproval.plan.professionalBoundaries[0].qualification, 'licensed-lawyer');
   const evidencePath = path.join(root, options.approvalEvidence);
   const evidence = JSON.parse(fs.readFileSync(evidencePath));
@@ -149,7 +156,7 @@ test('trusted professional scope is mandatory without an operator risk declarati
   assert.equal(satisfied.ok, true, JSON.stringify(satisfied));
   assert.equal(satisfied.taskApproval.identityVerified, false);
   baseline(root);
-  write(root, 'src/modules/widget/index.mjs');
+  write(root, scope.unrelated);
   const unrelated = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
   assert.equal(unrelated.ok, true, JSON.stringify(unrelated));
   assert.notEqual(unrelated.taskApproval.review.mode, 'high-consequence-pk');
@@ -166,14 +173,17 @@ test('trusted professional scope without an explicit applicability mapping canno
   assert.equal(result.taskApproval.status, 'professional-review-gap');
 });
 
-test('professional roster ambiguity blocks product changes but not an unrelated documentation task', (context) => {
+test('unmapped ordinary documentation keeps its L1 single-review flow', (context) => {
   const root = fixture('professional-docs');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  initializeWithConstraints(root, ['Confirmed professional project.'], ['authorization']);
+  initialize(root);
   trustedProfessionalRoster(root);
   write(root, 'README.md', '# Local documentation fix\n');
-  const result = runCompletion(root, approvalOptions(root, { taskLevel: 'L2' }));
+  const result = runCompletion(root, { taskLevel: 'L1' });
   assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.taskRoute.minimumLevel, 'L1');
+  assert.equal(result.taskApproval.review.mode, 'single');
+  assert.equal(result.taskApproval.status, 'not-required');
   assert.equal(result.taskApproval.plan.professionalBoundaries.length, 0);
 });
 
