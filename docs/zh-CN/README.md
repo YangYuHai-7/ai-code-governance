@@ -170,7 +170,7 @@ node scripts/prepublish-check.mjs
 npm pack --dry-run
 ```
 
-`test:full` 包含性能采样器。缺少真实发布类型、证据和精确审批时，`prepublish-check` 会按设计拒绝通过。本地回归结果不能证明 npm 已发布、Windows/Linux 已验证或真实客户端已经执行。
+`test:full` 包含性能采样器。普通 npm 发布会运行完整本地测试，确认 Git 候选干净并检查实际打包产物；只有同时提供全部组织发布变量时，才进入独立评审证据门禁，部分证据输入会按失败处理。两条路径都不会把本地结果冒充为 Windows/Linux 或真实客户端认证。
 
 <!-- sync:architecture -->
 ## 架构与文档管理
