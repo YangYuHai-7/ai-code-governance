@@ -221,6 +221,10 @@ for (const changedInput of ['config', 'manifest', 'managed', 'source', 'mode', '
   });
 }
 
+}
+
+if (part === 'prune-safety') {
+
 test('prune reports stale seed files as manual cleanup candidates and preserves them', (context) => {
   const { root } = legacyFixture(context);
   const relative = 'docs/ai/lifecycle.md';
