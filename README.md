@@ -5,7 +5,7 @@
 **Adaptive governance for AI coding agents — fast for small fixes, deliberate for business-critical changes.**
 
 <p>
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <strong>English</strong> · <a href="docs/i18n/README.zh-CN.md">简体中文</a>
 </p>
 
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)

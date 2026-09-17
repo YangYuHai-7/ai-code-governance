@@ -15,7 +15,7 @@
     "scripts/prepublish-check.mjs",
     "SKILL.md",
     "README.md",
-    "README.zh-CN.md",
+    "docs/i18n/README.zh-CN.md",
     "LICENSE"
   ],
   "engines": {
