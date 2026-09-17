@@ -127,7 +127,7 @@ test('first-use Chinese evidence artifacts localize prose and preserve every mac
     ['docs/ai/surface-verification-profiles.json', stableJson(surfaceVerificationProfiles())],
     ['docs/ai/acceptance-contract.json', fs.readFileSync('assets/contracts/acceptance-contract.json', 'utf8')],
   ]);
-  assert.equal(sha256(expected.get('docs/ai/release-acceptance-policy.json')), 'a978f63bad494ab4519c673c1d87f224776ca311856525b2fbe0d961fe5a56ea');
+  assert.equal(sha256(expected.get('docs/ai/release-acceptance-policy.json')), 'bf8b8f04edd635455efb10334140d5b628d82f8ebebab06cbcaac42558e61e50');
   assert.equal(sha256(expected.get('docs/ai/surface-verification-profiles.json')), '7e0779fbe78c372c8e2b0fd73b768df9808aeb5256060780b7bd3aa4ee113246');
   assert.equal(sha256(expected.get('docs/ai/acceptance-contract.json')), '2fd5633856ec347e4e54538d74654f5532d1111c4c2a54bceeb094194e6cf377');
   const proseKeys = new Set(['description', 'reason', 'claimBoundary', 'binding', 'coverage', 'applies_when', 'negative_case', 'expected_failure', 'recovery_case', 'expected_recovery', 'proves']);

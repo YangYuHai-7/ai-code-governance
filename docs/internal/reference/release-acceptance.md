@@ -6,7 +6,7 @@
 
 `docs/ai/release-acceptance-policy.json` 是由 `aicg sync` 更新的受管基线快照；漂移或落后于当前 CLI 时，发布检查会提前要求审阅并同步。项目要收紧标准时，新增完整的 `docs/ai/release-acceptance-override.json`：可以增加风险信号、证据或提高人数/分数，但不能删除内置维度、降低分数、减少参与者、移除证据、改写基线语义或放宽风险升级；这种弱化会被 `release-check` 直接拒绝。override 不由生成器覆盖，并由最终证据的 policy hash 绑定。
 
-该策略显式区分两个 scope：`projectCompletion` 由 `aicg complete` 执行，不要求虚构独立参与者，只证明项目配置的完成检查；`organizationalReleaseCertification` 由 `aicg release-check` 执行，才应用下面的独立人数与分级证据要求。单人或 minimal 项目可以诚实完成前者；只有在要作组织发布、部署审批或产品认证声明时才进入后者。高风险项目是否允许单人上线仍由其真实组织和部署权限决定，AICG 不代替该决策。
+该策略显式区分三个 scope：`projectCompletion` 由 `aicg complete` 执行，只证明项目配置的完成检查；`engineeringPublication` 用于普通 npm 工程发布，在 `prepublishOnly` 已完成全量测试、校验与 smoke 后，再检查干净 Git 候选和实际 npm 打包形态；`organizationalReleaseCertification` 由 `aicg release-check` 执行，只有它才应用下面的独立人数与分级证据要求。前两者不要求虚构独立参与者，也不产生组织认证结论。只有明确要求组织发布审批或产品认证声明时才进入第三种 scope。高风险项目是否允许单人上线仍由其真实组织和部署权限决定，AICG 不代替该决策。
 
 ## 统一质量评分
 
@@ -172,7 +172,9 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.js
 
 `command` verification 必须声明 `runner: npm-script`、真实 `package.json` 路径、script、预期 `exitCode: 0` 以及 stdout/stderr SHA-256。`probe` 必须声明相同 runner/packagePath，并提供严格且保持顺序的两个 steps：先是预期非零的 `failure`，再是预期为零的 `recovery`；每步都要记录 script、exitCode 和两个输出 digest。检查器拒绝伪 JSON、install/publish 生命周期和任何隐式 `pre<script>`/`post<script>`，将发布单元、预检 HEAD、candidate 中精确脚本文本及 hash 放入 `replayPlan`。只有在所有非执行校验均通过且 `--approve` 精确匹配 plan hash 时才会执行，真实退出码与输出 digest 必须逐项匹配；执行后再次验证 preflight HEAD 完全不变、全部已验证 evidence artifact hash 不变、candidate 与 clean worktree，并在 npm publication 模式重算最终包指纹。P0/P1 标为 resolved 时还必须提供同样绑定且可重放的 `resolutionReference`；个人报告中的发现必须无损进入根 `findings`。
 
-对于 AICG 自身的 npm 发布，`prepublishOnly` 要求 `AICG_RELEASE_TYPE`、`AICG_RELEASE_EVIDENCE` 和预先审阅的 `AICG_RELEASE_APPROVAL`，然后执行相同的 `release-check`，并额外用 `npm pack --dry-run --ignore-scripts --json` 重新计算发布包的 filename、shasum、integrity 和 entryCount，与根证据的 `packageArtifact` 比对。证据目录不进入 npm `files` 清单，因此可在 candidate 之后记录 digest 而不形成循环。没有达到对应级别的证据时，发布必须在访问 npm registry 之前停止。
+对于 AICG 自身的普通 npm 工程发布，`prepublishOnly` 先执行 `test:full`、Skill 校验、源码 smoke 和安装包 smoke，再要求工作树与 index 干净、发布必须从包仓库根目录执行，并使用 `npm pack --dry-run --ignore-scripts --json` 校验包名、稳定版本、CLI 入口、必要文件以及 filename、shasum、integrity 和 entryCount。这个路径不声称独立评审、真实客户端或跨平台认证。
+
+只有明确要求组织级发布认证时，才同时提供 `AICG_RELEASE_TYPE`、`AICG_RELEASE_EVIDENCE` 和预先审阅的 `AICG_RELEASE_APPROVAL`。此时 `prepublishOnly` 执行完整的 `release-check`，并把实际 npm 包指纹与根证据的 `packageArtifact` 比对。三个变量必须同时提供；部分输入会失败，不能从不完整认证静默降级为普通工程发布。证据目录不进入 npm `files` 清单，因此可在 candidate 之后记录 digest 而不形成循环。
 
 ## 结果解释
 

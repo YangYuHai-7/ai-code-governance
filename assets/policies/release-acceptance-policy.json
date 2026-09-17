@@ -7,6 +7,11 @@
       "independentParticipantsRequired": false,
       "claimBoundary": "Proves the configured project completion checks only; it is not an organizational release certification."
     },
+    "engineeringPublication": {
+      "command": "npm publish / prepublishOnly",
+      "independentParticipantsRequired": false,
+      "claimBoundary": "Proves a clean Git candidate, full configured local verification, and the packed npm artifact shape; it is not an organizational release certification."
+    },
     "organizationalReleaseCertification": {
       "command": "aicg release-check",
       "independentParticipantsRequired": true,

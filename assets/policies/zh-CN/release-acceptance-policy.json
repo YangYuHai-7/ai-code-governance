@@ -7,6 +7,11 @@
       "independentParticipantsRequired": false,
       "claimBoundary": "仅证明已配置的项目完成检查，不构成组织级发布认证。"
     },
+    "engineeringPublication": {
+      "command": "npm publish / prepublishOnly",
+      "independentParticipantsRequired": false,
+      "claimBoundary": "仅证明 Git 候选干净、配置的本地完整验证通过且 npm 打包形态正确，不构成组织级发布认证。"
+    },
     "organizationalReleaseCertification": {
       "command": "aicg release-check",
       "independentParticipantsRequired": true,

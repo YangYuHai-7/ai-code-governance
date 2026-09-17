@@ -5,7 +5,13 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { loadReleaseAcceptancePolicy, releaseAcceptanceRequirements, runReleaseAcceptance as runReleaseAcceptanceCore } from '../src/release-acceptance.mjs';
+import {
+  loadReleaseAcceptancePolicy,
+  releaseAcceptanceRequirements,
+  resolvePrepublishMode,
+  runEngineeringPublicationGate,
+  runReleaseAcceptance as runReleaseAcceptanceCore,
+} from '../src/release-acceptance.mjs';
 import { loadProjectReleaseAcceptancePolicy } from '../src/modules/release/policy.mjs';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
@@ -818,14 +824,56 @@ test('Git tags can be the version authority for non-Node release units', (contex
   assert.equal(result.ok, true, result.errors.join('\n'));
 });
 
-test('prepublish gate refuses to contact a registry without explicit tier and evidence inputs', () => {
-  const environment = { ...process.env };
-  delete environment.AICG_RELEASE_TYPE;
-  delete environment.AICG_RELEASE_EVIDENCE;
-  delete environment.AICG_RELEASE_APPROVAL;
-  const result = spawnSync(process.execPath, [path.resolve('scripts/prepublish-check.mjs')], { encoding: 'utf8', env: environment });
-  assert.equal(result.status, 1);
-  assert.match(result.stderr, /Publishing requires AICG_RELEASE_TYPE.*AICG_RELEASE_APPROVAL/);
+test('prepublish mode keeps routine engineering publication separate from organizational certification', () => {
+  assert.deepEqual(resolvePrepublishMode({}), { mode: 'engineering-publication' });
+  assert.deepEqual(resolvePrepublishMode({
+    AICG_RELEASE_TYPE: 'feature',
+    AICG_RELEASE_EVIDENCE: 'docs/ai/release-evidence/1.2.0.json',
+    AICG_RELEASE_APPROVAL: 'a'.repeat(64),
+  }), {
+    mode: 'organizational-certification',
+    changeType: 'feature',
+    evidencePath: 'docs/ai/release-evidence/1.2.0.json',
+    replayApproval: 'a'.repeat(64),
+  });
+  assert.throws(
+    () => resolvePrepublishMode({ AICG_RELEASE_TYPE: 'feature' }),
+    /all be provided for organizational certification/,
+  );
+});
+
+test('routine engineering publication requires a clean tracked repository and validates the package shape', (context) => {
+  const root = fixture('engineering-publication');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(root, ['init', '--quiet']);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    name: 'ai-code-governance',
+    version: '0.2.0',
+    type: 'module',
+    bin: { aicg: 'bin/aicg.js' },
+    files: ['bin/', 'src/', 'assets/', 'docs/', 'SKILL.md', 'README.md', 'LICENSE'],
+  }));
+  for (const [relative, content] of [
+    ['bin/aicg.js', '#!/usr/bin/env node\n'],
+    ['src/index.mjs', 'export {};\n'],
+    ['assets/contracts/example.json', '{}\n'],
+    ['docs/zh-CN/README.md', '# 中文\n'],
+    ['README.md', '# AI Code Governance\n'],
+    ['SKILL.md', '# Skill\n'],
+    ['LICENSE', 'Apache-2.0\n'],
+  ]) writeFile(root, relative, content);
+  commit(root, 'publication candidate');
+
+  const passed = runEngineeringPublicationGate(root);
+  assert.equal(passed.ok, true, passed.errors.join('\n'));
+  assert.equal(passed.mode, 'engineering-publication');
+  assert.equal(passed.package.version, '0.2.0');
+  assert.equal(passed.packageArtifact.entryCount > 0, true);
+
+  fs.appendFileSync(path.join(root, 'README.md'), 'dirty\n');
+  const dirty = runEngineeringPublicationGate(root);
+  assert.equal(dirty.ok, false);
+  assert.ok(dirty.errors.some((error) => error.includes('clean Git worktree')));
 });
 
 test('npm publication mode binds acceptance to the exact packed artifact', (context) => {
