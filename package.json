@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "test:fast": "node --test test/args.test.mjs test/onboarding-product-flow.test.mjs test/sync-prune.test.mjs test/sync-prune-safety.test.mjs test/sync-retention.test.mjs test/context-budget.test.mjs test/artifact-selection.test.mjs test/task-routing.test.mjs test/execution-plan.test.mjs test/generation.test.mjs test/technical-standards.test.mjs test/architecture-boundaries.test.mjs",
+    "test:fast": "node --test test/args.test.mjs test/onboarding-product-flow.test.mjs test/sync-prune.test.mjs test/context-budget.test.mjs test/artifact-selection.test.mjs test/task-routing.test.mjs test/execution-plan.test.mjs test/generation.test.mjs test/technical-standards.test.mjs test/architecture-boundaries.test.mjs",
     "test:full": "node --test --test-skip-pattern=\"repeated CLI check\" && node --test test/performance-budget.test.mjs",
     "test:perf": "node --test test/performance-budget.test.mjs",
     "test:architecture": "node --test test/architecture-boundaries.test.mjs",

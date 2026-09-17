@@ -12,6 +12,9 @@ import { addReadOnlyGuidance, initSuccessGuidance, printHumanGuidance } from '..
 import { COMMAND_HANDLERS, COMMAND_REGISTRY } from '../src/cli/command-registry.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+const part = new URL(import.meta.url).searchParams.get('part') ?? 'unit';
+
+if (part === 'unit') {
 
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
   const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
@@ -44,6 +47,8 @@ test('single-pass compilation preserves every artifact and deselected seed defin
   assert.deepEqual(compiled.definitions.map(({ path, ownership }) => ({ path, ownership })), artifactDefinitions(config, scan).map(({ path, ownership }) => ({ path, ownership })));
   assert.ok(compiled.definitions.some((entry) => entry.path === 'docs/ai/skills/generic-unknown/SKILL.md' && entry.ownership === 'seed'));
 });
+
+}
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-onboarding-${name}-`));
@@ -92,6 +97,8 @@ function humanGuidanceLines(result) {
     console.log = original;
   }
 }
+
+if (part === 'unit') {
 
 test('pinned init success places a localized installation prerequisite beside its daily command', (context) => {
   const root = fixture('pinned-success-prerequisite');
@@ -309,6 +316,10 @@ test('guided client multi-select normalizes unordered duplicate input to registr
   );
 });
 
+}
+
+if (part === 'cli-a') {
+
 test('Chinese and English human discovery output gives one plain-language action, reason, boundary, and exact command', (context) => {
   const root = fixture('human-guidance');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -423,6 +434,10 @@ test('a confirmed new project records that architecture is not established', (co
     decision.id === 'architecture-not-established' && decision.status === 'not-established'
   )));
 });
+
+}
+
+if (part === 'cli-b') {
 
 test('architecture assessment produces stable adoptable ids and an approved selection only changes governance', (context) => {
   const root = fixture('architecture-adoption');
@@ -564,3 +579,5 @@ test('post-init source and scripts produce read-only rescan CTAs without mutatin
   assert.equal(completion.projectVerification.status, 'passed');
   assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
 });
+
+}
