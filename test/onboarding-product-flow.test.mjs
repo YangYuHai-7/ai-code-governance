@@ -13,6 +13,7 @@ import { COMMAND_HANDLERS, COMMAND_REGISTRY } from '../src/cli/command-registry.
 
 const cli = path.resolve('bin/aicg.js');
 const part = new URL(import.meta.url).searchParams.get('part') ?? 'unit';
+const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 if (part === 'unit') {
 
@@ -235,7 +236,7 @@ test('legacy pinned config retains its mode while daily artifacts require instal
   assert.equal(JSON.parse(content('.ai-governance/config.json')).invocationMode, 'npm-exec-pinned');
   assert.equal(governanceCommand(config, 'complete .'), 'aicg complete .');
   assert.match(content('AGENTS.md'), /unavailable.*stop.*install/i);
-  assert.match(content('docs/ai/bootstrap-prompt.md'), /npm exec --yes --package=ai-code-governance@0\.3\.0 -- aicg/);
+  assert.ok(content('docs/ai/bootstrap-prompt.md').includes(`npm exec --yes --package=ai-code-governance@${packageVersion} -- aicg`));
   for (const artifact of artifacts.filter((entry) => entry.path !== 'docs/ai/bootstrap-prompt.md')) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
 });
 
@@ -396,7 +397,7 @@ test('non-interactive init requires an explicit client scope and records invocat
   assert.equal(config.artifactLanguage, 'en');
   assert.equal(config.codeDocumentationPolicy, 'en');
   assert.equal(config.invocationMode, 'npm-exec-pinned');
-  assert.equal(config.toolVersion, '0.2.0');
+  assert.equal(config.toolVersion, packageVersion);
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   assert.match(agents, /aicg complete \./);
   assert.doesNotMatch(agents, /npm exec --yes --package/);

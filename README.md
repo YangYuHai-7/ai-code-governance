@@ -18,7 +18,7 @@ One canonical rule source · Small context by default · Evidence before claims 
 </div>
 
 > [!IMPORTANT]
-> This checkout is the `0.2.0` source candidate. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
+> This checkout is the `0.3.0` source candidate. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
 
 <!-- sync:quick-start -->
 ## Quick start
