@@ -11,7 +11,7 @@
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../../LICENSE)
 [![CI: Manual](https://img.shields.io/badge/CI-manual-6f42c1?logo=githubactions&logoColor=white)](../../.github/workflows/ci.yml)
-[![Agents](https://img.shields.io/badge/Agents-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-111827)](../../SKILL.md)
+![Agents](https://img.shields.io/badge/Agents-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-111827)
 
 单一规范源 · 默认最小上下文 · 先有证据再下结论 · 不自动过度治理
 
@@ -23,15 +23,16 @@
 <!-- sync:quick-start -->
 ## 快速开始
 
-使用 Node.js 22 或更高版本，直接从源码目录运行：
+使用 Node.js 22 或更高版本，全局安装一次，然后在需要治理的项目目录中执行一个命令：
 
 ```bash
-node bin/aicg.js doctor /path/to/project
-node bin/aicg.js init /path/to/project --guided
-node bin/aicg.js check /path/to/project
+npm install --global ai-code-governance
+aicg
 ```
 
-引导流程会先扫描再提问，由项目负责人选择需要支持的 Agent 和治理文件语言；工具推荐能够满足需求的最小预设，预览全部写入操作，并且只应用已授权的决策。准确参数和所有权规则请查看[初始化契约](../../references/initializer.md)。
+只想临时使用时不必全局安装，直接执行 `npx ai-code-governance`。`aicg` 不带参数时会自动识别终端语言，扫描当前目录并进入引导流程，只询问需要支持的 Agent、治理文件语言、项目阶段和确实需要由你决定的选项，写入前先展示预览。治理文件仍默认使用英文，只有负责人明确选择简体中文后才生成中文治理内容。
+
+更喜欢聊天时，直接告诉 Codex、Claude Code、Cursor 或其他可以操作终端的编码 Agent：“请使用已安装的 `aicg` 为当前项目初始化 AI 代码治理。先扫描项目，只询问必须由我决定的事项，写入前展示变更预览。”Agent 负责操作 CLI，用户不需要记忆高级参数。
 
 <!-- sync:why-aicg -->
 ## 为什么选择 AICG
@@ -138,7 +139,7 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/candidat
 aicg release-check . --type feature --evidence docs/ai/release-evidence/candidate.json --replay --approve <planHash>
 ```
 
-推送、发布、部署、安装 hook、发送外部消息和修改 CI 都需要独立授权。发布前请阅读[发布验收契约](../../references/release-acceptance.md)。
+推送、发布、部署、安装 hook、发送外部消息和修改 CI 都需要独立授权。
 
 <!-- sync:evidence -->
 ## 证据、成长与性能
@@ -150,7 +151,7 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/candidat
 | `enforced` | 指定机器检查及其反向探针能够拒绝错误声明。 |
 | `verified` | 指定命令、候选版本、范围、平台和结果具有当前执行证据。 |
 
-经过验证、符合条件的 L2/L3 产品变更可以生成能力候选。纯文案、格式、fixture、只读工作和不可复用修改不会触发提取。提取、采用和晋升是三个独立的显式步骤，详见[能力演进](../../references/continuous-skill-evolution.md)。
+经过验证、符合条件的 L2/L3 产品变更可以生成能力候选。纯文案、格式、fixture、只读工作和不可复用修改不会触发提取。提取、采用和晋升是三个独立的显式步骤。
 
 确定性 fixture 会限制文件数量和字节预算。普通上下文固定为三个唯一文件，不超过 3,600 字节和 900 个估算 token。性能采样保留小型和一万文件项目的绝对上限，五万文件场景仅提供信息。这些合成结果不能证明真实 Agent 加载效果，也不能认证所有操作系统。
 
@@ -172,19 +173,18 @@ npm pack --dry-run
 `test:full` 包含性能采样器。缺少真实发布类型、证据和精确审批时，`prepublish-check` 会按设计拒绝通过。本地回归结果不能证明 npm 已发布、Windows/Linux 已验证或真实客户端已经执行。
 
 <!-- sync:architecture -->
-## 架构与参考资料
+## 架构与文档管理
 
 ```text
 bin → src/cli → src/modules → src/kernel + src/shared
 ```
 
-适配器隔离外部影响，目录加载带版本的资产，根目录 `src/*.mjs` 文件作为兼容门面。建议从以下内容开始：
+项目文档统一放在 `docs/`：面向用户的文档按语言分目录，维护者内部资料放在 `docs/internal`；根目录只保留默认英文 README。适配器隔离外部影响，目录加载带版本的资产，根目录 `src/*.mjs` 文件作为兼容门面。中文入口只链接中文说明或语言无关的机器契约：
 
-- [Agent Skill](../../SKILL.md)
-- [参考资料索引](../../references/README.md)
-- [初始化契约](../../references/initializer.md)
-- [能力演进](../../references/continuous-skill-evolution.md)
-- [工作流集成](../../references/workflow-integrations.md)
+- [产品架构](../internal/reference/product-architecture.md)
+- [团队编排](../internal/reference/team-orchestration.md)
+- [工作流集成](../internal/reference/workflow-integrations.md)
+- [发布验收](../internal/reference/release-acceptance.md)
 - [能力与平台注册表](../../assets/registries/capability-pack-registry.json)
 
 <!-- sync:license -->

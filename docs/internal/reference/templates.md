@@ -333,7 +333,7 @@ description: <这是唯一的选中机制。写清"什么时候用"，包含用�
 ## 深入
 | 文件 | 何时读 |
 | --- | --- |
-| `references/<x>.md` | <条件> |
+| `docs/internal/reference/<x>.md` | <条件> |
 ```
 
 > `description` 写不好，技能就是**静默不可发现**——不是报错，是永远不被选中。

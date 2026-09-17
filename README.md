@@ -5,7 +5,7 @@
 **Adaptive governance for AI coding agents — fast for small fixes, deliberate for business-critical changes.**
 
 <p>
-  <strong>English</strong> · <a href="docs/i18n/README.zh-CN.md">简体中文</a>
+  <strong>English</strong> · <a href="docs/zh-CN/README.md">简体中文</a>
 </p>
 
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -23,15 +23,16 @@ One canonical rule source · Small context by default · Evidence before claims 
 <!-- sync:quick-start -->
 ## Quick start
 
-Run directly from a source checkout with Node.js 22 or newer:
+Install once with Node.js 22 or newer, then run one command in the project you want to govern:
 
 ```bash
-node bin/aicg.js doctor /path/to/project
-node bin/aicg.js init /path/to/project --guided
-node bin/aicg.js check /path/to/project
+npm install --global ai-code-governance
+aicg
 ```
 
-The guided flow scans before asking questions, lets the owner choose supported Agents and governance language, recommends the smallest justified preset, previews all writes, and applies only authorized decisions. See the [initializer contract](references/initializer.md) for exact flags and ownership rules.
+No global install is required for a one-off run: use `npx ai-code-governance`. With no arguments, `aicg` scans the current directory and starts the guided setup in the detected terminal language. It asks for supported Agents, governance language, project stage, and only the choices that matter, then previews writes before applying them. Governance artifacts still default to English until the owner selects Simplified Chinese.
+
+Prefer chat? Tell Codex, Claude Code, Cursor, or another shell-capable coding Agent: “Use the installed `aicg` CLI to initialize AI code governance for this project. Scan first, ask me only for decisions I must own, and preview changes before writing.” The Agent operates the CLI; the user does not need to learn advanced flags.
 
 <!-- sync:why-aicg -->
 ## Why AICG
@@ -138,7 +139,7 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/candidat
 aicg release-check . --type feature --evidence docs/ai/release-evidence/candidate.json --replay --approve <planHash>
 ```
 
-Pushing, publishing, deployment, hook installation, external messages, and CI changes remain separate authorizations. Read the [release acceptance contract](references/release-acceptance.md) before release work.
+Pushing, publishing, deployment, hook installation, external messages, and CI changes remain separate authorizations.
 
 <!-- sync:evidence -->
 ## Evidence, growth, and performance
@@ -150,7 +151,7 @@ Pushing, publishing, deployment, hook installation, external messages, and CI ch
 | `enforced` | A named machine check and negative probe reject a broken assertion. |
 | `verified` | A named command, candidate, scope, platform, and result have current execution evidence. |
 
-Eligible, verified L2/L3 product changes may produce capability candidates. Prose, formatting, fixtures, read-only work, and non-reusable changes do not. Harvesting, adoption, and promotion are separate explicit steps; see [capability evolution](references/continuous-skill-evolution.md).
+Eligible, verified L2/L3 product changes may produce capability candidates. Prose, formatting, fixtures, read-only work, and non-reusable changes do not. Harvesting, adoption, and promotion are separate explicit steps.
 
 Deterministic fixtures enforce file and byte budgets. Ordinary context is exactly three unique files, at most 3,600 bytes and 900 estimated tokens. Performance sampling keeps absolute limits for small and 10k-file checks and treats the 50k case as informational. These synthetic results do not certify real Agent loading or every operating system.
 
@@ -172,19 +173,17 @@ npm pack --dry-run
 `test:full` includes the performance sampler. `prepublish-check` intentionally refuses to pass without real release type, evidence, and exact approval. A local regression run does not establish npm publication, Windows/Linux verification, or real-client execution.
 
 <!-- sync:architecture -->
-## Architecture and references
+## Architecture and documentation
 
 ```text
 bin → src/cli → src/modules → src/kernel + src/shared
 ```
 
-Adapters isolate external effects; catalogs load versioned assets; root `src/*.mjs` files are compatibility facades. Start with:
+All project documentation is managed under `docs/`: localized user documentation under language folders and maintainer-only material under `docs/internal`. The root keeps only the default English README. Adapters isolate external effects; catalogs load versioned assets; root `src/*.mjs` files are compatibility facades.
 
 - [Agent Skill](SKILL.md)
-- [Reference map](references/README.md)
-- [Initializer contract](references/initializer.md)
-- [Capability evolution](references/continuous-skill-evolution.md)
-- [Workflow integrations](references/workflow-integrations.md)
+- [Initializer contract](docs/internal/reference/initializer.md)
+- [Capability evolution](docs/internal/reference/continuous-skill-evolution.md)
 - [Capability and platform registry](assets/registries/capability-pack-registry.json)
 
 <!-- sync:license -->

@@ -20,7 +20,7 @@ Use [templates/client-os-matrix.json](templates/client-os-matrix.json) as the bl
 | Independent reviewer | Recomputes the candidate digest, inspects the actual client entrypoint replay, and checks negative/recovery evidence. | Cannot be the implementation owner or environment operator for the reviewed cell. |
 | Release reviewer | Determines whether the declared matrix is complete enough for a human release decision. | Cannot infer certification from receipt counts or passing repository tests. |
 
-An execution cell needs at least one reviewer who is independent from both the implementation owner and the environment operator. Any later `real-project` certification receipt remains subject to the stricter two-independent-reviewer requirement in [certification-evidence.md](../../references/certification-evidence.md).
+An execution cell needs at least one reviewer who is independent from both the implementation owner and the environment operator. Any later `real-project` certification receipt remains subject to the stricter two-independent-reviewer requirement in [certification-evidence.md](../reference/certification-evidence.md).
 
 ## Consent, privacy, and anonymization
 

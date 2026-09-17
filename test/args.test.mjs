@@ -3,6 +3,19 @@ import test from 'node:test';
 import { parseArgs } from '../src/args.mjs';
 import { isSafeRelative, normalizeRelative } from '../src/utils.mjs';
 
+test('starts guided initialization in the current directory when no arguments are provided', () => {
+  assert.deepEqual(parseArgs([], { environment: { LANG: 'zh_CN.UTF-8' }, runtimeLocale: 'en-US' }), {
+    command: 'init',
+    target: '.',
+    options: { guided: true, locale: 'zh-CN' },
+  });
+  assert.deepEqual(parseArgs([], { environment: {}, runtimeLocale: 'en-US' }), {
+    command: 'init',
+    target: '.',
+    options: { guided: true, locale: 'en' },
+  });
+});
+
 test('parses init flags and a target with spaces', () => {
   const parsed = parseArgs(['init', 'project with spaces', '--yes', '--config=answers.json', '--migrate-links']);
   assert.deepEqual(parsed, {

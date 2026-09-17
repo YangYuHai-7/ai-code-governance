@@ -91,8 +91,7 @@ function validateMarkdownLinks() {
   const files = [
     path.join(root, 'SKILL.md'),
     path.join(root, 'README.md'),
-    ...markdownFiles(path.join(root, 'references')),
-    ...markdownFiles(path.join(root, 'docs', 'validation')),
+    ...markdownFiles(path.join(root, 'docs')),
   ];
   for (const file of files) {
     const text = markdownOutsideFences(fs.readFileSync(file, 'utf8'));
@@ -141,13 +140,13 @@ function validateExternalValidationTemplates({ negativeProbe = false } = {}) {
   let receipt;
   let matrix;
   try {
-    receipt = JSON.parse(read('docs/validation/templates/external-evidence-receipt.json'));
+    receipt = JSON.parse(read('docs/internal/validation/templates/external-evidence-receipt.json'));
     validateBlankExternalReceipt(receipt);
   } catch (error) {
     fail(`External evidence receipt template is invalid: ${error.message}`);
   }
   try {
-    matrix = JSON.parse(read('docs/validation/templates/client-os-matrix.json'));
+    matrix = JSON.parse(read('docs/internal/validation/templates/client-os-matrix.json'));
     validateBlankClientOsMatrix(matrix);
   } catch (error) {
     fail(`Client/OS matrix template is invalid: ${error.message}`);
@@ -270,7 +269,7 @@ function validateAgentRegistry(registry) {
 }
 
 function validateNoLinkAdapters() {
-  const markdown = [path.join(root, 'SKILL.md'), path.join(root, 'README.md'), ...markdownFiles(path.join(root, 'references'))];
+  const markdown = [path.join(root, 'SKILL.md'), path.join(root, 'README.md'), ...markdownFiles(path.join(root, 'docs'))];
   const forbidden = [
     { pattern: /\bln\s+-s\b/, label: 'ln -s adapter command' },
     { pattern: /New-Item\s+-ItemType\s+Junction/i, label: 'PowerShell junction command' },
@@ -732,7 +731,7 @@ function runNegativeProbe(
 
   let brokenLinkCaught = false;
   try {
-    validateLocalLink(path.join(root, 'SKILL.md'), 'references/does-not-exist.md');
+    validateLocalLink(path.join(root, 'SKILL.md'), 'docs/internal/reference/does-not-exist.md');
   } catch {
     brokenLinkCaught = true;
   }
@@ -909,11 +908,11 @@ try {
 } catch (error) {
   fail(`Agent registry is not valid JSON: ${error.message}`);
 }
-const generationProtocol = read('references/stack-skill-generation.md');
+const generationProtocol = read('docs/internal/reference/stack-skill-generation.md');
 validateGenerationProtocol(generationProtocol);
-const evolutionProtocol = read('references/continuous-skill-evolution.md');
+const evolutionProtocol = read('docs/internal/reference/continuous-skill-evolution.md');
 validateEvolutionProtocol(evolutionProtocol);
-const workflowProtocol = read('references/workflow-integrations.md');
+const workflowProtocol = read('docs/internal/reference/workflow-integrations.md');
 validateWorkflowProtocol(workflowProtocol);
 
 let registry;
