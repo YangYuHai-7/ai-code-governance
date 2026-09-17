@@ -5,13 +5,13 @@
 **面向 AI 编码 Agent 的自适应治理——小改动快速完成，关键业务变更审慎执行。**
 
 <p>
-  <a href="README.md">English</a> · <strong>简体中文</strong>
+  <a href="../../README.md">English</a> · <strong>简体中文</strong>
 </p>
 
 [![Node.js 22+](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
-[![CI: Manual](https://img.shields.io/badge/CI-manual-6f42c1?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Agents](https://img.shields.io/badge/Agents-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-111827)](SKILL.md)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../../LICENSE)
+[![CI: Manual](https://img.shields.io/badge/CI-manual-6f42c1?logo=githubactions&logoColor=white)](../../.github/workflows/ci.yml)
+[![Agents](https://img.shields.io/badge/Agents-Codex%20%7C%20Claude%20Code%20%7C%20Cursor-111827)](../../SKILL.md)
 
 单一规范源 · 默认最小上下文 · 先有证据再下结论 · 不自动过度治理
 
@@ -31,7 +31,7 @@ node bin/aicg.js init /path/to/project --guided
 node bin/aicg.js check /path/to/project
 ```
 
-引导流程会先扫描再提问，由项目负责人选择需要支持的 Agent 和治理文件语言；工具推荐能够满足需求的最小预设，预览全部写入操作，并且只应用已授权的决策。准确参数和所有权规则请查看[初始化契约](references/initializer.md)。
+引导流程会先扫描再提问，由项目负责人选择需要支持的 Agent 和治理文件语言；工具推荐能够满足需求的最小预设，预览全部写入操作，并且只应用已授权的决策。准确参数和所有权规则请查看[初始化契约](../../references/initializer.md)。
 
 <!-- sync:why-aicg -->
 ## 为什么选择 AICG
@@ -108,7 +108,7 @@ Minimal 不生成管理类文件。经批准的 Standard/Complete 方案受文�
 <!-- sync:vertical-delivery -->
 ## 一个功能，一个交付边界
 
-L2/L3 生产功能使用一个范围明确的文档覆盖完整交付。[工作单元 schema](assets/contracts/work-unit-schema.json)把范围、成功与失败用例、适用 QA 用例、公共 API/方法可测试性、引用、记忆影响和必要角色绑定到同一个审批哈希。
+L2/L3 生产功能使用一个范围明确的文档覆盖完整交付。[工作单元 schema](../../assets/contracts/work-unit-schema.json)把范围、成功与失败用例、适用 QA 用例、公共 API/方法可测试性、引用、记忆影响和必要角色绑定到同一个审批哈希。
 
 ```bash
 aicg work-unit plan . --work-unit docs/ai/feature.json --json
@@ -138,7 +138,7 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/candidat
 aicg release-check . --type feature --evidence docs/ai/release-evidence/candidate.json --replay --approve <planHash>
 ```
 
-推送、发布、部署、安装 hook、发送外部消息和修改 CI 都需要独立授权。发布前请阅读[发布验收契约](references/release-acceptance.md)。
+推送、发布、部署、安装 hook、发送外部消息和修改 CI 都需要独立授权。发布前请阅读[发布验收契约](../../references/release-acceptance.md)。
 
 <!-- sync:evidence -->
 ## 证据、成长与性能
@@ -150,7 +150,7 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/candidat
 | `enforced` | 指定机器检查及其反向探针能够拒绝错误声明。 |
 | `verified` | 指定命令、候选版本、范围、平台和结果具有当前执行证据。 |
 
-经过验证、符合条件的 L2/L3 产品变更可以生成能力候选。纯文案、格式、fixture、只读工作和不可复用修改不会触发提取。提取、采用和晋升是三个独立的显式步骤，详见[能力演进](references/continuous-skill-evolution.md)。
+经过验证、符合条件的 L2/L3 产品变更可以生成能力候选。纯文案、格式、fixture、只读工作和不可复用修改不会触发提取。提取、采用和晋升是三个独立的显式步骤，详见[能力演进](../../references/continuous-skill-evolution.md)。
 
 确定性 fixture 会限制文件数量和字节预算。普通上下文固定为三个唯一文件，不超过 3,600 字节和 900 个估算 token。性能采样保留小型和一万文件项目的绝对上限，五万文件场景仅提供信息。这些合成结果不能证明真实 Agent 加载效果，也不能认证所有操作系统。
 
@@ -180,14 +180,14 @@ bin → src/cli → src/modules → src/kernel + src/shared
 
 适配器隔离外部影响，目录加载带版本的资产，根目录 `src/*.mjs` 文件作为兼容门面。建议从以下内容开始：
 
-- [Agent Skill](SKILL.md)
-- [参考资料索引](references/README.md)
-- [初始化契约](references/initializer.md)
-- [能力演进](references/continuous-skill-evolution.md)
-- [工作流集成](references/workflow-integrations.md)
-- [能力与平台注册表](assets/registries/capability-pack-registry.json)
+- [Agent Skill](../../SKILL.md)
+- [参考资料索引](../../references/README.md)
+- [初始化契约](../../references/initializer.md)
+- [能力演进](../../references/continuous-skill-evolution.md)
+- [工作流集成](../../references/workflow-integrations.md)
+- [能力与平台注册表](../../assets/registries/capability-pack-registry.json)
 
 <!-- sync:license -->
 ## 许可证
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](../../LICENSE)
