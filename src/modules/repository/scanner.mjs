@@ -206,9 +206,6 @@ export function scanProject(target, options = {}) {
   if (['openspec/config.yaml', 'openspec/specs', 'openspec/changes'].some((relative) => exists(path.join(root, relative)))) {
     externalWorkflows.push('openspec-change-governance');
   }
-  if (exists(path.join(root, '.codex-plugin/plugin.json')) || exists(path.join(root, '.claude-plugin/plugin.json'))) {
-    externalWorkflows.push('superpowers-execution-discipline');
-  }
 
   return {
     root,

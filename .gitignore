@@ -2,3 +2,30 @@ node_modules/
 *.tgz
 .coverage/
 .worktrees/
+.cache/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.env
+.env.*
+!.env.example
+
+# Local AI workflow and review artifacts
+.superpowers/
+docs/superpowers/
+docs/pilots/
+docs/reports/
+reports/
+reviews/
+
+# Generated test and tool reports
+coverage/
+test-results/
+playwright-report/
+.nyc_output/
+*.log
+junit*.xml
+docs/评测-*.md
+docs/整改-*.md
+docs/*报告*.md

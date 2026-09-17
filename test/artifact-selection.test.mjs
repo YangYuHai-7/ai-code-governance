@@ -31,6 +31,20 @@ function fixture(context) {
   return { root, scan, config: { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'minimal' } };
 }
 
+test('repository scan recognizes OpenSpec without treating plugin markers as workflow providers', (context) => {
+  const { root } = fixture(context);
+  for (const relative of [
+    'openspec/config.yaml',
+    '.codex-plugin/plugin.json',
+    '.claude-plugin/plugin.json',
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), relative.endsWith('.json') ? '{}\n' : 'schema: spec-driven\n');
+  }
+
+  assert.deepEqual(scanProject(root).externalWorkflows, ['openspec-change-governance']);
+});
+
 test('Codex-only minimal emits only the trusted kernel', (context) => {
   const { config, scan } = fixture(context);
   const paths = buildArtifacts(config, scan).map((item) => item.path).sort();

@@ -236,4 +236,4 @@
 | 可重复的验证 | 检查器 + 验证档案 |
 | 临时任务状态 | `state/<task-slug>/`（gitignored） |
 
-理由和上面所有条一样朴素：**一个事实的第二份拷贝，是第二个需要维持为真的东西。** 在根仓库重述子模块的文档、把 OpenSpec tasks 再复制成 Superpowers plan、在 skill 里重述规则正文、在钩子里打印规则文本——都是同一个错误的不同形态。钩子应该打印**指针和实时状态**，永不打印规则正文。外部工作流的选择、权威和证据使用 [workflow-integrations.md](workflow-integrations.md)。
+理由和上面所有条一样朴素：**一个事实的第二份拷贝，是第二个需要维持为真的东西。** 在根仓库重述子模块文档、把 OpenSpec tasks 再复制成另一份执行计划、在 skill 里重述规则正文、在钩子里打印规则文本——都是同一个错误的不同形态。钩子应该打印**指针和实时状态**，永不打印规则正文。外部工作流的选择、权威和证据使用 [workflow-integrations.md](workflow-integrations.md)。

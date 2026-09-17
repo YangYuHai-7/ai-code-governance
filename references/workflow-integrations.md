@@ -1,13 +1,10 @@
 # 外部规格与执行工作流集成协议
 
-机器可读注册表在 [../assets/registries/workflow-integration-registry.json](../assets/registries/workflow-integration-registry.json)。本协议用于发现、选择和约束 OpenSpec、Superpowers 或相邻工具；它不要求目标项目安装任何一个，也不授权 Agent 自动安装插件、修改全局配置或采用第三方 bridge。
+机器可读注册表在 [../assets/registries/workflow-integration-registry.json](../assets/registries/workflow-integration-registry.json)。本协议用于发现、选择和约束 OpenSpec 或其他由项目明确选择的相邻工具；它不要求目标项目安装任何一个，也不授权 Agent 自动安装插件、修改全局配置或采用第三方 bridge。
 
 ## 为什么需要单独协议
 
-治理框架容易在两个方向重复造轮子：
-
-- 自己实现一套 proposal、delta spec、verify、archive，重复规格工具；
-- 自己实现一套 brainstorming、TDD、调试、worktree、subagent review，重复执行方法库。
+治理框架不应重复实现外部 provider 已经拥有的 proposal、delta spec、verify 或 archive 生命周期，也不应把外部任务状态复制成第二套项目正典。
 
 反过来，把多个完整工作流直接叠加也会产生第二正典、重复审批和相互矛盾的计划。正确做法是先确定权威，再把外部工具当作可替换 provider。
 
@@ -39,15 +36,6 @@ providers:
     source_checked_at: YYYY-MM-DD
     license: <observed upstream license>
     source_ids: [<official source ids>]
-  execution_discipline:
-    id: superpowers-execution-discipline
-    selected_by: <user decision id>
-    installed_version: <observed version>
-    version_checked_at: YYYY-MM-DD
-    source_checked_at: YYYY-MM-DD
-    license: <observed upstream license>
-    source_ids: [<official source ids>]
-
 authority:
   current_product_behavior: openspec/specs
   active_change: openspec/changes/<change-id>
@@ -89,34 +77,6 @@ overlap_policy:
 - 不因为 Markdown 结构合法就证明实现符合业务行为；
 - 不自动获得安装、更新、archive 或外部发布权限。
 
-## Superpowers 作为 execution-discipline provider
-
-采用前检查真实运行时能否发现相应 skills，并记录插件/skill 版本或 commit。优先选择可观察的能力，而不是笼统写“已启用 Superpowers”。
-
-适合复用的执行能力包括：
-
-- test-driven development；
-- systematic debugging；
-- worktree isolation；
-- plan execution 或 subagent-driven development；
-- spec-compliance review 与 code-quality review；
-- verification before completion；
-- branch finishing。
-
-### 重叠处理
-
-Superpowers 的完整工作流通常还拥有 brainstorming、design 和 writing-plans。目标项目已有批准的 OpenSpec change 或项目计划时，不得再生成第二份正式 design/plan。
-
-只有满足以下任一条件才能声明 `coordinated`：
-
-1. 运行时支持选择性调用，且真实回放证明所选执行 skill 不会强制创建冲突 artifact；
-2. 项目采用有来源、许可证和版本证据的本地适配 skill，并通过行为 forward-test；
-3. 用户选择并审计了 external bridge/custom schema，且 bridge 明确单一权威。
-
-如果上游 bootstrap 强制完整流程且项目无法选择性调用，不能写“已无冲突集成”。应选择一个完整 orchestrator，或把状态标记为 `unverified` 并停止生成冲突接线。
-
-复制或改写外部 skill 时保留来源、许可证、上游版本、局部修改和刷新策略；不要让复制内容无主地进入项目正典。
-
 ## L9 任务关联
 
 存在外部 provider 时，`task.yaml` 增加引用而不是内容副本：
@@ -132,14 +92,6 @@ external_workflows:
       - openspec/changes/<change-id>/design.md
       - openspec/changes/<change-id>/tasks.md
     observed_version: <version>
-  execution:
-    provider: superpowers-execution-discipline
-    mode: selective
-    capabilities:
-      - test-driven-development
-      - systematic-debugging
-      - verification-before-completion
-    plan_authority: openspec-tasks
 ```
 
 恢复任务时必须先验证：change 仍存在、权威路径仍解析到同一 change、任务未引用已归档或被替代的变更、provider 版本没有在未复核情况下漂移。
@@ -148,11 +100,11 @@ external_workflows:
 
 | 任务 | 默认建议 |
 | --- | --- |
-| 只读解释、局部调查 | 不创建 OpenSpec change，不启用完整执行工作流 |
+| 只读解释、局部调查 | 不创建 OpenSpec change，不启用额外外部工作流 |
 | 单文件无行为修复 | 项目原生任务 + 定向验证；是否 TDD 按风险决定 |
 | 可观察行为变化 | change contract + requirement/scenario traceability |
 | API、权限、数据、跨仓契约 | change contract + L9 + 完整项目门禁 + 独立 review |
-| 生产修复、迁移、敏感操作 | L9 权限与审计 + systematic debugging + rollback/verification evidence |
+| 生产修复、迁移、敏感操作 | L9 权限与审计 + 项目诊断流程 + rollback/verification evidence |
 
 工具不能决定风险等级。目标仓库事实、用户影响、可逆性和权限边界决定需要多少仪式。
 
@@ -178,16 +130,12 @@ external_workflows:
 - [OpenSpec Getting Started](https://github.com/Fission-AI/OpenSpec/blob/main/docs/getting-started.md)
 - [OpenSpec Customization](https://github.com/Fission-AI/OpenSpec/blob/main/docs/customization.md)
 - [OpenSpec Writing Good Specs](https://github.com/Fission-AI/OpenSpec/blob/main/docs/writing-specs.md)
-- [Superpowers repository and workflow](https://github.com/obra/superpowers)
-- [Superpowers using-superpowers skill](https://github.com/obra/superpowers/blob/main/skills/using-superpowers/SKILL.md)
-- [Superpowers systematic-debugging skill](https://github.com/obra/superpowers/blob/main/skills/systematic-debugging/SKILL.md)
-
-OpenSpec community schema 或其他第三方 bridge 必须作为独立 provider 记录自己的仓库、版本、许可证和证据等级；不能借用 OpenSpec/Superpowers 上游名称获得 `supported` 或 `certified`。
+OpenSpec community schema 或其他第三方 bridge 必须作为独立 provider 记录自己的仓库、版本、许可证和证据等级；不能借用 OpenSpec 上游名称获得 `supported` 或 `certified`。
 
 ## 反模式
 
 - 因为目录被检测到就静默采用外部工具。
-- 同时保留 OpenSpec tasks、Superpowers plan 和项目 harness plan，声称它们会自然同步。
+- 同时保留 OpenSpec tasks、另一套外部计划和项目 harness plan，声称它们会自然同步。
 - 把 `openspec validate` 通过写成产品测试通过。
 - 声称 selective integration，却没有真实运行时调用证据。
 - 把第三方 bridge 当作两个上游项目的官方能力。

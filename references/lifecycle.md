@@ -46,7 +46,7 @@
 | **新同事 / 新助手问的问题** | 中 | 他们问的正是入口层没说清的 |
 | **`gate_blocked` 记录** | 中 | 反复被同一个先存在问题挡住 = 有笔技术债该单独立项 |
 | **上游工具能力变化** | 中 | 新客户端出现、旧客户端加了钩子 API → L0/L1/L10 要更新 |
-| **外部规格/执行 provider 变化** | 强 | OpenSpec schema/命令或 Superpowers bootstrap/skill 行为变化 → 权威矩阵、接线和证据先降级再复核 |
+| **外部规格/执行 provider 变化** | 强 | OpenSpec schema/命令或其他已选 provider 行为变化 → 权威矩阵、接线和证据先降级再复核 |
 | **文档里的陈旧措辞** | 弱 | 由 L8 的陈旧措辞检查产出 |
 | **已验证的可复用功能** | 强 | complete 前扫描 change set；权限、租户、幂等等高后果能力一次即可评估晋升 |
 | **项目统一封装或 adapter** | 强 | 发现新 public export/client/provider 或第二个 consumer，自动查重并 create/update Skill |

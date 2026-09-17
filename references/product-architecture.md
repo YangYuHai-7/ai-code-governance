@@ -52,7 +52,7 @@ bin → cli → modules → kernel/shared
 
 ### 外部工作流编排器
 
-发现 OpenSpec、Superpowers 或相邻 spec/change/execution 系统，记录真实版本、来源、许可证、能力与重叠，但不自动采用。用户选择后生成唯一权威矩阵：产品行为、active change、正式 design/task、runtime state 和 delivery evidence 各自只能有一个 owner。非 owner 系统只保存引用；选择性执行能力必须经过真实客户端回放。协议见 [workflow-integrations.md](workflow-integrations.md)。
+发现 OpenSpec 或相邻 spec/change/execution 系统，记录真实版本、来源、许可证、能力与重叠，但不自动采用。用户选择后生成唯一权威矩阵：产品行为、active change、正式 design/task、runtime state 和 delivery evidence 各自只能有一个 owner。非 owner 系统只保存引用；选择性执行能力必须经过真实客户端回放。协议见 [workflow-integrations.md](workflow-integrations.md)。
 
 ### 产物编译器
 
