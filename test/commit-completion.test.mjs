@@ -16,12 +16,16 @@ import { scanProjectMemoryFacts, buildMemoryArtifacts } from '../src/modules/mem
 import { prepareCompletionUnit } from './helpers/work-unit-fixture.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+// Verification fixtures intentionally start nested `node --test` processes.
+// The parent harness marker would otherwise make Node skip those child files.
+delete process.env.NODE_TEST_CONTEXT;
 
 test('completion reports stale owning memory and exempts test-only and formatting changes', (context) => {
   const root = memoryFixture(context);
   const scan = scanProject(root);
   const config = { ...defaultConfig(scan), initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' } };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  for (const artifact of buildMemoryArtifacts(config, scan, scanProjectMemoryFacts(scan)).artifacts) write(root, artifact.path, artifact.content);
   baseline(root);
   write(root, 'test/widgets.test.mjs', '// test-only refinement\n');
   assert.deepEqual(runCompletion(root, { taskLevel: 'L1' }).memory.issues, []);
@@ -83,6 +87,12 @@ function baseline(root) {
 function write(root, relative, content = 'export const value = true;\n') {
   fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
   fs.writeFileSync(path.join(root, relative), content);
+}
+
+function verificationTest(root, name, content = '') {
+  const relative = `test/verification/${name}.test.cjs`;
+  write(root, relative, content || "'use strict';\n");
+  return `node --test ${relative}`;
 }
 
 // Explicit test-owner approvals, separate from completion itself. Persist the
@@ -149,7 +159,8 @@ test('approval binds same-path staged unstaged and untracked content plus verifi
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
   write(root, 'src/modules/widget/index.mjs');
-  write(root, 'package.json', JSON.stringify({ scripts: { test: 'node -e "require(\'fs\').appendFileSync(\'src/modules/widget/index.mjs\', \'\\n// rewritten\')"' } }));
+  const rewrite = verificationTest(root, 'rewrite-widget', "require('node:fs').appendFileSync('src/modules/widget/index.mjs', '\\n// rewritten');\n");
+  write(root, 'package.json', JSON.stringify({ scripts: { test: rewrite } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   for (const kind of ['unstaged', 'staged', 'untracked']) {
@@ -342,10 +353,13 @@ test('completion rereads final approval references and recomputes path and revie
   const root = fixture('final-approval');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
+  const scripts = {
+    'test:path': verificationTest(root, 'change-path', "require('node:fs').writeFileSync('README.md', 'new path');\n"),
+    'test:review': verificationTest(root, 'change-review', "require('node:fs').writeFileSync('schema.proto', 'new contract');\n"),
+    'test:reference': verificationTest(root, 'change-reference', "require('node:fs').appendFileSync('docs/ai/task-approval/approved.md', 'stale');\n"),
+  };
   write(root, 'package.json', JSON.stringify({ scripts: {
-    'test:path': 'node -e "require(\'fs\').writeFileSync(\'README.md\', \'new path\')"',
-    'test:review': 'node -e "require(\'fs\').writeFileSync(\'schema.proto\', \'new contract\')"',
-    'test:reference': 'node -e "require(\'fs\').appendFileSync(\'docs/ai/task-approval/approved.md\', \'stale\')"',
+    ...scripts,
   } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
@@ -394,8 +408,8 @@ for (const [mutation, body, taskLevel] of [
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
     initialize(root);
     write(root, 'src/modules/session/auth.mjs');
-    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); ${body}\n`);
-    write(root, 'package.json', JSON.stringify({ scripts: { test: 'node scripts/verify.cjs' } }));
+    const verify = verificationTest(root, `final-route-${mutation}`, `const fs = require('node:fs'); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ scripts: { test: verify } }));
     assert.equal(run(['sync', root]).status, 0);
     baseline(root);
     write(root, 'README.md', '# Changed guide\n');
@@ -420,8 +434,8 @@ for (const [mutation, body] of [
     const root = fixture(`final-route-unreadable-${mutation}`);
     context.after(() => fs.rmSync(root, { recursive: true, force: true }));
     initialize(root);
-    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); ${body}\n`);
-    write(root, 'package.json', JSON.stringify({ scripts: { test: 'node scripts/verify.cjs' } }));
+    const verify = verificationTest(root, `unreadable-${mutation}`, `const fs = require('node:fs'); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ scripts: { test: verify } }));
     assert.equal(run(['sync', root]).status, 0);
     baseline(root);
     assert.throws(() => runCompletion(root, { taskLevel: 'L1', verificationCommand: 'npm test' }), /Cannot read.*(?:changed paths|routing configuration)/);
@@ -432,7 +446,9 @@ test('completion returns current verified capability candidates without writing 
   const root = fixture('harvest-summary');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
-  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: 'node -e "process.exit(0)"', 'test:fail': 'node -e "process.exit(1)"' } }));
+  const pass = verificationTest(root, 'harvest-pass');
+  const fail = verificationTest(root, 'harvest-fail', "throw new Error('expected verification failure');\n");
+  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: pass, 'test:fail': fail } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   write(root, 'src/modules/http/index.ts', "import axios from 'axios'; export const client = axios.create({});\n");
@@ -486,7 +502,8 @@ test('completion fails closed when a verified command leaves HEAD source evidenc
   baseline(root);
   const blob = git(root, ['rev-parse', `HEAD:${source}`]).stdout.trim();
   const objectPath = `.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`;
-  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: `node -e "require('fs').unlinkSync('${objectPath}')"` } }));
+  const verify = verificationTest(root, 'remove-git-object', `require('node:fs').unlinkSync(${JSON.stringify(objectPath)});\n`);
+  write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: verify } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 2000 });\n");
@@ -507,8 +524,8 @@ for (const [mutation, body] of [
     const source = 'src/modules/http/index.ts';
     write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 1000 });\n");
     write(root, 'src/modules/http/peer.ts', 'export const peer = true;\n');
-    write(root, 'scripts/verify.cjs', `const fs = require('node:fs'); const source = ${JSON.stringify(source)}; if (!fs.readFileSync(source, 'utf8').includes('2000')) process.exit(1); ${body}\n`);
-    write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: 'node scripts/verify.cjs' } }));
+    const verify = verificationTest(root, `verification-input-${mutation}`, `const fs = require('node:fs'); const source = ${JSON.stringify(source)}; if (!fs.readFileSync(source, 'utf8').includes('2000')) process.exit(1); ${body}\n`);
+    write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: verify } }));
     const synced = run(['sync', root]);
     assert.equal(synced.status, 0, synced.stdout + synced.stderr);
     baseline(root);
@@ -621,7 +638,8 @@ test('upgrade-required completion performs no harvest or project command mutatio
   const root = fixture('upgrade-read-only');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
-  write(root, 'package.json', JSON.stringify({ scripts: { verify: 'node --eval "require(\'fs\').writeFileSync(\'mutation-marker\', \'bad\')"' } }));
+  const verify = verificationTest(root, 'upgrade-mutation', "require('node:fs').writeFileSync('mutation-marker', 'bad');\n");
+  write(root, 'package.json', JSON.stringify({ scripts: { verify } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
   write(root, 'src/modules/widget/index.mjs');
@@ -742,13 +760,15 @@ test('manual completion is read-only and runs only an explicitly discovered npm 
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
   const agentsBefore = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
+  const pass = verificationTest(root, 'manual-pass');
+  const broken = verificationTest(root, 'manual-fail', "throw new Error('expected verification failure');\n");
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'completion-fixture',
     private: true,
     scripts: {
-      test: 'node --eval "process.exit(0)"',
-      verify: 'node --eval "process.exit(0)"',
-      'verify:broken': 'node --eval "process.exit(7)"',
+      test: pass,
+      verify: pass,
+      'verify:broken': broken,
     },
   }, null, 2));
   const configPath = path.join(root, '.ai-governance', 'config.json');
@@ -789,16 +809,18 @@ test('completion exposes only verification scripts and never runs implicit npm l
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
   const marker = path.join(root, 'implicit-hook-ran');
+  const pass = verificationTest(root, 'command-boundary-pass');
+  const hook = verificationTest(root, 'implicit-hook', "require('node:fs').writeFileSync('implicit-hook-ran', 'unexpected');\n");
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'completion-command-boundary',
     private: true,
     scripts: {
-      pretest: 'node --eval "require(\'fs\').writeFileSync(\'implicit-hook-ran\', \'unexpected\')"',
-      test: 'node --eval "process.exit(0)"',
-      'test:unit': 'node --eval "process.exit(0)"',
-      verify: 'node --eval "process.exit(0)"',
-      start: 'node --eval "process.exit(0)"',
-      deploy: 'node --eval "process.exit(0)"',
+      pretest: hook,
+      test: pass,
+      'test:unit': pass,
+      verify: pass,
+      start: pass,
+      deploy: pass,
     },
   }, null, 2));
 
@@ -829,7 +851,8 @@ for (const artifactLanguage of ['en', 'zh-CN']) test(`surface verification passe
   initialize(root, artifactLanguage);
   fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --eval "process.exit(0)"' } }));
+  const emptyHttp = verificationTest(root, 'surface-http-empty');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': emptyHttp } }));
   fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
     schemaVersion: 1,
     stories: [{
@@ -858,7 +881,7 @@ for (const artifactLanguage of ['en', 'zh-CN']) test(`surface verification passe
   assert.equal('stdout' in fabricatedPayload.projectVerification, false);
 
   fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'scripts', 'verify-http.mjs'), `import http from 'node:http';
+  fs.writeFileSync(path.join(root, 'scripts', 'verify-http.test.mjs'), `import http from 'node:http';
 const server = http.createServer((request, response) => {
   if (request.method === 'GET' && request.url === '/health') {
     response.writeHead(200, { 'content-type': 'text/plain' });
@@ -876,7 +899,7 @@ await new Promise((resolve) => server.close(resolve));
 if (response.status !== 200 || body !== 'healthy') process.exit(1);
 console.log('AICG_SURFACE_EVIDENCE ' + JSON.stringify({ schemaVersion: 1, storyId: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', outcome: 'passed' }));
 `);
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node scripts/verify-http.mjs' } }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --test scripts/verify-http.test.mjs' } }));
   const completed = runApproved(['complete', root, '--verify', 'npm run test:http', '--json']);
   assert.equal(completed.status, 0, `${completed.stderr}\n${completed.stdout}`);
   const completedPayload = JSON.parse(completed.stdout);
@@ -901,7 +924,8 @@ test('surface verification rejects a successful command with a marker bound to a
   fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
   const marker = JSON.stringify({ schemaVersion: 1, storyId: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /invented', outcome: 'passed' });
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': `node --eval "console.log('AICG_SURFACE_EVIDENCE ${marker.replaceAll('"', '\\"')}')"` } }));
+  const wrongMarker = verificationTest(root, 'surface-wrong-marker', `console.log(${JSON.stringify(`AICG_SURFACE_EVIDENCE ${marker}`)});\n`);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': wrongMarker } }));
   fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
     schemaVersion: 1,
     stories: [{ id: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', reachability: 'reachable', environment: 'available', command: 'npm run test:http' }],
@@ -917,7 +941,8 @@ test('surface verification blocks an explicitly internal-only unreachable story'
   initialize(root);
   fs.mkdirSync(path.join(root, 'src', 'modules', 'api'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'api', 'index.mjs'), "import http from 'node:http';\nexport const server = http.createServer();\n");
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': 'node --eval "process.exit(0)"' } }));
+  const internalOnly = verificationTest(root, 'surface-internal-only');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:http': internalOnly } }));
   fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
     schemaVersion: 1,
     stories: [{
@@ -943,7 +968,8 @@ test('unavailable browser verification remains unverified instead of passing or 
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
   fs.writeFileSync(path.join(root, 'index.html'), '<button id="save">Save</button>\n');
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:browser': 'node --eval "process.exit(0)"' } }));
+  const browser = verificationTest(root, 'surface-browser');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { 'test:browser': browser } }));
   fs.writeFileSync(path.join(root, 'docs', 'ai', 'surface-verification.json'), JSON.stringify({
     schemaVersion: 1,
     stories: [{
@@ -968,7 +994,8 @@ test('completion blocks production readiness when confirmed risk signals lack bo
   const root = fixture('production-readiness-missing');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeWithConstraints(root, ['Only active members may access tenant issues.']);
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node --eval "process.exit(0)"' } }));
+  const verify = verificationTest(root, 'production-readiness');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify } }));
   assert.equal(run(['sync', root]).status, 0);
 
   const json = runApproved(['complete', root, '--verify', 'npm run verify', '--json']);
@@ -1143,7 +1170,8 @@ test('chat completion and the managed pre-commit hook validate only when explici
 
   const completionInput = path.join(root, 'completion.json');
   fs.writeFileSync(completionInput, JSON.stringify({ verificationCommand: 'npm run verify' }));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify: 'node --eval "process.exit(0)"' } }));
+  const verify = verificationTest(root, 'request-completion');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify } }));
   assert.equal(run(['sync', root]).status, 0);
   const verifiedCompletion = run(['request', root, '--text', '运行完成门禁', '--config', completionInput, '--json']);
   assert.equal(verifiedCompletion.status, 1, verifiedCompletion.stderr);

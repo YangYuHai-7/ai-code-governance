@@ -8,7 +8,7 @@ import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { resolveInitializationDecision } from '../src/project-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
-import { evaluateModuleGraph, moduleGraphDeclaration } from '../src/modules/architecture/index.mjs';
+import { deriveArchitectureDecision, evaluateModuleGraph, moduleGraphDeclaration, validateArchitectureDecision } from '../src/modules/architecture/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 const ACTIVE_GRAPH_CONFIG = { architecture: { status: 'active', verification: { dependencyDirection: 'aicg-check-js-ts-module-graph' } } };
@@ -24,6 +24,26 @@ test('minimal checker does not require unselected architecture artifacts or rout
   const result = run(['check', root, '--json']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(JSON.parse(result.stdout).evidence.reachable, 'pass');
+});
+
+test('repository-family architecture is advisory and never claims a root source placement scope', (context) => {
+  const root = fixture('repository-family-advisory');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "app"]\n  path = members/app\n  url = https://example.invalid/app.git\n');
+  fs.mkdirSync(path.join(root, 'members/app'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'members/app/.git'), 'gitdir: ../../.git/modules/members/app\n');
+  fs.writeFileSync(path.join(root, 'members/app/package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
+  const scan = scanProject(root);
+  const config = {
+    ...defaultConfig(scan),
+    initialization: { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard', source: 'config' },
+  };
+
+  const architecture = deriveArchitectureDecision(scan, config);
+  assert.equal(architecture.topologyBinding, 'repository-family');
+  assert.equal(architecture.status, 'advisory');
+  assert.deepEqual(architecture.scope, { roots: [], appliesTo: 'none', baselineSourcePaths: [] });
+  assert.equal(validateArchitectureDecision(architecture, config.initialization), architecture);
 });
 
 function writeSource(root, relative, content) {

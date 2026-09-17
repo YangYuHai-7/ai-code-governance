@@ -2,13 +2,13 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { CONFIG_PATH, MANIFEST_PATH, TOOL_VERSION } from '../../constants.mjs';
 import { assertNoLinkAncestor, repositoryFingerprint, sameSnapshot, snapshotPath } from '../../preconditions.mjs';
-import { classifyProject, buildDecisionLedger } from '../repository/index.mjs';
+import { buildDecisionLedger, classifyProject, scanInputFingerprint, scanProject } from '../repository/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 
-function executionFingerprint(root, intent) {
-  if (intent !== 'governance.prune') return repositoryFingerprint(root);
+function executionFingerprint(root, intent, scan = null) {
+  if (intent !== 'governance.prune') return scanInputFingerprint(scan ?? scanProject(root));
   // Bind root and directory state as well as files, but exclude volatile Git metadata.
   const snapshot = walkFilesDetailed(root, { maxDepth: Infinity, ignored: ['.git'], includeDirectories: true });
   if (!snapshot.budget.complete) throw usageError('Cannot completely scan repository inputs for pruning.');
@@ -85,7 +85,7 @@ export function buildExecutionPlan({ intent, scan, artifactPlan = null, config =
     configSha256: config ? sha256(stableJson(config)) : null,
     configFile: snapshotPath(path.join(root, CONFIG_PATH)),
     manifestFile: snapshotPath(path.join(root, MANIFEST_PATH)),
-    repositoryFingerprint: executionFingerprint(root, intent.id),
+    repositoryFingerprint: executionFingerprint(root, intent.id, scan),
     projectAssessment: classifyProject(scan),
     decisionLedger: buildDecisionLedger(scan, config),
     operations,

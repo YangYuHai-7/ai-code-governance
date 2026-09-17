@@ -20,7 +20,9 @@ test('detects React and Node from manifest dependencies', (context) => {
   const scan = scanProject(root);
   assert.deepEqual(scan.stacks.map((stack) => stack.id), ['frontend-react', 'backend-node']);
   assert.equal(scan.projectMode, 'brownfield');
-  assert.ok(scan.commands.some((command) => command.command === 'npm run test'));
+  const testCommand = scan.commands.find((command) => command.command === 'npm run test');
+  assert.equal(testCommand.verification.trust.level, 'structurally-trusted');
+  assert.deepEqual(testCommand.verification.argv, ['npm', 'run', 'test']);
 });
 
 test('uses generic fallback for an empty greenfield repository', (context) => {
@@ -29,6 +31,128 @@ test('uses generic fallback for an empty greenfield repository', (context) => {
   const scan = scanProject(root);
   assert.equal(scan.projectMode, 'greenfield');
   assert.deepEqual(scan.stacks.map((stack) => stack.id), ['generic-unknown']);
+});
+
+test('discovers git submodules as a repository family and excludes child contents from root facts', (context) => {
+  const root = fixture('repository-family');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "frontend"]\n\tpath = modules/frontend\n\turl = https://example.invalid/frontend.git\n');
+  fs.mkdirSync(path.join(root, 'modules/frontend'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'modules/frontend/.git'), 'gitdir: ../../.git/modules/modules/frontend\n');
+  fs.writeFileSync(path.join(root, 'modules/frontend/package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
+  fs.writeFileSync(path.join(root, 'modules/frontend/App.tsx'), 'export const App = () => null;\n');
+
+  const scan = scanProject(root);
+  assert.equal(scan.projectMode, 'repository-family');
+  assert.deepEqual(scan.repositoryFamily, {
+    kind: 'git-submodules',
+    source: '.gitmodules',
+    members: [{ id: 'frontend', path: 'modules/frontend', repositoryKind: 'git-submodule', initialized: true }],
+    issues: [],
+  });
+  assert.equal(scan.files.some((file) => file.relative.startsWith('modules/frontend/')), false);
+  assert.deepEqual(scan.stacks.map((stack) => stack.id), ['generic-unknown']);
+  assert.deepEqual(scan.packageDependencies, {});
+  assert.equal(scan.governanceUnits.length, 1);
+  assert.equal(scan.governanceUnits[0].path, 'modules/frontend');
+  assert.deepEqual(scan.governanceUnits[0].stacks.map((stack) => stack.id), ['frontend-react']);
+});
+
+test('rejects submodule paths that differ only by case on every platform', (context) => {
+  const root = fixture('repository-family-case-collision');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitmodules'), [
+    '[submodule "frontend-lower"]',
+    '  path = modules/frontend',
+    '[submodule "frontend-upper"]',
+    '  path = Modules/Frontend',
+    '',
+  ].join('\n'));
+
+  const scan = scanProject(root);
+  assert.equal(scan.repositoryFamily.members.length, 1);
+  assert.match(scan.repositoryFamily.issues.join('\n'), /duplicate submodule identity or path/);
+});
+
+test('discovers an ordinary nested Git repository and excludes it from root facts', (context) => {
+  const root = fixture('nested-git-family');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'services/api/.git'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'services/api/.git/HEAD'), 'ref: refs/heads/main\n');
+  fs.writeFileSync(path.join(root, 'services/api/package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
+  fs.writeFileSync(path.join(root, 'services/api/App.tsx'), 'export const App = () => null;\n');
+
+  const scan = scanProject(root);
+  assert.equal(scan.projectMode, 'repository-family');
+  assert.deepEqual(scan.repositoryFamily.members.map(({ initialized, ...member }) => member), [{
+    id: 'services/api', path: 'services/api', repositoryKind: 'nested-git',
+  }]);
+  assert.equal(scan.repositoryFamily.members[0].initialized, true);
+  assert.equal(scan.files.some((file) => file.relative.startsWith('services/api/')), false);
+  assert.deepEqual(scan.stacks.map((stack) => stack.id), ['generic-unknown']);
+  assert.deepEqual(scan.governanceUnits[0].stacks.map((stack) => stack.id), ['frontend-react']);
+});
+
+test('keeps nested repository families layered and enforces a recursion budget', (context) => {
+  const root = fixture('nested-family-layers');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "child"]\n  path = child\n');
+  fs.mkdirSync(path.join(root, 'child/vendor/grand/.git'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'child/.git'), 'gitdir: ../.git/modules/child\n');
+  fs.writeFileSync(path.join(root, 'child/package.json'), '{}\n');
+  fs.writeFileSync(path.join(root, 'child/vendor/grand/.git/HEAD'), 'ref: refs/heads/main\n');
+  fs.writeFileSync(path.join(root, 'child/vendor/grand/package.json'), JSON.stringify({
+    scripts: { test: 'node --test' }, dependencies: { react: '19.0.0' },
+  }));
+  fs.writeFileSync(path.join(root, 'child/vendor/grand/App.tsx'), 'export const App = () => null;\n');
+
+  const scan = scanProject(root);
+  const child = scan.governanceUnits[0];
+  assert.equal(child.projectMode, 'repository-family');
+  assert.deepEqual(child.repositoryFamily.members.map((member) => member.path), ['vendor/grand']);
+  assert.equal(child.sourceFiles.some((file) => file.path.startsWith('vendor/grand/')), false);
+  assert.equal(child.manifests.includes('vendor/grand/package.json'), false);
+  assert.equal(child.stacks.some((stack) => stack.id === 'frontend-react'), false);
+  assert.equal(child.governanceUnits[0].commands[0].verification.cwd, 'child/vendor/grand');
+
+  const bounded = scanProject(root, { repositoryFamilyMaxDepth: 1 });
+  assert.equal(bounded.governanceUnits[0].status, 'incomplete');
+  assert.equal(bounded.governanceUnits[0].governanceUnits[0].status, 'depth-limit');
+});
+
+test('reports a declared repository cycle without recursing', (context) => {
+  const root = fixture('repository-family-cycle');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.git'));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "loop"]\n  path = loop\n');
+  try {
+    fs.symlinkSync(process.platform === 'win32' ? root : '.', path.join(root, 'loop'), process.platform === 'win32' ? 'junction' : 'dir');
+  } catch (error) {
+    context.skip(`directory links are unavailable: ${error.code ?? error.message}`);
+    return;
+  }
+
+  const scan = scanProject(root);
+  assert.equal(scan.projectMode, 'repository-family');
+  assert.equal(scan.governanceUnits[0].status, 'cycle');
+});
+
+test('scan exclusions are audited and source-hiding rules remain unverified', (context) => {
+  const root = fixture('aicg-ignore-audit');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'src/app.ts'), 'export const app = true;\n');
+  fs.writeFileSync(path.join(root, '.aicgignore'), 'src/app.ts\n');
+  const scan = scanProject(root);
+  assert.match(scan.scanIgnore.sha256, /^[a-f0-9]{64}$/);
+  assert.equal(scan.scanIgnore.matchedCount, 1);
+  assert.equal(scan.scanIgnore.unverifiedExclusions.length, 1);
+  assert.deepEqual({ ...scan.scanIgnore.unverifiedExclusions[0], evidenceHash: undefined }, {
+    path: 'src/app.ts', type: 'file', line: 1, pattern: 'src/app.ts', category: 'product-source', evidenceStatus: 'complete',
+    contentSha256: scan.scanIgnore.unverifiedExclusions[0].contentSha256, evidenceHash: undefined,
+  });
+  assert.match(scan.scanIgnore.unverifiedExclusions[0].contentSha256, /^[a-f0-9]{64}$/);
+  assert.match(scan.scanIgnore.unverifiedExclusions[0].evidenceHash, /^[a-f0-9]{64}$/);
 });
 
 test('local review and report manifests cannot change repository facts', (context) => {
@@ -179,7 +303,7 @@ test('oversized non-code payloads do not make a code scan incomplete', (context)
   }
   const vendor = path.join(root, 'modules/management/src/utils/ezuikit-js/ezuikit.js');
   fs.mkdirSync(path.dirname(vendor), { recursive: true });
-  fs.writeFileSync(vendor, `const vendor=true;${'x'.repeat(2 * 1024 * 1024)};`);
+  fs.writeFileSync(vendor, `(function (global, factory) {\n  typeof exports === "object" && typeof module !== "undefined" ? module.exports = factory() :\n  typeof define === "function" && define.amd ? define(factory) :\n  (global.EZUIKit = factory());\n}(this, (function () {\n${'  var bundledValue = true;\n'.repeat(90000)}  return {};\n})));\n`);
 
   const scan = scanProject(root);
   assert.equal(scan.scanBudget.complete, true);

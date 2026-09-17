@@ -1,6 +1,7 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { detectSurfaceSignals } from './surface-signals.mjs';
+import { repositoryFamilyMembersSnapshot } from './repository-family.mjs';
 
 const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
@@ -117,18 +118,22 @@ function unexplainedProductPaths(files) {
 }
 
 export function classifyProject(scan) {
-  const productFiles = scan.files.filter((file) => file.type === 'file' && !isGovernancePath(file.relative));
+  const productFiles = scan.files.filter((file) => file.type === 'file'
+    && !isGovernancePath(file.relative)
+    && !(scan.projectMode === 'repository-family' && file.relative === '.gitmodules'));
   const manifests = productFiles.filter((file) => PROJECT_MANIFESTS.has(file.relative.split('/').at(-1))).map((file) => file.relative).slice(0, 8);
   const sources = sourceEvidence(productFiles);
   const tests = evidencePaths(productFiles, (relative) => /(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[^/]+$/.test(relative));
   const migrations = evidencePaths(productFiles, (relative) => /(^|\/)(?:migrations?|db\/migrate)(\/|$)/.test(relative));
   const substantiveEvidence = [...sources, ...tests, ...migrations];
   const unexplainedPaths = unexplainedProductPaths(productFiles);
-  const lifecycle = substantiveEvidence.length > 0 ? 'existing' : manifests.length > 0 || unexplainedPaths.length > 0 ? 'ambiguous' : 'greenfield';
-  const topology = scan.projectMode === 'monorepo' ? 'monorepo' : 'single-repo';
+  const repositoryMembers = repositoryFamilyMembersSnapshot(scan.repositoryFamily, scan.governanceUnits);
+  const repositoryFamily = scan.projectMode === 'repository-family' && repositoryMembers.length > 0;
+  const lifecycle = repositoryFamily || substantiveEvidence.length > 0 ? 'existing' : manifests.length > 0 || unexplainedPaths.length > 0 ? 'ambiguous' : 'greenfield';
+  const topology = repositoryFamily ? 'repository-family' : scan.projectMode === 'monorepo' ? 'monorepo' : 'single-repo';
   const confidence = lifecycle === 'ambiguous' ? 'low' : 'high';
   const kind = lifecycle === 'existing'
-    ? topology === 'monorepo' ? 'existing-monorepo' : 'existing-application'
+    ? topology === 'repository-family' ? 'existing-repository-family' : topology === 'monorepo' ? 'existing-monorepo' : 'existing-application'
     : lifecycle === 'ambiguous' ? 'ambiguous-skeleton'
       : 'greenfield-empty';
 
@@ -144,12 +149,12 @@ export function classifyProject(scan) {
       lifecycle: {
         value: lifecycle,
         confidence,
-        ruleId: lifecycle === 'existing' ? 'lifecycle-substantive-code-v1' : lifecycle === 'ambiguous' ? 'lifecycle-manifest-only-v1' : 'lifecycle-no-substantive-evidence-v1',
+        ruleId: repositoryFamily ? 'lifecycle-repository-family-v1' : lifecycle === 'existing' ? 'lifecycle-substantive-code-v1' : lifecycle === 'ambiguous' ? 'lifecycle-manifest-only-v1' : 'lifecycle-no-substantive-evidence-v1',
       },
       topology: {
         value: topology,
-        confidence: topology === 'monorepo' ? 'high' : 'medium',
-        ruleId: topology === 'monorepo' ? 'topology-workspace-v1' : 'topology-single-repo-v1',
+        confidence: topology === 'repository-family' || topology === 'monorepo' ? 'high' : 'medium',
+        ruleId: topology === 'repository-family' ? 'topology-repository-family-v1' : topology === 'monorepo' ? 'topology-workspace-v1' : 'topology-single-repo-v1',
       },
       evidence: {
         manifests,
@@ -158,6 +163,7 @@ export function classifyProject(scan) {
         migrationFiles: migrations,
         unexplainedPaths,
         productFileCount: productFiles.length,
+        ...(repositoryFamily ? { repositoryMembers } : {}),
       },
     },
     governance: {
@@ -360,10 +366,19 @@ export function buildDecisionLedger(scan, config = null) {
 
 export function assessmentSummary(scan) {
   const assessment = classifyProject(scan);
+  const governanceUnits = (scan.governanceUnits ?? []).map(({ inventory, sourceFiles, ...unit }) => ({
+    ...unit,
+    sourceFiles: (sourceFiles ?? []).map(({ absolute, ...file }) => file),
+  }));
+  const familyIncomplete = (scan.repositoryFamily?.issues?.length ?? 0) > 0
+    || governanceUnits.some((unit) => unit.status !== 'scanned');
   return {
     target: scan.root,
-    assessmentStatus: scan.scanBudget?.complete === false ? 'incomplete' : 'complete',
+    assessmentStatus: scan.scanBudget?.complete === false || familyIncomplete ? 'incomplete' : 'complete',
     scanBudget: scan.scanBudget ?? null,
+    scanIgnore: scan.scanIgnore ?? null,
+    repositoryFamily: scan.repositoryFamily ?? null,
+    governanceUnits,
     surfaceSignals: detectSurfaceSignals(scan),
     classification: assessment,
     decisionLedger: buildDecisionLedger(scan),

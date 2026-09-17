@@ -11,7 +11,10 @@ import { scanProjectMemoryFacts, memoryIssues, buildMemoryArtifacts } from '../s
 function initialize(root, lifecycle = 'existing') {
   const scan = scanProject(root, { probeEnvironment: false });
   const config = { ...defaultConfig(scan), initialization: { lifecycle, existingCodeStrategy: lifecycle === 'existing' ? 'keep-existing' : null, source: 'config' } };
-  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const generated = buildArtifacts(config, scan);
+  const explicitMemory = buildMemoryArtifacts(config, scan, lifecycle === 'existing' ? scanProjectMemoryFacts(scan) : undefined).artifacts;
+  const artifacts = [...generated.filter((artifact) => !artifact.path.startsWith('docs/memory/')), ...explicitMemory];
+  applyArtifactPlan(root, planArtifacts(root, artifacts));
   return { scan, config, index: JSON.parse(fs.readFileSync(path.join(root, 'docs/memory/INDEX.json'))) };
 }
 
@@ -42,6 +45,16 @@ test('greenfield foundation contains no business facts even with scaffold source
   const { index } = initialize(root, 'greenfield');
   for (const key of ['modules', 'pages', 'apis', 'methods', 'callSites', 'dataSources', 'sources']) assert.deepEqual(index[key], []);
   for (const relative of ['README.md', 'SCHEMA.md', 'INDEX.json']) assert.ok(fs.existsSync(path.join(root, 'docs/memory', relative)));
+});
+
+test('brownfield initialization also creates a bounded empty memory foundation', (t) => {
+  const root = memoryFixture(t);
+  const scan = scanProject(root, { probeEnvironment: false });
+  const config = { ...defaultConfig(scan), initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' } };
+  const built = buildMemoryArtifacts(config, scan);
+  for (const key of ['modules', 'pages', 'apis', 'methods', 'callSites', 'dataSources', 'sources']) assert.deepEqual(built.memory[key], []);
+  assert.deepEqual(built.artifacts.map((artifact) => artifact.path).sort(), ['docs/memory/INDEX.json', 'docs/memory/README.md', 'docs/memory/SCHEMA.md']);
+  assert.ok(built.discoveryFacts.modules.length > 0);
 });
 
 test('behavior freshness requires owning page AND index and current evidence, not unrelated memory edits', (t) => {

@@ -1,9 +1,9 @@
 export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit']);
 
-export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'no-assist', 'migrate-links', 'prune', 'from-git-hook', 'replay', 'help', 'version']);
+export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'family', 'no-assist', 'migrate-links', 'prune', 'from-git-hook', 'replay', 'help', 'version']);
 
 export const COMMAND_FLAGS = Object.freeze({
-  init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'no-assist', 'migrate-links', 'approve', 'clients', 'locale', 'help']),
+  init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'family', 'no-assist', 'migrate-links', 'approve', 'clients', 'locale', 'help']),
   check: new Set(['json', 'help']),
   sync: new Set(['dry-run', 'force', 'migrate-links', 'prune', 'approve', 'config', 'help']),
   doctor: new Set(['json', 'locale', 'help']),

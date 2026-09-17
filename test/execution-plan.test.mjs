@@ -7,6 +7,8 @@ import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '
 import { defaultConfig, buildArtifacts } from '../src/generator.mjs';
 import { planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { scanInputDescriptor } from '../src/modules/repository/input-fingerprint.mjs';
+import { sha256 } from '../src/shared/index.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-execution-plan-${name}-`));
@@ -98,6 +100,52 @@ test('execution plans reject repository input changes and altered desired conten
   const refreshedPlan = buildExecutionPlan({ intent: initializeIntent, scan: refreshedScan, artifactPlan: refreshedArtifactPlan, config: refreshedConfig });
   refreshedArtifactPlan.operations.find((operation) => operation.path === 'AGENTS.md').desired += '\nchanged after approval\n';
   assert.throws(() => assertArtifactPlanMatches(refreshedPlan, root, refreshedArtifactPlan), (error) => error.exitCode === 2 && /approved artifact plan/.test(error.message));
+});
+
+test('execution plans bind effective deep scan inputs but ignore built-in runtime logs', (context) => {
+  const root = fixture('effective-scan-inputs');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const deepDirectory = path.join(root, 'src/a/b/c/d/e/f');
+  fs.mkdirSync(deepDirectory, { recursive: true });
+  const deepSource = path.join(deepDirectory, 'feature.mjs');
+  fs.writeFileSync(deepSource, 'export const value = 1;\n');
+  fs.mkdirSync(path.join(root, 'logs'));
+  fs.writeFileSync(path.join(root, 'logs/runtime.log'), 'first\n');
+
+  const scan = scanProject(root);
+  const plan = buildExecutionPlan({ intent: initializeIntent, scan });
+  fs.writeFileSync(path.join(root, 'logs/runtime.log'), 'second\n');
+  assert.equal(assertPlanFresh(plan), true);
+
+  fs.writeFileSync(deepSource, 'export const value = 2;\n');
+  assert.throws(() => assertPlanFresh(plan), (error) => error.exitCode === 2 && /repository inputs changed/.test(error.message));
+});
+
+test('execution input descriptors bind visible regular-file bytes and link targets', (context) => {
+  const root = fixture('content-digests');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const content = 'export const visible = true;\n';
+  fs.writeFileSync(path.join(root, 'visible.mjs'), content);
+  fs.symlinkSync('visible.mjs', path.join(root, 'visible-link.mjs'));
+
+  const descriptor = scanInputDescriptor(scanProject(root));
+  const file = descriptor.files.find((entry) => entry.path === 'visible.mjs');
+  const link = descriptor.files.find((entry) => entry.path === 'visible-link.mjs');
+  assert.equal(file.sha256, sha256(content));
+  assert.equal(link.target, 'visible.mjs');
+  assert.equal(Object.hasOwn(link, 'sha256'), false);
+});
+
+test('execution plans bind the project ignore policy itself', (context) => {
+  const root = fixture('ignore-policy');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'public'));
+  fs.writeFileSync(path.join(root, 'public/vendor.js'), '/* vendor */\n');
+  fs.writeFileSync(path.join(root, '.aicgignore'), 'public/vendor.js\n');
+  const plan = buildExecutionPlan({ intent: initializeIntent, scan: scanProject(root) });
+  assert.equal(assertPlanFresh(plan), true);
+  fs.writeFileSync(path.join(root, '.aicgignore'), 'public/**\n');
+  assert.throws(() => assertPlanFresh(plan), (error) => error.exitCode === 2 && /repository inputs changed/.test(error.message));
 });
 
 test('execution plans explicitly bind deterministic manifest content', (context) => {

@@ -258,13 +258,13 @@ test('final audit: Memory reader rejects ancestor replacement and path identity 
   }
 });
 
-test('final audit: fresh Standard stays within 20 files while historical placeholders are retained', (t) => {
+test('final audit: fresh Standard stays within 24 files while historical placeholders are retained', (t) => {
   const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-final-standard-fresh-'));
   const existing = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-final-standard-existing-'));
   t.after(() => { fs.rmSync(fresh, { recursive: true, force: true }); fs.rmSync(existing, { recursive: true, force: true }); });
   const freshScan = scanProject(fresh);
   const artifacts = buildArtifacts({ ...defaultConfig(freshScan), clients: ['codex'], governanceDepth: 'standard' }, freshScan);
-  assert.ok(artifacts.length + 1 <= 20, `fresh Standard including manifest: ${artifacts.length + 1}`);
+  assert.ok(artifacts.length + 1 <= 24, `fresh Standard including manifest: ${artifacts.length + 1}`);
   assert.equal(artifacts.some((entry) => /^(?:reviews|reports)\/\.gitkeep$/.test(entry.path)), false);
 
   write(existing, 'reviews/.gitkeep', '# historical review placeholder\n');

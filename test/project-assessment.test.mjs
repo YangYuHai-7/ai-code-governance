@@ -341,6 +341,32 @@ test('unrecognized product files are never silently classified as high-confidenc
   assert.equal(infrastructureAssessment.codebase.lifecycle.value, 'existing');
 });
 
+test('repository-family assessment treats declared child repositories as existing topology evidence', (context) => {
+  const root = fixture('repository-family-assessment');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "backend"]\n  path = services/backend\n  url = https://example.invalid/backend.git\n');
+  fs.mkdirSync(path.join(root, 'services/backend'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'services/backend/.git'), 'gitdir: ../../.git/modules/services/backend\n');
+  fs.writeFileSync(path.join(root, 'services/backend/pom.xml'), '<project/>\n');
+
+  const assessment = classifyProject(scanProject(root));
+  assert.equal(assessment.codebase.kind, 'existing-repository-family');
+  assert.deepEqual(assessment.codebase.lifecycle, {
+    value: 'existing',
+    confidence: 'high',
+    ruleId: 'lifecycle-repository-family-v1',
+  });
+  assert.deepEqual(assessment.codebase.topology, {
+    value: 'repository-family',
+    confidence: 'high',
+    ruleId: 'topology-repository-family-v1',
+  });
+  assert.deepEqual(assessment.codebase.evidence.repositoryMembers, [{
+    id: 'backend', path: 'services/backend', repositoryKind: 'git-submodule',
+  }]);
+  assert.deepEqual(assessment.codebase.evidence.manifests, []);
+});
+
 test('first sync of a legacy config persists its baseline and preserves it after source growth', (context) => {
   const root = fixture('legacy-config');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

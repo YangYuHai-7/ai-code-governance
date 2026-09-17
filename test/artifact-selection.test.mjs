@@ -56,8 +56,8 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
     ['minimal', 9, 24 * 1024],
-    ['standard', 20, 64 * 1024],
-    ['complete', 22, 96 * 1024],
+    ['standard', 24, 80 * 1024],
+    ['complete', 26, 112 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -85,11 +85,11 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
   const { config, scan } = fixture(context);
   for (const governanceDepth of ['standard', 'complete']) {
     const paths = buildArtifacts({ ...config, governanceDepth }, scan).map((item) => item.path).sort();
-    const policy = ['docs/ai/anti-patterns.md', 'docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md'];
+    const policy = ['docs/ai/anti-patterns.md', 'docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standards/standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standards/professional-testing/SKILL.md'];
     const routing = ['.gitignore', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
     assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 20 : 26));
+    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 24 : 30));
   }
 });
 
@@ -291,7 +291,7 @@ test('conditional upgrade preserves custom conditions comments order and CRLF by
 });
 
 test('untrusted and ambiguous conditional upgrades fail closed without changing files', (context) => {
-  for (const scenario of ['foreign', 'duplicate', 'inline-map', 'conflicting-stack']) {
+  for (const scenario of ['foreign', 'duplicate', 'inline-map']) {
     const { root, config, scan } = fixture(context);
     config.features.knowledge = false;
     applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
@@ -305,7 +305,6 @@ test('untrusted and ambiguous conditional upgrades fail closed without changing 
       const replacement = {
         duplicate: '    conditional: {}\n    conditional: {}',
         'inline-map': '    conditional: {stack: [docs/owner.md]}',
-        'conflicting-stack': '    conditional:\n      stack:\n        - docs/owner.md',
       }[scenario];
       fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace('    conditional: {}', replacement));
     }
@@ -316,4 +315,39 @@ test('untrusted and ambiguous conditional upgrades fail closed without changing 
     for (const [file, bytes] of before) assert.equal(fs.readFileSync(file, 'utf8'), bytes);
     assert.equal(fs.existsSync(path.join(root, 'docs/ai/technical-standards.json')), false);
   }
+});
+
+test('a trusted conditional upgrade appends generated paths to an existing owner route', (context) => {
+  const { root, config, scan } = fixture(context);
+  config.features.knowledge = false;
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const target = path.join(root, 'docs/ai/context-map.yaml');
+  fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace(
+    '    conditional: {}',
+    '    conditional:\n      stack:\n        - docs/owner.md',
+  ));
+  const upgraded = { ...config, governanceDepth: 'standard' };
+  const plan = planArtifacts(root, buildArtifacts(upgraded, scanProject(root)));
+  assert.deepEqual(plan.conflicts, []);
+  applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) });
+  const after = fs.readFileSync(target, 'utf8');
+  assert.match(after, /stack:\n        - docs\/owner\.md\n        - docs\/ai\/stack-profile\.json/);
+  assert.equal(checkProject(scanProject(root)).ok, true);
+});
+
+test('trusted stack routing appends a newly detected standard without replacing prior routes', (context) => {
+  const { root, config, scan } = fixture(context);
+  config.features.knowledge = false;
+  config.governanceDepth = 'standard';
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const target = path.join(root, 'docs/ai/context-map.yaml');
+  const before = fs.readFileSync(target, 'utf8');
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { vue: '3.5.0' } }));
+  const current = scanProject(root);
+  const plan = planArtifacts(root, buildArtifacts({ ...config, projectMode: current.projectMode }, current));
+  assert.deepEqual(plan.conflicts, []);
+  applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) });
+  const after = fs.readFileSync(target, 'utf8');
+  assert.ok(after.includes('docs/ai/skills/standards/vue-component-composition/SKILL.md'));
+  for (const line of before.split('\n').filter((entry) => entry.startsWith('        - '))) assert.ok(after.includes(line));
 });

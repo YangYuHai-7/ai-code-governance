@@ -46,16 +46,25 @@ export function prepareCompletionUnit(root, options = {}) {
   const preview = runCompletion(root, { ...options, verificationCommand: null });
   const pkg = fs.existsSync(path.join(root, 'package.json')) ? JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) : {};
   pkg.scripts ??= {};
-  if (!Object.keys(pkg.scripts).length) pkg.scripts.verify = 'node --eval "process.exit(0)"';
+  if (!Object.keys(pkg.scripts).length) pkg.scripts.verify = 'node --test test/aicg-qa.test.mjs';
   const command = options.verificationCommand === 'npm test' ? 'npm run test' : options.verificationCommand ?? `npm run ${pkg.scripts.test ? 'test' : pkg.scripts.verify ? 'verify' : Object.keys(pkg.scripts)[0]}`;
+  const commandName = command.match(/^npm run ([A-Za-z0-9][A-Za-z0-9._:@/-]*)$/)?.[1];
   const unit = unitFixture(root, [...new Set([...changed, 'package.json'])], { taskLevel: options.taskLevel ?? preview.taskRoute.minimumLevel, reviewMode: options.reviewMode ?? preview.taskApproval.review.mode });
   unit.verification.command = command;
-  write(root, 'test/aicg-qa.mjs', qaMarkers(unit).map((entry) => `console.log(${JSON.stringify(`AICG_QA_RESULT ${JSON.stringify(entry)}`)});`).join('\n'));
-  for (const [name, body] of Object.entries(pkg.scripts)) if (!body.includes('node test/aicg-qa.mjs')) pkg.scripts[name] = `${body} && node test/aicg-qa.mjs`;
+  write(root, 'test/aicg-qa.test.mjs', qaMarkers(unit).map((entry) => `console.log(${JSON.stringify(`AICG_QA_RESULT ${JSON.stringify(entry)}`)});`).join('\n'));
+  if (commandName && typeof pkg.scripts[commandName] === 'string') {
+    const body = pkg.scripts[commandName];
+    if (/^node\s+--test(?:\s|$)/.test(body) && !body.includes('test/aicg-qa.test.mjs')) {
+      pkg.scripts[commandName] = `${body} test/aicg-qa.test.mjs`;
+    } else {
+      const directNodeScript = body.match(/^node\s+([^\s;&|<>`]+)$/);
+      if (directNodeScript) pkg.scripts[commandName] = `node --test ${directNodeScript[1]} test/aicg-qa.test.mjs`;
+    }
+  }
   write(root, 'package.json', JSON.stringify(pkg));
   // These fixture-owned files are configuration, static markup and an internal
   // verification client, not public APIs. Declare that exact reviewed inventory.
-  const noPublicSurface = { 'package.json': 'Fixture npm command configuration has no public API or method.', 'index.html': 'Fixture static button markup has no exported API or method.', 'scripts/verify-http.mjs': 'Fixture HTTP verification client has no public exported method or server route.' };
+  const noPublicSurface = { 'package.json': 'Fixture npm command configuration has no public API or method.', 'index.html': 'Fixture static button markup has no exported API or method.', 'scripts/verify-http.test.mjs': 'Fixture HTTP verification client has no public exported method or server route.' };
   unit.manualCoverage = unit.scope[0].paths.filter((relative) => relative in noPublicSurface).map((relative) => ({ path: relative, sourceSha256: sha256(fs.readFileSync(path.join(root, relative))), evidenceLevel: 'operator-declared', reason: noPublicSurface[relative], referenceIds: ['feature'], noPublicSurface: true, entries: [] }));
   const current = scanProject(root), config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json')));
   const currentFacts = scanProjectMemoryFacts(current);
@@ -66,7 +75,7 @@ export function prepareCompletionUnit(root, options = {}) {
   write(root, relative, JSON.stringify(unit));
   const enhanced = { ...options, taskLevel: unit.taskLevel, reviewMode: unit.reviewMode, workUnit: relative, verificationCommand: options.fromGitHook ? null : command };
   const stage = () => {
-    const result = spawnSync('git', ['-C', root, 'add', relative, 'docs/feature.md', 'test/feature.test.mjs', 'test/aicg-qa.mjs', 'package.json', ...artifacts.map((entry) => entry.path)], { encoding: 'utf8' });
+    const result = spawnSync('git', ['-C', root, 'add', relative, 'docs/feature.md', 'test/feature.test.mjs', 'test/aicg-qa.test.mjs', 'package.json', ...artifacts.map((entry) => entry.path)], { encoding: 'utf8' });
     if (result.status) throw new Error(result.stderr);
   };
   if (options.fromGitHook) {

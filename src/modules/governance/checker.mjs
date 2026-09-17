@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
-import { buildArtifacts, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { artifactDefinitions, buildArtifacts, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
 import { conditionalArtifactRoutes } from './artifact-selection.mjs';
 import {
   extractManagedBlock,
@@ -14,8 +14,10 @@ import {
   renderGitignoreBlock,
   renderManagedBlock,
 } from './managed-files.mjs';
+import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, sha256 } from '../../shared/index.mjs';
+import { isRepositoryFamilyBoundary, repositoryTopologyMigrationRequired } from '../repository/index.mjs';
 
 const ACCEPTANCE_CONTRACT_PATH = 'docs/ai/acceptance-contract.json';
 const ACCEPTANCE_RESULTS_PATH = 'docs/ai/acceptance-results.json';
@@ -30,6 +32,34 @@ const BASELINE_APPLICABLE_PROBES = new Set([
   'unmanaged-file-preservation',
   'noninteractive-required-input',
 ]);
+const EXECUTABLE_GOVERNANCE_SKILL = /^(?:docs\/ai\/skills|\.agents\/skills|\.claude\/skills)\/(?:[^/]+\/)*SKILL\.md$/;
+
+function indexedProjectSkillPaths(config, scan) {
+  if (config.skillDiscovery?.decision?.status !== 'approved') return [];
+  return (config.skillDiscovery.decision.candidates ?? [])
+    .filter((candidate) => candidate?.sourceKind === 'project'
+      && candidate.location?.root
+      && path.resolve(candidate.location.root) === path.resolve(scan.root)
+      && typeof candidate.location.relative === 'string'
+      && isSafeRelative(candidate.location.relative)
+      && EXECUTABLE_GOVERNANCE_SKILL.test(candidate.location.relative))
+    .map((candidate) => candidate.location.relative);
+}
+
+function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills = []) {
+  const registered = new Set([
+    ...expected.map((artifact) => artifact.path),
+    ...trustedHistoricalFiles.filter((entry) => entry && typeof entry.path === 'string').map((entry) => entry.path),
+    ...legalSeedDefinitions
+      .filter((definition) => definition.ownership === 'seed')
+      .map((definition) => definition.path),
+    ...approvedProjectSkills,
+  ]);
+  return scan.files
+    .filter((entry) => ['file', 'link'].includes(entry.type) && EXECUTABLE_GOVERNANCE_SKILL.test(entry.relative) && !registered.has(entry.relative))
+    .map((entry) => `${entry.relative}: unmanaged executable governance artifact; register it through the governance configuration and manifest or remove it`)
+    .sort((left, right) => left.localeCompare(right));
+}
 
 function expectedManagedHash(artifact) {
   if (artifact.ownership === 'managed-block') return sha256(renderManagedBlock(artifact.content));
@@ -405,6 +435,10 @@ export function checkProject(scan) {
     ].filter(Boolean).join('; ');
     structureErrors.push(`repository scan incomplete: ${details || 'configured scan budget was exceeded'}`);
   }
+  for (const issue of scan.repositoryFamily?.issues ?? []) structureErrors.push(`repository-family discovery: ${issue}`);
+  for (const unit of scan.governanceUnits ?? []) {
+    if (unit.status !== 'scanned') structureErrors.push(`repository-family member ${unit.path}: ${unit.status}${unit.reason ? ` (${unit.reason})` : ''}`);
+  }
   let config;
   let manifest;
   const gateAssertions = new Set();
@@ -413,6 +447,19 @@ export function checkProject(scan) {
     config = validateConfig(readJson(path.join(scan.root, CONFIG_PATH)));
   } catch (error) {
     structureErrors.push(`${CONFIG_PATH}: ${error.message}`);
+  }
+  for (const exclusion of scan.scanIgnore?.unverifiedExclusions ?? []) {
+    if (exclusion.evidenceStatus !== 'complete' || !/^[a-f0-9]{64}$/.test(exclusion.contentSha256 ?? '')) {
+      structureErrors.push(`unverified scan exclusion: ${exclusion.path} has incomplete content evidence${exclusion.evidenceReason ? ` (${exclusion.evidenceReason})` : ''}; narrow or remove the rule`);
+      continue;
+    }
+    const approval = config?.scanExclusions?.policySha256 === scan.scanIgnore.sha256
+      ? config.scanExclusions.approvals.find((entry) => entry.path === exclusion.path && entry.evidenceHash === exclusion.evidenceHash)
+      : null;
+    if (!approval) structureErrors.push(`unverified scan exclusion: ${exclusion.path} matched .aicgignore:${exclusion.line} (${exclusion.category}); record an evidence-bound exclusion decision or narrow the rule`);
+  }
+  if (scan.scanIgnore?.unverifiedExclusionsTruncated || (scan.scanIgnore?.unverifiedExclusionCount ?? 0) > (scan.scanIgnore?.unverifiedExclusions?.length ?? 0)) {
+    structureErrors.push(`unverified scan exclusions exceed the ${scan.scanIgnore?.unverifiedExclusions?.length ?? 0}-entry review budget; narrow the .aicgignore policy`);
   }
   try {
     manifest = loadManifest(scan.root);
@@ -423,6 +470,9 @@ export function checkProject(scan) {
   }
 
   if (config && manifest) {
+    if (repositoryTopologyMigrationRequired(scan, config)) {
+      structureErrors.push(`${CONFIG_PATH}: migration-required; current repository mode or family membership differs from the stored classification (${config.projectMode} -> ${scan.projectMode})`);
+    }
     if (!config.initialization?.lifecycle) {
       warnings.push(`${CONFIG_PATH}: legacy-unconfirmed initialization decision; re-run aicg init to record lifecycle and existing-code strategy before changing architecture or existing behavior.`);
     }
@@ -431,12 +481,16 @@ export function checkProject(scan) {
     }
     let expected = [];
     let selected = [];
+    let legalSeedDefinitions = [];
+    let expectedResolved = false;
     try {
       selected = selectedArtifactDefinitions(config, scan);
+      legalSeedDefinitions = artifactDefinitions(config, scan);
       for (const assertion of selected.flatMap((definition) => definition.gateAssertions)) gateAssertions.add(assertion);
       expected = config.skillDiscovery?.enabled && config.agentTeam?.enabled
         ? buildArtifacts(config, scan)
         : selected.map((definition) => definition.build(selected));
+      expectedResolved = true;
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
     }
@@ -446,6 +500,14 @@ export function checkProject(scan) {
     const seedExpected = expected.filter((artifact) => artifact.ownership === 'seed');
     const expectedPaths = new Set(managedExpected.map((artifact) => artifact.path));
     const manifestPaths = new Set(manifestFiles.filter((entry) => entry && typeof entry.path === 'string').map((entry) => entry.path));
+    const manifestAuthority = validateManifestRemovalAuthority(scan.root, manifest);
+    const trustedHistoricalFiles = manifestAuthority.trusted ? manifestFiles : [];
+    for (const entry of manifestFiles) if (typeof entry?.path === 'string' && isRepositoryFamilyBoundary(entry.path, scan.repositoryFamily)) {
+      const member = scan.repositoryFamily.members.find((candidate) => isRepositoryFamilyBoundary(entry.path, { members: [candidate] }));
+      structureErrors.push(`${MANIFEST_PATH}: parent manifest crosses repository boundary ${member?.path ?? '<unknown>'} with ${entry.path}`);
+    }
+    const approvedProjectSkills = expectedResolved ? indexedProjectSkillPaths(config, scan) : [];
+    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills));
     for (const relative of expectedPaths) {
       if (!manifestPaths.has(relative)) structureErrors.push(`${MANIFEST_PATH}: missing managed entry for ${relative}`);
     }
@@ -569,7 +631,7 @@ export function checkProject(scan) {
 
     const reviewItems = config.capabilityEvolution?.lastHarvest?.reviewItems ?? [];
     if (config.features?.knowledge) structureErrors.push(...memoryIssues(scan.root, scan));
-    for (const issue of projectConventionIssues(scan.root)) (['stale', 'warning'].includes(issue.status) ? warnings : structureErrors).push(`project convention ${issue.reason}`);
+    for (const issue of projectConventionIssues(scan.root, scan)) (['stale', 'warning'].includes(issue.status) ? warnings : structureErrors).push(`project convention ${issue.reason}`);
     for (const issue of capabilityEvidenceIssues(scan, config.projectCapabilities ?? [])) {
       const reviewed = reviewItems.some((item) => item.id === issue.id && item.status === 'required' && item.code === issue.code && item.observedFingerprint === issue.observedFingerprint);
       if (reviewed) warnings.push(`capability ${issue.id}: ${issue.reason}; owner review is required before promotion or reuse enforcement`);

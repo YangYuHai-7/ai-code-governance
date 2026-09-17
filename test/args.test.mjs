@@ -25,6 +25,11 @@ test('parses init flags and a target with spaces', () => {
   });
 });
 
+test('parses the repository-family initialization flag only for init', () => {
+  assert.equal(parseArgs(['init', '.', '--family', '--dry-run', '--yes', '--clients', 'codex']).options.family, true);
+  assert.throws(() => parseArgs(['sync', '.', '--family']), (error) => error.exitCode === 2);
+});
+
 test('parses the guided novice preset only for interactive init', () => {
   assert.deepEqual(parseArgs(['init', 'project', '--guided', '--locale', 'zh-CN']), {
     command: 'init',

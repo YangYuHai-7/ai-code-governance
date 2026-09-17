@@ -9,7 +9,7 @@ import { isArchitectureNonSourcePath } from './source-classification.mjs';
 export const ARCHITECTURE_PROFILE_ID = 'module-boundaries-v1';
 export const ARCHITECTURE_MODES = ['module-first-new-code', 'preserve-current', 'staged-migration-pending', 'legacy-unconfigured'];
 export const ARCHITECTURE_STATUSES = ['active', 'advisory', 'legacy-unconfigured'];
-const TOPOLOGY_BINDINGS = new Set(['single-repo', 'monorepo']);
+const TOPOLOGY_BINDINGS = new Set(['single-repo', 'monorepo', 'repository-family']);
 const NON_SOURCE_LINK_ROOTS = new Set([
   'docs', 'public', 'assets', 'static', 'scripts', 'script', 'tools', 'tooling', 'migrations', 'migration',
   'infra', 'infrastructure', 'terraform', '.github', '.ai-governance', '.cursor', '.claude', '.agents',
@@ -66,7 +66,7 @@ function profileMode(initialization) {
 
 function scopeFor(scan, config, mode) {
   if (mode !== 'module-first-new-code') return { roots: [], appliesTo: 'none', baselineSourcePaths: [] };
-  if (scan.projectMode === 'monorepo') {
+  if (scan.projectMode === 'monorepo' || scan.projectMode === 'repository-family') {
     return { roots: [], appliesTo: 'none', baselineSourcePaths: [] };
   }
   const baselineSourcePaths = config.initialization?.lifecycle === 'existing' ? sourceBaseline(scan) : [];

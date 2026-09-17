@@ -5,7 +5,7 @@ export const HELP = `AI Code Governance CLI
 Usage:
   aicg            Start guided setup for the current project in the detected terminal language.
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
-                  [--yes] [--approve planHash] [--dry-run] [--no-assist]
+                  [--yes] [--approve planHash] [--dry-run] [--family] [--no-assist]
                   [--assist codex|claude-code|cursor] [--migrate-links] [--force]
   aicg check [path] [--json]
   aicg sync [path] [--dry-run] [--force] [--migrate-links]
@@ -27,6 +27,7 @@ Usage:
 
 Commands:
   init    Inspect a repository and initialize tailored AI governance.
+          --family prepares one exact plan for the orchestrator and every detected member repository; preview with --dry-run, then approve the combined planHash. All repositories roll back if any apply or check fails.
   check   Validate configuration, managed files, drift, and reachability.
   sync    Regenerate managed adapters from canonical governance sources.
   doctor  Inspect the local environment without changing the repository.
@@ -73,7 +74,7 @@ export const HELP_ZH = `AI 代码治理 CLI
 用法：
   aicg            使用自动识别的终端语言，为当前项目启动引导式设置。
   aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
-                  [--yes] [--approve planHash] [--dry-run] [--no-assist]
+                  [--yes] [--approve planHash] [--dry-run] [--family] [--no-assist]
   aicg check [路径] [--json]
   aicg sync [路径] [--dry-run]
   aicg doctor [路径] [--locale zh-CN|en] [--json]
@@ -87,7 +88,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg --version
 
 关键流程：
-  init          扫描仓库并初始化治理；客户端支持范围必须显式选择。
+  init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
   architecture  只读评估架构并输出稳定的采用计划 ID 和哈希，不迁移业务代码。
   enrich        为现有项目生成只读、可精确批准的治理补全计划，不写入文件。
   evidence      记录或汇总匿名试点/真实项目证据；不会自动认证。

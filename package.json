@@ -1,6 +1,6 @@
 {
   "name": "ai-code-governance",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Adaptive, cross-platform governance for Codex, Claude Code, Cursor, and other AI coding agents.",
   "type": "module",
   "bin": {

@@ -86,6 +86,17 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 5. **治理预设**——根据证据从 Minimal 或 Standard 开始；Complete 必须主动选择，不会因一句模糊需求自动启用。
 6. **可选能力**——记忆、Git hooks、CI、工作流、Skills 和专家角色分别决策。
 
+仓库家族使用一个可精确审批的计划，同时保留每个成员仓的独立所有权：
+
+```bash
+aicg init . --family --yes --clients codex --no-assist --dry-run
+aicg init . --family --yes --clients codex --no-assist --approve <planHash>
+```
+
+组合计划同时绑定编排仓和所有检测到的成员仓。成员仓先于编排仓执行；父清单永不拥有成员仓文件；任一仓写入或后置检查失败时，整个仓库家族都会回滚。
+
+Standard 与 Complete 还会生成经过审计的实现型 Skills。只有文字描述的 Skill 会被生成门禁拒绝：实现型 Skill 必须包含触发与非触发条件、不变量、决策流程、正确与错误代码形状、例外、验证矩阵、项目证据边界和来源。默认的专业测试 Skill 会询问是否需要模拟真人测试；选择后推荐测试人员角色和真实用户画像，但不会声称已经招募或完成真实用户验证。
+
 | 预设 | 新项目默认包含的能力 |
 | --- | --- |
 | **Minimal** | 配置、公共入口、规范总览、上下文映射、常驻规则、清单和选定的 Agent 适配器 |

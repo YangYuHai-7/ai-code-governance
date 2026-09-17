@@ -235,7 +235,7 @@ test('legacy pinned config retains its mode while daily artifacts require instal
   assert.equal(JSON.parse(content('.ai-governance/config.json')).invocationMode, 'npm-exec-pinned');
   assert.equal(governanceCommand(config, 'complete .'), 'aicg complete .');
   assert.match(content('AGENTS.md'), /unavailable.*stop.*install/i);
-  assert.match(content('docs/ai/bootstrap-prompt.md'), /npm exec --yes --package=ai-code-governance@0\.2\.0 -- aicg/);
+  assert.match(content('docs/ai/bootstrap-prompt.md'), /npm exec --yes --package=ai-code-governance@0\.3\.0 -- aicg/);
   for (const artifact of artifacts.filter((entry) => entry.path !== 'docs/ai/bootstrap-prompt.md')) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
 });
 
@@ -551,7 +551,7 @@ test('post-init source and scripts produce read-only rescan CTAs without mutatin
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     name: 'post-init-rescan',
     private: true,
-    scripts: { test: 'node --eval "process.exit(0)"' },
+    scripts: { test: 'node --test' },
   }));
   fs.mkdirSync(path.join(root, 'src', 'app'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'app', 'main.js'), 'export const ready = true;\n');

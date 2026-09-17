@@ -24,8 +24,10 @@ function manualCoverageBytes(root, scan, relative) {
 }
 export function parseWorkUnitResults(stdout) {
   const results = [];
-  for (const line of String(stdout ?? '').split(/\r?\n/)) if (line.startsWith(QA_MARKER_PREFIX)) {
-    if (line.length > 8192 || results.length >= 1000) return { results: [], error: 'QA marker budget exceeded.' };
+  for (const rawLine of String(stdout ?? '').split(/\r?\n/)) {
+    const line = rawLine.startsWith('# ') ? rawLine.slice(2) : rawLine;
+    if (!line.startsWith(QA_MARKER_PREFIX)) continue;
+    if (rawLine.length > 8192 || results.length >= 1000) return { results: [], error: 'QA marker budget exceeded.' };
     try {
       const entry = JSON.parse(line.slice(QA_MARKER_PREFIX.length));
       if (!entry || entry.schemaVersion !== 1 || typeof entry.workUnitId !== 'string' || typeof entry.caseId !== 'string' || !['passed', 'failed', 'blocked', 'not-applicable'].includes(entry.status)

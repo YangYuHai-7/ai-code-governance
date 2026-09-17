@@ -4,8 +4,10 @@ import { isSafeRelative, sha256 } from '../../shared/index.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { loadCapabilityRegistry } from '../../catalogs/index.mjs';
-import { loadTechnicalStandardRegistry } from '../standards/index.mjs';
+import { buildProjectConventionArtifacts, loadTechnicalStandardRegistry } from '../standards/index.mjs';
 import { buildCapabilityArtifacts } from '../capabilities/index.mjs';
+import { scanProject } from '../repository/index.mjs';
+import { scanProjectMemoryFacts } from '../memory/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from './business-constraints.mjs';
 
 const KNOWN_MANAGED_RELATIONSHIPS = new Set([
@@ -31,7 +33,7 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'managed-block\0entrypoint\0template:agents',
 ]);
 
-const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
+const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
 
 function definitionKey(entry) {
   return [entry?.ownership, entry?.kind, entry?.source, entry?.path].join('\0');
@@ -80,6 +82,13 @@ function supportedSkillDefinitions(root, manifest) {
       const artifacts = buildCapabilityArtifacts({ ...config, clients: ['codex', 'claude-code'] }).artifacts;
       for (const artifact of artifacts.filter((item) => SKILL_KINDS.has(item.kind))) add(artifact, sha256(artifact.content));
     } catch { /* Invalid capability records cannot manufacture a supported definition. */ }
+    try {
+      const scan = scanProject(root);
+      const memory = scanProjectMemoryFacts(scan);
+      for (const artifact of buildProjectConventionArtifacts(config, scan, memory).artifacts.filter((item) => item.kind === 'project-convention-skill')) {
+        add(artifact, sha256(artifact.content));
+      }
+    } catch { /* Invalid or stale convention evidence cannot manufacture a supported definition. */ }
   }
   return definitions;
 }

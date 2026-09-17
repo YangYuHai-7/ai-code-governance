@@ -121,7 +121,10 @@ export function walkFilesDetailed(root, options = {}) {
         const absolute = path.join(current, entry.name);
         const relative = normalizeRelative(path.relative(root, absolute));
         const type = entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other';
-        if (options.shouldIgnorePath?.({ absolute, relative, type }) === true) continue;
+        if (options.shouldIgnorePath?.({ absolute, relative, type }) === true) {
+          options.onIgnoredPath?.({ absolute, relative, type });
+          continue;
+        }
         if (entry.isSymbolicLink()) {
           if (result.length >= maxFiles) {
             fileLimitReached = true;

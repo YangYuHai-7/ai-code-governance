@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "snapshot": {
     "status": "reviewed-offline-snapshot",
-    "reviewedAt": "2026-09-08",
+    "reviewedAt": "2026-09-17",
     "refreshAfterDays": 90,
     "boundary": "This registry is a reproducible offline snapshot of selected primary sources. It is not a claim that an installed framework version is current or that a project has enforced every rule."
   },
@@ -480,6 +480,120 @@
         "Queue retries alone do not make external side effects idempotent.",
         "Production worker concurrency and observability need operational ownership."
       ]
+    },
+    {
+      "id": "standard-skill-authoring",
+      "profile": "workflow",
+      "translations": { "zh-CN": {
+        "title": "标准 Skill 编写与审计",
+        "triggers": ["创建、更新、拆分或评审仓库 Skill。", "生成的 Skill 过于宽泛、只有文字描述、无法准确路由或缺少实施指导。"],
+        "nonTriggers": ["不要为一次性任务或尚未确认的业务偏好创建 Skill。", "没有证据绑定的负责人决定时，不得提升项目候选。"],
+        "decisionFlow": ["定义一个稳定的决策表面，并写出具体命中与不命中的任务。", "选择实现型或工作流型质量档案，补齐所有必需章节与证据来源。", "实现型 Skill 提供中性的正确与错误代码形状；工作流型 Skill 提供可执行流程。", "把场景验证绑定到已发现的仓库命令；没有可信命令时明确标记尚未验证。", "发布或采纳前运行质量审计与路由测试。"],
+        "practices": ["先声明明确触发条件与非触发条件，避免按技术名词无条件加载。", "实现型 Skill 必须给出不变量、决策流程、正确与错误代码形状、例外和项目证据边界。", "验证必须使用场景矩阵，绑定真实仓库命令；没有可信命令时明确标记尚未验证。", "通用标准使用中性示例，真实业务端点、类名、表名和事故细节只能留在项目证据中。", "一个 Skill 只负责一个稳定决策表面；路由 Skill 负责组合，不把整个技术栈塞进一个文件。"],
+        "verification": ["运行 Skill 质量审计，确认所有必需章节、决策步骤与验证矩阵存在。", "用命中和不命中任务各做一次路由测试。", "用正确、错误和例外案例验证 Skill 能指导实际实现与评审。"],
+        "boundaries": ["章节齐全不等于内容正确；仍需官方来源与项目证据。", "不得把未批准的项目候选直接提升为标准。"]
+      } },
+      "title": "Standard Skill authoring and audit",
+      "appliesTo": { "always": true },
+      "sources": [{ "id": "governance-skill-quality-contract", "kind": "governance-principle", "title": "AI Code Governance Skill quality contract", "retrievedAt": "2026-09-17" }],
+      "triggers": ["Create, update, split, or review a repository Skill.", "A generated Skill is too broad, descriptive-only, unroutable, or lacks implementation guidance."],
+      "nonTriggers": ["Do not create a Skill for one transient task or an unconfirmed business preference.", "Do not promote a project candidate without an evidence-bound owner decision."],
+      "decisionFlow": ["Define one stable decision surface and write concrete trigger and non-trigger cases.", "Choose an implementation or workflow profile, then supply every required section and evidence source.", "For implementation Skills, add neutral correct and incorrect code shapes; for workflows, add an executable worked flow.", "Bind scenario-based verification to discovered repository commands or mark it not yet verified.", "Run the quality audit and route tests before publishing or adopting the Skill."],
+      "practices": ["State concrete trigger and non-trigger conditions instead of loading a Skill from a technology keyword alone.", "An implementation Skill must include invariants, a decision flow, correct and incorrect code shapes, exceptions, and a project evidence boundary.", "Use a scenario verification matrix bound to real repository commands; mark it not yet verified when no trusted command exists.", "Keep reusable standards neutral; real business endpoints, classes, tables, and incident details belong only in project evidence.", "Give one Skill one stable decision surface; compose them through a router instead of putting an entire stack in one file."],
+      "verification": ["Run the Skill quality audit and confirm all required sections, decisions, and matrix fields are present.", "Exercise one matching and one non-matching task to verify routing.", "Use correct, incorrect, and exception cases to confirm the Skill guides implementation and review."],
+      "boundaries": ["Complete sections do not prove technical correctness; official sources and project evidence are still required.", "Never promote an unapproved project candidate into a standard." ]
+    },
+    {
+      "id": "professional-testing",
+      "profile": "workflow",
+      "translations": { "zh-CN": {
+        "title": "专业测试与模拟真人测试",
+        "triggers": ["客户要求测试、验证、质量保障、验收或实际操作某项产品行为。", "交付需要规划自动化检查、模拟真人测试或真实用户研究。"],
+        "nonTriggers": ["普通编译或静态检查不能视为模拟真人测试。", "没有客户明确授权时，不得招募、联系或观察真实用户。"],
+        "decisionFlow": ["询问客户是否需要模拟真人测试；等待可选答复时继续安全的自动化验证。", "若客户选择模拟真人测试，根据产品表面、风险、无障碍、设备和网络环境推荐测试人员角色及真实用户群体。", "执行前定义场景、期望结果、证据记录、隐私边界与停止条件。", "分别报告自动化、模拟真人与真实用户证据，并列出未执行场景和剩余风险。"],
+        "practices": ["客户提出测试时，先确认是否需要模拟真人测试；普通自动化测试不因等待此答案而停止。", "若需要模拟真人测试，先推荐测试人员组合：质量工程师、领域专家、可用性或无障碍测试者，以及与目标设备和网络相符的覆盖人员。", "同时推荐真实用户画像：新用户、高频用户、边界场景用户、无障碍需求用户及目标设备或网络用户；不得编造真实身份或声称已经招募。", "把自动化验证、模拟真人走查和真实用户研究分别报告，不得互相替代。", "联系、招募、记录或补偿真实用户前，必须取得客户明确授权，并确认隐私、同意与数据保留边界。"],
+        "verification": ["检查测试方案是否包含风险、人员角色、真实用户画像、场景、期望结果和证据记录方式。", "确认每个已执行场景都有结果、缺陷、复现证据和剩余边界。", "确认未执行的模拟或真实用户测试被标记为尚未验证。"],
+        "boundaries": ["模拟真人测试不是已经完成真实用户验证的证明。", "治理框架只能推荐角色和用户画像；不得在没有客户授权时联系或招募人员。"]
+      } },
+      "title": "Professional testing and human-simulation planning",
+      "appliesTo": { "always": true },
+      "sources": [{ "id": "governance-professional-testing", "kind": "governance-principle", "title": "AI Code Governance professional testing workflow", "retrievedAt": "2026-09-17" }],
+      "triggers": ["The customer asks to test, verify, QA, accept, or exercise a product behavior.", "A delivery needs automated checks, simulated human testing, or real-user research planning."],
+      "nonTriggers": ["Do not treat an ordinary compile or static check as human-simulation testing.", "Do not recruit, contact, or observe real users without explicit customer authorization."],
+      "decisionFlow": ["Ask the customer whether simulated human testing is required; continue safe automated verification while awaiting an optional answer.", "If selected, recommend tester roles and real-user cohorts that match the product surface, risk, accessibility, device, and network context.", "Define scenarios, expected results, evidence capture, privacy boundaries, and stop conditions before execution.", "Report automated, simulated-human, and real-user evidence separately, including unexecuted cases and residual risk."],
+      "practices": ["When a customer requests testing, first ask whether simulated human testing is required; do not block ordinary automated checks while waiting for that optional choice.", "For simulated human testing, recommend a role mix such as a QA engineer, domain specialist, usability or accessibility tester, and device/network coverage appropriate to the product.", "Also recommend real-user cohorts such as first-time, frequent, edge-case, accessibility, and target-device/network users; never fabricate identities or claim recruitment occurred.", "Report automated verification, simulated human walkthroughs, and real-user research separately; none substitutes for another.", "Obtain explicit customer authorization and confirm consent, privacy, and retention boundaries before contacting, recruiting, recording, or compensating real users."],
+      "verification": ["Check that the test plan names risks, tester roles, real-user cohorts, scenarios, expected results, and evidence capture.", "Confirm every executed scenario has a result, defect record, reproduction evidence, and remaining boundary.", "Confirm unexecuted simulation or real-user testing is marked not yet verified."],
+      "boundaries": ["Simulated human testing is not proof that real-user validation occurred.", "Governance may recommend roles and user cohorts, but must not contact or recruit people without customer authorization."]
+    },
+    {
+      "id": "spring-http-contracts",
+      "translations": { "zh-CN": { "title": "Spring MVC HTTP 契约", "practices": ["普通 JSON 请求使用具名 DTO、@RequestBody 与 @Valid，并保持稳定的响应 DTO。", "控制器只处理传输映射；跨字段校验、授权、状态转换和事务在服务边界执行。", "显式定义错误语义，不向客户端泄露持久化对象或内部异常。"], "verification": ["测试有效、缺字段、非法字段和未授权请求。", "测试响应和错误契约不泄露内部字段。"], "boundaries": ["表单和 multipart 输入应根据 Servlet 语义单独建模。", "项目专属鉴权、租户和错误封装必须由仓库证据确认。"] } },
+      "title": "Spring MVC HTTP contracts",
+      "appliesTo": { "dependenciesAny": [{ "ecosystem": "maven", "name": "org.springframework.boot:spring-boot-starter-web" }, { "ecosystem": "maven", "name": "org.springframework:spring-web" }] },
+      "sources": [{ "id": "spring-request-body", "kind": "official-documentation", "title": "Spring Framework: @RequestBody", "url": "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/requestbody.html", "retrievedAt": "2026-09-17" }],
+      "practices": ["Use named DTOs with @RequestBody and @Valid for ordinary JSON requests, and return stable response DTOs.", "Keep controllers at the transport boundary; perform cross-field validation, authorization, state transitions, and transactions in services.", "Define error semantics explicitly and never expose persistence records or internal exceptions directly."],
+      "verification": ["Test valid, missing-field, invalid-field, and unauthorized requests.", "Test that response and error contracts do not expose internal fields."],
+      "boundaries": ["Model form and multipart input separately according to Servlet semantics.", "Project-specific authentication, tenancy, and error envelopes require repository evidence."]
+    },
+    {
+      "id": "spring-service-transactions",
+      "translations": { "zh-CN": { "title": "Spring 服务与事务边界", "practices": ["在应用服务中编排授权、状态转换和必须共同成功的持久化写入。", "明确回滚、传播、隔离和外部副作用边界；网络调用尽量置于数据库事务外。", "验证代理语义，不能假设同类自调用会触发 @Transactional。"], "verification": ["测试成功、回滚、并发冲突和重复调用。", "测试目标方法确实通过事务代理调用。"], "boundaries": ["事务注解本身不能证明运行时事务已启用。", "隔离级别与重试规则必须由业务不变量决定。"] } },
+      "title": "Spring service and transaction boundaries",
+      "appliesTo": { "dependenciesAny": [{ "ecosystem": "maven", "name": "org.springframework:spring-tx" }, { "ecosystem": "maven", "name": "org.springframework.boot:spring-boot-starter-jdbc" }] },
+      "sources": [{ "id": "spring-transactional-annotations", "kind": "official-documentation", "title": "Spring Framework: Using @Transactional", "url": "https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/annotations.html", "retrievedAt": "2026-09-17" }],
+      "practices": ["Orchestrate authorization, state transitions, and persistence writes that must succeed together in an application service.", "State rollback, propagation, isolation, and external-effect boundaries explicitly; keep network calls outside database transactions when possible.", "Verify proxy semantics instead of assuming that same-class self-invocation activates @Transactional."],
+      "verification": ["Test success, rollback, concurrency conflict, and duplicate invocation.", "Test that the target method is actually invoked through a transaction proxy."],
+      "boundaries": ["A transaction annotation alone does not prove that runtime transaction management is active.", "Isolation and retry rules must follow confirmed business invariants."]
+    },
+    {
+      "id": "mybatis-persistence-boundaries",
+      "translations": { "zh-CN": { "title": "MyBatis 持久化边界", "practices": ["Mapper 方法使用具名参数和明确返回类型，并让 XML statement id 与接口契约对应。", "动态 SQL 仅拼装受控结构；用户输入必须作为绑定参数。", "并发正确性依赖数据库约束或带期望状态的条件更新，不只依赖先查后写。"], "verification": ["测试空结果、多结果、动态条件和字段映射。", "测试重复或并发写入不会违反不变量。"], "boundaries": ["生成器不得从表名推断业务语义。", "缓存、批处理和插件行为需要项目配置证据。"] } },
+      "title": "MyBatis persistence boundaries",
+      "appliesTo": { "dependenciesAny": [{ "ecosystem": "maven", "name": "org.mybatis:mybatis" }, { "ecosystem": "maven", "name": "org.mybatis.spring.boot:mybatis-spring-boot-starter" }] },
+      "sources": [{ "id": "mybatis-mapper-xml", "kind": "official-documentation", "title": "MyBatis 3: Mapper XML Files", "url": "https://mybatis.org/mybatis-3/sqlmap-xml.html", "retrievedAt": "2026-09-17" }],
+      "practices": ["Use named mapper parameters and explicit return types, with XML statement ids aligned to interface contracts.", "Use dynamic SQL only for controlled structure; keep user input in bound parameters.", "Enforce concurrency invariants with database constraints or conditional updates that include the expected state, not only read-before-write checks."],
+      "verification": ["Test empty, multiple, dynamic-condition, and result-mapping cases.", "Test duplicate or concurrent writes cannot violate the invariant."],
+      "boundaries": ["Do not infer business semantics from table names.", "Cache, batching, and plugin behavior require project configuration evidence."]
+    },
+    {
+      "id": "vue-component-composition",
+      "translations": { "zh-CN": { "title": "Vue 组件组合", "practices": ["组件使用有类型的 props 和 emits；可复用状态与副作用进入可测试 composable。", "明确加载、空、错误和等待状态，避免在渲染期间修改外部状态。", "组件只负责一个界面职责，跨页面策略进入领域或状态层。"], "verification": ["测试主要交互及加载、空和错误状态。", "运行项目类型检查与组件测试。"], "boundaries": ["确认项目使用 Options API 还是 Composition API。", "客户端校验不能替代服务端校验。"] } },
+      "title": "Vue component composition",
+      "appliesTo": { "packagesAny": ["vue"] },
+      "sources": [{ "id": "vue-component-basics", "kind": "official-documentation", "title": "Vue: Components Basics", "url": "https://vuejs.org/guide/essentials/component-basics.html", "retrievedAt": "2026-09-17" }],
+      "practices": ["Use typed props and emits; move reusable state and effects into testable composables.", "Represent loading, empty, error, and pending states explicitly, and do not mutate external state during render.", "Give a component one UI responsibility and move cross-page policy to a domain or state boundary."],
+      "verification": ["Test the primary interaction plus loading, empty, and error states.", "Run the project type check and component test command."],
+      "boundaries": ["Confirm whether the project standardizes the Options API or Composition API.", "Client validation does not replace server validation."]
+    },
+    {
+      "id": "vue-api-client-contracts",
+      "translations": { "zh-CN": { "title": "Vue API 客户端契约", "practices": ["通过领域局部 API 模块集中请求、DTO 和错误映射。", "复用项目 HTTP 客户端、授权和错误封装，不创建平行 fetch/axios 路径。", "可被路由或新请求替换的调用应支持取消并忽略过期结果。"], "verification": ["测试成功、服务端错误、取消和过期响应。", "类型检查请求与响应 DTO 的调用点。"], "boundaries": ["端点、Header 和错误码必须来自项目契约证据。", "不得把真实业务路径写入通用治理模板。"] } },
+      "title": "Vue API client contracts",
+      "appliesTo": { "packagesAny": ["vue", "axios"] },
+      "sources": [{ "id": "vue-composables", "kind": "official-documentation", "title": "Vue: Composables", "url": "https://vuejs.org/guide/reusability/composables.html", "retrievedAt": "2026-09-17" }],
+      "practices": ["Centralize requests, DTOs, and error mapping in domain-local API modules.", "Reuse the project HTTP client, authorization, and error envelope instead of creating a parallel fetch or axios path.", "Support cancellation and ignore stale results when a route or newer request can supersede an in-flight request."],
+      "verification": ["Test success, server error, cancellation, and stale-response behavior.", "Type-check request and response DTO call sites."],
+      "boundaries": ["Endpoints, headers, and error codes must come from project contract evidence.", "Never copy real business paths into a reusable governance template."]
+    },
+    {
+      "id": "pinia-state-routing",
+      "translations": { "zh-CN": { "title": "Pinia 状态与路由边界", "practices": ["Store 保存跨组件共享的领域状态与动作，不保存 DOM、路由对象或临时表单细节。", "路由负责导航和访问入口；授权仍由服务端执行。", "刷新或注销时显式清理用户作用域状态。"], "verification": ["测试 Store 动作、失败恢复、刷新与注销清理。", "测试路由守卫的允许、拒绝和直接 URL 访问。"], "boundaries": ["是否持久化状态必须由数据敏感性和产品需求决定。", "前端路由守卫不能作为唯一授权控制。"] } },
+      "title": "Pinia state and routing boundaries",
+      "appliesTo": { "packagesAny": ["pinia", "vue-router"] },
+      "sources": [{ "id": "pinia-core-concepts", "kind": "official-documentation", "title": "Pinia: Defining a Store", "url": "https://pinia.vuejs.org/core-concepts/", "retrievedAt": "2026-09-17" }],
+      "practices": ["Keep cross-component domain state and actions in stores; do not store DOM nodes, router objects, or transient form details.", "Use routing for navigation and access entrypoints while keeping authorization enforced by the server.", "Clear user-scoped state explicitly on refresh recovery or logout."],
+      "verification": ["Test store actions, failure recovery, refresh, and logout cleanup.", "Test allowed, denied, and direct-URL route-guard paths."],
+      "boundaries": ["Persist state only when product need and data sensitivity justify it.", "A frontend route guard is never the sole authorization control."]
+    },
+    {
+      "id": "taro-react-native-target-boundaries",
+      "translations": { "zh-CN": { "title": "Taro 与 React Native 多端边界", "practices": ["共享领域契约，平台 API 通过窄适配器隔离。", "每个目标分别声明能力、权限、存储和生命周期差异。", "不要假设小程序、H5 与原生端具备相同全局对象或后台行为。"], "verification": ["至少在每个受影响目标运行构建或测试。", "测试权限拒绝、后台恢复和不支持能力的降级。"], "boundaries": ["单端通过不能证明其他目标正确。", "设备和系统版本行为需要真机证据。"] } },
+      "title": "Taro and React Native target boundaries",
+      "appliesTo": { "packagesAny": ["@tarojs/taro", "react-native"] },
+      "sources": [{ "id": "taro-introduction", "kind": "official-documentation", "title": "Taro: Introduction", "url": "https://docs.taro.zone/en/docs/", "retrievedAt": "2026-09-17" }],
+      "practices": ["Share domain contracts while isolating platform APIs behind narrow adapters.", "Declare capability, permission, storage, and lifecycle differences for each target explicitly.", "Do not assume mini-program, web, and native targets expose the same globals or background behavior."],
+      "verification": ["Run a build or test for every affected target.", "Test permission denial, background recovery, and unsupported-capability fallback."],
+      "boundaries": ["Passing on one target does not prove correctness on another.", "Device and OS-version behavior requires real-device evidence."]
     }
   ]
 }

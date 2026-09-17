@@ -86,6 +86,17 @@ Installation is **Agent-first** and **artifact-language-second**. The stored `ar
 5. **Preset** — start with Minimal or Standard from evidence. Complete is opt-in, never the default consequence of a vague request.
 6. **Optional capabilities** — memory, hooks, CI, workflows, Skills, and specialist roles remain separate choices.
 
+Repository families use one exact, reviewable plan while retaining autonomous member ownership:
+
+```bash
+aicg init . --family --yes --clients codex --no-assist --dry-run
+aicg init . --family --yes --clients codex --no-assist --approve <planHash>
+```
+
+The combined plan binds the orchestrator and every detected member. Member repositories are applied before the orchestrator, parent manifests never own member files, and a failed apply or post-check rolls the entire family back.
+
+Standard and Complete governance also generate audited implementation Skills. A descriptive-only Skill fails generation: implementation Skills require trigger and non-trigger cases, invariants, a decision flow, correct and incorrect code shapes, exceptions, a verification matrix, project evidence boundaries, and sources. The default professional-testing Skill asks whether simulated human testing is needed and, when selected, recommends tester roles and real-user cohorts without claiming recruitment or real-user validation.
+
 | Preset | Fresh default selection |
 | --- | --- |
 | **Minimal** | Config, shared entry, canonical overview, context map, always rules, manifest, and selected Agent adapters |

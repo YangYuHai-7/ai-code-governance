@@ -9,16 +9,18 @@ import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, validateConf
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprovedProjectAgentTeam } from '../../project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
-import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
+import { applyArtifactPlan, planArtifacts, restoreUserOwnedLink } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
 import { adaptivePreviewGuidance, initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../../project-assessment.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
+import { repositoryTopologyMigrationRequired } from '../../modules/repository/index.mjs';
 import { readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
+import { rollbackSnapshot, restoreRollbackSnapshot } from '../../modules/governance/artifact-rollback.mjs';
 
 const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/ai/', 'docs/memory/', '.cursor/', '.claude/', '.agents/'];
 const GOVERNANCE_WRITE_FILES = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'reports/.gitkeep', 'reviews/.gitkeep']);
@@ -184,7 +186,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       if (!error.budgetCost) throw error;
       config = baseConfig;
       summary.status = 'budget-blocked';
-      summary.budget = { proposedCost: error.budgetCost, maximumFiles: 26, maximumBytes: (config.governanceDepth === 'standard' ? 64 : 96) * 1024, maximumManagerTokens: 800 };
+      summary.budget = { proposedCost: error.budgetCost, maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagerTokens: 800 };
       summary.manualCleanup = {
         paths: scan.files.map((entry) => entry.relative).filter((relative) => ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md', '.agents/skills/business-constraints/SKILL.md', '.claude/skills/business-constraints/SKILL.md'].includes(relative)),
         authorization: 'separate-explicit-approval-required', automaticDeletion: false,
@@ -198,7 +200,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   } };
 }
 
-export async function prepareInit(target, options, { allowDefaults = false } = {}) {
+export async function prepareInit(target, options, { allowDefaults = false, suppliedConfig = null } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
   if (options.guided && options.yes) throw usageError('--guided is interactive and cannot be combined with --yes.');
   if (options.guided && options.config) throw usageError('--guided cannot be combined with --config; answer the guided choices instead.');
@@ -209,11 +211,13 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
   let codeDocumentationPolicyExplicit = existing?.codeDocumentationPolicy !== undefined;
   let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
+  let topologyMigrationDecisionExplicit = false;
   let prompted = false;
-  if (options.config) {
-    const supplied = readJson(path.resolve(options.config));
+  if (options.config || suppliedConfig) {
+    const supplied = suppliedConfig ?? readJson(path.resolve(options.config));
     if (Object.hasOwn(supplied, 'adaptiveDecisions') && (!existing?.adaptiveDecisions || stableJson(supplied.adaptiveDecisions) !== stableJson(existing.adaptiveDecisions))) throw usageError('adaptiveDecisions must come from the trusted managed config; submit new decisions through adaptiveGovernance and exact approval.');
     if (supplied.codeDocumentationPolicy !== undefined) codeDocumentationPolicyExplicit = true;
+    if (supplied.initialization?.lifecycle !== undefined) topologyMigrationDecisionExplicit = true;
     if (!options.yes && !allowDefaults) requireConfiguredChoices(supplied);
     const { initialClassification: _ignoredClassification, architecture: _ignoredArchitecture, projectMode: _ignoredProjectMode, ...safeSupplied } = supplied;
     const normalizedSupplied = safeSupplied.clientSupport
@@ -241,6 +245,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
       preserveInvocation: Boolean(existing),
     });
     prompted = true;
+    topologyMigrationDecisionExplicit = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   } else if (!options.yes && !options.config && !allowDefaults) {
     if (!process.stdin.isTTY || !process.stdout.isTTY) throw usageError('Interactive init requires a TTY. Use --yes or --config <json>.');
@@ -249,9 +254,17 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
       preserveCodeDocumentationPolicy: codeDocumentationPolicyExplicit,
     });
     prompted = true;
+    topologyMigrationDecisionExplicit = true;
     if (!sameInitialization(existing?.initialization, config.initialization)) decisionSource = 'interactive';
   }
   if (options.locale) config.interactionLanguage = options.locale;
+  if (options.family && scan.projectMode === 'repository-family' && !config.initialization?.lifecycle) {
+    config = {
+      ...config,
+      initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' },
+    };
+    decisionSource = 'config';
+  }
   if (!config.clientSupport) {
     const locale = config.interactionLanguage === 'zh-CN' || options.locale === 'zh-CN';
     throw usageError(locale
@@ -265,6 +278,20 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
     throw usageError(`AI completion agent ${options.assist} was not selected in config.clients.`);
   }
   const currentAssessment = classifyProject(scan);
+  const topologyMigrationRequired = Boolean(existing && repositoryTopologyMigrationRequired(scan, existing));
+  if (topologyMigrationRequired && !topologyMigrationDecisionExplicit) {
+    throw usageError(`Topology migration required: the current repository mode or family membership differs from the stored classification (${existing.projectMode} -> ${scan.projectMode}). Re-run init with --guided or an explicit --config lifecycle decision and inspect the exact plan.`);
+  }
+  if (topologyMigrationRequired) {
+    config = {
+      ...config,
+      initialClassification: {
+        codebase: currentAssessment.codebase,
+        implementationBoundary: currentAssessment.implementationBoundary,
+        requiredDecisions: currentAssessment.requiredDecisions,
+      },
+    };
+  }
   try {
     if (config.architectureApproval) {
       const approval = resolveArchitectureApproval(scan, config.architectureApproval);
@@ -307,7 +334,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   const explicitAdaptiveRequest = Object.hasOwn(config, 'adaptiveGovernance');
   if (explicitAdaptiveRequest && (!request || typeof request !== 'object' || Array.isArray(request))) throw usageError('adaptiveGovernance must be an object with explicit installedRoots.');
   delete config.adaptiveGovernance;
-  if (!request && (options['dry-run'] || options.approve || prompted)) request = { installedRoots: [] };
+  if (!request && (options['dry-run'] || options.approve || prompted || topologyMigrationRequired)) request = { installedRoots: [] };
   let adaptive;
   try {
     adaptive = request ? prepareAdaptiveGovernance(config, scan, request, existing) : null;
@@ -331,6 +358,7 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   }
   const artifacts = buildArtifacts(config, scan);
   const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
+  if (topologyMigrationRequired) plan.requireTopologyApproval = true;
   if (adaptive) {
     plan.adaptiveGovernance = adaptive.summary;
     plan.requireAdaptiveApproval = true;
@@ -343,9 +371,135 @@ export async function prepareInit(target, options, { allowDefaults = false } = {
   return { scan, config, plan, assertSourcesFresh: adaptive?.assertSourcesFresh };
 }
 
+function inheritedMemberConfig(parentConfig, unit) {
+  const existing = unit.sourceFileCount > 0 || unit.manifests.length > 0;
+  return {
+    governanceDepth: parentConfig.governanceDepth,
+    artifactLanguage: parentConfig.artifactLanguage,
+    interactionLanguage: parentConfig.interactionLanguage,
+    supportedOs: parentConfig.supportedOs,
+    invocationMode: parentConfig.invocationMode,
+    codeDocumentationPolicy: existing ? 'inherit-existing' : parentConfig.codeDocumentationPolicy,
+    features: { ...parentConfig.features, aiAssist: false },
+    domainConstraints: [],
+    confirmedRiskSignals: [],
+    initialization: {
+      lifecycle: existing ? 'existing' : 'greenfield',
+      existingCodeStrategy: existing ? 'keep-existing' : null,
+      source: 'config',
+    },
+  };
+}
+
+async function prepareRepositoryFamilyMembers(parent, options) {
+  if (parent.scan.projectMode !== 'repository-family' || !parent.scan.repositoryFamily?.members.length) {
+    throw usageError('--family requires a detected repository family with at least one member.');
+  }
+  const units = parent.scan.governanceUnits ?? [];
+  const invalid = units.filter((unit) => unit.status !== 'scanned');
+  if (invalid.length) throw usageError(`Cannot prepare the family while member scans are incomplete: ${invalid.map((unit) => `${unit.path} (${unit.status})`).join(', ')}.`);
+  const members = [];
+  for (const unit of units) {
+    const memberRoot = path.join(parent.scan.root, unit.path);
+    const memberOptions = {
+      yes: true,
+      'dry-run': true,
+      'no-assist': true,
+      clients: parent.config.clients.join(','),
+      ...(options.locale ? { locale: options.locale } : {}),
+      ...(options.force ? { force: true } : {}),
+      ...(options['migrate-links'] ? { 'migrate-links': true } : {}),
+    };
+    const prepared = await prepareInit(memberRoot, memberOptions, {
+      allowDefaults: true,
+      suppliedConfig: inheritedMemberConfig(parent.config, unit),
+    });
+    members.push({ path: unit.path, ...prepared });
+  }
+  return members;
+}
+
+function familyExecutionPlan(parent, members) {
+  const units = [...members, { path: '.', ...parent }].map((entry) => {
+    const execution = buildExecutionPlan({ intent: initIntent(), scan: entry.scan, artifactPlan: entry.plan, config: entry.config });
+    return { path: entry.path, execution };
+  });
+  const base = {
+    schemaVersion: 1,
+    intent: 'governance.family-initialize',
+    toolVersion: TOOL_VERSION,
+    root: parent.scan.root,
+    units: units.map(({ path: relative, execution }) => ({
+      path: relative,
+      targetRoot: execution.targetRoot,
+      planHash: execution.planHash,
+      operationCount: execution.operations.filter((operation) => operation.action !== 'keep').length,
+      requiredPermissions: execution.requiredPermissions,
+    })),
+  };
+  return { ...base, planHash: sha256(stableJson(base)), executions: units };
+}
+
+async function initRepositoryFamily(parent, options) {
+  if (options.guided) throw usageError('--family uses one exact non-interactive plan; complete guided root decisions first, then run --family --dry-run.');
+  if (parent.config.features.aiAssist) throw usageError('--family supports deterministic governance generation only; use --no-assist and run any AI completion separately per repository.');
+  const members = await prepareRepositoryFamilyMembers(parent, options);
+  const combined = familyExecutionPlan(parent, members);
+  const all = [...members, { path: '.', ...parent }];
+  const conflicts = all.flatMap((entry) => entry.plan.conflicts.map((conflict) => `${entry.path}: ${conflict}`));
+  if (conflicts.length) throw usageError(`Cannot safely initialize the repository family:\n- ${conflicts.join('\n- ')}`);
+
+  if (options['dry-run'] || !options.approve) {
+    console.log(JSON.stringify({
+      dryRun: true,
+      family: true,
+      approvalRequired: true,
+      planHash: combined.planHash,
+      units: combined.units,
+      boundary: 'Each member remains an autonomous governance root. The combined approval binds every member plan and all repositories roll back if an apply or post-check fails.',
+    }, null, 2));
+    return;
+  }
+  if (options.approve !== combined.planHash) {
+    throw usageError(`Approval does not match the current family plan hash ${combined.planHash}. Re-run init --family --dry-run and approve the displayed hash.`);
+  }
+
+  for (const { path: relative, execution } of combined.executions) {
+    const prepared = all.find((entry) => entry.path === relative);
+    assertPlanFresh(execution);
+    assertArtifactPlanMatches(execution, prepared.scan.root, prepared.plan);
+    prepared.assertSourcesFresh?.();
+  }
+  const snapshots = all.map((entry) => ({ entry, snapshot: rollbackSnapshot(entry.scan.root, entry.plan) }));
+  const results = [];
+  try {
+    // Apply autonomous members before the orchestrator. No parent manifest may
+    // claim member files, but one approval and rollback boundary covers the run.
+    for (const entry of all) {
+      const applied = applyArtifactPlan(entry.scan.root, entry.plan, {
+        migrateLinks: options['migrate-links'],
+        transactional: false,
+        verify: () => checkProject(scanProject(entry.scan.root)),
+      });
+      results.push({ path: entry.path, changedFiles: applied.changed.length, governanceCheck: applied.verification.ok ? 'pass' : 'fail' });
+    }
+  } catch (error) {
+    const rollbackFailures = [];
+    for (const { entry, snapshot } of [...snapshots].reverse()) {
+      try { restoreRollbackSnapshot(entry.scan.root, snapshot, restoreUserOwnedLink); }
+      catch (rollbackError) { rollbackFailures.push(`${entry.path}: ${rollbackError.message}`); }
+    }
+    if (rollbackFailures.length) error.message = `${error.message}\nFamily rollback failed:\n- ${rollbackFailures.join('\n- ')}`;
+    throw error;
+  }
+  console.log(JSON.stringify({ initialized: parent.scan.root, family: true, planHash: combined.planHash, units: results }, null, 2));
+}
+
 export async function initCommand(target, options) {
-  const { scan, config, plan, assertSourcesFresh } = await prepareInit(target, options);
-  const needsApproval = Boolean(plan.requireAdaptiveApproval || options.requireApproval || config.skillDiscovery?.enabled || config.agentTeam?.enabled);
+  const prepared = await prepareInit(target, options);
+  if (options.family) return initRepositoryFamily(prepared, options);
+  const { scan, config, plan, assertSourcesFresh } = prepared;
+  const needsApproval = Boolean(plan.requireTopologyApproval || plan.requireAdaptiveApproval || options.requireApproval || config.skillDiscovery?.enabled || config.agentTeam?.enabled);
   // Plain legacy --yes initialization does not expose or consume an execution digest.
   const executionPlan = options['dry-run'] || options.approve || needsApproval
     ? buildExecutionPlan({ intent: options.sync ? { id: 'governance.sync', handler: 'sync', mode: 'write' } : initIntent(), scan, artifactPlan: plan, config })

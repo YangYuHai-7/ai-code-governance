@@ -150,13 +150,34 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
   const confirmedLifecycle = config?.initialization?.lifecycle ?? null;
   const prefix = invocationPrefix(config);
   const rescan = postInitRescan(scan, config);
-  const scanComplete = scan.scanBudget?.complete !== false;
+  const scanComplete = scan.scanBudget?.complete !== false
+    && (scan.repositoryFamily?.issues?.length ?? 0) === 0
+    && (scan.governanceUnits ?? []).every((unit) => unit.status === 'scanned');
   const allowedVerificationCommands = verificationNpmCommands(scan.commands)
     .map((candidate) => candidate.command)
     .sort((left, right) => left.localeCompare(right));
   const nextSteps = [];
   const warnings = [];
   const surfaceSignals = detectSurfaceSignals(scan);
+
+  for (const exclusion of scan.scanIgnore?.unverifiedExclusions ?? []) warnings.push({
+    id: 'unverified-scan-exclusion',
+    message: localized(locale,
+      `${exclusion.path} 被 .aicgignore 排除，但它可能包含 ${exclusion.category}；在记录证据绑定的排除决定前不能视为已检查。`,
+      `${exclusion.path} is excluded by .aicgignore but may contain ${exclusion.category}; it is not considered inspected until an evidence-bound exclusion decision is recorded.`),
+    path: exclusion.path,
+  });
+  for (const unit of scan.governanceUnits ?? []) if (unit.status !== 'scanned') warnings.push({
+    id: `repository-member-${unit.status}`,
+    message: unit.status === 'uninitialized'
+      ? localized(locale,
+        `成员仓库 ${unit.path} 尚未检出，无法评估其技术栈、约定或验证入口；请先由仓库维护者初始化该成员。`,
+        `Member repository ${unit.path} is not checked out, so its stacks, conventions, and verification entrypoints cannot be assessed; have the repository maintainer initialize it first.`)
+      : localized(locale,
+        `成员仓库 ${unit.path} 的扫描状态为 ${unit.status}；解决读取或预算问题后再评估。`,
+        `Member repository ${unit.path} has scan status ${unit.status}; resolve its read or budget problem before assessment.`),
+    path: unit.path,
+  });
 
   if (!scanComplete) {
     const recoveryAction = {
@@ -228,6 +249,16 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
       id: 'review-current-architecture',
       description: localized(locale, '只读查看适合当前扫描结果的架构建议。', 'Review architecture advice for the current scan without writing files.'),
       command: `${prefix} architecture . --locale ${locale} --json`,
+      readOnly: true,
+    });
+  }
+  if (scan.projectMode === 'repository-family') {
+    for (const unit of (scan.governanceUnits ?? []).filter((entry) => entry.status === 'scanned')) nextSteps.push({
+      id: `assess-member-${unit.unitId}`,
+      description: localized(locale,
+        `单独评估成员仓库 ${unit.path}；根治理只负责编排，不替代成员工程规范。`,
+        `Assess member repository ${unit.path} separately; root governance orchestrates the family and does not replace member engineering conventions.`),
+      command: `${prefix} assess ${unit.path} --locale ${locale} --json`,
       readOnly: true,
     });
   }

@@ -294,7 +294,8 @@ function discoveredVerification(scan, requestedCommand) {
 
 function surfaceMarkers(stdout) {
   const markers = [];
-  for (const line of String(stdout ?? '').split(/\r?\n/)) {
+  for (const rawLine of String(stdout ?? '').split(/\r?\n/)) {
+    const line = rawLine.startsWith('# ') ? rawLine.slice(2) : rawLine;
     if (!line.startsWith(SURFACE_EVIDENCE_MARKER_PREFIX) || line.length > 8192 || markers.length >= 16) continue;
     try {
       const value = JSON.parse(line.slice(SURFACE_EVIDENCE_MARKER_PREFIX.length));

@@ -6,6 +6,7 @@ import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '
 import { usageError } from '../../kernel/index.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
 import { scanProject } from '../../scanner.mjs';
+import { repositoryTopologyMigrationRequired } from '../../modules/repository/index.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { assertManagedArchitectureConfigTrusted, normalizeClientSupport } from '../shared.mjs';
 
@@ -26,6 +27,9 @@ export async function syncCommand(target, options) {
     toolVersion: TOOL_VERSION,
     invocationMode: existing.invocationMode ?? 'npm-exec-pinned',
   });
+  if (repositoryTopologyMigrationRequired(scan, config)) {
+    throw usageError(`Topology migration required: the current repository mode or family membership differs from the stored classification (${config.projectMode} -> ${scan.projectMode}). Run aicg init . --guided (or use an explicit --config lifecycle decision) and inspect the exact plan; ordinary sync will not rewrite this boundary.`);
+  }
   assertManagedArchitectureConfigTrusted(scan.root, config);
   const { artifacts, definitions } = buildArtifactsWithDefinitions(config, scan);
   const plan = planArtifacts(scan.root, artifacts, {

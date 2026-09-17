@@ -135,8 +135,8 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.deepEqual(roster.professionalBoundaries, config.agentTeam.professionalBoundaries);
   assert.equal(roster.teamType, 'project-ai-agent-team');
   assert.equal(plan.cost.increment.files, 4);
-  assert.ok(plan.cost.total.files <= 26);
-  assert.ok(plan.cost.total.bytes <= 64 * 1024);
+  assert.ok(plan.cost.total.files <= 30);
+  assert.ok(plan.cost.total.bytes <= 96 * 1024);
   const bodies = artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path));
   assert.ok(Math.ceil(bodies.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4) <= 800);
   const map = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
@@ -417,8 +417,8 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       const bytes = transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content);
       assert.equal(transaction.operations.length + 1, plan.cost.total.files);
       assert.equal(bytes, plan.cost.total.bytes);
-      assert.ok(bytes <= (governanceDepth === 'standard' ? 64 : 96) * 1024);
-      assert.ok(transaction.operations.length <= 26);
+      assert.ok(bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
+      assert.ok(transaction.operations.length <= 30);
       for (const artifact of artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
         if (artifactLanguage !== 'en') assert.match(artifact.content, /审批/);
         assert.match(artifact.content, /planHash/);

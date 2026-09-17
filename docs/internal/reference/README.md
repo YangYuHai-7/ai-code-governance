@@ -30,5 +30,6 @@ The existing reference filenames remain stable because they are linked from the 
 ## Product
 
 - `product-architecture.md`
+- `repository-family-and-project-conventions.md`
 - `team-orchestration.md`
 - `ui-selection.md`

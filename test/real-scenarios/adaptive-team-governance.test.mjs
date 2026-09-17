@@ -235,8 +235,8 @@ for (const governanceDepth of ['standard', 'complete']) {
     const config = selectedConfig({ governanceDepth });
     const result = preview(f, config);
     assert.ok(result.contextCost.management.total, JSON.stringify(result));
-    assert.ok(result.contextCost.management.total.files <= 26);
-    assert.ok(result.contextCost.management.total.bytes <= (governanceDepth === 'standard' ? 64 : 96) * 1024);
+    assert.ok(result.contextCost.management.total.files <= 30);
+    assert.ok(result.contextCost.management.total.bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
     assert.ok(result.contextCost.management.increment.managerTokens <= 800);
     assert.deepEqual(result.files.filter((item) => managementPaths.includes(item.path)).map((item) => item.path).sort(), [...managementPaths].sort());
     const before = snapshot(f.root);
@@ -375,7 +375,7 @@ test('historical Standard artifacts cause an explicit budget-blocked preview wit
   const before = snapshot(f.root);
   const result = output(command(['sync', f.root, '--config', f.answers]));
   assert.equal(result.adaptiveGovernance.status, 'budget-blocked');
-  assert.ok(result.adaptiveGovernance.budget.proposedCost.total.files > 26);
+  assert.ok(result.adaptiveGovernance.budget.proposedCost.total.files > 30);
   assert.ok(result.adaptiveGovernance.manualCleanup.paths.includes('docs/ai/bootstrap-prompt.md'));
   assert.equal(result.adaptiveGovernance.manualCleanup.authorization, 'separate-explicit-approval-required');
   const applied = command(['sync', f.root, '--config', f.answers, '--approve', result.planHash]);

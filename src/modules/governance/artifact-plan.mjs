@@ -9,7 +9,7 @@ import {
 } from '../../constants.mjs';
 import { snapshotPath } from '../../preconditions.mjs';
 import { lstatSafe, readText } from '../../adapters/filesystem/index.mjs';
-import { isSafeRelative, normalizeRelative, stableJson } from '../../shared/index.mjs';
+import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { linkAncestor, nonDirectoryAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
 import { loadManifest } from './manifest-store.mjs';
@@ -157,19 +157,36 @@ function mergeConditionalSeedRoutes(current, desired) {
   if (required.conditions.size === 0) return current;
   const existing = conditionalSeedLayout(currentProfile);
   const additions = [];
+  let changed = false;
   for (const [condition, route] of required.conditions) {
     const present = existing.conditions.get(condition);
     if (present) {
-      if (stableJson(present.entries) !== stableJson(route.entries)) {
-        throw new Error(`${CONTEXT_MAP_PATH}: existing behavior_change ${condition} condition conflicts with the required AICG route`);
+      const missing = route.entries.filter((entry) => !present.entries.includes(entry));
+      if (missing.length > 0) {
+        const overlapsGeneratedRoute = route.entries.some((entry) => present.entries.includes(entry));
+        const generatedSkillExpansion = missing.every((entry) => /^        - docs\/ai\/skills\/(?:standards|project-conventions)\/[A-Za-z0-9._/-]+\/SKILL\.md$/.test(entry)
+          || /^        - docs\/ai\/skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/SKILL\.md$/.test(entry));
+        if (overlapsGeneratedRoute && !generatedSkillExpansion) {
+          throw new Error(`${CONTEXT_MAP_PATH}: ${condition} condition conflicts with the required AICG route`);
+        }
+        const headerIndex = existing.lines.indexOf(present.header);
+        let insertionIndex = headerIndex + 1;
+        while (insertionIndex < existing.lines.length && /^        -/.test(existing.lines[insertionIndex])) insertionIndex += 1;
+        existing.lines.splice(insertionIndex, 0, ...missing);
+        if (insertionIndex <= existing.end) existing.end += missing.length;
+        present.entries.push(...missing);
+        changed = true;
       }
     } else {
       additions.push(route.header, ...route.entries);
     }
   }
-  if (additions.length === 0) return current;
-  if (existing.empty) existing.lines[existing.start] = '    conditional:';
-  existing.lines.splice(existing.end, 0, ...additions);
+  if (additions.length > 0) {
+    if (existing.empty) existing.lines[existing.start] = '    conditional:';
+    existing.lines.splice(existing.end, 0, ...additions);
+    changed = true;
+  }
+  if (!changed) return current;
   const newline = current.includes('\r\n') ? '\r\n' : '\n';
   return current.replace(currentProfile.replaceAll('\n', newline), existing.lines.join(newline));
 }
@@ -303,9 +320,11 @@ export function planArtifacts(root, artifacts, options = {}) {
     if (artifact.ownership === 'seed') {
       const seedExists = !ancestor && Boolean(existingStat);
       let desired = seedExists ? current : artifact.content;
-      if (seedExists && legacyManagedProject && relative === CONTEXT_MAP_PATH) {
+      if (seedExists && relative === CONTEXT_MAP_PATH) {
         try {
-          desired = mergeLegacyContextMapSeed(current, artifact.content);
+          const merged = mergeLegacyContextMapSeed(current, artifact.content);
+          if (legacyManagedProject) desired = merged;
+          else if (merged !== current) conflicts.push(`${MANIFEST_PATH}: manifest is not trusted to extend ${CONTEXT_MAP_PATH}`);
         } catch (error) {
           conflicts.push(error.message);
         }
@@ -331,12 +350,15 @@ export function planArtifacts(root, artifacts, options = {}) {
     if (current && current !== desired) {
       const currentHash = managedContentHash(current, artifact.ownership);
       const isPreviouslyOwned = previous && previous.ownership === artifact.ownership;
+      const isExactSeedPromotion = artifact.ownership === 'full'
+        && /^[a-f0-9]{64}$/.test(artifact.promotionSourceSha256 ?? '')
+        && sha256(current) === artifact.promotionSourceSha256;
       const recognizableGenerated = current.includes(GENERATED_MARKER);
       if (isPreviouslyOwned && currentHash !== previous.sha256 && !options.force) {
         conflicts.push(`${relative}: managed content changed; run sync --force to replace only the managed content`);
         continue;
       }
-      if (!isPreviouslyOwned && artifact.ownership === 'full' && !recognizableGenerated) {
+      if (!isPreviouslyOwned && !isExactSeedPromotion && artifact.ownership === 'full' && !recognizableGenerated) {
         conflicts.push(`${relative}: existing unowned file will not be overwritten`);
         continue;
       }

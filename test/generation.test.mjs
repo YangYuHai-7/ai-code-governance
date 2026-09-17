@@ -10,6 +10,7 @@ import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { deriveArchitectureDecision } from '../src/architecture-policy.mjs';
+import { sha256 } from '../src/shared/index.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-${name}-`));
@@ -58,7 +59,7 @@ test('Chinese artifacts localize generated body instructions across selected dep
       ['docs/ai/rules/15_architecture.mdc', /当前.*架构/],
       ['docs/ai/skills/business-constraints/SKILL.md', /成功用例/],
       ['docs/ai/lifecycle.md', /证据.*规则/],
-      ['docs/memory/README.md', /记录.*模块/],
+      ['docs/memory/README.md', /记录.*业务事实/],
       ['docs/ai/long-running/README.md', /任务目录/],
       ['docs/ai/hooks.md', /真实客户端/],
       ['docs/ai/ci-integration.md', /验证.*恢复/],
@@ -69,10 +70,11 @@ test('Chinese artifacts localize generated body instructions across selected dep
     for (const text of [architecture.profile.summary, ...architecture.invariants, ...architecture.boundaries]) assert.match(text, /[\u3400-\u9fff]/u);
     assert.match(JSON.parse(body('docs/ai/module-graph.json')).claimBoundary, /[\u3400-\u9fff]/u);
     for (const artifact of artifacts.filter((item) => /\/skills\/standards\/.*\/SKILL\.md$/.test(item.path))) {
-      assert.match(artifact.content, /版本.*证据/, artifact.path);
+      assert.match(artifact.content, /技术证据.*变更表面/, artifact.path);
+      assert.match(artifact.content, /## Verification matrix/, artifact.path);
       assert.doesNotMatch(artifact.content, /Apply this technical standard|Read the installed|This generated/);
     }
-    if (governanceDepth === 'complete') assert.match(body('docs/ai/skills/backend-node/SKILL.md'), /读取.*AGENTS/);
+    if (governanceDepth === 'complete') assert.match(body('docs/ai/skills/backend-node/SKILL.md'), /精确技术 Skill/);
     applyArtifactPlan(root, planArtifacts(root, artifacts));
     assert.equal(checkProject(scanProject(root)).ok, true, governanceDepth);
   }
@@ -104,6 +106,26 @@ test('configuration defaults artifact and code documentation languages independe
     () => validateConfig({ ...defaultConfig(greenfieldScan), codeDocumentationPolicy: 'bilingual' }),
     /Unsupported code documentation policy/,
   );
+});
+
+test('mutable governance state remains in managed config instead of being duplicated into the human README', (context) => {
+  const root = fixture('managed-governance-state');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const standard = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  const initial = buildArtifacts(standard, scan);
+  const readme = initial.find((artifact) => artifact.path === 'docs/ai/README.md');
+  assert.equal(readme.ownership, 'seed');
+  assert.match(readme.content, /\.ai-governance\/config\.json/);
+  assert.doesNotMatch(readme.content, /Repository topology at initialization|Depth: `standard`/);
+  assert.equal(JSON.parse(initial.find((artifact) => artifact.path === '.ai-governance/config.json').content).governanceDepth, 'standard');
+
+  applyArtifactPlan(root, planArtifacts(root, initial));
+  const complete = { ...standard, governanceDepth: 'complete' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(complete, scanProject(root))));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).governanceDepth, 'complete');
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/README.md'), 'utf8'), /\.ai-governance\/config\.json/);
+  assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
 async function legacyBusinessUpgradeFixture(root, mutateLegacy = () => {}) {
@@ -589,6 +611,59 @@ test('check fails closed when the repository scan budget truncates evidence', (c
   assert.ok(result.errors.some((error) => error.includes('repository scan incomplete: file limit 2 reached')));
 });
 
+test('check rejects unregistered executable governance skills without rejecting ordinary docs', (context) => {
+  const root = fixture('unmanaged-governance-skill');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({ ...value, clients: ['codex'], governanceDepth: 'standard' }));
+  for (const relative of [
+    'docs/ai/skills/project-local/SKILL.md',
+    '.agents/skills/project-local/SKILL.md',
+    '.claude/skills/project-local/SKILL.md',
+  ]) {
+    fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    fs.writeFileSync(path.join(root, relative), '---\nname: project-local\ndescription: Unregistered project guidance.\n---\n');
+  }
+  fs.mkdirSync(path.join(root, 'docs/ai/notes'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs/ai/notes/project.md'), '# Ordinary project note\n');
+
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes('docs/ai/skills/project-local/SKILL.md: unmanaged executable governance artifact')));
+  assert.ok(result.errors.some((error) => error.includes('.agents/skills/project-local/SKILL.md: unmanaged executable governance artifact')));
+  assert.ok(result.errors.some((error) => error.includes('.claude/skills/project-local/SKILL.md: unmanaged executable governance artifact')));
+  assert.equal(result.errors.some((error) => error.includes('docs/ai/notes/project.md')), false);
+});
+
+test('check rejects an unknown executable Skill even when a forged manifest entry claims it', (context) => {
+  const root = fixture('forged-manifest-skill');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({ ...value, clients: ['codex'], governanceDepth: 'standard' }));
+  const relative = 'docs/ai/skills/unregistered/SKILL.md';
+  const content = '---\nname: unregistered\ndescription: Not approved by project governance.\n---\n';
+  fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(root, relative), content);
+  const manifestPath = path.join(root, '.ai-governance/manifest.json');
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  manifest.files.push({ path: relative, ownership: 'full', kind: 'forged-skill', source: 'untrusted', sha256: sha256(content) });
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, false);
+  assert.ok(result.errors.some((error) => error.includes(`${relative}: unmanaged executable governance artifact`)));
+});
+
+test('check permits a known canonical seed skill even when its route is dormant', (context) => {
+  const root = fixture('known-dormant-skill-seed');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  initialize(root, (value) => ({ ...value, clients: ['codex'], governanceDepth: 'standard' }));
+  const relative = 'docs/ai/skills/generic-unknown/SKILL.md';
+  fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+  fs.writeFileSync(path.join(root, relative), '---\nname: generic-unknown\ndescription: Human-maintained dormant canonical seed.\n---\n');
+
+  const result = checkProject(scanProject(root));
+  assert.equal(result.ok, true, result.errors.join('; '));
+});
+
 for (const artifactLanguage of ['en', 'zh-CN']) test(`check keeps enforcement unverified when complete receipt fields have not been replayed (${artifactLanguage})`, (context) => {
   const root = fixture('verified-enforcement-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -952,7 +1027,7 @@ test('legacy seed migration rejects foreign or drifted manifest authority and ro
 
     await assert.rejects(
       initCommand(root, { yes: true, force: true, config: upgradeConfigPath }),
-      /Post-apply verification failed/,
+      /manifest is not trusted to extend docs\/ai\/context-map\.yaml/,
     );
 
     for (const [relative, content] of Object.entries(before)) {

@@ -16,7 +16,7 @@ export { buildManifest, managedContentHash } from './manifest.mjs';
 export { loadManifest } from './manifest-store.mjs';
 export { planArtifacts } from './artifact-plan.mjs';
 
-function restoreUserOwnedLink(entry, absolute) {
+export function restoreUserOwnedLink(entry, absolute) {
   // Controlled rollback: restore only the user-owned link removed by this failed migration.
   fs.symlinkSync(entry.target, absolute);
 }

@@ -3,10 +3,12 @@ import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { stableJson, unique } from '../../shared/index.mjs';
+import { assertSkillQuality } from './skill-quality.mjs';
 
 const REGISTRY_PATH = 'assets/registries/technical-standard-registry.json';
 const STANDARD_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/i;
+const ECOSYSTEM = /^[a-z0-9][a-z0-9._-]*$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function asSortedStrings(values) {
@@ -22,6 +24,111 @@ function sourceSnapshot(source) {
     retrievedAt: source.retrievedAt,
   };
 }
+
+const IMPLEMENTATION_EXAMPLES = {
+  'spring-http-contracts': {
+    language: 'java',
+    correct: `public record CreateItemRequest(@NotBlank String name) {}
+
+@PostMapping("/items")
+ItemResponse create(@Valid @RequestBody CreateItemRequest input) {
+  return itemService.create(input);
+}`,
+    incorrect: `@PostMapping("/items")
+Object create(@RequestBody Map<String, Object> input) {
+  // Transport parsing, authorization, and persistence are mixed here.
+  return mapper.insert(input);
+}`,
+  },
+  'spring-service-transactions': {
+    language: 'java',
+    correct: `@Transactional
+public Item changeState(ChangeItem command) {
+  Item current = repository.require(command.id());
+  policy.check(command.actor(), current);
+  return repository.save(current.changeTo(command.targetState()));
+}`,
+    incorrect: `public Item changeState(ChangeItem command) {
+  repository.updateState(command.id(), command.targetState());
+  remoteAuditClient.send(command); // partial success can escape
+  return repository.find(command.id());
+}`,
+  },
+  'mybatis-persistence-boundaries': {
+    language: 'java',
+    correct: `public interface ItemMapper {
+  Optional<ItemRow> findById(@Param("id") long id);
+  int updateState(@Param("id") long id,
+                  @Param("expected") String expected,
+                  @Param("next") String next);
+}`,
+    incorrect: `public interface ItemMapper {
+  // Raw maps hide required fields and optimistic-concurrency semantics.
+  Map<String, Object> find(Map<String, Object> everything);
+  void update(Map<String, Object> everything);
+}`,
+  },
+  'vue-component-composition': {
+    language: 'vue',
+    correct: `<script setup lang="ts">
+const props = defineProps<{ itemId: string }>()
+const emit = defineEmits<{ saved: [id: string] }>()
+const { state, save } = useItemEditor(() => props.itemId)
+</script>`,
+    incorrect: `<script setup>
+// Global state, request ownership, and presentation are coupled.
+window.currentItem = props.item
+fetch('/items').then(r => r.json()).then(v => window.currentItem = v)
+</script>`,
+  },
+  'vue-api-client-contracts': {
+    language: 'typescript',
+    correct: `export interface CreateItemInput { name: string }
+export interface ItemDto { id: string; name: string }
+
+export const createItem = (input: CreateItemInput, signal?: AbortSignal) =>
+  http.post<ItemDto>('/items', input, { signal })`,
+    incorrect: `export const createItem = (data: any) =>
+  fetch('/items', { method: 'POST', body: JSON.stringify(data) })
+    .then(response => response.json())`,
+  },
+  'pinia-state-routing': {
+    language: 'typescript',
+    correct: `export const useItemStore = defineStore('items', () => {
+  const byId = ref<Record<string, ItemDto>>({})
+  async function load(id: string) { byId.value[id] = await getItem(id) }
+  return { byId, load }
+})`,
+    incorrect: `export const useItemStore = defineStore('items', {
+  state: () => ({ route: router.currentRoute, dom: document.body }),
+  actions: { go(id: string) { location.href = '/items/' + id } }
+})`,
+  },
+  'taro-react-native-target-boundaries': {
+    language: 'typescript',
+    correct: `export interface DevicePort { readToken(): Promise<string | null> }
+
+export function createDevicePort(platform: Platform): DevicePort {
+  return platform === 'rn' ? new ReactNativeDevicePort() : new TaroDevicePort()
+}`,
+    incorrect: `export async function readToken() {
+  // One implementation assumes every target exposes the same native global.
+  return NativeModules.Device.token || Taro.getStorageSync('token')
+}`,
+  },
+};
+
+const GENERIC_IMPLEMENTATION_EXAMPLE = {
+  language: 'text',
+  correct: `transport -> validate contract
+validated input -> authorize and execute one use case
+use case -> call a narrow persistence or integration port
+result -> map to the public response contract`,
+  incorrect: `transport -> accept an untyped payload
+handler -> mix policy, persistence, and external effects
+result -> expose internal records directly
+verification -> assume success without exercising failure paths`,
+};
 
 export function validateTechnicalStandardRegistry(registry) {
   if (!registry || registry.schemaVersion !== 1 || !Array.isArray(registry.standards)) {
@@ -41,10 +148,17 @@ export function validateTechnicalStandardRegistry(registry) {
     const applies = standard.appliesTo;
     if (applies?.packsAny !== undefined) throw usageError(`Technical standard ${standard.id} must use exact package selectors, not broad stack selectors.`);
     const packagesAny = asSortedStrings(applies?.packagesAny);
-    if (!applies || (applies.always !== true && packagesAny.length === 0)) {
+    const dependenciesAny = applies?.dependenciesAny ?? [];
+    if (!applies || (applies.always !== true && packagesAny.length === 0 && dependenciesAny.length === 0)) {
       throw usageError(`Technical standard ${standard.id} needs an explicit applicability condition.`);
     }
     if (packagesAny.some((name) => !PACKAGE_NAME.test(name))) throw usageError(`Technical standard ${standard.id} has an invalid package selector.`);
+    if (!Array.isArray(dependenciesAny) || dependenciesAny.some((entry) => !entry || !ECOSYSTEM.test(entry.ecosystem ?? '') || typeof entry.name !== 'string' || !entry.name || entry.name.length > 512)) {
+      throw usageError(`Technical standard ${standard.id} has an invalid dependency selector.`);
+    }
+    if (dependenciesAny.some((entry, index) => dependenciesAny.findIndex((candidate) => candidate.ecosystem === entry.ecosystem && candidate.name === entry.name) !== index)) {
+      throw usageError(`Technical standard ${standard.id} has duplicate dependency selectors.`);
+    }
     if (!Array.isArray(standard.sources) || standard.sources.length === 0) throw usageError(`Technical standard ${standard.id} needs at least one source.`);
     for (const source of standard.sources) {
       if (!source || !STANDARD_ID.test(source.id ?? '') || typeof source.kind !== 'string' || !source.kind || typeof source.title !== 'string' || !source.title || !ISO_DATE.test(source.retrievedAt ?? '')) {
@@ -77,27 +191,43 @@ function detectedPackageNames(scan) {
   return asSortedStrings(Object.keys(scan.packageDependencies ?? {}));
 }
 
-function selectionReason(standard, installed, declared) {
+function detectedDependencies(scan) {
+  return (scan.dependencyFacts ?? []).map((fact) => ({
+    ecosystem: fact.ecosystem,
+    name: fact.name,
+    sourcePath: fact.sourcePath,
+    declaredVersion: fact.declaredVersion,
+    resolvedVersion: fact.resolvedVersion,
+  }));
+}
+
+function selectionReason(standard, installed, declared, dependencies) {
   if (standard.appliesTo.always) return { kind: 'always', evidence: ['governance-baseline'] };
   const installedMatches = asSortedStrings(standard.appliesTo.packagesAny).filter((name) => installed.includes(name));
   if (installedMatches.length > 0) return { kind: 'installed-package', evidence: installedMatches };
   const declaredMatches = asSortedStrings(standard.appliesTo.packagesAny).filter((name) => declared.includes(name));
   if (declaredMatches.length > 0) return { kind: 'declared-technology', evidence: declaredMatches };
+  const dependencyMatches = (standard.appliesTo.dependenciesAny ?? []).flatMap((selector) => dependencies
+    .filter((fact) => fact.ecosystem === selector.ecosystem && fact.name === selector.name)
+    .map((fact) => `${fact.ecosystem}:${fact.name}@${fact.sourcePath}`));
+  if (dependencyMatches.length > 0) return { kind: 'installed-dependency', evidence: asSortedStrings(dependencyMatches) };
   return null;
 }
 
 export function selectTechnicalStandards(scan, config, registry = loadTechnicalStandardRegistry()) {
   const installedPackages = detectedPackageNames(scan);
   const configuredPackages = declaredPackages(config);
+  const dependencies = detectedDependencies(scan);
   const stackIds = asSortedStrings(config?.stacks ?? scan.stacks?.map((stack) => stack.id));
   const selected = registry.standards
-    .map((standard) => ({ standard, selection: selectionReason(standard, installedPackages, configuredPackages) }))
+    .map((standard) => ({ standard, selection: selectionReason(standard, installedPackages, configuredPackages, dependencies) }))
     .filter((entry) => entry.selection)
     .sort((left, right) => left.standard.id.localeCompare(right.standard.id));
   return {
     snapshot: registry.snapshot,
     installedPackages,
     configuredPackages,
+    dependencies,
     stackIds,
     selected,
   };
@@ -114,71 +244,112 @@ function sourcesMarkdown(sources) {
   }).join('\n');
 }
 
-function technicalSkill(standard, selection, snapshot, config) {
-  if (config.artifactLanguage === 'zh-CN') return `---
+function orderedList(values) {
+  return values.map((value, index) => `${index + 1}. ${value}`).join('\n');
+}
+
+function verificationRows(standard, commands, zh) {
+  const trusted = commands.filter((command) => command.verification?.trust?.level === 'structurally-trusted');
+  return standard.verification.map((scenario, index) => {
+    const command = trusted[index % Math.max(trusted.length, 1)];
+    const evidence = command ? `\`${command.command}\` in \`${command.verification.cwd}\`` : (zh ? '尚未验证；从栈路由的验证矩阵选择可信仓库命令' : 'not yet verified; select a trusted repository command from the stack router verification matrix');
+    return `| ${scenario.replaceAll('|', '\\|')} | ${zh ? '行为与契约断言通过，失败路径可观察' : 'Behavior and contract assertions pass; failure paths remain observable'} | ${evidence} |`;
+  }).join('\n');
+}
+
+function skillProfile(standard) {
+  return standard.profile ?? (standard.id === 'software-design-and-verification' || standard.id === 'professional-testing' ? 'workflow' : 'implementation');
+}
+
+function technicalSkill(standard, selection, snapshot, config, commands = []) {
+  const zh = config.artifactLanguage === 'zh-CN';
+  const profile = skillProfile(standard);
+  const examples = IMPLEMENTATION_EXAMPLES[standard.id] ?? GENERIC_IMPLEMENTATION_EXAMPLE;
+  const flow = standard.decisionFlow ?? (zh ? [
+    '确认任务命中本 Skill 的技术证据和代码表面；不匹配则停止使用。',
+    '读取相邻实现、测试和项目约定，区分已确认不变量与未验证假设。',
+    '选择满足契约的最小实现形状，并在变更前明确异常、兼容性和副作用边界。',
+    '运行验证矩阵中的仓库命令；无可信命令时明确记录为尚未验证。',
+  ] : [
+    'Confirm that the task matches both the declared technology evidence and the changed code surface; otherwise stop using this Skill.',
+    'Read neighboring implementation, tests, and project conventions; separate confirmed invariants from unverified assumptions.',
+    'Choose the smallest implementation shape that satisfies the contract, and state exception, compatibility, and side-effect boundaries before editing.',
+    'Run the repository command named in the verification matrix; if none is trusted, record the result as not yet verified.',
+  ]);
+  const when = standard.triggers ?? (zh
+    ? [`任务修改 ${standard.title} 所覆盖的生产代码、契约或验证。`, `扫描证据为 ${selection.kind}：${selection.evidence.join(', ')}。`]
+    : [`The task changes production code, contracts, or verification covered by ${standard.title}.`, `Scanner evidence is ${selection.kind}: ${selection.evidence.join(', ')}.`]);
+  const whenNot = standard.nonTriggers ?? (zh
+    ? ['不要把本 Skill 用作业务需求、跨仓库授权或既有代码迁移许可。', '如果技术版本或代码表面不匹配，改用对应项目 Skill。']
+    : ['Do not use this Skill as a business requirement, cross-repository authorization, or permission to migrate existing code.', 'Use a matching project Skill when the technology version or changed code surface does not match.']);
+  const exceptionRows = standard.exceptions ?? standard.boundaries;
+  const commandRows = verificationRows(standard, commands, zh);
+  const shapeSections = profile === 'implementation' ? `
+## ${zh ? 'Correct implementation shape' : 'Correct implementation shape'}
+
+\`\`\`${examples.language}
+${examples.correct}
+\`\`\`
+
+## ${zh ? 'Incorrect implementation shape' : 'Incorrect implementation shape'}
+
+\`\`\`${examples.language}
+${examples.incorrect}
+\`\`\`
+` : '';
+  const content = `---
 name: ${standard.id}
-description: 仅在技术版本及项目证据与任务匹配时，应用已审阅的${standard.title}指引。
+description: ${zh ? `当技术证据与变更表面匹配时，使用可执行的${standard.title}决策与验证流程。` : `Use the executable ${standard.title} decisions when technology evidence and the changed surface match.`}
 ---
 
 # ${standard.title}
 
 <!-- ${GENERATED_MARKER} -->
 
-## 适用性
+## When to use
 
-- 选择依据：\`${selection.kind}\` (${selection.evidence.join(', ')})
-- 来源状态：\`${snapshot.status}\`；审阅日期：${snapshot.reviewedAt}；${snapshot.refreshAfterDays} 天后更新。
+${markdownList(when)}
 
-## 证据来源
+## When not to use
 
-${standard.sources.map((source) => `- ${source.url ? `[${source.title}](${source.url})` : source.title} — ${source.kind}；获取日期：${source.retrievedAt}。`).join('\n')}
+${markdownList(whenNot)}
 
-## 必需实践
+## Evidence and prerequisites
 
-${markdownList(standard.practices)}
+- ${zh ? '选择依据' : 'Selection'}: \`${selection.kind}\` (${selection.evidence.join(', ')})
+- ${zh ? '来源状态' : 'Source status'}: \`${snapshot.status}\`; ${zh ? '审阅日期' : 'reviewed'} ${snapshot.reviewedAt}; ${zh ? `${snapshot.refreshAfterDays} 天后刷新` : `refresh after ${snapshot.refreshAfterDays} days`}.
+- ${zh ? '开始前读取相邻实现、测试和仓库专属 Skill；它们可以收紧本通用标准。' : 'Read neighboring implementation, tests, and repository-specific Skills first; they may narrow this general standard.'}
 
-## 必需验证
-
-${markdownList(standard.verification)}
-
-## 边界
-
-${markdownList(standard.boundaries)}
-
-- 本技能仅声明指引，不代表已强制执行策略或已完成真实客户端验证。
-`;
-  return `---
-name: ${standard.id}
-description: Apply the reviewed ${standard.title} guidance only when its declared technology evidence matches the task.
----
-
-# ${standard.title}
-
-<!-- ${GENERATED_MARKER} -->
-
-## Applicability
-
-- Selection: \`${selection.kind}\` (${selection.evidence.join(', ')})
-- Source status: \`${snapshot.status}\`; reviewed ${snapshot.reviewedAt}; refresh after ${snapshot.refreshAfterDays} days.
-
-## Evidence sources
-
-${sourcesMarkdown(standard.sources)}
-
-## Required practices
+## Required invariants
 
 ${markdownList(standard.practices)}
 
-## Required verification
+## Decision flow
 
-${markdownList(standard.verification)}
+${orderedList(flow)}
+${shapeSections}
+## Exceptions and escalation
 
-## Boundaries
+${markdownList(exceptionRows)}
+- ${zh ? '如果项目代码与本标准冲突，记录证据并请求负责人决定；不得静默改写整个项目。' : 'If project evidence conflicts with this standard, record it and request an owner decision; never rewrite the repository silently.'}
+
+## Verification matrix
+
+| ${zh ? '场景' : 'Scenario'} | ${zh ? '期望结果' : 'Expected result'} | ${zh ? '命令或证据状态' : 'Command or evidence status'} |
+| --- | --- | --- |
+${commandRows}
+
+## Project evidence boundary
 
 ${markdownList(standard.boundaries)}
 
-- This Skill is stated guidance, not a claim of enforced policy or real-client verification.
+- ${zh ? '本 Skill 不证明项目已经实施该模式，也不证明完成真实用户验证。' : 'This Skill does not prove that the project implements the pattern or that real-user validation has occurred.'}
+
+## Sources
+
+${zh ? standard.sources.map((source) => `- ${source.url ? `[${source.title}](${source.url})` : source.title} — ${source.kind}；获取日期：${source.retrievedAt}。`).join('\n') : sourcesMarkdown(standard.sources)}
 `;
+  return { content, profile, quality: assertSkillQuality(content, { profile, id: standard.id }) };
 }
 
 function technicalStandardsManifest(selection, config = {}) {
@@ -191,6 +362,7 @@ function technicalStandardsManifest(selection, config = {}) {
     technologyEvidence: {
       installedPackages: selection.installedPackages,
       configuredPackages: selection.configuredPackages,
+      dependencies: selection.dependencies,
       selectedStacks: selection.stackIds,
     },
     skills: selection.selected.map(({ standard, selection: reason }) => ({
@@ -202,6 +374,7 @@ function technicalStandardsManifest(selection, config = {}) {
       verification: standard.verification,
       boundaries: standard.boundaries,
       claimState: 'stated',
+      quality: standard.quality,
     })),
     generationVerification: {
       requiredCommand: 'aicg check .',
@@ -216,6 +389,14 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
     ...entry,
     standard: { ...entry.standard, ...(entry.standard.translations?.[config.artifactLanguage] ?? {}) },
   }));
+  const rendered = new Map(selection.selected.map(({ standard, selection: reason }) => {
+    // Reusable technical standards must not drift whenever a project script is
+    // added or renamed. Exact repository commands live in the generated stack
+    // router, while this full-owned standard keeps a stable verification handoff.
+    const skill = technicalSkill(standard, reason, selection.snapshot, config);
+    standard.quality = skill.quality;
+    return [standard.id, skill];
+  }));
   const manifest = technicalStandardsManifest(selection, config);
   const artifacts = [{
     path: 'docs/ai/technical-standards.json',
@@ -226,7 +407,7 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
   }];
   for (const { standard, selection: reason } of selection.selected) {
     const canonicalPath = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
-    const content = technicalSkill(standard, reason, selection.snapshot, config);
+    const content = rendered.get(standard.id).content;
     artifacts.push({
       path: canonicalPath,
       content,
@@ -253,7 +434,12 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
 
 export function technicalStandardsSummary(scan, config, registry = loadTechnicalStandardRegistry()) {
   const selection = selectTechnicalStandards(scan, config, registry);
-  const manifest = technicalStandardsManifest(selection);
+  selection.selected = selection.selected.map((entry) => {
+    const standard = { ...entry.standard, ...(entry.standard.translations?.[config.artifactLanguage] ?? {}) };
+    const rendered = technicalSkill(standard, entry.selection, selection.snapshot, config);
+    return { ...entry, standard: { ...standard, quality: rendered.quality } };
+  });
+  const manifest = technicalStandardsManifest(selection, config);
   return {
     schemaVersion: 1,
     mode: 'read-only-preview',

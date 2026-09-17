@@ -5,7 +5,7 @@ import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
-import { buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
+import { assertSkillQuality, buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
 import { buildMemoryArtifacts } from '../memory/index.mjs';
 import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
@@ -119,6 +119,7 @@ export function defaultConfig(scan) {
     },
     domainConstraints: [],
     confirmedRiskSignals: [],
+    scanExclusions: { schemaVersion: 1, policySha256: scan.scanIgnore?.sha256 ?? null, approvals: [] },
   };
 }
 
@@ -154,6 +155,15 @@ function normalizeConfigDefaults(config, scan) {
 
 export function validateConfig(config) {
   if (config.adaptiveDecisions !== undefined) validateAdaptiveDecisions(config.adaptiveDecisions);
+  if (config.scanExclusions !== undefined) {
+    const policy = config.scanExclusions;
+    if (!policy || policy.schemaVersion !== 1 || !Array.isArray(policy.approvals) || policy.approvals.length > 32
+      || (policy.policySha256 !== null && !/^[a-f0-9]{64}$/.test(policy.policySha256 ?? ''))) throw usageError('scanExclusions must bind a valid .aicgignore policy digest and bounded approvals.');
+    for (const approval of policy.approvals) {
+      if (!approval || typeof approval.path !== 'string' || typeof approval.reason !== 'string' || !approval.reason.trim() || approval.reason.length > 500
+        || !/^[a-f0-9]{64}$/.test(approval.evidenceHash ?? '')) throw usageError('scanExclusions approvals require path, reason, and evidenceHash.');
+    }
+  }
   if (config.codeDocumentationPolicy === undefined) {
     config = { ...config, codeDocumentationPolicy: defaultCodeDocumentationPolicy(config) };
   }
@@ -387,6 +397,12 @@ function governanceReadme(config, scan, packs, selected) {
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <type> --evidence <repository-relative-json>');
   const syncCommand = governanceCommand(config, 'sync .');
+  const familyBoundaryZh = config.projectMode === 'repository-family'
+    ? '\n## 仓库族边界\n\n本仓库仅负责编排。[repository-family.json](repository-family.json) 只记录稳定的成员关系和治理权威边界；成员技术栈、代码约定、验证命令和运行时状态须在各成员仓库内分别检查和治理，父清单不得拥有成员文件。\n'
+    : '';
+  const familyBoundaryEn = config.projectMode === 'repository-family'
+    ? '\n## Repository-family boundary\n\nThis repository is an orchestrator only. [repository-family.json](repository-family.json) records stable membership and governance authority boundaries only. Inspect and govern member stacks, conventions, verification commands, and runtime status inside each member repository; the parent manifest never owns member files.\n'
+    : '';
   if (config.artifactLanguage === 'zh-CN') return `# ${config.projectName} — AI 治理正典
 
 本目录是人工维护的治理来源。客户端专属普通文件是生成的适配器，由 \`${checkCommand}\` 检查。
@@ -397,15 +413,8 @@ ${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `部署或发布
 
 ## 配置
 
-- 初始化时的仓库拓扑：\`${classifyProject(scan).codebase.topology.value}\`
-- 治理深度：\`${config.governanceDepth}\`
-- 交互语言：\`${config.interactionLanguage ?? 'en'}\`；产物语言：\`${config.artifactLanguage}\`
-- CLI 调用方式：\`${config.invocationMode ?? 'npm-exec-pinned'}\`；固定工具版本：\`${config.toolVersion ?? TOOL_VERSION}\`
-- 客户端支持决策：\`${config.clientSupport?.mode ?? 'legacy-unrecorded'}\`；来源：\`${config.clientSupport?.source ?? 'legacy-config'}\`
-- 客户端：${config.clients.map((item) => `\`${item}\``).join(', ')}
-- 技术栈：${packs.map((pack) => `\`${pack.id}\` (${pack.evidence})`).join(', ')}
-- 支持的操作系统目标：${config.supportedOs.map((item) => `\`${item}\``).join(', ')}
-- 当前生成器证据仅覆盖 \`${scan.currentOs}\`；其他平台需由 CI 或真实客户端探针验证。
+当前机器可读状态由[确认配置](../../.ai-governance/config.json)统一维护。不要在本文复制拓扑、深度、客户端、技术栈或平台值。
+${familyBoundaryZh}
 
 ## 初始化边界
 
@@ -436,15 +445,8 @@ ${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `Before deployme
 
 ## Configuration
 
-- Repository topology at initialization: \`${classifyProject(scan).codebase.topology.value}\`
-- Depth: \`${config.governanceDepth}\`
-- Interaction language: \`${config.interactionLanguage ?? 'en'}\`; artifact language: \`${config.artifactLanguage}\`
-- CLI invocation: \`${config.invocationMode ?? 'npm-exec-pinned'}\`, pinned tool version \`${config.toolVersion ?? TOOL_VERSION}\`
-- Client-support decision: \`${config.clientSupport?.mode ?? 'legacy-unrecorded'}\` from \`${config.clientSupport?.source ?? 'legacy configuration'}\`
-- Clients: ${config.clients.map((item) => `\`${item}\``).join(', ')}
-- Stacks: ${packs.map((pack) => `\`${pack.id}\` (${pack.evidence})`).join(', ')}
-- Supported OS targets: ${config.supportedOs.map((item) => `\`${item}\``).join(', ')}
-- Current generator evidence: \`${scan.currentOs}\` only until CI or real-client probes complete.
+The current machine-readable state is maintained in the [confirmed configuration](../../.ai-governance/config.json). Do not duplicate topology, depth, clients, stacks, or platform values in this document.
+${familyBoundaryEn}
 
 ## Initialization boundary
 
@@ -496,38 +498,76 @@ Only add an item after repository evidence, a review finding, an incident, or an
 `;
 }
 
-function stackSkill(config, pack) {
-  if (config.artifactLanguage === 'zh-CN') return `---
+function stackSkill(config, pack, scan, selectedStandards = []) {
+  const zh = config.artifactLanguage === 'zh-CN';
+  const standardRows = selectedStandards.length
+    ? selectedStandards.map((standard) => `| ${standard.title} | \`docs/ai/skills/standards/${standard.id}/SKILL.md\` | ${zh ? '仅当任务表面匹配时加载' : 'Load only when the task surface matches'} |`).join('\n')
+    : `| ${zh ? '未发现精确技术标准' : 'No exact technical standard detected'} | - | ${zh ? '读取相邻代码并记录缺口' : 'Read neighboring code and record the gap'} |`;
+  const commands = scan.commands.filter((command) => command.verification?.purpose?.includes('verification'));
+  const commandRows = commands.length
+    ? commands.map((command) => `| \`${command.command}\` | \`${command.verification.cwd}\` | ${zh ? `命令完成对应验证且退出成功；可信度：${command.verification.trust.level}` : `The declared verification completes successfully; trust: ${command.verification.trust.level}`} |`).join('\n')
+    : `| - | - | ${zh ? '尚未验证；未发现入口' : 'not yet verified; no entrypoint discovered'} |`;
+  const content = `---
 name: ${pack.id}
-description: 验证已安装版本并加载项目证据后，应用 ${pack.id} 的仓库约定。
+description: ${zh ? `修改 ${pack.id} 代码时，用此路由选择精确实现 Skill、项目证据和验证命令。` : `Route ${pack.id} changes to exact implementation Skills, project evidence, and verification commands.`}
 ---
 
 # ${pack.id}
 
 <!-- ${GENERATED_MARKER} -->
 
-1. 读取 \`AGENTS.md\`、\`${config.canonicalRoot}/context-map.yaml\` 和相邻实现的测试。
-2. 从清单或锁文件验证已安装的技术栈版本。
-3. 对版本敏感的决策查阅当前官方来源；生成的路由外壳并非永不变化的最佳实践手册。
-4. 使用这些项目验证来源：${(pack.validation_sources ?? []).join('; ') || '仅限仓库已定义的命令'}。
-5. 缺少命令、不支持的组合或未确认的业务不变量应报告为 \`unverified\`，不得编造。
+## When to use
+
+- ${zh ? `新增、修改或评审 ${pack.id} 的生产代码。` : `Add, change, or review ${pack.id} production code.`}
+- ${zh ? '需要确定应加载哪个实现标准、项目约定或验证入口。' : 'Choose which implementation standard, project convention, or verification entrypoint to load.'}
+
+## When not to use
+
+- ${zh ? '不要用本路由推断业务规则、授权模型或跨仓库契约。' : 'Do not use this router to infer business rules, authorization models, or cross-repository contracts.'}
+- ${zh ? '不要用通用栈建议覆盖相邻代码和已批准的项目 Skill。' : 'Do not override neighboring code or approved project Skills with generic stack advice.'}
+
+## Required invariants
+
+- ${zh ? '一次任务只加载命中变更表面的最小 Skill 集。' : 'Load the smallest Skill set that matches the changed surface.'}
+- ${zh ? '项目专属证据可以收紧通用标准，但必须可追溯且未过期。' : 'Project evidence may narrow general standards, but it must remain traceable and fresh.'}
+- ${zh ? '命令未运行或不可信时，结果必须标记为尚未验证。' : 'When a command is not run or is untrusted, report the result as not yet verified.'}
+
+## Decision flow
+
+1. ${zh ? '从变更文件和清单证据识别实际代码表面。' : 'Identify the actual code surface from changed files and manifest evidence.'}
+2. ${zh ? '从下表加载精确技术 Skill，再读取相邻实现、测试和已批准的项目约定。' : 'Load exact technical Skills from the table, then read neighboring implementation, tests, and approved project conventions.'}
+3. ${zh ? '若只有候选约定或证据冲突，停止提升并请求证据绑定的负责人决定。' : 'If only a candidate convention exists or evidence conflicts, stop promotion and request an evidence-bound owner decision.'}
+4. ${zh ? '执行验证矩阵；分别报告通过、失败和尚未验证。' : 'Run the verification matrix and report pass, fail, and not-yet-verified outcomes separately.'}
+
+## Skill routing matrix
+
+| ${zh ? '代码表面' : 'Surface'} | Skill | ${zh ? '加载规则' : 'Load rule'} |
+| --- | --- | --- |
+${standardRows}
+
+## Exceptions and escalation
+
+- ${zh ? '版本敏感行为必须查阅匹配版本的官方来源。' : 'Version-sensitive behavior requires official sources matching the installed version.'}
+- ${zh ? '发现新的稳定项目模式时，只生成候选；没有负责人回执不得自动采纳。' : 'A newly repeated project pattern remains a candidate until an owner adopts its exact evidence.'}
+
+## Verification matrix
+
+| ${zh ? '命令' : 'Command'} | cwd | ${zh ? '期望结果' : 'Expected result'} |
+| --- | --- | --- |
+${commandRows}
+
+## Project evidence boundary
+
+- ${zh ? '清单和源码路径证明技术存在，不证明业务语义。' : 'Manifest and source paths prove technology presence, not business meaning.'}
+- ${zh ? '本路由不声称项目已经采用所有列出的标准。' : 'This router does not claim that the project already follows every listed standard.'}
+
+## Sources
+
+- ${zh ? `扫描到的技术栈：${pack.id}；清单路径：${scan.stacks.find((stack) => stack.id === pack.id)?.paths.join(', ') || '未记录'}。` : `Detected stack: ${pack.id}; manifest paths: ${scan.stacks.find((stack) => stack.id === pack.id)?.paths.join(', ') || 'not recorded'}.`}
+- ${zh ? `验证来源：${(pack.validation_sources ?? []).join('; ') || '仅限仓库命令'}。` : `Validation sources: ${(pack.validation_sources ?? []).join('; ') || 'repository commands only'}.`}
 `;
-  const description = `Apply ${pack.id} repository conventions after verifying installed versions and loading project evidence.`;
-  return `---
-name: ${pack.id}
-description: ${description}
----
-
-# ${pack.id}
-
-<!-- ${GENERATED_MARKER} -->
-
-1. Read \`AGENTS.md\`, \`${config.canonicalRoot}/context-map.yaml\`, and neighboring implementation tests.
-2. Verify the installed stack version from manifests or lockfiles.
-3. Consult current official sources for version-sensitive decisions; do not rely on this generated routing shell as a frozen best-practice manual.
-4. Use these project validation sources: ${(pack.validation_sources ?? []).join('; ') || 'repository-defined commands only'}.
-5. Report any missing command, unsupported combination, or business invariant as \`unverified\` instead of inventing it.
-`;
+  assertSkillQuality(content, { profile: 'workflow', id: pack.id });
+  return content;
 }
 
 function bootstrapPrompt(config) {
@@ -569,6 +609,19 @@ alwaysApply: true
 
 Read \`AGENTS.md\`, then follow \`${config.canonicalRoot}/context-map.yaml\` and \`${config.canonicalRoot}/rules/00_always.mdc\`. Client-specific adapters are generated; change canonical governance and run \`${governanceCommand(config, 'sync .')}\`.
 `;
+}
+
+function stableFamilyMembers(family, governanceUnits = []) {
+  return (family?.members ?? []).map((member) => {
+    const unit = governanceUnits.find((candidate) => candidate.path === member.path);
+    return {
+      id: member.id,
+      path: member.path,
+      repositoryKind: member.repositoryKind,
+      governanceMode: 'autonomous',
+      members: stableFamilyMembers(unit?.repositoryFamily, unit?.governanceUnits),
+    };
+  });
 }
 
 export function artifactDefinitions(config, scan) {
@@ -619,6 +672,23 @@ export function artifactDefinitions(config, scan) {
     ownership: 'full', kind: 'project-agent-team', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:team_orchestrator'],
   });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
+  add('docs/ai/repository-family.json', 'routing', () => stableJson({
+    schemaVersion: 1,
+    role: 'orchestrator',
+    observedTopology: {
+      kind: scan.repositoryFamily?.kind ?? null,
+      source: scan.repositoryFamily?.source ?? null,
+    },
+    authority: {
+      root: 'orchestrator',
+      members: 'autonomous',
+    },
+    members: stableFamilyMembers(scan.repositoryFamily, scan.governanceUnits),
+    boundaries: {
+      parentOwnsMemberFiles: false,
+      memberFactsAreRuntimeEvidence: true,
+    },
+  }), { requires: [(value) => value.projectMode === 'repository-family'], ownership: 'full', kind: 'repository-family-index', source: 'repository-family-scan', routeProfiles: ['behavior_change:repository_family'] });
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reports/\n/reports/*', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
 
@@ -637,11 +707,13 @@ export function artifactDefinitions(config, scan) {
   // Discover metadata without rendering the bundle; only selected definitions call it.
   let standards;
   let standardRegistry;
+  let technicalSelection = null;
   const standardArtifacts = () => (standards ??= buildTechnicalStandardArtifacts(config, scan, standardRegistry).artifacts);
   if (config.governanceDepth !== 'minimal') {
     // Selection and rendering share this invocation's validated snapshot, never a cross-call cache.
     standardRegistry = loadTechnicalStandardRegistry();
     const selection = selectTechnicalStandards(scan, config, standardRegistry);
+    technicalSelection = selection;
     const standardPaths = ['docs/ai/technical-standards.json'];
     for (const { standard } of selection.selected) {
       standardPaths.push(`docs/ai/skills/standards/${standard.id}/SKILL.md`);
@@ -656,9 +728,11 @@ export function artifactDefinitions(config, scan) {
 
   for (const pack of packs) {
     const canonicalPath = `docs/ai/skills/${pack.id}/SKILL.md`;
-    const stackGuidanceActive = (value, current) => pack.id !== 'generic-unknown' || !hasSkillManagement(value) || hasGovernanceUsage(current, 'stack') || hasArtifactEvidence(current, canonicalPath);
-    add(canonicalPath, 'policy', () => stackSkill(config, pack), { requires: [complete, stackGuidanceActive], routeProfiles: [`behavior_change:pack_${pack.id.replaceAll('-', '_')}`], kind: 'canonical-skill', source: 'capability-pack-registry' });
-    addSkillAdapters(canonicalPath, () => stackSkill(config, pack), 'policy', [complete, stackGuidanceActive]);
+    const stackGuidanceActive = (value, current) => value.projectMode !== 'repository-family'
+      && (pack.id !== 'generic-unknown' || !hasSkillManagement(value) || hasGovernanceUsage(current, 'stack') || hasArtifactEvidence(current, canonicalPath));
+    const selectedForPack = (technicalSelection?.selected ?? []).map((entry) => entry.standard);
+    add(canonicalPath, 'policy', () => stackSkill(config, pack, scan, selectedForPack), { requires: [complete, stackGuidanceActive], routeProfiles: [`behavior_change:pack_${pack.id.replaceAll('-', '_')}`], kind: 'canonical-skill', source: 'capability-pack-registry' });
+    addSkillAdapters(canonicalPath, () => stackSkill(config, pack, scan, selectedForPack), 'policy', [complete, stackGuidanceActive]);
   }
 
   let capabilities;
@@ -681,10 +755,13 @@ export function artifactDefinitions(config, scan) {
       ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
       routeProfiles: artifact.path === 'docs/memory/INDEX.json' ? ['behavior_change:memory'] : [],
     });
-    if (config.governanceDepth !== 'minimal') for (const artifact of buildProjectConventionArtifacts(config, scan, memory.memory).artifacts) add(artifact.path, 'core', () => artifact.content, {
-      ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
-      routeProfiles: artifact.path === 'docs/ai/project-conventions.json' ? ['behavior_change:project_conventions'] : [],
-    });
+    if (config.governanceDepth !== 'minimal') for (const artifact of buildProjectConventionArtifacts(config, scan, memory.discoveryFacts).artifacts) {
+      add(artifact.path, 'core', () => artifact.content, {
+        ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
+        routeProfiles: artifact.path === 'docs/ai/project-conventions.json' || artifact.adopted === true ? ['behavior_change:project_conventions'] : [],
+      });
+      definitions.at(-1).build = () => artifact;
+    }
   }
   add('docs/ai/long-running/README.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 长期任务状态\n\n每项已批准的长期工作建立一个任务目录。运行时状态引用正典计划与外部变更，不复制这些内容。\n' : '# Long-running task state\n\nCreate one task directory per approved long-running effort. Runtime state references canonical plans and external changes instead of copying them.\n', { requires: [(value) => value.features.taskRuntime], source: 'template:task-runtime' });
 
@@ -814,7 +891,7 @@ function skillGovernanceCost(root, artifacts) {
     increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens },
     total: { files: transaction.operations.length + 1 + retainedFiles, bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content) + retainedBytes },
   };
-  if (cost.total.files > 26 || cost.total.bytes > (config.governanceDepth === 'standard' ? 64 : 96) * 1024 || managerTokens > 800) {
+  if (cost.total.files > 30 || cost.total.bytes > (config.governanceDepth === 'standard' ? 96 : 128) * 1024 || managerTokens > 800) {
     const error = usageError('Approved Skill governance exceeds the existing file, byte or manager token budget.');
     error.budgetCost = cost;
     throw error;
