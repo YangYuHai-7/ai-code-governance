@@ -93,7 +93,6 @@ function validateMarkdownLinks() {
     path.join(root, 'README.md'),
     ...markdownFiles(path.join(root, 'references')),
     ...markdownFiles(path.join(root, 'docs', 'validation')),
-    path.join(root, 'docs', 'pilots', '2026-09-10', 'post-fix-execution-matrix.md'),
   ];
   for (const file of files) {
     const text = markdownOutsideFences(fs.readFileSync(file, 'utf8'));
@@ -533,7 +532,7 @@ function validateWorkflowRegistry(registry) {
     );
   }
 
-  for (const id of ['openspec-change-governance', 'superpowers-execution-discipline']) {
+  for (const id of ['openspec-change-governance']) {
     check(ids.has(id), `Missing workflow integration: ${id}`);
   }
 }

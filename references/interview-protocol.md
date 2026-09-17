@@ -144,7 +144,7 @@ rejected_options: []
 
 收集只有项目成员知道的内容：重复错误、任务档案、验证命令、硬边界、术语和完成定义。每条候选规则都要能追溯到一个回答或一个代码/事故证据。
 
-如果侦察发现或用户请求 OpenSpec、Superpowers、Spec Kit、BMAD 等相邻工作流，先插入 **Round 5B：工作流权威**，再进入领域种子：
+如果侦察发现或用户请求 OpenSpec、Spec Kit、BMAD 等相邻工作流，先插入 **Round 5B：工作流权威**，再进入领域种子：
 
 1. 展示检测到的 provider、观察版本、来源、客户端可达性和重叠能力；
 2. 让用户选择 `project-native`、`external-primary`、`coordinated` 或 `external-bridge`；
