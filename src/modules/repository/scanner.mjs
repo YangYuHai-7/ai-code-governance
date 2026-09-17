@@ -7,6 +7,7 @@ import { commandExists, commandVersion, resolveGitRoot } from '../../adapters/pr
 import { exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 import { matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
 import { dependencyFacts } from './dependencies.mjs';
+import { loadAicgIgnore } from './aicg-ignore.mjs';
 
 const GOVERNANCE_PATHS = [
   'AGENTS.md',
@@ -27,6 +28,9 @@ const DEFAULT_SCAN_BUDGET = Object.freeze({
 });
 
 const NPM_VERIFICATION_SCRIPT = /^(?:test|verify|check|lint|typecheck|type-check|build)(?::|$)/i;
+const CODE_EXTENSIONS = new Set(['.c', '.cc', '.cpp', '.cs', '.cjs', '.cts', '.dart', '.go', '.h', '.hpp', '.java', '.js', '.jsx', '.kt', '.kts', '.mjs', '.mts', '.php', '.py', '.rb', '.rs', '.sh', '.svelte', '.swift', '.ts', '.tsx', '.vue']);
+const NON_CODE_CONTENT_DIRECTORIES = new Set(['.swc', 'assets', 'coverage', 'dist', 'logs', 'public', 'static', 'target', 'test', 'tests', 'fixtures', '__fixtures__']);
+const NON_CODE_CONTENT_EXTENSIONS = new Set(['.7z', '.apk', '.avif', '.bin', '.bmp', '.bz2', '.class', '.dmg', '.exe', '.gif', '.gz', '.ico', '.jar', '.jpeg', '.jpg', '.mp3', '.mp4', '.otf', '.pdf', '.png', '.tar', '.tgz', '.ttf', '.wav', '.webm', '.webp', '.woff', '.woff2', '.zip']);
 
 export function verificationNpmCommands(commands) {
   const npmCommands = commands.filter((candidate) => candidate.source === 'package.json');
@@ -37,6 +41,38 @@ export function verificationNpmCommands(commands) {
     && !names.has(`pre${candidate.name}`)
     && !names.has(`post${candidate.name}`)
   ));
+}
+
+function isMinifiedJavaScript(file) {
+  if (!['.js', '.mjs', '.cjs'].includes(path.extname(file.relative).toLowerCase())) return false;
+  let sample;
+  try {
+    const descriptor = fs.openSync(file.absolute, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+    try {
+      const buffer = Buffer.alloc(64 * 1024);
+      const read = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
+      sample = buffer.subarray(0, read).toString('utf8');
+    } finally {
+      fs.closeSync(descriptor);
+    }
+  } catch {
+    // An unreadable oversized code file remains a blocking scan gap.
+    return false;
+  }
+  const lines = sample.split(/\r?\n/);
+  return sample.length >= 4096 && (lines.length <= 2 || Math.max(...lines.map((line) => line.length)) > 2048);
+}
+
+function isOversizedFileRelevantToCodeScan(file) {
+  const normalized = normalizeRelative(file.relative).toLowerCase();
+  const segments = normalized.split('/');
+  const extension = path.extname(normalized);
+  if (segments.some((segment) => NON_CODE_CONTENT_DIRECTORIES.has(segment))) return false;
+  if (NON_CODE_CONTENT_EXTENSIONS.has(extension)) return false;
+  if (!CODE_EXTENSIONS.has(extension)) return false;
+  // Minified vendor bundles are static dependencies, even when a project keeps
+  // them beside source files instead of under a conventional public directory.
+  return !isMinifiedJavaScript(file);
 }
 
 function detectProjectMode(root, files) {
@@ -172,14 +208,18 @@ export function scanProject(target, options = {}) {
   if (!stat?.isDirectory()) throw new Error(`Target directory does not exist: ${root}`);
 
   // Governance decisions and placement gates must see the complete product tree.
-  // `walkFiles` records links but never follows them. Build outputs are ignored only at
-  // the repository root so a nested directory cannot become an unscanned escape hatch.
+  // `walkFiles` records links but never follows them. Conventional compiler outputs,
+  // runtime logs, and compiler caches are excluded at every depth because they cannot
+  // provide application-source evidence and can otherwise exhaust scan budgets.
   const scanBudget = { ...DEFAULT_SCAN_BUDGET, ...(options.scanBudget ?? {}) };
+  const aicgIgnore = loadAicgIgnore(root);
   const walked = walkFilesDetailed(root, {
     ...scanBudget,
-    ignoredAtAnyDepth: ['.git', '.hg', '.svn', 'node_modules', '.worktrees', 'worktrees', '.venv', '__pycache__', '.gradle', '.mypy_cache', '.pytest_cache'],
+    ignoredAtAnyDepth: ['.git', '.hg', '.svn', 'node_modules', '.worktrees', 'worktrees', '.venv', '__pycache__', '.gradle', '.mypy_cache', '.pytest_cache', '.swc', 'logs', 'target'],
     ignoredAtRoot: LOCAL_OUTPUT_PREFIXES.map((prefix) => prefix.replace(/\/$/, '')),
     caseInsensitiveIgnored: true,
+    isOversizedFileRelevant: isOversizedFileRelevantToCodeScan,
+    shouldIgnorePath: aicgIgnore.shouldIgnore,
   });
   const files = walked.files;
   const factFiles = files.filter((file) => !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix)));
@@ -222,6 +262,7 @@ export function scanProject(target, options = {}) {
     architecture: os.arch(),
     files,
     scanBudget: walked.budget,
+    scanIgnore: { path: aicgIgnore.path, ruleCount: aicgIgnore.rules.length },
     stacks: detectStacks(factFiles, capabilityRegistry, dependencies),
     dependencyFacts: dependencies,
     packageDependencies: detectPackageDependencies(factFiles),
@@ -247,6 +288,7 @@ export function scanSummary(scan) {
     existing_governance: scan.existingGovernance,
     links: scan.links,
     scan_budget: scan.scanBudget,
+    scan_ignore: scan.scanIgnore,
     external_workflows: scan.externalWorkflows,
   };
 }

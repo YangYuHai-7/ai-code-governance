@@ -78,6 +78,7 @@ export function walkFilesDetailed(root, options = {}) {
   const truncatedDirectories = [];
   const directoryBudgetPaths = [];
   const oversizedFiles = [];
+  const ignoredOversizedFiles = [];
   const readErrors = [];
   let fileLimitReached = false;
   let directoryLimitReached = false;
@@ -119,6 +120,8 @@ export function walkFilesDetailed(root, options = {}) {
         if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignoredAtRoot.has(ignoredName))) continue;
         const absolute = path.join(current, entry.name);
         const relative = normalizeRelative(path.relative(root, absolute));
+        const type = entry.isSymbolicLink() ? 'link' : entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other';
+        if (options.shouldIgnorePath?.({ absolute, relative, type }) === true) continue;
         if (entry.isSymbolicLink()) {
           if (result.length >= maxFiles) {
             fileLimitReached = true;
@@ -143,8 +146,15 @@ export function walkFilesDetailed(root, options = {}) {
             readErrors.push({ path: relative, operation: 'stat', code: error.code ?? 'UNKNOWN' });
           }
           const contentScannable = size !== null && size <= maxFileBytes;
-          if (size !== null && size > maxFileBytes) oversizedFiles.push({ path: relative, bytes: size });
-          result.push({ absolute, relative, type: 'file', size, contentScannable });
+          const file = { absolute, relative, type: 'file', size, contentScannable };
+          if (size !== null && size > maxFileBytes) {
+            const detail = { path: relative, bytes: size };
+            // A caller can explicitly exclude known non-code payloads from the
+            // content budget without hiding them from the inventory.
+            if (options.isOversizedFileRelevant?.(file) === false) ignoredOversizedFiles.push(detail);
+            else oversizedFiles.push(detail);
+          }
+          result.push(file);
         }
       }
     } catch (error) {
@@ -180,6 +190,7 @@ export function walkFilesDetailed(root, options = {}) {
         directories: [...truncatedDirectories].sort((left, right) => left.localeCompare(right)).slice(0, 20),
         directoryBudgetPaths: [...directoryBudgetPaths].sort((left, right) => left.localeCompare(right)).slice(0, 20),
         oversizedFiles: [...oversizedFiles].sort(byPath).slice(0, 20),
+        ignoredOversizedFiles: [...ignoredOversizedFiles].sort(byPath).slice(0, 20),
         readErrors: [...readErrors].sort(byPath).slice(0, 20),
       },
     },

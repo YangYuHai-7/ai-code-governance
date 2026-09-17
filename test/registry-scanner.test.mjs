@@ -61,6 +61,31 @@ test('only root local-output directories are excluded from repository scanning',
   assert.ok(scan.files.some((file) => file.relative === 'src/reports/index.mjs'));
 });
 
+test('.aicgignore excludes matching paths and supports root-relative negation', (context) => {
+  const root = fixture('aicg-ignore');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.aicgignore'), '# generated files\ncache/\ngenerated/cache/\n*.log\n!/cache/keep.js\n/root-only.txt\n');
+  fs.mkdirSync(path.join(root, 'cache'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'nested'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'cache/drop.js'), 'export const drop = true;\n');
+  fs.writeFileSync(path.join(root, 'cache/keep.js'), 'export const keep = true;\n');
+  fs.writeFileSync(path.join(root, 'nested/runtime.log'), 'ignored\n');
+  fs.mkdirSync(path.join(root, 'generated/cache'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'generated/cache/drop.js'), 'export const generated = true;\n');
+  fs.writeFileSync(path.join(root, 'nested/root-only.txt'), 'kept\n');
+  fs.writeFileSync(path.join(root, 'root-only.txt'), 'ignored\n');
+
+  const scan = scanProject(root);
+  assert.equal(scan.scanIgnore.ruleCount, 5);
+  assert.equal(scan.files.some((file) => file.relative === 'cache/drop.js'), false);
+  assert.equal(scan.files.some((file) => file.relative === 'cache/keep.js'), true);
+  assert.equal(scan.files.some((file) => file.relative === 'nested/runtime.log'), false);
+  assert.equal(scan.files.some((file) => file.relative === 'generated/cache/drop.js'), false);
+  assert.equal(scan.files.some((file) => file.relative === 'nested/root-only.txt'), true);
+  assert.equal(scan.files.some((file) => file.relative === 'root-only.txt'), false);
+  assert.equal(scan.files.some((file) => file.relative === '.aicgignore'), true);
+});
+
 test('filesystem root-only ignores do not hide nested directories with the same name', (context) => {
   const root = fixture('root-only-ignore');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -132,6 +157,49 @@ test('scan budgets expose file-count, depth, and oversized-content truncation', 
   assert.equal(fileLimited.scanBudget.complete, false);
   assert.equal(fileLimited.scanBudget.truncation.fileLimitReached, true);
   assert.equal(fileLimited.files.length, 2);
+});
+
+test('oversized non-code payloads do not make a code scan incomplete', (context) => {
+  const root = fixture('non-code-oversize');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const large = Buffer.alloc(2 * 1024 * 1024 + 1, 'x');
+  for (const relative of [
+    'modules/<sample-repo>/service/target/service.jar',
+    'modules/<sample-repo>/logs/service.log',
+    'modules/<sample-repo>/site/src/main/resources/static/res.txt',
+    'modules/<sample-repo>/site/src/main/resources/test/wsclc.json',
+    'modules/management/public/amap.js',
+    'modules/management/src/views/Taxation/assets/identify.gif',
+    'modules/app/.swc/plugins/cache.bin',
+    'modules/app/src/trace/assets/bgemployer.png',
+  ]) {
+    const target = path.join(root, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, large);
+  }
+  const vendor = path.join(root, 'modules/management/src/utils/ezuikit-js/ezuikit.js');
+  fs.mkdirSync(path.dirname(vendor), { recursive: true });
+  fs.writeFileSync(vendor, `const vendor=true;${'x'.repeat(2 * 1024 * 1024)};`);
+
+  const scan = scanProject(root);
+  assert.equal(scan.scanBudget.complete, true);
+  assert.deepEqual(scan.scanBudget.truncation.oversizedFiles, []);
+  assert.equal(scan.scanBudget.truncation.ignoredOversizedFiles.length, 6);
+  assert.ok(scan.scanBudget.truncation.ignoredOversizedFiles.some((file) => file.path.endsWith('ezuikit.js')));
+  assert.equal(scan.files.find((file) => file.relative.endsWith('ezuikit.js')).contentScannable, false);
+  for (const segment of ['/target/', '/logs/', '/.swc/']) assert.equal(scan.files.some((file) => file.relative.includes(segment)), false);
+});
+
+test('an oversized application source file still makes the scan incomplete', (context) => {
+  const root = fixture('code-oversize');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/service.ts'), `export const value = '${'x'.repeat(2 * 1024 * 1024)}';\n`);
+
+  const scan = scanProject(root);
+  assert.equal(scan.scanBudget.complete, false);
+  assert.deepEqual(scan.scanBudget.truncation.oversizedFiles.map((file) => file.path), ['src/service.ts']);
+  assert.deepEqual(scan.scanBudget.truncation.ignoredOversizedFiles, []);
 });
 
 test('scanner reports directory read failures instead of silently claiming completeness', (context) => {
