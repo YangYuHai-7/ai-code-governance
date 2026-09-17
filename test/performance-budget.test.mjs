@@ -26,7 +26,7 @@ test('nearest-rank p95 and relative regression checks retain independent absolut
 test('fast full and performance entrypoints preserve the full npm test contract', () => {
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.equal(scripts.test, 'node --test');
-  assert.equal(scripts['test:full'], 'node --test');
+  assert.equal(scripts['test:full'], 'node --test --test-skip-pattern="repeated CLI check" && node --test test/performance-budget.test.mjs');
   assert.equal(scripts['test:perf'], 'node --test test/performance-budget.test.mjs');
   for (const file of ['args', 'onboarding-product-flow', 'sync-prune', 'sync-prune-safety', 'sync-retention', 'context-budget', 'artifact-selection', 'task-routing', 'execution-plan', 'generation', 'technical-standards', 'architecture-boundaries']) {
     assert.ok(scripts['test:fast']?.includes(`test/${file}.test.mjs`), `fast coverage missing ${file}`);
