@@ -162,6 +162,10 @@ test('project capability removal requires a reproducible generated definition fr
   }
 });
 
+}
+
+if (part === 'prune-approval') {
+
 for (const version of [1, 2]) {
   test(`v${version} prune previews without writes and requires exact fresh approval`, (context) => {
     const { root, relative } = legacyFixture(context, version);
@@ -198,6 +202,10 @@ for (const version of [1, 2]) {
     assert.deepEqual(updated.files.find((item) => item.path === relative), manifest.files.find((item) => item.path === relative));
   });
 }
+
+}
+
+if (part === 'prune-invalidation') {
 
 for (const changedInput of ['config', 'manifest', 'managed', 'source', 'mode', 'deep-source']) {
   test(`prune invalidates approval after ${changedInput} changes without writing`, (context) => {

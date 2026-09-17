@@ -28,7 +28,7 @@ test('fast full and performance entrypoints preserve the full npm test contract'
   assert.equal(scripts.test, 'node --test');
   assert.equal(scripts['test:full'], 'node --test --test-skip-pattern="repeated CLI check" && node --test test/performance-budget.test.mjs');
   assert.equal(scripts['test:perf'], 'node --test test/performance-budget.test.mjs');
-  for (const file of ['args', 'onboarding-product-flow', 'sync-prune', 'sync-prune-safety', 'sync-retention', 'context-budget', 'artifact-selection', 'task-routing', 'execution-plan', 'generation', 'technical-standards', 'architecture-boundaries']) {
+  for (const file of ['args', 'onboarding-product-flow', 'sync-prune', 'context-budget', 'artifact-selection', 'task-routing', 'execution-plan', 'generation', 'technical-standards', 'architecture-boundaries']) {
     assert.ok(scripts['test:fast']?.includes(`test/${file}.test.mjs`), `fast coverage missing ${file}`);
   }
   assert.ok(!scripts['test:fast'].includes('performance-budget'), 'performance runner must not recurse');
