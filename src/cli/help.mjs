@@ -3,6 +3,7 @@ import { governanceBootstrapCommand } from '../generator.mjs';
 export const HELP = `AI Code Governance CLI
 
 Usage:
+  aicg            Start guided setup for the current project in the detected terminal language.
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--no-assist]
                   [--assist codex|claude-code|cursor] [--migrate-links] [--force]
@@ -51,8 +52,12 @@ Commands:
   request Route an exact Chinese or English governance request through a safe plan and verification workflow.
 
 Novice quick start:
-  aicg doctor . --locale en
-  aicg init . --guided --locale en
+  npm install --global ai-code-governance
+  aicg
+
+Chat start:
+  Ask a shell-capable coding Agent to use the installed aicg CLI for the current project.
+  The Agent should scan first, ask only owner decisions, preview writes, and then request approval.
 
 Bootstrap help (package resolution only at setup):
   ${governanceBootstrapCommand({})}
@@ -66,6 +71,7 @@ Daily commands require an installed project-local or global AICG. If unavailable
 export const HELP_ZH = `AI 代码治理 CLI
 
 用法：
+  aicg            使用自动识别的终端语言，为当前项目启动引导式设置。
   aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--no-assist]
   aicg check [路径] [--json]
@@ -89,10 +95,17 @@ export const HELP_ZH = `AI 代码治理 CLI
   sync          从治理正典重新生成客户端适配器。
 
 新手快速开始：
+  npm install --global ai-code-governance
+  aicg
+
+聊天开始：
+  直接让能够操作终端的编码 Agent 使用已安装的 aicg 处理当前项目。
+  Agent 应先扫描，只询问负责人必须决定的事项，预览写入内容，再请求批准。
+
+高级设置：
   固定版本启动帮助（仅在设置阶段解析包）：${governanceBootstrapCommand({})}
   日常命令要求已安装项目本地或全局 AICG；缺少时停止并显式安装。固定版本启动不会安装持久 CLI。
-  aicg doctor . --locale zh-CN
-  aicg init . --guided --locale zh-CN
+  中文交互可使用 aicg init . --guided --locale zh-CN
 
 --guided 会先收集 AI 编码工具，再单独询问治理产物语言，然后确认项目阶段、检测到的技术栈或目标技术栈、治理强度和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
 

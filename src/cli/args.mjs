@@ -3,9 +3,23 @@ import { BOOLEAN_FLAGS, COMMAND_FLAGS, COMMAND_NAMES, VALUE_FLAGS } from './comm
 
 export { HELP } from './help.mjs';
 
-export function parseArgs(argv) {
+function defaultInteractionLocale(environment, runtimeLocale) {
+  const locale = environment.LC_ALL || environment.LC_MESSAGES || environment.LANG || runtimeLocale || '';
+  return /^zh(?:[_-]|$)/i.test(locale) ? 'zh-CN' : 'en';
+}
+
+export function parseArgs(argv, {
+  environment = process.env,
+  runtimeLocale = Intl.DateTimeFormat().resolvedOptions().locale,
+} = {}) {
   const args = [...argv];
-  if (args.length === 0) return { command: 'help', target: '.', options: {} };
+  if (args.length === 0) {
+    return {
+      command: 'init',
+      target: '.',
+      options: { guided: true, locale: defaultInteractionLocale(environment, runtimeLocale) },
+    };
+  }
   if (args[0] === '--help' || args[0] === '-h') return { command: 'help', target: '.', options: {} };
   if (args[0] === '--version' || args[0] === '-V') return { command: 'version', target: '.', options: {} };
 

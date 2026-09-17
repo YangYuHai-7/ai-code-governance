@@ -9,7 +9,7 @@ import { scanProject } from '../src/scanner.mjs';
 // These are documentation contracts requested for the adaptive-flow migration;
 // they prove discoverable guidance, never actual client execution.
 test('installation documentation exposes adaptive routing and independent artifact language', () => {
-  for (const relative of ['README.md', 'SKILL.md', 'references/initializer.md']) {
+  for (const relative of ['README.md', 'SKILL.md', 'docs/internal/reference/initializer.md']) {
     const doc = fs.readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
     assert.match(doc, /Agent-first/);
     assert.match(doc, /artifact-language-second/);
@@ -23,7 +23,7 @@ test('installation documentation exposes adaptive routing and independent artifa
 });
 
 test('evolution documentation keeps verified completion candidate-only and promotion explicit', () => {
-  const doc = fs.readFileSync(new URL('../references/continuous-skill-evolution.md', import.meta.url), 'utf8');
+  const doc = fs.readFileSync(new URL('../docs/internal/reference/continuous-skill-evolution.md', import.meta.url), 'utf8');
   assert.match(doc, /verified/);
   assert.match(doc, /candidate-only/);
   assert.match(doc, /no automatic promotion/i);

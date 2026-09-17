@@ -10,12 +10,11 @@
     "bin/",
     "src/",
     "assets/",
-    "references/",
+    "docs/",
     "scripts/validate-skill.mjs",
     "scripts/prepublish-check.mjs",
     "SKILL.md",
     "README.md",
-    "docs/i18n/README.zh-CN.md",
     "LICENSE"
   ],
   "engines": {
