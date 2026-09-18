@@ -22,6 +22,7 @@ export const SUPPORTED_DEPTHS = ['minimal', 'standard', 'complete'];
 export const SUPPORTED_LANGUAGES = ['zh-CN', 'en', 'bilingual'];
 export const SUPPORTED_INTERACTION_LANGUAGES = ['zh-CN', 'en'];
 export const SUPPORTED_CODE_DOCUMENTATION_POLICIES = ['inherit-existing', 'en', 'zh-CN'];
+export const SUPPORTED_TEST_CASE_FORMATS = ['aicg-json-v2', 'markdown-plus-json'];
 export const CLIENT_SUPPORT_MODES = ['all-built-in', 'selected'];
 export const CLIENT_SUPPORT_SOURCES = ['user', 'cli', 'config', 'interactive', 'legacy-config', 'existing-governance'];
 export const INVOCATION_MODES = ['npm-exec-pinned', 'project-local', 'global'];

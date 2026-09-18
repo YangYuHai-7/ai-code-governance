@@ -32,10 +32,14 @@ export function normalizeClientSupport(config, { source = 'legacy-config' } = {}
 }
 
 export function mergeConfig(base, supplied) {
+  const inferredTestingLanguage = supplied.testing?.reportLanguage === undefined && supplied.artifactLanguage !== undefined
+    ? { reportLanguage: supplied.artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en' }
+    : {};
   return {
     ...base,
     ...supplied,
     features: { ...base.features, ...(supplied.features ?? {}) },
+    testing: { ...base.testing, ...inferredTestingLanguage, ...(supplied.testing ?? {}) },
   };
 }
 

@@ -30,6 +30,9 @@ export function parseArgs(argv, {
   if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');
+  } else if (command === 'test-case') {
+    action = args.shift() ?? null;
+    if (!['init', 'validate', 'select', 'record'].includes(action)) throw usageError('test-case requires an action: init, validate, select, or record.');
   } else if (command === 'hook') {
     action = args.shift() ?? null;
     if (!['install', 'status'].includes(action)) throw usageError('hook requires an action: install or status.');

@@ -55,9 +55,9 @@ AICG is a repository governance CLI and Agent Skill. It supports new and legacy 
 Scan repository → Confirm owner choices → Generate the smallest governance set → Route each task by impact
 ```
 
-1. **Discover** — inspect lifecycle, manifests, exact stacks, scripts, existing Agent adapters, rules, and workflow evidence without executing project code.
-2. **Decide** — choose Codex, Claude Code, Cursor, generic Agents, or a combination; choose English or Simplified Chinese artifacts; confirm lifecycle and migration policy.
-3. **Generate** — maintain one canonical source under `docs/ai`, ordinary adapter files, an ownership manifest, and only the selected capabilities.
+1. **Discover** — inspect lifecycle, development units, manifests, exact stacks, scripts, existing Agent adapters, rules, and workflow evidence without executing project code.
+2. **Decide** — choose supported Agents, governance language, test-case format and location, lifecycle, and migration policy.
+3. **Generate** — maintain one canonical source under `docs/ai`, per-unit development baselines for existing projects, README entrypoints, ordinary adapters, an ownership manifest, and only selected capabilities.
 4. **Route** — answer simple questions directly, verify small changes locally, and reserve formal approval and broader evidence for higher-impact work.
 
 English is the default artifact language. Selecting `zh-CN` generates Chinese governance prose while keeping IDs, paths, commands, and schema keys stable. Conversation language and artifact language remain independent.
@@ -81,10 +81,11 @@ Installation is **Agent-first** and **artifact-language-second**. The stored `ar
 
 1. **Agent support** — select the clients the project will actually support. Existing files are evidence, not automatic consent.
 2. **Artifact language** — `en` is default; `zh-CN` is explicit. Legacy `bilingual` configuration remains readable.
-3. **Project lifecycle** — existing repositories confirm detected stacks; greenfield repositories select target stacks without pretending architecture already exists.
-4. **Existing-code policy** — choose `keep-existing`, `new-code-standard`, or `staged-migration`. Initialization never silently modernizes product code.
-5. **Preset** — start with Minimal or Standard from evidence. Complete is opt-in, never the default consequence of a vague request.
-6. **Optional capabilities** — memory, hooks, CI, workflows, Skills, and specialist roles remain separate choices.
+3. **Test-case output** — choose compact `aicg-json-v2` (recommended) or a readable Markdown baseline plus schema-v2 JSON, and choose its repository-relative directory.
+4. **Project lifecycle** — existing repositories confirm detected stacks; greenfield repositories select target stacks without pretending architecture already exists.
+5. **Existing-code policy** — choose `keep-existing`, `new-code-standard`, or `staged-migration`. Initialization never silently modernizes product code.
+6. **Preset** — start with Minimal or Standard from evidence. Complete is opt-in, never the default consequence of a vague request.
+7. **Optional capabilities** — memory, hooks, CI, workflows, Skills, and specialist roles remain separate choices.
 
 Repository families use one exact, reviewable plan while retaining autonomous member ownership:
 
@@ -95,7 +96,16 @@ aicg init . --family --yes --clients codex --no-assist --approve <planHash>
 
 The combined plan binds the orchestrator and every detected member. Member repositories are applied before the orchestrator, parent manifests never own member files, and a failed apply or post-check rolls the entire family back.
 
-Standard and Complete governance also generate audited implementation Skills. A descriptive-only Skill fails generation: implementation Skills require trigger and non-trigger cases, invariants, a decision flow, correct and incorrect code shapes, exceptions, a verification matrix, project evidence boundaries, and sources. The default professional-testing Skill asks whether simulated human testing is needed and, when selected, recommends tester roles and real-user cohorts without claiming recruitment or real-user validation.
+Existing projects receive `docs/ai/development/index.json`, one evidence baseline per detected development unit, and a short managed entrypoint in each unit README. The `brownfield-understanding` Skill tells an Agent to complete one unit at a time from code/test evidence, keep unknowns unverified, and extract only stable decision surfaces into project Skills. Implementation Skills require correct, incorrect, and exception code shapes; workflow Skills require an executable flow.
+
+Standard and Complete governance also generate an expanded `professional-testing` Skill. It uses stable Case IDs, shared context, minimal AI execution packets, evidence-bound PASS/FAIL, an idempotent result ledger, automatic `NOT_RUN`, and ledger-derived reports. Automated, AI-simulated-human, and real-user evidence remain separate.
+
+```bash
+aicg test-case init . --scope ACCOUNT --format aicg-json-v2 --output docs/ai/testing --yes
+aicg test-case validate . --manifest docs/ai/testing/ACCOUNT-test-cases.json
+aicg test-case select . --manifest docs/ai/testing/ACCOUNT-test-cases.json --cases ACCOUNT-TC-001 --output reports/testing/ACCOUNT-packet.json
+aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --packet reports/testing/ACCOUNT-packet.json --results reports/testing/ACCOUNT-external-results.json
+```
 
 | Preset | Fresh default selection |
 | --- | --- |

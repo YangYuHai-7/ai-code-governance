@@ -17,6 +17,7 @@ Usage:
   aicg standards [path] [--json]
   aicg team [path] [--config team-context.json] [--json]
   aicg work-unit <plan|status> [path] --work-unit <relative-json> [--json]
+  aicg test-case <init|validate|select|record> [path] [--manifest <relative-json>] [--scope <id>] [--output <relative-path>]
   aicg harvest [path] [--dry-run] [--yes] [--force] [--json]
   aicg promote [path] --id <capabilityId> --entrypoint <path> --verify <discovered-command> [--consumer <path>] [--dry-run] [--yes] [--json]
   aicg complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json]
@@ -38,6 +39,7 @@ Commands:
   standards  Preview the selected technical-standard Skills and their audited source snapshot without changing the repository.
   team  Recommend human delivery and governance responsibility coverage without creating people, agents, tasks, or files.
   work-unit  Preview or validate one bounded vertical feature document. Never writes files or launches Agents.
+  test-case  Create and validate schema-v2 cases, emit minimal AI packets, and record evidence-bound results.
   harvest  Detect reusable project capabilities and generate candidate Skills only after confirmation.
   promote  Run a discovered verification command and adopt one confirmed capability after confirmation.
   complete  Manually run the completion gate; a selected project verification command is explicit and never inferred.
@@ -64,7 +66,7 @@ Bootstrap help (package resolution only at setup):
   ${governanceBootstrapCommand({})}
 Daily commands require an installed project-local or global AICG. If unavailable, stop and explicitly install it. Pinned bootstrap does not install a persistent CLI.
 
---guided asks for AI coding tools first and governance artifact language second, followed by project stage, technology stack confirmation or selection, governance depth, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
+--guided asks for AI coding tools first, governance artifact language second, and test-case format/location third, followed by project stage, technology stack confirmation or selection, governance depth, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
 
 --locale controls interaction language only. Governance artifacts default to English; choose config.artifactLanguage or answer the separate guided question to change them. Existing bilingual artifact configurations remain supported but are not offered for new guided choices.
 `;
@@ -84,6 +86,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg evidence <record|status|export> [路径] [--config receipt.json] [--yes] [--json]
   aicg standards [路径] [--json]
   aicg work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json]
+  aicg test-case <init|validate|select|record> [路径] [--manifest <相对路径.json>] [--scope <标识>] [--output <相对路径>]
   aicg complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json]
   aicg --version
 
@@ -91,6 +94,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
   architecture  只读评估架构并输出稳定的采用计划 ID 和哈希，不迁移业务代码。
   enrich        为现有项目生成只读、可精确批准的治理补全计划，不写入文件。
+  test-case     创建和校验 schema v2 测试用例、生成最小 AI 执行包，并记录证据绑定结果。
   evidence      记录或汇总匿名试点/真实项目证据；不会自动认证。
   check         检查配置、受管文件、漂移和入口可达性。
   sync          从治理正典重新生成客户端适配器。
@@ -108,7 +112,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   日常命令要求已安装项目本地或全局 AICG；缺少时停止并显式安装。固定版本启动不会安装持久 CLI。
   中文交互可使用 aicg init . --guided --locale zh-CN
 
---guided 会先收集 AI 编码工具，再单独询问治理产物语言，然后确认项目阶段、检测到的技术栈或目标技术栈、治理强度和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
+--guided 会先收集 AI 编码工具，再单独询问治理产物语言和测试用例格式/位置，然后确认项目阶段、检测到的技术栈或目标技术栈、治理强度和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
 
 --locale 只控制交互语言。治理产物默认使用英语；如需更改，请设置 config.artifactLanguage 或回答独立的引导问题。已有 bilingual 配置继续兼容，但新的引导选项不再推荐它。
 `;

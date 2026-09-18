@@ -1,4 +1,4 @@
-export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit']);
+export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report']);
 
 export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'family', 'no-assist', 'migrate-links', 'prune', 'from-git-hook', 'replay', 'help', 'version']);
 
@@ -17,6 +17,7 @@ export const COMMAND_FLAGS = Object.freeze({
   promote: new Set(['id', 'entrypoint', 'verify', 'consumer', 'yes', 'dry-run', 'json', 'help']),
   complete: new Set(['verify', 'task-level', 'review-mode', 'approval-evidence', 'approve', 'json', 'from-git-hook', 'work-unit', 'help']),
   'work-unit': new Set(['work-unit', 'json', 'help']),
+  'test-case': new Set(['scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'yes', 'json', 'help']),
   hook: new Set(['yes', 'json', 'help']),
   'release-check': new Set(['type', 'evidence', 'replay', 'approve', 'json', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'clients', 'locale', 'help']),

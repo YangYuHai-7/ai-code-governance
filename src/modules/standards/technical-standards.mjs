@@ -297,6 +297,23 @@ ${examples.correct}
 ${examples.incorrect}
 \`\`\`
 ` : '';
+  const testCaseInitCommand = `aicg test-case init . --scope <SCOPE> --format ${config.testing?.caseFormat ?? 'aicg-json-v2'} --output ${config.testing?.caseRoot ?? 'docs/ai/testing'} --yes`;
+  const testingWorkflow = standard.id === 'professional-testing' ? `
+## ${zh ? 'Formal testing workflow' : 'Formal testing workflow'}
+
+- ${zh ? '配置格式' : 'Configured format'}: \`${config.testing?.caseFormat ?? 'aicg-json-v2'}\`
+- ${zh ? '用例目录' : 'Case directory'}: \`${config.testing?.caseRoot ?? 'docs/ai/testing'}\`
+- ${zh ? '报告目录' : 'Report directory'}: \`${config.testing?.reportRoot ?? 'reports/testing'}\`
+- ${zh ? '报告语言' : 'Report language'}: \`${config.testing?.reportLanguage ?? 'en'}\`
+
+1. ${zh ? '开发者交接已确认需求、开发文档、代码版本和变更风险；测试负责人建立或更新稳定 Case ID 的清单。' : 'Development hands off confirmed requirements, development docs, code version, and change risks; test ownership creates or updates stable Case IDs.'}
+2. ${zh ? `首次执行运行 \`${testCaseInitCommand}\`。` : `For first execution run \`${testCaseInitCommand}\`.`}
+3. ${zh ? '补全 schema v2 共享角色、环境、数据、覆盖决策与用例；使用 validate 校验后才能执行。' : 'Complete schema-v2 shared actors, environments, data, coverage decisions, and cases; validate before execution.'}
+4. ${zh ? '使用 select 按 Case、优先级、标签或驱动生成最小执行包，一次只给 AI 当前用例和引用上下文。' : 'Use select by Case, priority, tag, or driver to produce a minimal packet; give the AI only the current cases and referenced context.'}
+5. ${zh ? '执行结果必须回传范围、基线、清单摘要和执行包摘要；PASS/FAIL 关联仓库内真实证据文件。' : 'Results return scope, baseline, manifest digest, and packet digest; PASS/FAIL reference real repository evidence files.'}
+6. ${zh ? '使用 record 原子写入结果账本、补齐 NOT_RUN 并生成报告；同一会话重复提交保持幂等。' : 'Use record to atomically update the ledger, fill NOT_RUN, and generate the report; replaying an identical session remains idempotent.'}
+7. ${zh ? '报告必须把 AI 模拟真人、自动化与真实用户结果分开；真实用户执行需要明确授权。' : 'Reports keep AI-simulated-human, automated, and real-user results separate; real-user execution requires explicit authorization.'}
+` : '';
   const content = `---
 name: ${standard.id}
 description: ${zh ? `当技术证据与变更表面匹配时，使用可执行的${standard.title}决策与验证流程。` : `Use the executable ${standard.title} decisions when technology evidence and the changed surface match.`}
@@ -338,6 +355,7 @@ ${markdownList(exceptionRows)}
 | ${zh ? '场景' : 'Scenario'} | ${zh ? '期望结果' : 'Expected result'} | ${zh ? '命令或证据状态' : 'Command or evidence status'} |
 | --- | --- | --- |
 ${commandRows}
+${testingWorkflow}
 
 ## Project evidence boundary
 

@@ -14,6 +14,7 @@ export const COMMAND_HANDLERS = Object.freeze({
   team: handler('./commands/read-only.mjs', 'teamCommand'),
   complete: handler('./commands/completion.mjs', 'completeCommand'),
   'work-unit': handler('./commands/work-unit.mjs', 'workUnitCommand', ['target', 'action', 'options']),
+  'test-case': handler('./commands/testing.mjs', 'testCaseCommand', ['target', 'action', 'options']),
   hook: handler('./commands/completion.mjs', 'hookCommand', ['target', 'action', 'options']),
   'release-check': handler('./commands/completion.mjs', 'releaseCheckCommand'),
   doctor: handler('./commands/read-only.mjs', 'doctorCommand'),

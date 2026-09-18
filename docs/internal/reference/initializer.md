@@ -10,11 +10,12 @@ The visible order is:
 
 1. Supported Agents: Codex, Claude Code, Cursor, generic, or a combination. Codex is the interactive default. `--clients all` selects the three built-in clients; config may record a selected scope. Neither installed tools nor `--yes` decide scope.
 2. Governance language: `artifactLanguage: en` is default/recommended; `zh-CN` explicitly generates Chinese governance prose. `--locale`/`interactionLanguage` controls interaction independently. Legacy `bilingual` configuration remains supported, without becoming the onboarding default. Schema keys, IDs, commands, and filenames stay English.
-3. Lifecycle: confirm greenfield or existing. Existing source requires an explicit existing decision; ambiguous scaffolds need confirmation.
-4. Stack: existing projects confirm/correct detected stacks and their evidence; greenfield selects target stacks. Unknown remains `generic-unknown`/unverified. Greenfield architecture is `not-established` until implementation and owner confirmation provide evidence.
-5. Existing-code strategy: `keep-existing`, `new-code-standard`, or `staged-migration`; no strategy authorizes initialization to rewrite/move/format product code.
-6. Depth/options: recommend Minimal or Standard from scan evidence and owner needs. Guided defaults to Minimal; advanced/config defaults retain Standard. Complete is an explicit choice. Memory ownership/index foundations default on at all depths; no module semantics are invented. Runtime/hooks/CI/external workflows/AI assist stay off unless explicitly selected.
-7. Invocation and plan: choose a usable installation, inspect the write/keep/conflict/retention plan, then approve.
+3. Test-case output: choose `aicg-json-v2` (recommended) or `markdown-plus-json`, then choose a safe repository-relative case directory. Reports retain a separately configured directory and language.
+4. Lifecycle: confirm greenfield or existing. Existing source requires an explicit existing decision; ambiguous scaffolds need confirmation.
+5. Stack: existing projects confirm/correct detected stacks and their evidence; greenfield selects target stacks. Unknown remains `generic-unknown`/unverified. Greenfield architecture is `not-established` until implementation and owner confirmation provide evidence.
+6. Existing-code strategy: `keep-existing`, `new-code-standard`, or `staged-migration`; no strategy authorizes initialization to rewrite/move/format product code.
+7. Depth/options: recommend Minimal or Standard from scan evidence and owner needs. Guided defaults to Minimal; advanced/config defaults retain Standard. Complete is an explicit choice. Memory ownership/index foundations default on at all depths; no module semantics are invented. Runtime/hooks/CI/external workflows/AI assist stay off unless explicitly selected.
+8. Invocation and plan: choose a usable installation, inspect the write/keep/conflict/retention plan, then approve.
 
 `codeDocumentationPolicy` defaults to `inherit-existing` for existing projects and `en` for greenfield. The AICG repository's documentation/comments remain English according to its instructions; selecting Chinese governance in a target project is a separate product decision.
 
@@ -30,6 +31,14 @@ Use the existing `--config` JSON, alongside normal client, stack, lifecycle and 
   "stacks": ["generic-unknown"],
   "governanceDepth": "standard",
   "artifactLanguage": "en",
+  "testing": {
+    "schemaVersion": 1,
+    "caseFormat": "aicg-json-v2",
+    "caseRoot": "docs/ai/testing",
+    "reportRoot": "reports/testing",
+    "reportLanguage": "en",
+    "humanPerspective": "ask"
+  },
   "adaptiveGovernance": {
     "installedRoots": [],
     "curatedCatalog": [],
@@ -66,6 +75,7 @@ Generation uses English by default; explicit `artifactLanguage: "zh-CN"` localiz
 | `aicg assess [path] --json` | Lifecycle/topology, current evidence, decision gaps |
 | `aicg architecture [path] --json` | Architecture advice and bounded policy evidence; does not migrate code |
 | `aicg standards [path] --json` | Preview packaged technical source snapshots |
+| `aicg test-case init|validate|select|record [path] ...` | Scaffold schema-v2 cases, emit minimal AI packets, and record evidence-bound idempotent sessions |
 | `aicg complete [path] --task-level L2 --verify "npm run test" --json` | Compare Git minimum to declaration; run only the explicitly selected discovered npm script |
 | `aicg harvest [path] --dry-run --json` | Read-only candidate discovery; does not claim verification ran |
 | `aicg promote [path] --id <id> --entrypoint <path> --verify "npm run <script>" --yes` | Explicit candidate adoption with current implementation and successful command evidence |
@@ -85,7 +95,7 @@ Project-local mode is recommended only when a valid package/executable is found.
 
 ## Presets and dynamic tasks
 
-Minimal generates the kernel, memory ownership/index foundation, and chosen client adapters. Standard adds routing, policy/standard Skills, decision ledger, verification profiles, and scoped local-output ignore rules. Fresh installs do not spend artifacts on empty `reviews/`/`reports/` placeholders; tools create actual local outputs on first use. Approved dynamic team and Skill metadata use the exact-plan transaction. Complete adds selected stack Skills; lifecycle features remain explicit. Evidence policies activate on first use and receipts only when produced. Generator and checker use the same artifact selection definitions.
+Minimal generates the kernel, memory ownership/index foundation, and chosen client adapters. Existing projects additionally receive one code-scan development baseline and README entrypoint per detected development unit. Standard adds routing, policy/standard Skills, the `brownfield-understanding` Skill for existing projects, decision ledger, verification profiles, and scoped local-output ignore rules. The professional-testing Skill uses configured schema-v2 cases, stable Case IDs, minimal execution packets, evidence hashing, an idempotent session ledger, `NOT_RUN` completion, and ledger-derived reports. Automated, AI-simulated-human, and real-user evidence remain separate. Fresh installs do not spend artifacts on empty `reviews/`/`reports/` placeholders; tools create actual local outputs on first use. Approved dynamic team and Skill metadata use the exact-plan transaction. Complete adds selected stack Skills; lifecycle features remain explicit. Evidence policies activate on first use and receipts only when produced. Generator and checker use the same artifact selection definitions.
 
 Scanner dependency facts report `ecosystem`, `name`, `declaredVersion`, `resolvedVersion`, `sourcePath`, and `evidenceLevel: stated`. Supported literal npm, Maven, Gradle, Go, and Python declarations and local supported lockfiles are never installed or executed. Unresolved expressions remain declared, and ambiguous lock versions are not guessed. Root and nested worktree/cache directories are excluded from project facts. Agent executable availability remains `not-probed` until `doctor` performs its separate probe.
 

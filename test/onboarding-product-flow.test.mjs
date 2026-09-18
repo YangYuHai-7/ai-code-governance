@@ -18,13 +18,13 @@ const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', imp
 if (part === 'unit') {
 
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
-  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
   assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
   assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
   for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
     const module = await import(new URL(`../src/cli/${definition.module}`, import.meta.url));
     assert.equal(typeof module[definition.exportName], 'function', `${command}: missing export`);
-    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence', 'work-unit'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
+    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence', 'work-unit', 'test-case'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
   }
   const registry = fs.readFileSync(new URL('../src/cli/command-registry.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(registry, /^import .* from ['"]\.\/commands\//m, 'help/version must not eagerly load command implementations');
@@ -151,7 +151,7 @@ test('guided onboarding asks clients first and artifact language second', async 
   const root = fixture('guided-preset');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
-  const readline = scriptedReadline(['1', '', '1', '', '1', '1']);
+  const readline = scriptedReadline(['1', '', '1', '', '1', '', '1', '1']);
 
   const { labels, value: config } = await capturePromptLabels(
     () => promptGuidedConfig(scan, defaultConfig(scan), { readline }),
@@ -162,6 +162,7 @@ test('guided onboarding asks clients first and artifact language second', async 
   ]);
   assert.equal(config.interactionLanguage, 'en');
   assert.equal(config.artifactLanguage, 'en');
+  assert.deepEqual(config.testing, { schemaVersion: 1, caseFormat: 'aicg-json-v2', caseRoot: 'docs/ai/testing', reportRoot: 'reports/testing', reportLanguage: 'en', humanPerspective: 'ask' });
   assert.equal(config.codeDocumentationPolicy, 'en');
   assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex'], source: 'interactive' });
   assert.deepEqual(config.clients, ['codex']);
@@ -182,7 +183,7 @@ test('guided onboarding only recommends project-local when the package and execu
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ devDependencies: { 'ai-code-governance': '0.2.0' } }));
   const prompt = () => {
     const scan = scanProject(root);
-    return promptGuidedConfig(scan, defaultConfig(scan), { locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '1']) });
+    return promptGuidedConfig(scan, defaultConfig(scan), { locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '1', '1']) });
   };
   assert.equal((await prompt()).invocationMode, 'npm-exec-pinned', 'a declared dependency is not an installed executable');
   const installed = path.join(root, 'node_modules', 'ai-code-governance');
@@ -212,15 +213,15 @@ test('missing local executable requires an explicit bootstrap or global choice a
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   await assert.rejects(promptGuidedConfig(scan, defaultConfig(scan), {
-    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '']),
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '1', '']),
   }), /explicit selection/i);
   const global = await promptGuidedConfig(scan, defaultConfig(scan), {
-    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '2']),
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '1', '2']),
   });
   assert.equal(global.invocationMode, 'global');
   for (const invocationMode of ['project-local', 'global', 'npm-exec-pinned']) {
     const existing = await promptGuidedConfig(scan, { ...defaultConfig(scan), invocationMode }, {
-      locale: 'en', preserveInvocation: true, readline: scriptedReadline(['1', '', '1', '', '1']),
+      locale: 'en', preserveInvocation: true, readline: scriptedReadline(['1', '', '1', '', '1', '', '1']),
     });
     assert.equal(existing.invocationMode, invocationMode);
   }
@@ -249,7 +250,7 @@ test('guided existing-project onboarding shows detected stacks and requires conf
   const confirmed = await capturePromptLabels(() => promptGuidedConfig(
     scan,
     defaultConfig(scan),
-    { locale: 'zh-CN', readline: scriptedReadline(['1', '', '2', '1', '1', '1', '1']) },
+    { locale: 'zh-CN', readline: scriptedReadline(['1', '', '1', '', '2', '1', '1', '1', '1']) },
   ));
   assert.equal(confirmed.value.artifactLanguage, 'en');
   assert.equal(confirmed.value.codeDocumentationPolicy, 'inherit-existing');
@@ -262,7 +263,7 @@ test('guided existing-project onboarding shows detected stacks and requires conf
   const corrected = await capturePromptLabels(() => promptGuidedConfig(
     scan,
     defaultConfig(scan),
-    { locale: 'en', readline: scriptedReadline(['1', '', '2', '2', '4', '1', '1', '1']) },
+    { locale: 'en', readline: scriptedReadline(['1', '', '1', '', '2', '2', '4', '1', '1', '1']) },
   ));
   assert.deepEqual(corrected.value.stacks, ['backend-node']);
   assert.ok(corrected.labels.some((label) => label === 'Correct technology stacks'));
@@ -273,7 +274,7 @@ test('full onboarding accepts ordinary constraints with no confirmed risk signal
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   const readline = scriptedReadline([
-    '1', '', '', '1', '', '', '', '',
+    '1', '', '1', '', '', '1', '', '', '', '',
     'Every workspace belongs to one owner.', '', '',
   ]);
 
@@ -296,7 +297,7 @@ test('guided client multi-select normalizes unordered duplicate input to registr
     const config = await promptGuidedConfig(
       scan,
       defaultConfig(scan),
-      { locale: 'en', readline: scriptedReadline([answer, '', '1', '', '1', '1']) },
+      { locale: 'en', readline: scriptedReadline([answer, '', '1', '', '1', '', '1', '1']) },
     );
     assert.deepEqual(config.clients, expectedClients);
     assert.deepEqual(config.clientSupport.selectedClients, expectedClients);

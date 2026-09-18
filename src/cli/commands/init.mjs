@@ -70,7 +70,9 @@ function recordArchitectureDecisionGap(config) {
 function assertInitializationWriteBoundary(plan) {
   const unexpected = plan.operations
     .map((operation) => operation.path)
-    .filter((relative) => !GOVERNANCE_WRITE_FILES.has(relative) && !GOVERNANCE_WRITE_PREFIXES.some((prefix) => relative.startsWith(prefix)));
+    .filter((relative) => !GOVERNANCE_WRITE_FILES.has(relative)
+      && !/(^|\/)README\.md$/.test(relative)
+      && !GOVERNANCE_WRITE_PREFIXES.some((prefix) => relative.startsWith(prefix)));
   if (unexpected.length > 0) {
     throw usageError(`Initialization plan attempted to modify a non-governance path: ${unexpected.sort((left, right) => left.localeCompare(right)).join(', ')}.`);
   }
@@ -380,6 +382,7 @@ function inheritedMemberConfig(parentConfig, unit) {
     supportedOs: parentConfig.supportedOs,
     invocationMode: parentConfig.invocationMode,
     codeDocumentationPolicy: existing ? 'inherit-existing' : parentConfig.codeDocumentationPolicy,
+    testing: { ...parentConfig.testing },
     features: { ...parentConfig.features, aiAssist: false },
     domainConstraints: [],
     confirmedRiskSignals: [],

@@ -1,16 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
+import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
 import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
-import { buildDecisionLedger, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
+import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
 import { assertSkillQuality, buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
 import { buildMemoryArtifacts } from '../memory/index.mjs';
 import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
@@ -104,6 +104,14 @@ export function defaultConfig(scan) {
     governanceDepth: 'standard',
     artifactLanguage: 'en',
     codeDocumentationPolicy: assessment.codebase.lifecycle.value === 'existing' ? 'inherit-existing' : 'en',
+    testing: {
+      schemaVersion: 1,
+      caseFormat: 'aicg-json-v2',
+      caseRoot: 'docs/ai/testing',
+      reportRoot: 'reports/testing',
+      reportLanguage: 'en',
+      humanPerspective: 'ask',
+    },
     supportedOs: ['macos', 'windows', 'linux'],
     technologyPackages: [],
     projectCapabilities: [],
@@ -144,6 +152,15 @@ function normalizeConfigDefaults(config, scan) {
   }
   return {
     ...config,
+    testing: {
+      schemaVersion: 1,
+      caseFormat: 'aicg-json-v2',
+      caseRoot: 'docs/ai/testing',
+      reportRoot: 'reports/testing',
+      reportLanguage: config.artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en',
+      humanPerspective: 'ask',
+      ...(config.testing ?? {}),
+    },
     codeDocumentationPolicy: config.codeDocumentationPolicy
       ?? defaultCodeDocumentationPolicy(config, assessment?.codebase.lifecycle.value),
     initialClassification: {
@@ -191,6 +208,22 @@ export function validateConfig(config) {
   if (!SUPPORTED_LANGUAGES.includes(config.artifactLanguage)) throw usageError(`Unsupported artifact language: ${config.artifactLanguage}`);
   if (config.interactionLanguage !== undefined && !SUPPORTED_INTERACTION_LANGUAGES.includes(config.interactionLanguage)) throw usageError(`Unsupported interaction language: ${config.interactionLanguage}`);
   if (!SUPPORTED_CODE_DOCUMENTATION_POLICIES.includes(config.codeDocumentationPolicy)) throw usageError(`Unsupported code documentation policy: ${config.codeDocumentationPolicy}`);
+  const testing = config.testing ?? {
+    schemaVersion: 1,
+    caseFormat: 'aicg-json-v2',
+    caseRoot: 'docs/ai/testing',
+    reportRoot: 'reports/testing',
+    reportLanguage: config.artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en',
+    humanPerspective: 'ask',
+  };
+  if (!testing || typeof testing !== 'object' || Array.isArray(testing) || Object.keys(testing).some((key) => !['schemaVersion', 'caseFormat', 'caseRoot', 'reportRoot', 'reportLanguage', 'humanPerspective'].includes(key))) throw usageError('testing contains unsupported fields.');
+  if (testing.schemaVersion !== 1 || !SUPPORTED_TEST_CASE_FORMATS.includes(testing.caseFormat)) throw usageError(`testing must use schemaVersion 1 and a supported caseFormat: ${SUPPORTED_TEST_CASE_FORMATS.join(', ')}.`);
+  for (const [field, value] of [['caseRoot', testing.caseRoot], ['reportRoot', testing.reportRoot]]) {
+    if (typeof value !== 'string' || !isSafeRelative(value) || normalizeRelative(value) !== value || value.split('/').some((part) => part.toLowerCase() === '.git')) throw usageError(`testing.${field} must be a safe repository-relative directory outside .git.`);
+  }
+  if (!['en', 'zh-CN'].includes(testing.reportLanguage)) throw usageError('testing.reportLanguage must be en or zh-CN.');
+  if (!['ask', 'not-required', 'required'].includes(testing.humanPerspective)) throw usageError('testing.humanPerspective must be ask, not-required, or required.');
+  config = { ...config, testing };
   if (config.invocationMode !== undefined && !INVOCATION_MODES.includes(config.invocationMode)) throw usageError(`Unsupported invocation mode: ${config.invocationMode}`);
   if (!Array.isArray(config.supportedOs) || config.supportedOs.some((value) => !SUPPORTED_OSES.includes(value))) {
     throw usageError('config.supportedOs contains an unsupported operating system.');
@@ -691,6 +724,25 @@ export function artifactDefinitions(config, scan) {
   }), { requires: [(value) => value.projectMode === 'repository-family'], ownership: 'full', kind: 'repository-family-index', source: 'repository-family-scan', routeProfiles: ['behavior_change:repository_family'] });
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reports/\n/reports/*', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
+
+  const existingDevelopment = config.initialization?.lifecycle === 'existing' && config.projectMode !== 'repository-family';
+  if (existingDevelopment) {
+    const development = buildDevelopmentDocumentationArtifacts(config, scan);
+    for (const artifact of development.artifacts) {
+      const isSkill = artifact.kind.includes('skill');
+      if (artifact.kind === 'brownfield-understanding-skill') assertSkillQuality(artifact.content, { profile: 'workflow', id: 'brownfield-understanding' });
+      const isCanonicalRoute = artifact.path === 'docs/ai/development/index.json' || artifact.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
+      const capability = isSkill && (artifact.path.startsWith('.agents/') || artifact.path.startsWith('.claude/')) ? 'integration' : 'core';
+      add(artifact.path, capability, () => artifact.content, {
+        requires: isSkill ? [(value) => value.governanceDepth !== 'minimal'] : [],
+        ownership: artifact.ownership,
+        kind: artifact.kind,
+        source: artifact.source,
+        routeProfiles: isCanonicalRoute ? ['behavior_change:brownfield_understanding'] : [],
+      });
+      definitions.at(-1).build = () => artifact;
+    }
+  }
 
   const antiPatternsActive = (value, current) => !hasSkillManagement(value) || hasGovernanceUsage(current, 'anti-patterns') || hasArtifactEvidence(current, 'docs/ai/anti-patterns.md');
   add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { requires: [antiPatternsActive], routeProfiles: ['behavior_change:anti_patterns'], source: 'template:anti-patterns' });

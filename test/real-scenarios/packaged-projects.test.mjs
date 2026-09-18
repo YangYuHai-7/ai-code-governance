@@ -115,7 +115,7 @@ function changedPathsFromStagedDiff(diff) {
 function assertGovernanceOnlyDiff(diff, label) {
   const paths = changedPathsFromStagedDiff(diff);
   assert.ok(paths.length > 0, `${label} must produce governance artifacts`);
-  const unexpected = paths.filter((relative) => !governanceFiles.has(relative) && !governancePrefixes.some((prefix) => relative.startsWith(prefix)));
+  const unexpected = paths.filter((relative) => relative !== 'README.md' && !relative.endsWith('/README.md') && !governanceFiles.has(relative) && !governancePrefixes.some((prefix) => relative.startsWith(prefix)));
   assert.deepEqual(unexpected, [], `${label} changed non-governance paths: ${unexpected.join(', ')}`);
 }
 

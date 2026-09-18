@@ -95,6 +95,29 @@ function artifactLanguageOptions(locale) {
   ];
 }
 
+async function promptTestingConfig(rl, locale, seed, artifactLanguage, { guided = false } = {}) {
+  const choose = guided
+    ? (label, options, defaultIndex) => guidedChoice(rl, locale, label, options, defaultIndex)
+    : (label, options, defaultIndex) => chooseOne(rl, label, options, defaultIndex, locale);
+  const formats = [
+    { label: localized(locale, 'Compact schema-v2 JSON for AI execution (recommended)', '面向 AI 执行的紧凑 schema v2 JSON（推荐）'), value: 'aicg-json-v2' },
+    { label: localized(locale, 'Readable Markdown baseline plus schema-v2 JSON', '可读 Markdown 基线 + schema v2 JSON'), value: 'markdown-plus-json' },
+  ];
+  const current = seed.testing ?? {};
+  const defaultIndex = Math.max(0, formats.findIndex((entry) => entry.value === current.caseFormat));
+  const caseFormat = await choose(localized(locale, 'Generated test-case format', '生成的测试用例格式'), formats, defaultIndex);
+  const defaultRoot = current.caseRoot ?? 'docs/ai/testing';
+  const answer = (await rl.question(`${localized(locale, 'Test-case directory', '测试用例放置目录')} [${defaultRoot}]: `)).trim();
+  return {
+    schemaVersion: 1,
+    caseFormat,
+    caseRoot: answer || defaultRoot,
+    reportRoot: current.reportRoot ?? 'reports/testing',
+    reportLanguage: artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en',
+    humanPerspective: current.humanPerspective ?? 'ask',
+  };
+}
+
 function stackOptions() {
   return loadCapabilityRegistry().packs.map((pack) => ({
     label: `${pack.id} (${pack.evidence})`,
@@ -197,6 +220,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       artifactLanguageOptions(locale),
       0,
     );
+    const testing = await promptTestingConfig(rl, interactionLanguage, seed, artifactLanguage, { guided: true });
 
     let initialization = seed.initialization?.lifecycle
       ? { ...seed.initialization }
@@ -245,6 +269,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       ...seed,
       interactionLanguage,
       artifactLanguage,
+      testing,
       codeDocumentationPolicy: preserveCodeDocumentationPolicy
         ? seed.codeDocumentationPolicy
         : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',
@@ -294,6 +319,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       0,
       locale,
     );
+    const testing = await promptTestingConfig(rl, interactionLanguage, seed, artifactLanguage);
 
     console.log(zh ? `目标：${scan.root}` : `Target: ${scan.root}`);
     console.log(zh ? `检测到的项目模式：${scan.projectMode}` : `Detected mode: ${scan.projectMode}`);
@@ -365,6 +391,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       stacks,
       governanceDepth,
       artifactLanguage,
+      testing,
       codeDocumentationPolicy: preserveCodeDocumentationPolicy
         ? seed.codeDocumentationPolicy
         : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',

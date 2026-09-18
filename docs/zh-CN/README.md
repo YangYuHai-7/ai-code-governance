@@ -55,9 +55,9 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 扫描仓库 → 确认负责人选择 → 生成最小治理集合 → 按影响程度路由每个任务
 ```
 
-1. **发现**——检查生命周期、清单、准确技术栈、脚本、既有 Agent 适配器、规范和工作流证据，不执行项目代码。
-2. **决策**——选择 Codex、Claude Code、Cursor、通用 Agent 或其组合；选择英文或简体中文治理文件；确认生命周期和迁移策略。
-3. **生成**——在 `docs/ai` 维护单一规范源、普通适配文件、所有权清单和用户实际选择的能力。
+1. **发现**——检查生命周期、子工程、清单、准确技术栈、脚本、既有 Agent 适配器、规范和工作流证据，不执行项目代码。
+2. **决策**——选择支持的 Agent、治理文件语言、测试用例格式与位置、生命周期和迁移策略。
+3. **生成**——在 `docs/ai` 维护单一规范源，为旧项目生成各子工程开发基线和 README 入口，并生成普通适配文件、所有权清单和用户实际选择的能力。
 4. **路由**——简单问题直接回答，小改动本地验证，只有高影响任务才要求正式审批和更完整证据。
 
 治理文件默认使用英文。明确选择 `zh-CN` 后生成中文治理说明，但 ID、路径、命令和 schema 字段继续保持英文。对话语言和治理文件语言相互独立。
@@ -81,10 +81,11 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 
 1. **Agent 支持范围**——选择项目真正需要支持的客户端。已有文件只是证据，不代表用户已经授权。
 2. **治理文件语言**——默认 `en`，显式支持 `zh-CN`；旧版 `bilingual` 配置继续可读。
-3. **项目生命周期**——已有项目确认检测到的技术栈；新项目选择目标技术栈，但不会假装架构已经建立。
-4. **旧代码策略**——选择 `keep-existing`、`new-code-standard` 或 `staged-migration`；初始化不会擅自改造产品代码。
-5. **治理预设**——根据证据从 Minimal 或 Standard 开始；Complete 必须主动选择，不会因一句模糊需求自动启用。
-6. **可选能力**——记忆、Git hooks、CI、工作流、Skills 和专家角色分别决策。
+3. **测试用例输出**——选择紧凑的 `aicg-json-v2`（推荐）或 Markdown 可读基线加 schema-v2 JSON，并选择仓库内放置目录。
+4. **项目生命周期**——已有项目确认检测到的技术栈；新项目选择目标技术栈，但不会假装架构已经建立。
+5. **旧代码策略**——选择 `keep-existing`、`new-code-standard` 或 `staged-migration`；初始化不会擅自改造产品代码。
+6. **治理预设**——根据证据从 Minimal 或 Standard 开始；Complete 必须主动选择，不会因一句模糊需求自动启用。
+7. **可选能力**——记忆、Git hooks、CI、工作流、Skills 和专家角色分别决策。
 
 仓库家族使用一个可精确审批的计划，同时保留每个成员仓的独立所有权：
 
@@ -95,7 +96,16 @@ aicg init . --family --yes --clients codex --no-assist --approve <planHash>
 
 组合计划同时绑定编排仓和所有检测到的成员仓。成员仓先于编排仓执行；父清单永不拥有成员仓文件；任一仓写入或后置检查失败时，整个仓库家族都会回滚。
 
-Standard 与 Complete 还会生成经过审计的实现型 Skills。只有文字描述的 Skill 会被生成门禁拒绝：实现型 Skill 必须包含触发与非触发条件、不变量、决策流程、正确与错误代码形状、例外、验证矩阵、项目证据边界和来源。默认的专业测试 Skill 会询问是否需要模拟真人测试；选择后推荐测试人员角色和真实用户画像，但不会声称已经招募或完成真实用户验证。
+旧项目会获得 `docs/ai/development/index.json`、每个已识别子工程各自的证据基线，以及各 README 中的简短受管入口。`brownfield-understanding` Skill 要求 Agent 每次只处理一个子工程，依据代码和测试补全文档，把未知项保留为未验证，并只把稳定决策面提炼为项目 Skill。实现型 Skill 必须提供正确、错误和例外代码形状；工作流 Skill 必须提供可执行流程。
+
+Standard 与 Complete 还会生成扩展后的 `professional-testing` Skill。它使用稳定 Case ID、共享上下文、最小 AI 执行包、证据绑定的 PASS/FAIL、幂等结果账本、自动补齐 `NOT_RUN` 和从账本生成的报告。自动化、AI 模拟真人与真实用户证据严格分开。
+
+```bash
+aicg test-case init . --scope ACCOUNT --format aicg-json-v2 --output docs/ai/testing --yes
+aicg test-case validate . --manifest docs/ai/testing/ACCOUNT-test-cases.json
+aicg test-case select . --manifest docs/ai/testing/ACCOUNT-test-cases.json --cases ACCOUNT-TC-001 --output reports/testing/ACCOUNT-packet.json
+aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --packet reports/testing/ACCOUNT-packet.json --results reports/testing/ACCOUNT-external-results.json
+```
 
 | 预设 | 新项目默认包含的能力 |
 | --- | --- |

@@ -6,3 +6,4 @@ export * from './surface-signals.mjs';
 export * from './repository-family.mjs';
 export * from './verification-commands.mjs';
 export * from './aicg-ignore.mjs';
+export * from './development-documentation.mjs';

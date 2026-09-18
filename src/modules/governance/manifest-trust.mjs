@@ -31,6 +31,10 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'gitignore-block\0local-output-ignore\0template:local-output-layout',
   'managed-block\0adapter\0AGENTS.md',
   'managed-block\0entrypoint\0template:agents',
+  'full\0development-documentation-index\0repository-code-scan',
+  'managed-block\0development-readme\0repository-code-scan',
+  'full\0brownfield-understanding-skill\0repository-code-scan',
+  'full\0brownfield-understanding-adapter-skill\0docs/ai/skills/brownfield-understanding/SKILL.md',
 ]);
 
 const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
@@ -118,6 +122,10 @@ const FIXED_MANAGED_PATHS = Object.freeze({
 });
 
 function hasKnownManagedPath(entry, definitions) {
+  if (entry.kind === 'development-documentation-index') return entry.path === 'docs/ai/development/index.json';
+  if (entry.kind === 'development-readme') return entry.path === 'README.md' || entry.path.endsWith('/README.md');
+  if (entry.kind === 'brownfield-understanding-skill') return entry.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
+  if (entry.kind === 'brownfield-understanding-adapter-skill') return /^(?:\.agents|\.claude)\/skills\/brownfield-understanding\/SKILL\.md$/.test(entry.path);
   if (entry.kind === 'adapter') return entry.path === (entry.ownership === 'full' ? '.cursor/rules/ai-code-governance.mdc' : 'CLAUDE.md');
   if (Object.hasOwn(FIXED_MANAGED_PATHS, entry.kind)) return FIXED_MANAGED_PATHS[entry.kind].includes(entry.path);
   if (entry.kind === 'canonical') return entry.path === (entry.source === 'capability-pack-registry' ? 'docs/ai/stack-profile.json' : 'docs/ai/decision-ledger.json');

@@ -127,6 +127,17 @@ test('parses evidence actions and keeps recording explicitly authorized', () => 
   assert.throws(() => parseArgs(['evidence', 'status', '--force']), (error) => error.exitCode === 2);
 });
 
+test('parses professional test-case lifecycle actions and bounded filters', () => {
+  assert.deepEqual(parseArgs(['test-case', 'select', 'project', '--manifest', 'docs/ai/testing/cases.json', '--cases', 'ACCOUNT-TC-001', '--priorities', 'P0,P1', '--tags', 'smoke', '--drivers', 'browser', '--output', 'reports/testing/packet.json']), {
+    command: 'test-case',
+    action: 'select',
+    target: 'project',
+    options: { manifest: 'docs/ai/testing/cases.json', cases: 'ACCOUNT-TC-001', priorities: 'P0,P1', tags: 'smoke', drivers: 'browser', output: 'reports/testing/packet.json' },
+  });
+  assert.throws(() => parseArgs(['test-case', 'execute']), (error) => error.exitCode === 2);
+  assert.throws(() => parseArgs(['test-case', 'record', '--force']), (error) => error.exitCode === 2);
+});
+
 test('normalizes Windows separators without corrupting drive and UNC-like text', () => {
   assert.equal(normalizeRelative('docs\\ai\\rules\\00_always.mdc'), 'docs/ai/rules/00_always.mdc');
   assert.equal(normalizeRelative('C:\\repo\\AGENTS.md'), 'C:/repo/AGENTS.md');
