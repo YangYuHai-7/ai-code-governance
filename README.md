@@ -23,16 +23,48 @@ One canonical rule source · Small context by default · Evidence before claims 
 <!-- sync:quick-start -->
 ## Quick start
 
-Install once with Node.js 22 or newer, then run one command in the project you want to govern:
+Pick one of two paths. Both run `aicg` directly; they differ only in who supplies the answers.
+
+**Path A — chat (no configuration file at all):** open your AI coding assistant in the project folder and tell it:
+
+> Use the installed `aicg` CLI to set up AI code governance for this project. Run `aicg` so it scans first and asks me only the questions that require an owner decision. Preview changes before writing anything.
+
+`aicg` reads the terminal language, detects the project type and stack, then asks the few questions that need your sign-off — supported Agents, governance language, project stage, and what to do with existing code. Everything else uses scan-backed defaults. The exact plan is previewed before any file is written.
+
+**Path B — one CLI command in the terminal:**
 
 ```bash
 npm install --global ai-code-governance
+cd /path/to/project
 aicg
 ```
 
-No global install is required for a one-off run: use `npx ai-code-governance`. With no arguments, `aicg` scans the current directory and starts the guided setup in the detected terminal language. It asks for supported Agents, governance language, project stage, and only the choices that matter, then previews writes before applying them. Governance artifacts still default to English until the owner selects Simplified Chinese.
+Same default as Path A — guided prompts in the detected terminal language, scan-first, preview-before-write.
 
-Prefer chat? Tell Codex, Claude Code, Cursor, or another shell-capable coding Agent: “Use the installed `aicg` CLI to initialize AI code governance for this project. Scan first, ask me only for decisions I must own, and preview changes before writing.” The Agent operates the CLI; the user does not need to learn advanced flags.
+**Path C — scripted or non-interactive (for automation):**
+
+```bash
+aicg init . --yes
+```
+
+`--yes` skips every prompt and applies the conservative scan-backed defaults. Use this in CI, in `package.json` postinstall, or any time you want zero human input. Re-run it after installing to pick up new defaults; it is idempotent.
+
+**No global install?** Use `npx ai-code-governance` instead. Same behavior.
+
+**What `aicg` will ask you (and what it will not):**
+
+| Asked | Default if you press Enter |
+| --- | --- |
+| Which Agents should this project support? | Detected from existing files, otherwise Codex |
+| Governance artifact language? | English (Chinese only if you pick it) |
+| Is this a new project or an existing one with code? | Detected from the scan |
+| Which technology stacks apply? | Detected from `package.json`, manifests, and source files |
+| What should new governance do with existing code? | Keep existing code unchanged |
+| Anything else (skills, hooks, CI, depth) | Off unless explicitly turned on |
+
+Everything not on that list stays at a safe default. The exact plan, with every file the run would write, is shown before anything touches disk.
+
+Set `AICG_NO_AUTO_OPEN=1` before installation to suppress any best-effort browser launch.
 
 <!-- sync:why-aicg -->
 ## Why AICG
@@ -74,10 +106,27 @@ English is the default artifact language. Selecting `zh-CN` generates Chinese go
 
 Classification combines mutation, scope, risk, and clarity; sentence length does not determine process depth. A feature remains one vertical work unit across UI, API, service, data, and tests — endpoints and individual test cases do not become separate governance tasks.
 
-<!-- sync:onboarding -->
-## Project onboarding
+<!-- sync:what-each-file-does -->
+## What each generated file is for
 
-Installation is **Agent-first** and **artifact-language-second**. The stored `artifactLanguage` defaults to `en`; selecting `zh-CN` changes governance prose without changing machine identifiers. The first visible decisions are:
+`aicg init` writes a small tree under `docs/ai/`, `.ai-governance/`, and the Agent adapter folders. Every file earns its place because a coding Agent reads it before it acts. None of them are decoration.
+
+| File | Why a coding Agent reads it | What fails without it |
+| --- | --- | --- |
+| `docs/ai/context-map.yaml` | The first read on every request. Tells the Agent what is in the repo, how modules relate, and whether it is a single repo or a family of repos. | The Agent explores blindly and wastes context. |
+| `docs/ai/decision-ledger.json` | Records every "why this config" decision so the Agent does not reverse a human call later. | The Agent re-asks the same question or changes settings you already chose. |
+| `docs/ai/task-routing-policy.json` | Maps a change to L0/L1/L2/L3 and decides how many approvals are required. | The Agent either over-processes trivial edits or under-processes risky ones. |
+| `docs/ai/architecture-profile.json` + `rules/15_architecture.mdc` + `module-graph.json` | Architecture image plus the rule reminder plus the module dependency graph. Locks which directories belong to which layer and forbids downward dependencies. | The Agent writes business logic in a utility folder or lets pages import services. |
+| `docs/ai/business-constraints/` | Your business rules (for example "order totals must reconcile with payments before confirmation"). The Agent reads these before any business change. | The Agent ships a change that breaks an invariant you already stated. |
+| `docs/ai/technical-standards/` | Industry standard snapshots (accessibility, secure coding, logging, and similar). Read before code is written. | The Agent writes code that follows its own habits but not the standards your team committed to. |
+| `docs/ai/project-conventions/` | Project-specific conventions harvested from your code: one Skill per service, HTTP entrypoint, data contract, or layout group. Each Skill includes Usage and Correct/Incorrect implementation shapes that cite real evidence paths, never line numbers. | The Agent does not know where new files belong or how to name them. |
+| `docs/ai/anti-patterns.md` | The "do not write it like this" list. Explicit anti-patterns recorded as evidence. | The Agent re-invents mistakes you already paid to learn. |
+| `docs/ai/lifecycle.md` | The fixed flow that takes one feature from requirement to verified result. | The Agent writes code but skips the requirement, plan, or verification boundary. |
+| `docs/ai/hooks.md`, `docs/ai/ci-integration.md`, `docs/ai/workflow-integrations.yaml` | **Candidate** integrations. Hook installation is only marked `enforced` after a real client entrypoint calls `aicg check` and a negative probe passes. CI integration is `enforced` only after the same on the real CI runner. | You think installing the file equals wiring it up. It does not — the file stays `unverified` until the real system replays it. |
+
+**About the SHA-256 fields in `.ai-governance/manifest.json`.** Each managed file has a `sha256` field that fingerprints the content `aicg init` produced. `aicg check` recomputes that hash from the file on disk and flags `managed content drifted` when they stop matching. `--enforce` turns the flag into a nonzero exit code. The hash is not redundant; it is the only thing the gate can compare cheaply on every run. Deleting and regenerating the hash on every check would be slower, not faster.
+
+**About the confirmation prompt.** A fresh `aicg` run asks once before the first write because the preview must be human-readable and the plan hash binds it to the file set. Subsequent `aicg sync` calls are zero-delete by default — they never prompt, never overwrite a managed file that drifted, and never remove anything you have not explicitly pruned. Physical pruning is the only step that asks again, because deletion is irreversible.
 
 1. **Agent support** — select the clients the project will actually support. Existing files are evidence, not automatic consent.
 2. **Artifact language** — `en` is default; `zh-CN` is explicit. Legacy `bilingual` configuration remains readable.
@@ -134,8 +183,48 @@ aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --pac
 | **Standard** | Minimal plus routing, verification guidance, decision ledger, local report paths, and relevant policy/standard Skills |
 | **Complete** | Standard plus selected stack Skills; task runtime, hooks, CI, workflow bridges, and other integrations remain optional |
 
-<!-- sync:skills-and-team -->
-## Skill discovery and dynamic teams
+<!-- sync:onboarding -->
+## Project onboarding
+
+After the quick start, the storage backend is one `aicg.config.json` at the project root plus the generated tree under `docs/ai/` and `.ai-governance/`. Installation is **Agent-first** and **artifact-language-second** — the supported Agents are picked before the artifact language, and the stored `artifactLanguage` defaults to `en`; selecting `zh-CN` changes governance prose without changing machine identifiers. Common follow-up choices:
+
+1. **Open the local visual editor** — the page reads and writes the same `aicg.config.json`, explains each choice inline, and lets you import or export JSON for sharing.
+
+```bash
+aicg config open
+aicg config open /absolute/path/to/project
+```
+
+2. **Install a Desktop launcher once** for drag-and-drop project folders:
+
+```bash
+aicg config launcher --yes
+```
+
+macOS uses a `.app` droplet, Windows a `.cmd` file, and Linux a `.desktop` entry with a shell helper. Use `--output /absolute/directory` if your Desktop is elsewhere. The launcher never replaces a modified file of its own.
+
+3. **Or work from a saved JSON file directly.** The template uses conservative scan-backed defaults, keeps every owner decision visible, and is the format you would check into version control:
+
+```bash
+aicg config init . --output aicg.config.json --yes
+aicg config validate . --config aicg.config.json --json
+aicg init . --config aicg.config.json --yes --dry-run
+```
+
+`config init` creates only a missing file. An identical retry reports `unchanged`; foreign files, unsafe paths, and `.git` destinations are rejected. `config validate` is read-only and builds the same effective plan as `init`.
+
+5. **Repository families** (a root plus 1-level sub-projects) use one exact, reviewable plan while each member stays autonomous:
+
+```bash
+aicg init . --family --yes --clients codex --no-assist --dry-run
+aicg init . --family --yes --clients codex --no-assist --approve <planHash>
+```
+
+The combined plan binds the orchestrator and every detected member. Members apply before the orchestrator, parent manifests never own member files, and a failed apply or post-check rolls the family back.
+
+6. **Existing-code brownfield** — a repository with working code also gets `docs/ai/development/index.json`, one evidence baseline per detected development unit, and a short managed entrypoint in each unit README. Use `aicg init ... --assist <selected-agent>` so the selected Agent completes the `brownfield-understanding` workflow. `aicg check --json` reports `brownfield.gaps`; a scan baseline is not semantic completion.
+
+`aicg check` defaults to advisory exit code 0 and writes JSON findings under `reports/aicg/`. Pass `--enforce` for a nonzero exit on failed findings. The installed pre-commit hook uses the advisory default.
 
 Offline discovery previews at most five bounded Skill candidates and a project-specific roster. Technical roles come from architecture and delivery needs; domain roles come from business context — for example, legal work can require a qualified lawyer and restaurant software can require restaurant operations expertise.
 

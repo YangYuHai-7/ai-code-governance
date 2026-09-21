@@ -23,16 +23,48 @@
 <!-- sync:quick-start -->
 ## 快速开始
 
-使用 Node.js 22 或更高版本，全局安装一次，然后在需要治理的项目目录中执行一个命令：
+从下面三条路径里选一条就行。两条都直接执行 `aicg`，区别只在于谁来回答问题。
+
+**路径 A — 对话模式（完全不需要配置文件）：** 在项目目录里打开 AI 编码助手，对它说一句：
+
+> 请使用已安装的 `aicg` 为当前项目建立 AI 代码治理。先扫描项目，只询问必须由我决定的事项，写入前先展示变更预览。
+
+`aicg` 会识别终端语言，扫描项目并检测项目类型与技术栈，然后就只问几个真正需要负责人拍板的问题——要支持的 Agent、治理文件语言、项目阶段、对现有代码的处理方式。其他全部按扫描结果取默认值。每一步要写入的文件都会先以预览方式呈现，确认后才落盘。
+
+**路径 B — 终端里一条命令：**
 
 ```bash
 npm install --global ai-code-governance
+cd /path/to/project
 aicg
 ```
 
-只想临时使用时不必全局安装，直接执行 `npx ai-code-governance`。`aicg` 不带参数时会自动识别终端语言，扫描当前目录并进入引导流程，只询问需要支持的 Agent、治理文件语言、项目阶段和确实需要由你决定的选项，写入前先展示预览。治理文件仍默认使用英文，只有负责人明确选择简体中文后才生成中文治理内容。
+默认行为和路径 A 一致——按识别到的终端语言进入引导流程，先扫描后预览。
 
-更喜欢聊天时，直接告诉 Codex、Claude Code、Cursor 或其他可以操作终端的编码 Agent：“请使用已安装的 `aicg` 为当前项目初始化 AI 代码治理。先扫描项目，只询问必须由我决定的事项，写入前展示变更预览。”Agent 负责操作 CLI，用户不需要记忆高级参数。
+**路径 C — 脚本化 / 非交互（用于自动化）：**
+
+```bash
+aicg init . --yes
+```
+
+`--yes` 会跳过所有提问，直接采用保守的扫描默认。可用于 CI、`package.json` postinstall，或任何不需要人工干预的场景。安装后可重复执行以更新默认值；它是幂等的。
+
+**不想全局安装？** 用 `npx ai-code-governance` 即可，行为完全一致。
+
+**`aicg` 会问你什么（以及不会问什么）：**
+
+| 会问 | 直接回车的默认值 |
+| --- | --- |
+| 项目要支持哪些 Agent | 从已有文件推断，否则 Codex |
+| 治理文件用什么语言 | 英文（只有主动选才出中文） |
+| 这是新项目还是已有代码的旧项目 | 按扫描结果判定 |
+| 涉及哪些技术栈 | 从 `package.json`、清单和源代码推断 |
+| 新治理对现有代码怎么处理 | 保持现有代码不变 |
+| 其他（skills、hooks、CI、治理深度） | 不显式打开则全部关闭 |
+
+不在这个表里的项目一律保持安全默认值。计划里每一条要写的文件都会在落盘前先打出来。
+
+安装前设置 `AICG_NO_AUTO_OPEN=1` 可关闭自动打开浏览器的尝试。
 
 <!-- sync:why-aicg -->
 ## 为什么选择 AICG
@@ -74,10 +106,27 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 
 任务等级综合考虑变更性质、范围、风险和清晰度，不根据句子长短决定流程深度。一个功能始终作为横跨 UI、API、服务、数据和测试的单一纵向工作单元；不会把接口或单个测试用例拆成多个治理任务。
 
-<!-- sync:onboarding -->
-## 项目接入
+<!-- sync:what-each-file-does -->
+## 生成的每个文件分别做什么
 
-安装顺序坚持 **Agent-first**、**artifact-language-second**。配置字段 `artifactLanguage` 默认值为 `en`；选择 `zh-CN` 只改变治理说明语言，不改变机器标识。最先向用户确认的决策包括：
+`aicg init` 会在 `docs/ai/`、`.ai-governance/` 和各 Agent 适配器目录里写一组文件。每个文件都不是装饰——编码 Agent 在动手前会读它。
+
+| 文件 | 编码 Agent 为什么要读 | 缺失会发生什么 |
+| --- | --- | --- |
+| `docs/ai/context-map.yaml` | 每次请求的第一读，告诉 Agent 仓库里有什么、模块关系如何、是单仓还是一组仓库。 | Agent 盲目探索，浪费上下文。 |
+| `docs/ai/decision-ledger.json` | 记录每个「为什么这样配置」的决定，避免 Agent 之后推翻人工决策。 | Agent 反复问同一个问题，或改掉你已经选过的设置。 |
+| `docs/ai/task-routing-policy.json` | 把一次改动映射到 L0/L1/L2/L3，决定需要几层审批。 | Agent 要么把小事当大事，要么把大事当小事。 |
+| `docs/ai/architecture-profile.json` + `rules/15_architecture.mdc` + `module-graph.json` | 架构画像 + 规则提醒 + 模块依赖图，明确每个目录属于哪一层，禁止向下依赖。 | Agent 把业务逻辑写到工具目录，或让页面直接引用服务层。 |
+| `docs/ai/business-constraints/` | 你的业务规则（例如「订单总额必须先和支付对账再确认」），Agent 改业务前必读。 | Agent 上线一次改动，把你声明过的不变量打破。 |
+| `docs/ai/technical-standards/` | 行业标准快照（可访问性、安全编码、日志规范等），写代码前先查。 | Agent 按自己习惯写，不符合团队已经承诺的标准。 |
+| `docs/ai/project-conventions/` | 从你代码里抽出来的项目约定 Skill：每个服务、HTTP 入口、数据契约、目录分组各一个 Skill。每个 Skill 都有 Usage 和正确/错误实现形态，引用真实证据路径，不引用行号。 | Agent 不知道新文件该放在哪、命名怎么起。 |
+| `docs/ai/anti-patterns.md` | 「不要这样写」清单，明确记录反模式及其证据。 | Agent 重复你已经踩过的坑。 |
+| `docs/ai/lifecycle.md` | 一个功能从需求到验证完成的固定流程。 | Agent 只写代码，跳过需求、计划或验证边界。 |
+| `docs/ai/hooks.md`、`docs/ai/ci-integration.md`、`docs/ai/workflow-integrations.yaml` | **候选**集成。`hooks` 只有在真实客户端入口调用 `aicg check`、负向探针通过之后才标为 `enforced`。`ci-integration` 需要在真实 CI 上重放同样通过。 | 你以为写完就接好了，其实文件一直停在 `unverified`，必须真实系统重放才会升档。 |
+
+**关于 `.ai-governance/manifest.json` 里的 SHA-256。** 每个受管文件都有一个 `sha256` 字段，标记 `aicg init` 写入时的内容指纹。`aicg check` 会重新计算磁盘上文件的哈希，对不上就报 `managed content drifted`，配 `--enforce` 退出码非 0。这个指纹不是冗余——它是门禁每次快速比对唯一能用的东西。删除现算反而更慢。
+
+**关于「确认」提示。** 第一次跑 `aicg` 会问一次，因为预览必须人看得懂，planHash 又必须把要写的文件集合绑住。之后 `aicg sync` 默认零删除——不弹提示、不覆盖已漂移的受管文件、不删任何你没显式 prune 的东西。真正会再问一次的只有 prune，因为它不可逆。
 
 1. **Agent 支持范围**——选择项目真正需要支持的客户端。已有文件只是证据，不代表用户已经授权。
 2. **治理文件语言**——默认 `en`，显式支持 `zh-CN`；旧版 `bilingual` 配置继续可读。
@@ -134,8 +183,48 @@ aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --pac
 | **Standard** | Minimal，加上路由、验证说明、决策账本、本地报告路径以及相关政策或技术规范 Skills |
 | **Complete** | Standard，加上选定的技术栈 Skills；任务运行时、hooks、CI、工作流桥接和其他集成仍然可选 |
 
-<!-- sync:skills-and-team -->
-## Skill 发现与动态团队
+<!-- sync:onboarding -->
+## 项目接入
+
+完成快速开始后，项目的存储后端就是仓库根目录下的 `aicg.config.json`，加上 `docs/ai/` 和 `.ai-governance/` 下生成的内容。安装顺序是 **Agent 优先、产物语言其次** —— 先选好要支持的 Agent，再决定产物语言；`artifactLanguage` 默认 `en`；选 `zh-CN` 只改变治理说明，不改变机器标识。常见的下一步选择：
+
+1. **打开本地可视化配置页** — 页面读写的就是同一份 `aicg.config.json`，每项选择都有解释，并支持上传/下载 JSON 共享配置。
+
+```bash
+aicg config open
+aicg config open /absolute/path/to/project
+```
+
+2. **安装桌面入口**（一次性），把项目文件夹拖上去就能打开配置：
+
+```bash
+aicg config launcher --yes
+```
+
+macOS 用 `.app`，Windows 用 `.cmd`，Linux 用 `.desktop` 加上 shell 脚本。桌面目录不在默认位置时可指定 `--output /绝对路径/目录`。入口从不覆盖自身已修改的文件。
+
+3. **直接使用保存好的 JSON 文件。** 模板采用保守的扫描结果，把需要负责人确认的决策集中保留在文件中——这格式可以直接进版本控制：
+
+```bash
+aicg config init . --output aicg.config.json --yes
+aicg config validate . --config aicg.config.json --json
+aicg init . --config aicg.config.json --yes --dry-run
+```
+
+`config init` 只创建不存在的文件；相同内容重复执行会返回 `unchanged`，已有不同内容、符号链接、不安全路径和 `.git` 目录都会被拒绝。`config validate` 是只读操作，并与 `init` 使用同一份有效初始化计划。
+
+5. **仓库家族**（根 + 一级子工程）使用一份可精确审批的计划，每个成员仓保持独立所有权：
+
+```bash
+aicg init . --family --yes --clients codex --no-assist --dry-run
+aicg init . --family --yes --clients codex --no-assist --approve <planHash>
+```
+
+组合计划同时绑定编排仓和所有检测到的成员仓。成员仓先于编排仓执行；父清单永不拥有成员仓文件；任一仓写入或后置检查失败时，整个家族都会回滚。
+
+6. **旧项目的棕地补充**——已有可运行代码的项目会获得 `docs/ai/development/index.json`、每个已识别子工程各自的证据基线，以及各 README 中的简短受管入口。使用 `aicg init ... --assist <已选 Agent>`，让已选 Agent 按 `brownfield-understanding` 流程逐个子工程阅读代码和测试、把现存业务写入 Memory、补全开发文档，并提交稳定项目 Skill 供批准。`aicg check --json` 的 `brownfield.gaps` 会列出未完成项；扫描基线本身不代表业务理解完成。
+
+`aicg check` 默认仅报告提醒，退出码为 0，并把 JSON 结果写入 `reports/aicg/`。显式传入 `--enforce` 才会在检查失败时返回非零退出码。已安装的提交前 hook 默认使用报告模式。
 
 离线发现最多预览五个范围受控的 Skill 候选，并根据项目生成专属角色清单。技术角色来自架构和交付需要，行业角色来自业务背景——例如合同类项目可能需要合格律师，餐饮软件可能需要餐饮运营专家。
 
