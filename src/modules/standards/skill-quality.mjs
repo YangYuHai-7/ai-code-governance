@@ -18,6 +18,19 @@ const IMPLEMENTATION_SECTIONS = [
   'Incorrect implementation shape',
 ];
 
+// A Skill that cites a line number or an inline content digest breaks the first time the
+// referenced file moves. Edge edits reflow line numbers, so `Foo.java:42` silently points at
+// unrelated code and the reader cannot tell that it drifted. Cite stable targets instead:
+// a path plus a symbol name (class, function, exported member), or the machine-readable
+// catalog that owns digests.
+const LINE_NUMBER_REFERENCE = /[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|java|kt|kts|scala|py|go|rb|rs|php|cs|vue|svelte|sql|json|ya?ml|md|css|scss|html|xml|gradle|toml|sh|proto):\d+(?:-\d+)?/g;
+
+// Machine comments carry the receiving tool its own metadata (evidenceHash, generated
+// markers). They are not prose a reader follows, so they are exempt from the style rules.
+function proseBody(markdown) {
+  return markdown.replace(/<!--[\s\S]*?-->/g, '');
+}
+
 function sectionBody(markdown, heading) {
   const marker = `## ${heading}`;
   const start = markdown.indexOf(marker);
@@ -73,6 +86,15 @@ export function auditSkillQuality(markdown, { profile = 'implementation', id = '
       if (blocks.length !== 1 || blocks[0].split('\n').length < 4) issues.push(`${heading} needs one non-trivial fenced example`);
       if (/TODO|fill this|placeholder|example only/i.test(body)) issues.push(`${heading} contains placeholder text`);
     }
+  }
+
+  const prose = proseBody(markdown);
+  const lineReferences = [...new Set(prose.match(LINE_NUMBER_REFERENCE) ?? [])];
+  if (lineReferences.length > 0) {
+    issues.push(`line-number references drift when code moves, so cite a path plus symbol instead: ${lineReferences.slice(0, 3).join(', ')}`);
+  }
+  if (/\b[0-9a-f]{64}\b/i.test(prose)) {
+    issues.push('content digests belong to the machine-readable catalog, not to Skill prose');
   }
 
   const score = Math.max(0, 100 - issues.length * 10);

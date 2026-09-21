@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { readMemoryFile, scanProjectMemoryFacts } from '../memory/index.mjs';
 import { adaptiveDecisionEvidenceHash } from '../skills/index.mjs';
@@ -173,6 +174,9 @@ export function buildProjectConventionArtifacts(config, scan, memory) {
       const commandRows = candidate.verificationCommands.length
         ? candidate.verificationCommands.map((entry) => `| \`${entry.command}\` | ${zh ? '受影响行为和失败路径通过' : 'Affected behavior and failure paths pass'} | ${entry.trust.level === 'structurally-trusted' ? `\`${entry.cwd}\`` : (zh ? `尚未验证；${entry.trust.level}` : `not yet verified; ${entry.trust.level}`)} |`).join('\n')
         : `| ${zh ? '相邻行为测试' : 'Neighboring behavior test'} | ${zh ? '主要与失败路径通过' : 'Primary and failure paths pass'} | ${zh ? '尚未验证；未发现命令' : 'not yet verified; no command discovered'} |`;
+      const primaryEvidence = candidate.evidencePaths[0] ?? '<neighbor>';
+      const primaryEvidenceDir = path.posix.dirname(primaryEvidence);
+      const primaryExtension = path.posix.extname(primaryEvidence);
       const content = `---
 name: ${candidate.id}
 description: ${zh ? `修改 ${scan.projectName} 的${candidate.label}时，评审并应用这个证据绑定的项目表面约定。` : candidate.trigger}
@@ -205,6 +209,30 @@ Status: ${adopted ? 'owner-approved for new code' : 'evidence-backed candidate, 
 3. ${zh ? '发现反例或业务差异时记录 gap，不自动统一。' : 'Record a gap instead of normalizing automatically when counter-evidence or business differences exist.'}
 4. ${zh ? '获得与当前 evidenceHash 绑定的 add 回执后，才把候选用于新代码。' : 'Apply the candidate to new code only after an add receipt is bound to the current evidenceHash.'}
 
+## Usage
+
+1. ${zh ? `先读取下方 Project evidence boundary 列出的相邻实现，再动手写代码。` : `Read the neighbor implementations listed under Project evidence boundary before writing code.`}
+2. ${zh ? `把新文件放进同一个目录角色，并沿用同样的命名后缀与依赖方向。` : `Put the new file in the same directory role and keep the same naming suffix and dependency direction.`}
+3. ${zh ? `逐项比对命名、输入输出、依赖方向、错误处理与测试形状，只保留一致的共性。` : `Compare naming, inputs and outputs, dependency direction, error handling, and test shape; keep only the consistent commonalities.`}
+
+## Correct implementation shape
+
+\`\`\`text
+read first:   ${primaryEvidence}
+then add:     ${primaryEvidenceDir}/<NewName>${primaryExtension}
+keep aligned: same directory role, naming suffix, and dependency direction
+\`\`\`
+
+## Incorrect implementation shape
+
+\`\`\`text
+do not add:   ${primaryEvidenceDir}/../<other-directory-role>/<NewName>${primaryExtension}
+do not mix:   persistence, policy, or transport logic inside this surface
+do not reuse: this convention for a module without current evidence
+\`\`\`
+
+${zh ? '目录相邻不等于职责可以合并；越界会让 `aicg check` 报告边界缺口。' : 'Adjacent directories do not license merged responsibilities; crossing this boundary surfaces as a boundary gap in `aicg check`.'}
+
 ## Exceptions and escalation
 
 - ${zh ? '新边界、跨仓库契约或业务不变量需要单独的架构或业务决定。' : 'A new boundary, cross-repository contract, or business invariant needs a separate architecture or business decision.'}
@@ -229,7 +257,9 @@ ${candidate.evidencePaths.map((relative) => `- \`${relative}\``).join('\n')}
 
 <!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->
 `;
-      assertSkillQuality(content, { profile: 'workflow', id: candidate.id });
+      // Conventions describe how code should be written in a surface, so they follow the
+      // implementation profile: concrete correct and incorrect shapes are required, not optional.
+      assertSkillQuality(content, { profile: 'implementation', id: candidate.id });
       return { path: candidate.skill, ownership: adopted ? 'full' : 'seed', kind: adopted ? 'project-convention-skill' : 'project-convention-candidate', source: 'project-convention-evidence', adopted, content };
     }
     if (candidate.kind === 'project-layout') {
