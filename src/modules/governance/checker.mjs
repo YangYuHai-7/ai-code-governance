@@ -673,7 +673,7 @@ export function checkProject(scan) {
   // generator created (or that an earlier tool version left behind) and never registered
   // would otherwise be invisible. Reporting them here turns hidden orphans into an
   // actionable cleanup signal without making the managed set pass or fail on them.
-  const orphans = manifest ? collectGovernanceOrphans(scan, manifest) : { status: 'no-manifest', count: 0, files: [], truncated: false };
+  const orphans = manifest ? collectGovernanceOrphans(scan, manifest, config) : { status: 'no-manifest', count: 0, files: [], truncated: false };
   if (orphans.count > 0) warnings.push(`governance orphans: ${orphans.count} unmanaged file(s) under docs/ai or client skill directories; see orphans in the JSON report`);
   return {
     ok: pass,
@@ -706,14 +706,35 @@ const ORPHAN_RUNTIME_PREFIXES = ['reports/', 'reviews/'];
 const ORPHAN_SEED_PREFIXES = ['docs/ai/skills/project-conventions/'];
 const ORPHAN_SELF_PATHS = new Set([MANIFEST_PATH, CONFIG_PATH]);
 
-function collectGovernanceOrphans(scan, manifest) {
+/**
+ * Paths the generator writes with `ownership: 'seed'` are handed back to the project after
+ * creation, so the managed manifest intentionally omits them. Reporting them as orphans
+ * would flag the tool's own output as unmanaged clutter, so resolve the seed set from the
+ * artifact definitions instead of guessing at path prefixes.
+ */
+function generatorSeedPaths(config, scan) {
+  const seedPaths = new Set();
+  if (!config || !scan) return seedPaths;
+  try {
+    for (const definition of selectedArtifactDefinitions(config, scan)) {
+      if (definition?.ownership === 'seed' && definition?.path) seedPaths.add(definition.path);
+    }
+  } catch {
+    // Definitions cannot be resolved for this scan; fall back to manifest-only orphan detection.
+  }
+  return seedPaths;
+}
+
+function collectGovernanceOrphans(scan, manifest, config = null) {
   const managed = new Set((manifest?.files ?? []).map((entry) => entry?.path).filter(Boolean));
+  const seedPaths = generatorSeedPaths(config, scan);
   const clientDirs = new Set(declaredSkillDirectories());
   const candidates = [];
   for (const file of scan.files ?? []) {
     const relative = file.relative;
     if (!relative) continue;
     if (managed.has(relative)) continue;
+    if (seedPaths.has(relative)) continue;
     if (ORPHAN_SELF_PATHS.has(relative)) continue;
     if (ORPHAN_RUNTIME_PREFIXES.some((prefix) => relative === prefix.slice(0, -1) || relative.startsWith(prefix))) continue;
     if (ORPHAN_SEED_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue;

@@ -190,7 +190,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
     }));
   }
   const summary = {
-    schemaVersion: 1, status: 'recommendation', skills: { ...discovery, candidates: skillChoices.filter((item) => !hiddenSkills.has(item.id)) }, projectConventions: conventionDiscovery, team: { ...team, roleProposals: team.roleProposals.filter((item) => !hiddenRoles.has(item.id)) }, decisions,
+    schemaVersion: 1, status: 'recommendation', skills: { ...discovery, candidates: skillChoices.filter((item) => !hiddenSkills.has(item.id)) }, projectConventions: { ...conventionDiscovery, candidates: conventionDiscovery.candidates.filter((item) => !hiddenSkills.has(item.id)) }, team: { ...team, roleProposals: team.roleProposals.filter((item) => !hiddenRoles.has(item.id)) }, decisions,
     domainCandidates: domainCandidates.map((entry) => ({ ...entry, status: 'proposed-unconfirmed' })),
     professionalReviewGaps: team.professionalBoundaries,
     skillGaps: discoveryInput.requiredCapabilities.filter((capability) => !discovery.candidates.some((entry) => entry.capabilities.includes(capability))),

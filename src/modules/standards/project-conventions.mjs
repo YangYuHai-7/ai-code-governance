@@ -166,7 +166,16 @@ export function projectConventionIssues(root, scan = null) {
 
 export function buildProjectConventionArtifacts(config, scan, memory) {
   const discovery = discoverProjectConventionCandidates(scan, memory);
-  const artifacts = discovery.candidates.map((candidate) => {
+  // An owner `reject` receipt is a decision that this observed surface must not be promoted.
+  // Suppress the candidate Skill and its catalog entry entirely, so the repository stops
+  // carrying artifacts the owner already refused instead of re-emitting them on every scan.
+  const receipts = config.adaptiveDecisions?.skills ?? [];
+  const isRejected = (candidate) => receipts.some((entry) => entry.id === candidate.id
+    && entry.action === 'reject'
+    && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
+  const kept = discovery.candidates.filter((candidate) => !isRejected(candidate));
+  const discoveryKept = { ...discovery, candidates: kept };
+  const artifacts = kept.map((candidate) => {
     const zh = config.artifactLanguage === 'zh-CN';
     const receipt = config.adaptiveDecisions?.skills?.find((entry) => entry.id === candidate.id && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
     const adopted = receipt?.action === 'add';
@@ -331,9 +340,9 @@ ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新
         ? `状态：${adopted ? '所有者已批准为新代码标准' : '候选，尚未采纳'}。add/defer/reject 决策必须绑定证据；不得自动执行或提升。`
         : `Status: ${adopted ? 'owner-approved for new code' : 'candidate, not adopted'}. Bind add/defer/reject decisions to evidence; never execute or promote automatically.`}\n\n${zh ? '决策来源：以 .ai-governance/config.json 中证据绑定的 adaptiveDecisions.skills 回执为准；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound adaptiveDecisions.skills receipt in .ai-governance/config.json is authoritative; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Approved new-code decisions\n\n${adopted ? (zh ? '- 新代码应优先沿用上述相邻调用风格；不得据此迁移既有代码或推断业务语义。' : '- New code should prefer the neighboring observed call style; this does not authorize existing-code migration or imply business semantics.') : (zh ? '- 无；当前证据尚未获得 add 回执。' : '- None; the current evidence has no add receipt.')}\n\n## Evidence\n\n- ${zh ? '修改下列文件中的调用前，先确认相邻调用仍使用同一风格。' : 'Before changing a call in the files below, confirm the neighboring calls still use the same style.'}\n${candidate.evidencePaths.map((relative) => `- ${relative}`).join('\n')}\n- ${zh ? '内容摘要保存在 docs/ai/project-conventions.json；aicg check 报告证据漂移。' : 'Content digests live in docs/ai/project-conventions.json; aicg check reports evidence drift.'}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
   });
-  if (discovery.candidates.length || discovery.gaps.length) artifacts.unshift({ path: 'docs/ai/project-conventions.json', content: stableJson(discovery), ownership: 'seed', kind: 'project-convention-index', source: 'project-convention-evidence', adopted: false });
+  if (kept.length || discovery.gaps.length) artifacts.unshift({ path: 'docs/ai/project-conventions.json', content: stableJson(discoveryKept), ownership: 'seed', kind: 'project-convention-index', source: 'project-convention-evidence', adopted: false });
   if (artifacts.some((artifact) => artifact.adopted === true)) {
-    const adoptedIds = new Set(discovery.candidates
+    const adoptedIds = new Set(kept
       .filter((candidate) => config.adaptiveDecisions?.skills?.some((entry) => entry.id === candidate.id && entry.action === 'add' && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate)))
       .map((candidate) => candidate.id));
     const seedConfig = {
@@ -346,5 +355,5 @@ ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新
     const seedByPath = new Map(buildProjectConventionArtifacts(seedConfig, scan, memory).artifacts.map((artifact) => [artifact.path, artifact]));
     for (const artifact of artifacts.filter((entry) => entry.adopted === true)) artifact.promotionSourceSha256 = sha256(seedByPath.get(artifact.path)?.content ?? '');
   }
-  return { ...discovery, artifacts };
+  return { ...discoveryKept, artifacts };
 }
