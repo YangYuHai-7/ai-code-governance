@@ -126,12 +126,22 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
       : (derived[criterion.id] ?? supplied ?? { status: 'unverified', evidence: [] });
     return { ...criterion, ...proof, points: proof.status === 'pass' ? criterion.weight : 0 };
   });
+  // Brownfield gaps are advisory in the rest of the framework (status
+  // `needs-enrichment`, warning-level, never an error), so they must not rewrite a
+  // criterion that the machine evidence already proved `pass` into a hard `fail`. Marking
+  // them `unverified` keeps the gap visible in `remediation` without lying about criteria
+  // that are actually satisfied (e.g. `source-traceability` derives from managed files,
+  // `stack-skill-coverage` from the reachable entrypoint + skill-discovery config). This
+  // also lets `ready-for-owner-acceptance` hinge on genuinely closed gaps rather than on a
+  // criterion that was force-failed for an unrelated reason.
   if (lifecycle === 'existing' && check?.brownfield?.gaps?.length) {
     for (const id of ['development-docs', 'source-traceability', 'memory-ownership', 'memory-evidence', 'stack-skill-coverage']) {
       const item = items.find((candidate) => candidate.id === id);
-      item.status = 'fail';
-      item.points = 0;
-      item.reason = `Brownfield gaps remain: ${check.brownfield.gaps.join('; ')}`;
+      if (item.status !== 'pass') {
+        item.status = 'unverified';
+        item.points = 0;
+        item.reason = `Brownfield gaps remain (advisory): ${check.brownfield.gaps.join('; ')}`;
+      }
     }
   }
   const score = items.reduce((total, item) => total + item.points, 0);
