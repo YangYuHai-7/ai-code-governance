@@ -1,19 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
-import { resolveAgents, resolvePacks } from '../../catalogs/index.mjs';
+import { resolveAgents, resolvePacks, selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
-import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
+import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, buildGreenfieldLayoutArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, hasDocumentableDevelopmentUnit, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
 import { assertSkillQuality, buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
 import { buildMemoryArtifacts } from '../memory/index.mjs';
 import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { isSafeRelative, normalizeRelative, sha256, skillAdapterContent, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
+import { buildDeliveryLoopArtifacts, DELIVERY_LOOP_ENTRY_KIND, DELIVERY_LOOP_PHASE_KIND } from './delivery-loop.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 
@@ -101,7 +102,14 @@ export function defaultConfig(scan) {
     canonicalRoot: 'docs/ai',
     clients: ['codex', 'claude-code', 'cursor'],
     stacks: scan.stacks.map((stack) => stack.id),
-    governanceDepth: 'standard',
+    // `complete` is the default governance depth: every repository lands with the
+    // Skill-management set (skill-discovery + team-orchestrator + skill-index +
+    // project-agent-team) wired into the same exact-planHash approval. Operators who
+    // want a strictly smaller artifact set can still opt into `standard` or `minimal`
+    // explicitly; the default exists because the recommended entry point
+    // (`aicg config open`) plus an AI-driven init means the operator usually does not
+    // want to revisit the depth decision after first install.
+    governanceDepth: 'complete',
     artifactLanguage: 'en',
     codeDocumentationPolicy: assessment.codebase.lifecycle.value === 'existing' ? 'inherit-existing' : 'en',
     testing: {
@@ -123,6 +131,7 @@ export function defaultConfig(scan) {
       hooks: false,
       externalWorkflows: false,
       ciIntegration: false,
+      deliveryLoop: true,
       aiAssist: false,
     },
     domainConstraints: [],
@@ -295,6 +304,8 @@ function rootInstructions(config) {
 - 保留无关的用户修改，并在请求范围内工作。
 - 如果配置的 AICG 命令不可用，停止并请求明确安装；日常工作不得临时下载包。${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` 固定版本引导需要全局安装 ai-code-governance@${config.toolVersion ?? TOOL_VERSION}，或本地安装后明确选择 project-local 配置。` : ''}
 - ${taskRoutingSummary(config)}
+- 任务开始时可运行 \`${governanceCommand(config, 'route . --text "<task>"')}\` 获取等级、已审批角色建议与专业复核缺口；角色建议本身不是已分派的 Agent。
+- 治理文件必须先预览并经用户确认才应用；业务代码修改必须在实施前获得用户确认，修改后运行适用测试并保存测试结果报告。
 - 客户端适配器由工具生成。修改正典后运行 \`${syncCommand}\`，不要直接编辑适配器。
 - 交付前运行一次 \`${completeCommand}\`，并按运行时指引选择任务所需的仓库验证命令。
 `;
@@ -307,6 +318,8 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Preserve unrelated user changes and remain within the requested scope.
 - If the configured AICG command is unavailable, stop and request an explicit install; never fetch a package during daily work.${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` Pinned bootstrap requires a global installation of ai-code-governance@${config.toolVersion ?? TOOL_VERSION}, or a local installation followed by an explicit project-local configuration choice.` : ''}
 - ${taskRoutingSummary(config)}
+- At task start, \`${governanceCommand(config, 'route . --text "<task>"')}\` recommends the task level and approved roles; a recommendation does not mean an Agent was launched or a qualified human was assigned.
+- Preview governance changes and obtain user confirmation before applying them. Obtain user confirmation before business-code implementation, then run applicable tests and save a test result report.
 - Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
 - Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
 `;
@@ -673,14 +686,14 @@ export function artifactDefinitions(config, scan) {
   const stack = (value) => value.stacks.length > 0;
   const complete = (value) => value.governanceDepth === 'complete';
   const usage = (name) => (_config, snapshot) => hasGovernanceUsage(snapshot, name);
-  const clientsFor = (target) => (value) => target.startsWith('.claude/')
-    ? value.clients.includes('claude-code')
-    : value.clients.some((client) => ['codex', 'cursor', 'generic'].includes(client));
+  // Adapter roots come from the agent registry, so a new client is one registry entry rather
+  // than a new `clients.includes(...)` branch at every generator site.
+  const adapterDirs = selectedSkillDirectories(config.clients);
   const addSkillAdapters = (canonicalPath, content, capability, requires) => {
     const suffix = canonicalPath.slice('docs/ai/skills/'.length);
-    for (const target of [`.agents/skills/${suffix}`, `.claude/skills/${suffix}`]) {
-      add(target, capability, () => readText(path.join(scan.root, canonicalPath), content()), {
-        requires: [...requires, clientsFor(target)], ownership: 'full', kind: 'adapter-skill', source: canonicalPath,
+    for (const directory of adapterDirs) {
+      add(`${directory}/${suffix}`, capability, () => skillAdapterContent(canonicalPath, readText(path.join(scan.root, canonicalPath), content())), {
+        requires, ownership: 'full', kind: 'adapter-skill', source: canonicalPath,
       });
     }
   };
@@ -692,19 +705,44 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/rules/00_always.mdc', 'core', () => alwaysRule(config), { ...core, source: 'template:always-rule' });
   add('docs/ai/verification-profiles.yaml', 'routing', () => verificationProfiles(config), { source: 'template:runtime-verification' });
   add('docs/ai/task-routing-policy.json', 'routing', () => stableJson(taskRoutingPolicy(config)), { ownership: 'full', kind: 'task-routing-policy', source: 'template:task-routing-policy' });
+  // Skill management and the project agent team are governed surfaces that only belong to a
+  // repository whose owner has opted into adaptive skill discovery and per-task role routing.
+  // The Complete depth turns them on; Standard and Minimal never generate these artifacts, so
+  // Standard produces a strictly smaller artifact set than Complete rather than sharing it.
   for (const name of ['skill-discovery', 'team-orchestrator']) {
     add(`docs/ai/skills/${name}/SKILL.md`, 'skill-management', () => managementSkill(config, name), {
+      requires: [(value) => value.governanceDepth === 'complete'],
       ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: [`behavior_change:${name.replaceAll('-', '_')}`, ...(name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['behavior_change:business'] : [])],
       gateAssertions: name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['business-skill-route'] : [],
     });
   }
   add('docs/ai/skill-index.json', 'skill-management', () => stableJson(config.skillDiscovery.decision), {
+    requires: [(value) => value.governanceDepth === 'complete'],
     ownership: 'full', kind: 'skill-management-index', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
   });
   add('docs/ai/agent-team.json', 'skill-management', () => stableJson({ ...config.agentTeam, roles: config.agentTeam.roleProposals }), {
+    requires: [(value) => value.governanceDepth === 'complete'],
     ownership: 'full', kind: 'project-agent-team', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:team_orchestrator'],
   });
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
+  // The delivery loop is the requirement-to-convergence workflow (decomposition, assignment,
+  // development, test-authoring, local-test, report, fix-loop): an entry Skill, one Skill per
+  // phase, a runtime ledger and one discovery adapter per client directory. It is a default
+  // part of Standard and Complete because a governed repository that cannot carry a change
+  // from requirement to tested result is not governed. `minimal` stays a bootstrap-only preset
+  // and never carries it. An owner who does not want it sets features.deliveryLoop to false,
+  // which keeps that repository's artifact set — and therefore its recorded approval — intact.
+  if (config.governanceDepth !== 'minimal' && config.features?.deliveryLoop !== false) {
+    for (const artifact of buildDeliveryLoopArtifacts(config).artifacts) {
+      const index = definitions.length;
+      add(artifact.path, 'routing', () => artifact.content, {
+        ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
+        requires: [(value) => value.features?.deliveryLoop !== false],
+      });
+      definitions[index].build = () => artifact;
+      if (artifact.path.endsWith('SKILL.md')) addSkillAdapters(artifact.path, () => artifact.content, 'routing', [(value) => value.features?.deliveryLoop !== false]);
+    }
+  }
   add('docs/ai/repository-family.json', 'routing', () => stableJson({
     schemaVersion: 1,
     role: 'orchestrator',
@@ -725,20 +763,40 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reports/\n/reports/*', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
 
-  const existingDevelopment = config.initialization?.lifecycle === 'existing' && config.projectMode !== 'repository-family';
+  // Development documentation explains code-backed behavior. A repository with neither
+  // code nor a build manifest - a repository-family orchestrator parent, or a
+  // documentation-only repository - has nothing to document, so no development artifacts
+  // are generated. brownfieldProgress reports those contracts as not applicable instead
+  // of demanding placeholder pages that describe the absence of the code.
+  const existingDevelopment = config.initialization?.lifecycle === 'existing' && hasDocumentableDevelopmentUnit(scan);
   if (existingDevelopment) {
     const development = buildDevelopmentDocumentationArtifacts(config, scan);
     for (const artifact of development.artifacts) {
       const isSkill = artifact.kind.includes('skill');
+      const isLocalGovernance = ['development-unit-rule', 'development-unit-skill', 'development-unit-entrypoint'].includes(artifact.kind);
       if (artifact.kind === 'brownfield-understanding-skill') assertSkillQuality(artifact.content, { profile: 'workflow', id: 'brownfield-understanding' });
       const isCanonicalRoute = artifact.path === 'docs/ai/development/index.json' || artifact.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
       const capability = isSkill && (artifact.path.startsWith('.agents/') || artifact.path.startsWith('.claude/')) ? 'integration' : 'core';
       add(artifact.path, capability, () => artifact.content, {
-        requires: isSkill ? [(value) => value.governanceDepth !== 'minimal'] : [],
+        requires: isSkill || isLocalGovernance ? [(value) => value.governanceDepth !== 'minimal'] : [],
         ownership: artifact.ownership,
         kind: artifact.kind,
         source: artifact.source,
         routeProfiles: isCanonicalRoute ? ['behavior_change:brownfield_understanding'] : [],
+      });
+      definitions.at(-1).build = () => artifact;
+    }
+  }
+
+  {
+    const layoutConfig = { ...config, initialization: { ...config.initialization, lifecycle: 'greenfield' } };
+    for (const artifact of buildGreenfieldLayoutArtifacts(layoutConfig).artifacts) {
+      add(artifact.path, 'core', () => artifact.content, {
+        requires: [(value) => value.initialization?.lifecycle === 'greenfield' && value.governanceDepth !== 'minimal'],
+        ownership: artifact.ownership,
+        kind: artifact.kind,
+        source: artifact.source,
+        routeProfiles: artifact.path === 'docs/ai/development/index.json' ? ['behavior_change:architecture'] : [],
       });
       definitions.at(-1).build = () => artifact;
     }
@@ -769,8 +827,7 @@ export function artifactDefinitions(config, scan) {
     const standardPaths = ['docs/ai/technical-standards.json'];
     for (const { standard } of selection.selected) {
       standardPaths.push(`docs/ai/skills/standards/${standard.id}/SKILL.md`);
-      if (config.clients.some((client) => ['codex', 'cursor', 'generic'].includes(client))) standardPaths.push(`.agents/skills/standards/${standard.id}/SKILL.md`);
-      if (config.clients.includes('claude-code')) standardPaths.push(`.claude/skills/standards/${standard.id}/SKILL.md`);
+      for (const directory of adapterDirs) standardPaths.push(`${directory}/standards/${standard.id}/SKILL.md`);
     }
     for (const relative of standardPaths) {
       add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === 'docs/ai/technical-standards.json' ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: relative.startsWith('docs/ai/') ? ['behavior_change:stack'] : [] });
@@ -780,6 +837,12 @@ export function artifactDefinitions(config, scan) {
 
   for (const pack of packs) {
     const canonicalPath = `docs/ai/skills/${pack.id}/SKILL.md`;
+    // `generic-unknown` is the fallback orchestrator stack. Without an explicit stack
+    // usage or a previously installed file we must still emit it under `complete`, so
+    // the post-init tree stays byte-identical for any depth that opts in via planHash
+    // approval. The repository-family migration check below re-trusts any adapter that
+    // was installed before the topology change, so a single-repo install that later
+    // migrates does not leave orphans behind.
     const stackGuidanceActive = (value, current) => value.projectMode !== 'repository-family'
       && (pack.id !== 'generic-unknown' || !hasSkillManagement(value) || hasGovernanceUsage(current, 'stack') || hasArtifactEvidence(current, canonicalPath));
     const selectedForPack = (technicalSelection?.selected ?? []).map((entry) => entry.standard);
@@ -793,8 +856,7 @@ export function artifactDefinitions(config, scan) {
   for (const capability of (config.projectCapabilities ?? []).filter((entry) => ['candidate', 'adopted'].includes(entry.status))) {
     capabilityPaths.push(capability.skill);
     const suffix = path.basename(path.dirname(capability.skill));
-    if (config.clients.some((client) => ['codex', 'cursor', 'generic'].includes(client))) capabilityPaths.push(`.agents/skills/project/${suffix}/SKILL.md`);
-    if (config.clients.includes('claude-code')) capabilityPaths.push(`.claude/skills/project/${suffix}/SKILL.md`);
+    for (const directory of adapterDirs) capabilityPaths.push(`${directory}/project/${suffix}/SKILL.md`);
   }
   for (const relative of capabilityPaths) {
     add(relative, 'lifecycle', () => capabilityArtifacts().find((artifact) => artifact.path === relative).content, { ownership: 'full', kind: relative === 'docs/ai/capability-evolution.json' ? 'capability-evolution-catalog' : 'project-capability-skill', source: 'project-capability-harvest', gateAssertions: ['capability-evidence'] });
@@ -856,15 +918,65 @@ export function buildArtifactsWithDefinitions(config, scan) {
   config = normalizeConfigDefaults(config, scan);
   const { definitions, selected } = prepareArtifactDefinitions(config, scan);
   const artifacts = renderDefinitions(selected);
-  if (hasSkillManagement(config)) {
+  let governanceCostDrift = null;
+  if (hasSkillManagement(config) && rendersSkillManagementArtifacts(artifacts)) {
     const cost = skillGovernanceCost(scan.root, artifacts);
-    if (stableJson(cost) !== stableJson(config.skillDiscovery.artifactPlan.cost)) throw usageError('Skill governance costs changed; exact planHash approval is required again.');
+    const recorded = config.skillDiscovery.artifactPlan.cost;
+    // The governed receipt is the Skill-governance increment plus the artifacts this
+    // transaction generates. Both must match the approved receipt exactly, so a scan or
+    // generator change that adds or removes artifacts still requires fresh approval. We
+    // only enter this branch when the build actually emits the Skill-management tree
+    // (i.e. `complete` depth with the artifacts' `requires` satisfied), so a `standard`
+    // config that opts in but does not emit management artifacts carries no receipt
+    // obligation.
+    if (recorded?.managed) {
+      const governed = (value) => stableJson({ increment: value.increment, managed: value.managed });
+      if (governed(cost) !== governed(recorded)) throw usageError(`Skill governance costs changed; exact planHash approval is required again. Computed ${governed(cost)} but the approval recorded ${governed(recorded)}.`);
+    } else if (stableJson(cost.total) !== stableJson(recorded?.total)) {
+      // Receipts written before the retained/managed split folded the tree into `total`,
+      // which this transaction moves by itself. Report the difference instead of blocking
+      // every command, including read-only check; the next approved init or sync records
+      // the current receipt and the strict comparison applies again.
+      governanceCostDrift = { computed: cost.total, recorded: recorded?.total ?? null, migrated: true };
+    }
+    if (recorded?.managed && stableJson(cost.total) !== stableJson(recorded.total) && !governanceCostDrift) {
+      governanceCostDrift = { computed: cost.total, recorded: recorded.total, migrated: false };
+    }
   }
-  return { artifacts, definitions };
+  return { artifacts, definitions, governanceCostDrift };
+}
+
+/**
+ * An approved receipt binds the artifact set it was approved against. A tool upgrade or a
+ * generator change can move that set without touching the configuration, which leaves the
+ * receipt stale: buildArtifacts then throws for every caller and no command can re-approve.
+ * Recomputing the receipt here turns that into an ordinary exact-planHash approval. The
+ * caller must surface the returned refresh in the plan it asks the operator to approve.
+ */
+export function refreshSkillGovernanceReceipt(config, scan) {
+  if (!hasSkillManagement(config) || !config.skillDiscovery.artifactPlan) return null;
+  const previousCost = config.skillDiscovery.artifactPlan.cost ?? null;
+  const approval = prepareSkillGovernancePlan(config, scan);
+  if (stableJson(approval.cost.increment) === stableJson(previousCost?.increment)
+    && stableJson(approval.cost.total) === stableJson(previousCost?.total)) return null;
+  return {
+    config: { ...config, skillDiscovery: { ...approval.skillDiscovery, approvalPlanHash: approval.planHash }, agentTeam: approval.agentTeam },
+    refresh: { reason: 'skill-governance-receipt-refresh', previousCost, cost: approval.cost, planHash: approval.planHash },
+  };
 }
 
 function hasSkillManagement(config) {
+  // Skill management is opt-in for `standard` and `minimal`; `complete` carries it on by
+  // default. The selection filter in `artifact-selection.mjs` matches this rule by
+  // guarding the artifacts' own `requires` on `=== 'complete'`, so a `standard` config
+  // that opts in never actually emits management artifacts — it carries the receipt
+  // without producing the tree, and `buildArtifactsWithDefinitions` therefore skips the
+  // cost gate entirely (see the `artifacts` check below).
   return config.governanceDepth !== 'minimal' && config.skillDiscovery?.enabled === true && config.agentTeam?.enabled === true;
+}
+
+function rendersSkillManagementArtifacts(artifacts) {
+  return artifacts.some((item) => ['skill-management-skill', 'skill-management-index', 'project-agent-team'].includes(item.kind));
 }
 
 function hasCompactManagement(config) {
@@ -903,7 +1015,7 @@ function validateSkillGovernanceConfig(config, root = null) {
     if (config[key] !== undefined && (!config[key] || typeof config[key] !== 'object' || typeof config[key].enabled !== 'boolean')) throw usageError(`${key}.enabled must be an explicit boolean.`);
   }
   if (config.agentTeam?.enabled) validateApprovedAgentTeam(config.agentTeam);
-  if (config.governanceDepth === 'minimal' || (!config.skillDiscovery?.enabled && !config.agentTeam?.enabled)) return;
+  if (config.governanceDepth !== 'complete' || (!config.skillDiscovery?.enabled && !config.agentTeam?.enabled)) return;
   if (!hasSkillManagement(config)) throw usageError('Skill management requires both an approved discovery decision and project agent team.');
   validateSkillDecision(config.skillDiscovery.decision, { root });
   const plan = config.skillDiscovery.artifactPlan;
@@ -914,8 +1026,23 @@ function validateSkillGovernanceConfig(config, root = null) {
 function skillGovernanceCost(root, artifacts) {
   const transaction = planArtifacts(root, artifacts);
   if (transaction.conflicts.length) throw usageError(`Skill governance planning conflict: ${transaction.conflicts.join('; ')}`);
+  // Budget by load class rather than by total size. The always-on set is read for every
+  // Skill-management decision, the delivery entry is read once per delivery, and the phase
+  // Skills are read only while their phase is active. Folding all three into one ceiling
+  // would either starve the entry or leave the on-demand phases unbudgeted.
   const managers = artifacts.filter((item) => item.kind === 'skill-management-skill');
   const managerTokens = Math.ceil(managers.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
+  const deliveryEntry = artifacts.filter((item) => item.kind === DELIVERY_LOOP_ENTRY_KIND);
+  const deliveryEntryTokens = Math.ceil(deliveryEntry.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
+  const deliveryPhaseBytes = artifacts
+    .filter((item) => item.kind === DELIVERY_LOOP_PHASE_KIND)
+    .reduce((sum, item) => sum + Buffer.byteLength(item.content), 0);
+  // The increment is the Skill-management increment and nothing else. The delivery loop is
+  // a separate feature with its own two ceilings above; folding its artifacts in here both
+  // duplicated those ceilings and made the approved Skill-governance receipt move when an
+  // operator toggled `features.deliveryLoop`, forcing fresh Skill approval for a feature the
+  // approval never covered. Counting it here also contradicted the load-class rule stated
+  // below the ceilings, which exists precisely to keep these three classes apart.
   const extra = artifacts.filter((item) => ['skill-management-skill', 'skill-management-index', 'project-agent-team'].includes(item.kind));
   let retainedBytes = 0;
   let retainedFiles = 0;
@@ -931,7 +1058,14 @@ function skillGovernanceCost(root, artifacts) {
     retainedFiles += 1;
     retainedBytes += stat.size;
   }
+  // A retained entry that the new manifest omits is dropped from governance by this very
+  // transaction, so counting it here made the receipt depend on the manifest the same
+  // transaction rewrites. The pre-apply total then differed from the post-apply total and
+  // every plan that changed the managed set failed its own verification with
+  // "Skill governance costs changed". Account against the projected manifest instead.
+  const projectedManifest = new Set((transaction.manifest.value?.files ?? []).map((entry) => entry.path));
   for (const entry of transaction.retained) {
+    if (!projectedManifest.has(entry.path)) continue;
     const absolute = path.join(root, entry.path);
     if (!fs.existsSync(absolute)) continue;
     const stat = fs.lstatSync(absolute);
@@ -939,13 +1073,41 @@ function skillGovernanceCost(root, artifacts) {
     retainedBytes += stat.size;
     retainedFiles += 1;
   }
-  const cost = {
-    increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens },
-    total: { files: transaction.operations.length + 1 + retainedFiles, bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content) + retainedBytes },
+  const managed = {
+    files: transaction.operations.length + 1,
+    bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content),
   };
-  if (cost.total.files > 30 || cost.total.bytes > (config.governanceDepth === 'standard' ? 96 : 128) * 1024 || managerTokens > 800) {
-    const error = usageError('Approved Skill governance exceeds the existing file, byte or manager token budget.');
+  const cost = {
+    increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens, deliveryEntryTokens, deliveryPhaseBytes },
+    // The governed footprint is what this transaction generates. `retained` is reported
+    // separately because the transaction rewrites the manifest that produces it, so it
+    // cannot be part of the receipt the same transaction has to satisfy.
+    managed,
+    total: { files: managed.files + retainedFiles, bytes: managed.bytes + retainedBytes },
+    retained: { files: retainedFiles, bytes: retainedBytes },
+  };
+  // Skill governance budgets the increment it introduces, not the tree it lives in.
+  // `cost.total` counts every canonical artifact, retained historical seed and the
+  // manifest; all of those are produced by the approved governance depth rather than by
+  // Skill adoption. Comparing that tree against a fixed allowance made adoption
+  // unreachable for every existing repository whose approved depth already exceeded it,
+  // which permanently blocked the brownfield "no evidence-backed project Skill" gap.
+  const maximumFiles = 30;
+  const maximumBytes = (config.governanceDepth === 'standard' ? 96 : 128) * 1024;
+  const maximumManagerTokens = 800;
+  // The delivery entry is read once per delivery rather than for every Skill decision, so it
+  // gets its own ceiling instead of competing with the always-on management budget. The cap
+  // exists to stop unbounded growth, not to squeeze the entry: a phase dispatch table and the
+  // eight contract sections already cost most of it in the two-byte-per-character zh-CN form.
+  const maximumDeliveryEntryTokens = 1000;
+  const maximumDeliveryPhaseBytes = 24 * 1024;
+  if (cost.increment.files > maximumFiles || cost.increment.bytes > maximumBytes
+    || managerTokens > maximumManagerTokens
+    || deliveryEntryTokens > maximumDeliveryEntryTokens
+    || deliveryPhaseBytes > maximumDeliveryPhaseBytes) {
+    const error = usageError('Approved Skill governance exceeds the Skill management increment, byte, manager token, delivery entry token or on-demand phase byte budget.');
     error.budgetCost = cost;
+    error.budgetLimits = { maximumFiles, maximumBytes, maximumManagerTokens, maximumDeliveryEntryTokens, maximumDeliveryPhaseBytes };
     throw error;
   }
   return cost;

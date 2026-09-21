@@ -218,8 +218,9 @@ ${commandRows}
 
 ## Project evidence boundary
 
-${candidate.evidencePaths.map((relative) => `- \`${relative}\`: \`${candidate.sourceDigests[relative]}\``).join('\n')}
-- ${zh ? '上述路径只证明结构重复，不证明运行时正确或业务含义。' : 'These paths prove structural repetition, not runtime correctness or business meaning.'}
+- ${zh ? '先读取以下相邻实现再写新代码；命名、分层与依赖方向与它们保持一致。' : 'Read these neighboring implementations before writing new code; keep naming, layering, and dependency direction consistent with them.'}
+${candidate.evidencePaths.map((relative) => `- \`${relative}\``).join('\n')}
+- ${zh ? '上述路径只证明结构重复，不证明运行时正确或业务含义；内容摘要保存在 docs/ai/project-conventions.json，漂移由 aicg check 报告。' : 'These paths prove structural repetition, not runtime correctness or business meaning; content digests live in docs/ai/project-conventions.json and drift is reported by aicg check.'}
 
 ## Sources
 
@@ -278,7 +279,9 @@ ${verificationRows}
 
 ## ${zh ? '证据目录' : 'Evidence catalog'}
 
-${candidate.evidencePaths.map((relative) => `- \`${relative}\`: \`${candidate.sourceDigests[relative]}\``).join('\n')}
+- ${zh ? '变更落点与下列示例同层时，先比对最近的同类实现再动手。' : 'When a change lands on the same layer as the examples below, compare the nearest implementation of the same role before writing.'}
+${candidate.evidencePaths.map((relative) => `- \`${relative}\``).join('\n')}
+- ${zh ? '内容摘要不在本文件维护；保存在 docs/ai/project-conventions.json，aicg check 在证据漂移时报告。' : 'Content digests are not maintained in this file; they live in docs/ai/project-conventions.json, and aicg check reports evidence drift.'}
 
 ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新预览。' : candidate.staleOnChange}
 
@@ -296,7 +299,7 @@ ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新
     return { path: candidate.skill, ownership: adopted ? 'full' : 'seed', kind: adopted ? 'project-convention-skill' : 'project-convention-candidate', source: 'project-convention-evidence', adopted,
       content: `---\nname: ${candidate.id}\ndescription: ${zh ? '仅在修改证据路径中的 HTTP 客户端调用且审批有效时，评审此项目约定候选。' : candidate.trigger}\n---\n\n# ${zh ? '项目约定候选' : 'Project convention candidate'}\n\n${zh
         ? `状态：${adopted ? '所有者已批准为新代码标准' : '候选，尚未采纳'}。add/defer/reject 决策必须绑定证据；不得自动执行或提升。`
-        : `Status: ${adopted ? 'owner-approved for new code' : 'candidate, not adopted'}. Bind add/defer/reject decisions to evidence; never execute or promote automatically.`}\n\n${zh ? '决策来源：以 .ai-governance/config.json 中证据绑定的 adaptiveDecisions.skills 回执为准；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound adaptiveDecisions.skills receipt in .ai-governance/config.json is authoritative; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Approved new-code decisions\n\n${adopted ? (zh ? '- 新代码应优先沿用上述相邻调用风格；不得据此迁移既有代码或推断业务语义。' : '- New code should prefer the neighboring observed call style; this does not authorize existing-code migration or imply business semantics.') : (zh ? '- 无；当前证据尚未获得 add 回执。' : '- None; the current evidence has no add receipt.')}\n\n## Evidence\n\n${candidate.evidencePaths.map((relative) => `- ${relative}: ${candidate.sourceDigests[relative]}`).join('\n')}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
+        : `Status: ${adopted ? 'owner-approved for new code' : 'candidate, not adopted'}. Bind add/defer/reject decisions to evidence; never execute or promote automatically.`}\n\n${zh ? '决策来源：以 .ai-governance/config.json 中证据绑定的 adaptiveDecisions.skills 回执为准；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound adaptiveDecisions.skills receipt in .ai-governance/config.json is authoritative; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Approved new-code decisions\n\n${adopted ? (zh ? '- 新代码应优先沿用上述相邻调用风格；不得据此迁移既有代码或推断业务语义。' : '- New code should prefer the neighboring observed call style; this does not authorize existing-code migration or imply business semantics.') : (zh ? '- 无；当前证据尚未获得 add 回执。' : '- None; the current evidence has no add receipt.')}\n\n## Evidence\n\n- ${zh ? '修改下列文件中的调用前，先确认相邻调用仍使用同一风格。' : 'Before changing a call in the files below, confirm the neighboring calls still use the same style.'}\n${candidate.evidencePaths.map((relative) => `- ${relative}`).join('\n')}\n- ${zh ? '内容摘要保存在 docs/ai/project-conventions.json；aicg check 报告证据漂移。' : 'Content digests live in docs/ai/project-conventions.json; aicg check reports evidence drift.'}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
   });
   if (discovery.candidates.length || discovery.gaps.length) artifacts.unshift({ path: 'docs/ai/project-conventions.json', content: stableJson(discovery), ownership: 'seed', kind: 'project-convention-index', source: 'project-convention-evidence', adopted: false });
   if (artifacts.some((artifact) => artifact.adopted === true)) {

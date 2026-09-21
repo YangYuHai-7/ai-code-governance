@@ -46,7 +46,9 @@ test('a flat existing source root produces bounded migration options', (context)
 test('architecture command and exact chat intent are read-only', (context) => {
   const root = fixture('cli');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const direct = run(['architecture', root, '--json']);
+  // The retired `architecture` command folded into `doctor`; the chat intent must still
+  // route to architecture assessment without writing anything.
+  const direct = run(['doctor', root, '--json']);
   assert.equal(direct.status, 0, direct.stderr);
   assert.equal(JSON.parse(direct.stdout).boundary.includes('does not move files'), true);
   const chat = run(['request', root, '--text', '评估项目目录结构', '--json']);

@@ -2,11 +2,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { MANIFEST_PATH, TOOL_NAME } from '../../constants.mjs';
+import { declaredSkillDirectories } from '../../catalogs/index.mjs';
 
 const MAX_MANIFEST_BYTES = 64 * 1024;
 const MAX_ENTRIES = 2048;
 const MAX_DEPTH = 6;
 const ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+
+const SKILL_DIRECTORIES = declaredSkillDirectories();
+
+/**
+ * Map a generated adapter path back to the canonical Skill it copies. The registry decides
+ * which directories count, so a newly registered client's adapters are recognised as
+ * governance proof instead of being mistaken for independent Skill owners. Hard-coding
+ * `.agents|.claude` here previously meant any other client's canonical Skill and its own
+ * adapter collided as unresolved equal-priority candidates.
+ */
+function adapterCanonicalSource(relative) {
+  if (typeof relative !== 'string' || !relative.endsWith('/SKILL.md')) return null;
+  for (const directory of SKILL_DIRECTORIES) {
+    const prefix = `${directory}/`;
+    if (!relative.startsWith(prefix)) continue;
+    const suffix = relative.slice(prefix.length, -'/SKILL.md'.length);
+    if (!/^[A-Za-z0-9._/-]+$/.test(suffix)) continue;
+    return `docs/ai/skills/${suffix}/SKILL.md`;
+  }
+  return null;
+}
 
 /** No link traversal, executable loading, or unbounded content reads. */
 export function readSkillManifest(root, relative) {
@@ -144,8 +166,8 @@ function adapterEntries(root) {
   }
   return manifest.files.filter((entry) => entry.ownership === 'full'
     && ['adapter-skill', 'project-capability-adapter-skill', 'technical-standard-adapter-skill'].includes(entry.kind)
-    && /^\.(?:agents|claude)\/skills\/[A-Za-z0-9._/-]+\/SKILL\.md$/.test(entry.path)
-    && isSafeRelative(entry.path) && entry.source === `docs/ai/skills/${entry.path.split('/').slice(2).join('/')}`
+    && adapterCanonicalSource(entry.path) === entry.source
+    && isSafeRelative(entry.path)
     && /^[a-f0-9]{64}$/.test(entry.sha256 ?? ''));
 }
 
@@ -186,10 +208,11 @@ export function serializeSkillDiscovery(discovery) {
 }
 
 /** Discover metadata only. installedRoots is mandatory even when intentionally empty. */
-export function discoverSkills({ root, installedRoots, curatedCatalog = [], requiredCapabilities = [] } = {}) {
+export function discoverSkills({ root, installedRoots, curatedCatalog = [], requiredCapabilities = [], keepIds = [] } = {}) {
   if (typeof root !== 'string' || !path.isAbsolute(root)) throw new Error('root must be an explicit absolute project directory.');
   if (!Array.isArray(installedRoots) || installedRoots.some((value) => typeof value !== 'string' || !path.isAbsolute(value))) throw new Error('installedRoots must be an explicit array of absolute directories.');
   if (installedRoots.length > 16 || !Array.isArray(curatedCatalog) || curatedCatalog.length > 256) throw new Error('Skill source budget exceeded.');
+  if (!Array.isArray(keepIds) || keepIds.length > 64 || keepIds.some((value) => typeof value !== 'string' || !value || value.length > 256)) throw new Error('keepIds must be a bounded array of recorded candidate ids.');
   const required = ids(requiredCapabilities);
   const found = [];
   const sourceStatus = [];
@@ -260,15 +283,37 @@ export function discoverSkills({ root, installedRoots, curatedCatalog = [], requ
   }
   const owners = new Map();
   const priority = { project: 0, installed: 1, 'official-curated': 2 };
+  // A generated client copy carries adapterEvidence naming exactly one canonical
+  // Skill that the manifest already governs. It is proof of governance, not an
+  // independent owner, so the canonical file must never be reported as an
+  // unresolved equal-priority conflict against its own adapter.
+  const generatedCopyOf = (copy, canonical) => Boolean(copy?.adapterEvidence) && !canonical?.adapterEvidence
+    && canonical?.location?.relative === copy.adapterEvidence.source;
   for (const item of found) {
     const previous = owners.get(item.capabilityOwner);
-    if (!previous) owners.set(item.capabilityOwner, item);
-    else {
+    if (!previous) { owners.set(item.capabilityOwner, item); continue; }
+    if (generatedCopyOf(item, previous)) {
       previous.overlaps.push({ id: item.id, source: item.source, contentSha256: item.contentSha256 });
-      if (priority[previous.sourceKind] === priority[item.sourceKind] && previous.contentSha256 !== item.contentSha256) previous.availability = 'needs-user-decision';
+      continue;
     }
+    if (generatedCopyOf(previous, item)) {
+      // Keep the canonical source as the single owner even if the copy was seen first.
+      item.overlaps = [...previous.overlaps, { id: previous.id, source: previous.source, contentSha256: previous.contentSha256 }];
+      owners.set(item.capabilityOwner, item);
+      continue;
+    }
+    previous.overlaps.push({ id: item.id, source: item.source, contentSha256: item.contentSha256 });
+    if (priority[previous.sourceKind] === priority[item.sourceKind] && previous.contentSha256 !== item.contentSha256) previous.availability = 'needs-user-decision';
   }
-  const result = [...owners.values()].slice(0, 5);
+  // A recorded approval references exact candidate ids. Truncating a referenced candidate
+  // away turns a previously valid plan into an unknown id, which hard-fails the next init
+  // with "Adaptive decisions require unique known ids" - a dead end with a misleading
+  // message. Candidates that a recorded decision already names therefore survive the
+  // context budget; the remaining slots stay bounded.
+  const pinned = new Set(keepIds);
+  const ordered = [...owners.values()];
+  const referenced = ordered.filter((item) => pinned.has(item.id));
+  const result = [...referenced, ...ordered.filter((item) => !pinned.has(item.id))].slice(0, Math.max(5, referenced.length));
   Object.defineProperties(result, {
     sourceStatus: { value: sourceStatus, enumerable: false },
     toJSON: { value: () => serializeSkillDiscovery(result), enumerable: false },

@@ -25,6 +25,32 @@ test('parses init flags and a target with spaces', () => {
   });
 });
 
+test('parses configuration-file lifecycle actions', () => {
+  assert.deepEqual(parseArgs(['config', 'init', 'project', '--output', 'aicg.config.json', '--yes', '--json']), {
+    command: 'config',
+    action: 'init',
+    target: 'project',
+    options: { output: 'aicg.config.json', yes: true, json: true },
+  });
+  assert.deepEqual(parseArgs(['config', 'validate', 'project', '--config', 'aicg.config.json', '--json']), {
+    command: 'config',
+    action: 'validate',
+    target: 'project',
+    options: { config: 'aicg.config.json', json: true },
+  });
+  assert.deepEqual(parseArgs(['config', 'open', 'project', '--no-open', '--json']), {
+    command: 'config', action: 'open', target: 'project', options: { 'no-open': true, json: true },
+  });
+  assert.deepEqual(parseArgs(['config', 'open', '--no-open']), {
+    command: 'config', action: 'open', target: null, options: { 'no-open': true },
+  });
+  assert.deepEqual(parseArgs(['config', 'launcher', '--yes', '--json']), {
+    command: 'config', action: 'launcher', target: '.', options: { yes: true, json: true },
+  });
+  assert.throws(() => parseArgs(['config', 'launcher', 'project', '--yes']), /does not take a project path/);
+  assert.throws(() => parseArgs(['config', 'serve']), (error) => error.exitCode === 2);
+});
+
 test('parses the repository-family initialization flag only for init', () => {
   assert.equal(parseArgs(['init', '.', '--family', '--dry-run', '--yes', '--clients', 'codex']).options.family, true);
   assert.throws(() => parseArgs(['sync', '.', '--family']), (error) => error.exitCode === 2);

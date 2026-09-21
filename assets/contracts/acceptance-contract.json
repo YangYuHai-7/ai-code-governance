@@ -3,11 +3,11 @@
   "claim_states": {
     "present": "The artifact exists and its declared references resolve.",
     "reachable": "The default bootstrap, context router, capability catalog, or native adapter provides a concrete path to the artifact.",
-    "enforced": "The real delivery entrypoint exits non-zero for the claimed violation, and a targeted negative probe has demonstrated that failure and subsequent recovery.",
+    "enforced": "An explicitly enforced delivery entrypoint exits non-zero for the claimed violation, and a targeted negative probe has demonstrated that failure and subsequent recovery. Default AICG checks remain advisory.",
     "real_client_verified": "The declared client or platform executed its real configured entrypoint successfully; synthetic invocation alone is insufficient."
   },
   "failure_policy": {
-    "delivery_checker_exception": "A checker invoked as completion, pre-commit, or CI evidence must exit non-zero on internal errors or malformed governed input.",
+    "delivery_checker_exception": "Default AICG completion, pre-commit, and CI checks write failure reports and exit zero. An explicitly enforced checker must exit non-zero on internal errors or malformed governed input.",
     "ambient_hook_exception": "An ambient client hook may warn and exit zero to preserve repository usability, but the affected claim becomes unverified until repaired.",
     "optional_environment_dependency": "A missing local-only or explicitly optional dependency may warn only when the checker names the skipped assertion and the claim is not reported as enforced."
   },
@@ -205,7 +205,7 @@
       "id": "runtime-completion-freshness",
       "applies_when": "The runtime can return from verifying to implementing and later complete.",
       "negative_case": "Pass or attest all gates, re-enter implementing, return to verifying, and attempt completion without rerunning or reattesting them.",
-      "expected_failure": "Completion exits non-zero because receipts belong to an older implementation generation.",
+      "expected_failure": "Completion reports stale receipts by default; with --enforce it exits non-zero because receipts belong to an older implementation generation.",
       "recovery_case": "Rerun every machine gate and reattest every manual gate for the current generation.",
       "expected_recovery": "Completion succeeds and records the completed generation.",
       "proves": "Old evidence cannot prove a newer implementation."
@@ -331,7 +331,7 @@
       "id": "generated-adapter-no-links",
       "applies_when": "aicg init or aicg sync generates client-specific adapters on any supported platform.",
       "negative_case": "Replace a generated adapter or any ancestor with a symbolic link, junction, or other link-style filesystem object.",
-      "expected_failure": "aicg check exits non-zero and names the linked path; initialization or synchronization stops unless link migration was explicitly authorized.",
+      "expected_failure": "aicg check reports the linked path by default; with --enforce it exits non-zero. Initialization or synchronization stops unless link migration was explicitly authorized.",
       "recovery_case": "Run the explicit link migration after reviewing its plan, regenerate ordinary files, and replay the same check.",
       "expected_recovery": "The check exits zero, all managed adapters are regular files, and the former link target still exists unchanged.",
       "proves": "Cross-platform adapters do not depend on symlink or junction semantics."
@@ -340,7 +340,7 @@
       "id": "managed-adapter-drift",
       "applies_when": "A generated full-file adapter or managed entrypoint block is recorded in the manifest.",
       "negative_case": "Edit only the manifest-owned content without updating its canonical source.",
-      "expected_failure": "aicg check exits non-zero and identifies the content-hash mismatch.",
+      "expected_failure": "aicg check reports the content-hash mismatch by default; with --enforce it exits non-zero.",
       "recovery_case": "Run aicg sync --force after reviewing the drift and replay aicg check.",
       "expected_recovery": "Only manifest-owned content is restored, surrounding user content is preserved, and the check exits zero.",
       "proves": "Generated copies remain synchronized without becoming a second maintenance source."

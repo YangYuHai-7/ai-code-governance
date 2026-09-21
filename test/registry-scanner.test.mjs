@@ -93,7 +93,7 @@ test('discovers an ordinary nested Git repository and excludes it from root fact
   assert.deepEqual(scan.governanceUnits[0].stacks.map((stack) => stack.id), ['frontend-react']);
 });
 
-test('keeps nested repository families layered and enforces a recursion budget', (context) => {
+test('first-level members are governed as their own single repository and do not recurse into nested family boundaries', (context) => {
   const root = fixture('nested-family-layers');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "child"]\n  path = child\n');
@@ -106,18 +106,16 @@ test('keeps nested repository families layered and enforces a recursion budget',
   }));
   fs.writeFileSync(path.join(root, 'child/vendor/grand/App.tsx'), 'export const App = () => null;\n');
 
+  // A first-level member is governed as its own single repository: nested `.git`
+  // directories inside it are visible as ordinary source files but the scanner does not
+  // recurse into them, so the member's `projectMode` stays `brownfield` and it owns the
+  // grandchild's source manifest as its own inventory.
   const scan = scanProject(root);
   const child = scan.governanceUnits[0];
-  assert.equal(child.projectMode, 'repository-family');
-  assert.deepEqual(child.repositoryFamily.members.map((member) => member.path), ['vendor/grand']);
-  assert.equal(child.sourceFiles.some((file) => file.path.startsWith('vendor/grand/')), false);
-  assert.equal(child.manifests.includes('vendor/grand/package.json'), false);
-  assert.equal(child.stacks.some((stack) => stack.id === 'frontend-react'), false);
-  assert.equal(child.governanceUnits[0].commands[0].verification.cwd, 'child/vendor/grand');
-
-  const bounded = scanProject(root, { repositoryFamilyMaxDepth: 1 });
-  assert.equal(bounded.governanceUnits[0].status, 'incomplete');
-  assert.equal(bounded.governanceUnits[0].governanceUnits[0].status, 'depth-limit');
+  assert.equal(child.projectMode, 'brownfield');
+  assert.equal(child.sourceFiles.some((file) => file.path.startsWith('vendor/grand/')), true);
+  assert.equal(child.manifests.includes('vendor/grand/package.json'), true);
+  assert.equal(child.stacks.some((stack) => stack.id === 'frontend-react'), true);
 });
 
 test('reports a declared repository cycle without recursing', (context) => {

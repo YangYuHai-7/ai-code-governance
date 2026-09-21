@@ -19,11 +19,15 @@ test('all bundled technical standards localize body prose while retaining source
   const registry = loadTechnicalStandardRegistry();
   const config = { ...defaultConfig(scan), artifactLanguage: 'zh-CN', technologyPackages: registry.standards.flatMap((standard) => standard.appliesTo.packagesAny ?? []) };
   const built = buildTechnicalStandardArtifacts(config, scan);
-  for (const entry of built.artifacts.filter((artifact) => artifact.path.endsWith('SKILL.md'))) {
+  for (const entry of built.artifacts.filter((artifact) => artifact.path.startsWith('docs/ai/skills/') && artifact.path.endsWith('SKILL.md'))) {
     assert.match(entry.content, /技术证据.*变更表面/);
     const instructions = entry.content.split('## Required invariants')[1]?.split('## Decision flow')[0];
     assert.ok(instructions, entry.path);
     for (const line of instructions.split('\n').filter((line) => line.startsWith('- '))) assert.match(line, /[\u3400-\u9fff]/u, `${entry.path}: ${line}`);
+  }
+  for (const adapter of built.artifacts.filter((artifact) => artifact.path.startsWith('.agents/skills/'))) {
+    assert.match(adapter.content, /Read the complete Skill at `docs\/ai\/skills\/standards\//);
+    assert.doesNotMatch(adapter.content, /## Required invariants/);
   }
   const manifest = JSON.parse(built.artifacts[0].content);
   assert.equal(manifest.skills.length, built.selection.selected.length);
@@ -137,6 +141,8 @@ test('technical standards CLI and exact chat preview are read-only', (context) =
   const root = fixture('preview');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ dependencies: { react: '19.0.0' } }));
+  // `standards` remains in the registry as a retired command for backward compatibility; new
+  // copy should call `aicg doctor` instead, but the surviving output contract is unchanged.
   const direct = run(['standards', root, '--json']);
   assert.equal(direct.status, 0, direct.stderr);
   assert.equal(JSON.parse(direct.stdout).mode, 'read-only-preview');

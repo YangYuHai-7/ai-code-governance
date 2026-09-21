@@ -42,19 +42,76 @@ export function writeText(target, content) {
   return true;
 }
 
+// Codes that mean "this environment will not replace an existing file through rename".
+// Sandbox seatbelts report the intercepted syscall as EPERM/EACCES; Windows locks and
+// read-only destinations report EPERM/EBUSY/EEXIST. EXDEV shows up when the staging
+// directory and the destination resolve to different devices.
+const REPLACE_RESISTANT = new Set(['EPERM', 'EACCES', 'EBUSY', 'EEXIST', 'EXDEV', 'ENOTEMPTY']);
+
+function discardTemporary(temporary, error) {
+  try {
+    fs.unlinkSync(temporary);
+  } catch (cleanup) {
+    if (cleanup.code !== 'ENOENT') error.cleanupError = cleanup.code;
+  }
+}
+
 export function writeAtomicFile(target, content, mode = null) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  const temporary = path.join(path.dirname(target), `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  const directory = path.dirname(target);
+  const temporary = path.join(directory, `.${path.basename(target)}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  const encoding = typeof content === 'string' ? 'utf8' : undefined;
+
+  // Stage first: a failure here is a real write failure and is reported as such.
   try {
-    fs.writeFileSync(temporary, content, { encoding: typeof content === 'string' ? 'utf8' : undefined, flag: 'wx' });
+    fs.writeFileSync(temporary, content, { encoding, flag: 'wx' });
     if (mode !== null) fs.chmodSync(temporary, mode);
+  } catch (error) {
+    discardTemporary(temporary, error);
+    throw error;
+  }
+
+  try {
+    // A successful rename consumes the temporary name, so the success path needs no cleanup.
+    // The previous unconditional `finally { unlink }` was a redundant syscall on every write
+    // and, on sandboxes that deny unlink, replaced the real failure with a misleading EPERM.
     fs.renameSync(temporary, target);
-  } finally {
-    try {
-      fs.unlinkSync(temporary);
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
+    return true;
+  } catch (error) {
+    if (!REPLACE_RESISTANT.has(error.code)) {
+      discardTemporary(temporary, error);
+      throw error;
     }
+    // Availability fallback, only on a path that would otherwise fail outright: copy the staged
+    // bytes over the destination instead of replacing it by rename. This trades atomicity for a
+    // successful write, and never silently discards the original failure — it stays attached as
+    // `renameError` so diagnostics still name the syscall the environment actually refused.
+    try {
+      if (lstatSafe(target)?.isDirectory()) throw error;
+      fs.copyFileSync(temporary, target);
+      if (mode !== null) fs.chmodSync(target, mode);
+    } catch (fallback) {
+      discardTemporary(temporary, error);
+      error.fallbackError = fallback === error ? 'destination-is-directory' : fallback.code;
+      throw error;
+    }
+    discardTemporary(temporary, error);
+    return true;
+  }
+}
+
+export function createExclusiveFile(target, content, mode = null) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  try {
+    fs.writeFileSync(target, content, {
+      encoding: typeof content === 'string' ? 'utf8' : undefined,
+      flag: 'wx',
+      ...(mode === null ? {} : { mode }),
+    });
+    return true;
+  } catch (error) {
+    if (error.code === 'EEXIST') return false;
+    throw error;
   }
 }
 

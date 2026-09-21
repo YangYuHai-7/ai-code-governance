@@ -90,7 +90,9 @@ export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLin
     if (typeof options.verify === 'function') {
       verification = options.verify();
       if (!verification?.ok) {
-        const error = new Error('Post-apply verification failed.');
+        const reasons = Array.isArray(verification?.errors) ? verification.errors : [];
+        const detail = reasons.length ? `\n- ${reasons.slice(0, 20).join('\n- ')}${reasons.length > 20 ? `\n- ... ${reasons.length - 20} more` : ''}` : '';
+        const error = new Error(`Post-apply verification failed.${detail}`);
         error.verification = verification;
         throw error;
       }

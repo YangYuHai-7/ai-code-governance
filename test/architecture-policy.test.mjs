@@ -168,7 +168,7 @@ function run(args) {
   const explicit = args[0] === 'init' && !args.includes('--config') && !args.includes('--clients')
     ? [args[0], args[1], '--clients', 'all', ...args.slice(2)]
     : args;
-  return spawnSync(process.execPath, [cli, ...explicit], { encoding: 'utf8' });
+  return spawnSync(process.execPath, [cli, ...explicit, ...(args[0] === 'check' ? ['--enforce'] : [])], { encoding: 'utf8' });
 }
 
 function writeDecision(root, name, initialization, extra = {}) {

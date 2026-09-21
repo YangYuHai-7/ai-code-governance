@@ -9,6 +9,7 @@ import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { resolveGovernanceCapabilities, selectArtifactDefinitions } from '../src/modules/governance/artifact-selection.mjs';
+import { DELIVERY_LOOP_LEDGER, DELIVERY_PHASES } from '../src/modules/governance/delivery-loop.mjs';
 import { deriveArchitectureDecision } from '../src/modules/architecture/index.mjs';
 import { surfaceVerificationProfiles } from '../src/modules/repository/index.mjs';
 import { sha256, stableJson } from '../src/shared/index.mjs';
@@ -55,9 +56,13 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
+    // Standard and Complete carry the delivery loop by default: the entry Skill, one Skill per
+    // phase, the runtime ledger and one discovery adapter per phase. Minimal stays the
+    // bootstrap-only kernel and never carries it. Byte ceilings keep roughly the same headroom
+    // over the measured footprint that they had before the loop became a default.
     ['minimal', 9, 24 * 1024],
-    ['standard', 24, 80 * 1024],
-    ['complete', 26, 112 * 1024],
+    ['standard', 41, 120 * 1024],
+    ['complete', 43, 128 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -88,8 +93,21 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
     const policy = ['docs/ai/anti-patterns.md', 'docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standards/standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standards/professional-testing/SKILL.md'];
     const routing = ['.gitignore', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
-    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 24 : 30));
+    // The delivery loop is a default part of both depths. It is a workflow surface, not an
+    // evidence or lifecycle family, so the point of this test — that neither depth eagerly
+    // pulls in release/surface/acceptance artifacts — still holds. Derived from the canonical
+    // phase list so adding a phase cannot silently drift this expectation.
+    const deliveryLoop = [
+      DELIVERY_LOOP_LEDGER,
+      'docs/ai/skills/delivery-loop/SKILL.md',
+      '.agents/skills/delivery-loop/SKILL.md',
+      ...DELIVERY_PHASES.flatMap((phase) => [
+        `docs/ai/skills/delivery-${phase}/SKILL.md`,
+        `.agents/skills/delivery-${phase}/SKILL.md`,
+      ]),
+    ];
+    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills, ...deliveryLoop].sort());
+    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 41 : 43));
   }
 });
 
@@ -129,7 +147,7 @@ test('first-use Chinese evidence artifacts localize prose and preserve every mac
   ]);
   assert.equal(sha256(expected.get('docs/ai/release-acceptance-policy.json')), 'bf8b8f04edd635455efb10334140d5b628d82f8ebebab06cbcaac42558e61e50');
   assert.equal(sha256(expected.get('docs/ai/surface-verification-profiles.json')), '7e0779fbe78c372c8e2b0fd73b768df9808aeb5256060780b7bd3aa4ee113246');
-  assert.equal(sha256(expected.get('docs/ai/acceptance-contract.json')), '2fd5633856ec347e4e54538d74654f5532d1111c4c2a54bceeb094194e6cf377');
+  assert.equal(sha256(expected.get('docs/ai/acceptance-contract.json')), '26418012693591ef5baaeb0ce78cb59ff9bf409ab357940388bbe88f0b516487');
   const proseKeys = new Set(['description', 'reason', 'claimBoundary', 'binding', 'coverage', 'applies_when', 'negative_case', 'expected_failure', 'recovery_case', 'expected_recovery', 'proves']);
   const machineFields = (value, location = [], requireChinese = false) => {
     if (typeof value === 'string' && (proseKeys.has(location.at(-1)) || ['claim_states', 'failure_policy'].includes(location.at(-2)))) {

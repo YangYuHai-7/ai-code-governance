@@ -36,6 +36,13 @@ export function doctor(scan) {
     checks,
     agents,
     managedLinksDetected: scan.links.filter((relative) => /(^|\/)(\.cursor|\.claude|\.agents|docs\/ai)(\/|$)/.test(relative)),
+    // `doctor` is the surviving read-only diagnostics entry point, but it reports
+    // environment and repository state only. It does NOT fold in the retired advisory
+    // commands: repository assessment, architecture assessment, the technical-standards
+    // snapshot, and human-role team advice have no surviving command. This boundary states
+    // that diagnosis never moves files or rewrites business code, regardless of how deep a
+    // subsequent `init` approval goes.
+    boundary: 'This assessment is advisory. It does not move files, rewrite business code, or authorize a migration.',
   };
 }
 

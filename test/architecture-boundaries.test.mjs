@@ -31,7 +31,8 @@ const BUILTIN_ALLOWLIST = {
 };
 const ADAPTER_BUILTIN_ALLOWLIST = {
   agents: new Set(),
-  filesystem: new Set(['node:crypto', 'node:fs', 'node:path']),
+  filesystem: new Set(['node:crypto', 'node:fs', 'node:os', 'node:path']),
+  http: new Set(['node:http']),
   process: new Set(['node:child_process']),
 };
 

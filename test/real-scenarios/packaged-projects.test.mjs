@@ -167,7 +167,7 @@ function installPackedCli(evidence, scenarioRoot) {
 }
 
 function runAicg(evidence, cli, args, expected = 0) {
-  const result = runRecorded(evidence, process.execPath, [cli, ...args]);
+  const result = runRecorded(evidence, process.execPath, [cli, ...args, ...(args[0] === 'check' && expected === 1 ? ['--enforce'] : [])]);
   expectExit(result, expected, `aicg ${args.join(' ')}`);
   return result;
 }

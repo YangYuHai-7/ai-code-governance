@@ -3,8 +3,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sha256, stableJson } from '../../shared/index.mjs';
 
-const POLICY_VERSION = 'effective-scan-input-v2';
+const POLICY_VERSION = 'effective-scan-input-v3';
 const HASH_BUFFER_BYTES = 64 * 1024;
+
+// Runtime output directories: produced by the tool itself between two consecutive CLI
+// invocations (aicg check writes reports/aicg/, aicg review writes reports/aicg/, agent
+// sessions write reviews/). They are already excluded from version control by the managed
+// `.gitignore` block. Counting them in the input fingerprint meant any diagnostic command
+// invalidated the next exact-planHash approval; the user-visible effect was a mandatory
+// re-approval after every check or score run, with no semantic change to the plan.
+const RUNTIME_OUTPUT_PREFIXES = ['reports/', 'reviews/'];
+
+function isRuntimeOutput(relative) {
+  for (const prefix of RUNTIME_OUTPUT_PREFIXES) {
+    if (relative === prefix.slice(0, -1) || relative.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function filterRuntimeOutputs(files) {
+  return files.filter((file) => !isRuntimeOutput(file.relative));
+}
 
 function sameRegularFile(left, right) {
   return right.isFile()
@@ -98,9 +117,9 @@ export function scanInputDescriptor(scan) {
       manifests: unit.manifests ?? [],
       scanIgnore: unit.scanIgnore ?? null,
       scanPolicy: scanPolicy({ scanBudget: unit.scanBudget }),
-      files: (unit.inventory ?? []).map(fileSnapshot).sort((left, right) => left.path.localeCompare(right.path)),
+      files: filterRuntimeOutputs(unit.inventory ?? []).map(fileSnapshot).sort((left, right) => left.path.localeCompare(right.path)),
     })),
-    files: (scan.files ?? [])
+    files: filterRuntimeOutputs(scan.files ?? [])
       .map(fileSnapshot)
       .sort((left, right) => left.path.localeCompare(right.path)),
   };

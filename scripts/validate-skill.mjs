@@ -8,6 +8,7 @@ import { validateTeamRoleRegistry } from '../src/team-recommendation.mjs';
 import { validateArchitectureProfileRegistry } from '../src/architecture-policy.mjs';
 import { validateReleaseAcceptancePolicy } from '../src/release-acceptance.mjs';
 import { validateSurfaceVerificationContract } from '../src/modules/repository/index.mjs';
+import { SUPPORTED_CLIENTS } from '../src/constants.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const failures = [];
@@ -263,7 +264,7 @@ function validateAgentRegistry(registry) {
       check(!/\.\.|^[\\/]/.test(directory), `${agent.id} contains an unsafe adapter directory: ${directory}`);
     }
   }
-  for (const id of ['codex', 'claude-code', 'cursor', 'generic']) {
+  for (const id of SUPPORTED_CLIENTS) {
     check(ids.has(id), `Missing agent registry entry: ${id}`);
   }
 }

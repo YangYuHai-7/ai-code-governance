@@ -152,7 +152,7 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
   const rescan = postInitRescan(scan, config);
   const scanComplete = scan.scanBudget?.complete !== false
     && (scan.repositoryFamily?.issues?.length ?? 0) === 0
-    && (scan.governanceUnits ?? []).every((unit) => unit.status === 'scanned');
+    && (scan.governanceUnits ?? []).every((unit) => ['scanned', 'uninitialized'].includes(unit.status));
   const allowedVerificationCommands = verificationNpmCommands(scan.commands)
     .map((candidate) => candidate.command)
     .sort((left, right) => left.localeCompare(right));
@@ -171,8 +171,8 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
     id: `repository-member-${unit.status}`,
     message: unit.status === 'uninitialized'
       ? localized(locale,
-        `成员仓库 ${unit.path} 尚未检出，无法评估其技术栈、约定或验证入口；请先由仓库维护者初始化该成员。`,
-        `Member repository ${unit.path} is not checked out, so its stacks, conventions, and verification entrypoints cannot be assessed; have the repository maintainer initialize it first.`)
+        `成员仓库 ${unit.path} 尚未检出，已跳过；需要治理该成员时再由仓库维护者初始化。`,
+        `Member repository ${unit.path} is not checked out and was skipped; initialize it only when its governance is needed.`)
       : localized(locale,
         `成员仓库 ${unit.path} 的扫描状态为 ${unit.status}；解决读取或预算问题后再评估。`,
         `Member repository ${unit.path} has scan status ${unit.status}; resolve its read or budget problem before assessment.`),
@@ -221,7 +221,7 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
       readOnly: true,
     });
   }
-  if (kind === 'doctor' && result.ok) {
+  if (scanComplete && kind === 'doctor' && result.ok) {
     nextSteps.push({
       id: 'assess-current-repository',
       description: localized(locale, '只读扫描当前仓库形态、生命周期证据和可用验证命令。', 'Read the current repository shape, lifecycle evidence, and allowed verification commands without writing files.'),
@@ -244,13 +244,6 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
         readOnly: true,
       },
     );
-  } else if (scanComplete && kind === 'assess') {
-    nextSteps.push({
-      id: 'review-current-architecture',
-      description: localized(locale, '只读查看适合当前扫描结果的架构建议。', 'Review architecture advice for the current scan without writing files.'),
-      command: `${prefix} architecture . --locale ${locale} --json`,
-      readOnly: true,
-    });
   }
   if (scan.projectMode === 'repository-family') {
     for (const unit of (scan.governanceUnits ?? []).filter((entry) => entry.status === 'scanned')) nextSteps.push({

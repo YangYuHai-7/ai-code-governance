@@ -67,7 +67,7 @@ function preview(f, config) {
 }
 
 function selectedConfig(extra = {}) {
-  return configFor({ decisions: { skills: [], roles: [{ id: 'project-domain-reviewer', action: 'add' }] }, activation: { 'project-domain-reviewer': { signals: ['sensitive-data'], paths: ['docs/contracts/**'] } } }, extra);
+  return configFor({ decisions: { skills: [], roles: [{ id: 'project-domain-reviewer', action: 'add' }] }, activation: { 'project-domain-reviewer': { signals: ['sensitive-data'], paths: ['docs/contracts/**'] } } }, { ...extra, governanceDepth: extra.governanceDepth ?? 'complete' });
 }
 
 test('external config cannot manufacture an approved legal role without mandatory professional boundaries', (context) => {
@@ -229,14 +229,23 @@ test('brownfield repository domain candidates remain unconfirmed under the same 
   assert.deepEqual(snapshot(f.root), before);
 });
 
-for (const governanceDepth of ['standard', 'complete']) {
+// `standard` no longer emits the Skill-management set (skill-discovery + team-orchestrator
+// Skills, the skill-index, and the agent-team roster). Those four artifacts belong to
+// `complete` only, so `standard` keeps a strictly smaller footprint than `complete`.
+for (const governanceDepth of ['complete']) {
   test(`${governanceDepth} writes four approved artifacts through the existing transaction and trusted professional routing`, (context) => {
     const f = fixture(context);
     const config = selectedConfig({ governanceDepth });
     const result = preview(f, config);
     assert.ok(result.contextCost.management.total, JSON.stringify(result));
-    assert.ok(result.contextCost.management.total.files <= 30);
-    assert.ok(result.contextCost.management.total.bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
+    // Budget the increment, not the tree. The approved depth owns the artifacts below and
+    // the delivery loop now ships inside Standard and Complete, so a fixed allowance over
+    // `total` would only measure the depth that was chosen - the mistake that once made
+    // adoption unreachable for existing repositories. `total` is checked for completeness
+    // instead: every planned artifact plus the manifest, with nothing retained here.
+    assert.equal(result.contextCost.management.total.files, result.files.length + 1, `${governanceDepth} management cost ${JSON.stringify(result.contextCost.management)} files ${result.files.length}`);
+    assert.ok(result.contextCost.management.increment.files <= 30, 'the Skill management increment is the budgeted quantity');
+    assert.ok(result.contextCost.management.increment.bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
     assert.ok(result.contextCost.management.increment.managerTokens <= 800);
     assert.deepEqual(result.files.filter((item) => managementPaths.includes(item.path)).map((item) => item.path).sort(), [...managementPaths].sort());
     const before = snapshot(f.root);
@@ -368,19 +377,25 @@ test('existing Minimal governance upgrades with selected roles only after exact 
   assert.equal(checkProject(scanProject(f.root)).ok, true);
 });
 
-test('historical Standard artifacts cause an explicit budget-blocked preview without deleting seeds', (context) => {
+test('a retained historical governance tree stays adoptable and is never removed without approval', (context) => {
   const f = fixture(context);
   assert.equal(command(['init', f.root, '--yes', '--clients', 'codex']).status, 0);
   writeAnswers(f, selectedConfig({ governanceDepth: 'complete' }));
   const before = snapshot(f.root);
   const result = output(command(['sync', f.root, '--config', f.answers]));
-  assert.equal(result.adaptiveGovernance.status, 'budget-blocked');
-  assert.ok(result.adaptiveGovernance.budget.proposedCost.total.files > 30);
-  assert.ok(result.adaptiveGovernance.manualCleanup.paths.includes('docs/ai/bootstrap-prompt.md'));
-  assert.equal(result.adaptiveGovernance.manualCleanup.authorization, 'separate-explicit-approval-required');
+  // The retained tree is budgeted by the approved governance depth, so a Complete
+  // repository that already owns more than 30 governance files can still adopt Skills.
+  assert.equal(result.adaptiveGovernance.status, 'recommendation');
+  assert.equal(result.adaptiveGovernance.budget, undefined);
+  assert.deepEqual(result.adaptiveGovernance.actionsPerformed, []);
+  assert.ok(result.contextCost.management.total.files > 30, 'retained history stays visible in total cost');
+  assert.ok(result.contextCost.management.increment.files <= 30, 'the Skill management increment is the budgeted quantity');
+  assert.deepEqual(snapshot(f.root), before, 'an unapproved preview never writes');
   const applied = command(['sync', f.root, '--config', f.answers, '--approve', result.planHash]);
-  assert.equal(applied.status, 2, applied.stderr);
-  assert.deepEqual(snapshot(f.root), before);
+  assert.equal(applied.status, 0, applied.stderr);
+  for (const retained of ['docs/ai/bootstrap-prompt.md']) {
+    assert.ok(fs.existsSync(path.join(f.root, retained)), `${retained} must be retained, not deleted`);
+  }
 });
 
 test('forward routing keeps L0/L1 single and ordinary L2 independently reviewed, with PK for stronger evidence', () => {

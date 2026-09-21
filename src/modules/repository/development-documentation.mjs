@@ -1,7 +1,9 @@
 import path from 'node:path';
 import { GENERATED_MARKER } from '../../constants.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { selectedSkillDirectories } from '../../catalogs/index.mjs';
+import { normalizeRelative, sha256, skillAdapterContent, stableJson } from '../../shared/index.mjs';
+import { readText } from '../../adapters/filesystem/index.mjs';
 
 const MANIFEST_NAMES = new Set([
   'package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle',
@@ -41,14 +43,65 @@ function deepestOwner(relative, roots) {
   return roots.filter((root) => within(relative, root)).sort((left, right) => right.length - left.length)[0] ?? '.';
 }
 
+/**
+ * A repository with neither code nor a build manifest has no development unit worth
+ * documenting. Repository-family orchestrator parents and documentation-only
+ * repositories fall here: generating development documents for them produces
+ * placeholder pages that describe the absence of the code they are meant to explain.
+ */
+export function hasDocumentableDevelopmentUnit(scan) {
+  return scan.files.some((file) => file.type === 'file' && file.contentScannable !== false
+    && (CODE_EXTENSIONS.has(path.posix.extname(file.relative).toLowerCase()) || isManifest(file.relative)));
+}
+
+const MAVEN_AGGREGATOR = /<packaging>\s*pom\s*<\/packaging>/i;
+const MAVEN_MODULES = /<modules>([\s\S]*?)<\/modules>/i;
+const MAVEN_MODULE = /<module>\s*([^<]+?)\s*<\/module>/gi;
+
+/**
+ * A Maven aggregator declares its own modules in one pom. Those modules are build units
+ * of a single project, not independent governance units: giving each one its own entry
+ * file, development rule, and development Skill emits several files that all say the same
+ * thing. The aggregator becomes one unit and its declared modules become the child
+ * inventory inside that unit's document, so the file list shrinks without losing which
+ * module holds which source files.
+ */
+function mavenAggregatorChildren(file) {
+  if (!file.absolute || path.posix.basename(file.relative) !== 'pom.xml') return null;
+  let content;
+  try { content = readText(file.absolute); }
+  catch { return null; }
+  if (!MAVEN_AGGREGATOR.test(content)) return null;
+  const block = content.match(MAVEN_MODULES);
+  if (!block) return null;
+  const declared = [...block[1].matchAll(MAVEN_MODULE)].map((match) => match[1].trim()).filter(Boolean);
+  if (declared.length === 0) return null;
+  const base = normalizeRelative(path.posix.dirname(file.relative) || '.');
+  return declared.map((entry) => normalizeRelative(path.posix.join(base === '.' ? '' : base, entry)));
+}
+
 export function discoverDevelopmentUnits(scan) {
-  const manifests = scan.files.filter((file) => file.type === 'file' && isManifest(file.relative)).map((file) => normalizeRelative(file.relative));
+  const manifestFiles = scan.files.filter((file) => file.type === 'file' && isManifest(file.relative));
+  const manifests = manifestFiles.map((file) => normalizeRelative(file.relative));
   const codeFiles = scan.files.filter((file) => file.type === 'file' && file.contentScannable !== false && CODE_EXTENSIONS.has(path.posix.extname(file.relative).toLowerCase())).map((file) => normalizeRelative(file.relative));
   const roots = new Set(manifests.map((relative) => path.posix.dirname(relative) || '.'));
   if (codeFiles.length && (!roots.size || codeFiles.some((relative) => deepestOwner(relative, [...roots]) === '.'))) roots.add('.');
   if (!roots.size) roots.add('.');
   if (roots.size > 128) throw usageError('More than 128 development units were detected. Define narrower repository boundaries before generating development documentation.');
-  const orderedRoots = [...roots].sort((left, right) => left.localeCompare(right));
+
+  const childrenByContainer = new Map();
+  const absorbed = new Set();
+  for (const file of manifestFiles) {
+    const declared = mavenAggregatorChildren(file);
+    if (!declared) continue;
+    const container = normalizeRelative(path.posix.dirname(file.relative) || '.');
+    const children = declared.filter((child) => roots.has(child) && child !== container);
+    if (children.length === 0) continue;
+    childrenByContainer.set(container, [...new Set([...(childrenByContainer.get(container) ?? []), ...children])].sort((left, right) => left.localeCompare(right)));
+    for (const child of children) absorbed.add(child);
+  }
+
+  const orderedRoots = [...roots].filter((root) => !absorbed.has(root)).sort((left, right) => left.localeCompare(right));
   return orderedRoots.map((root) => {
     const ownedCode = codeFiles.filter((relative) => deepestOwner(relative, orderedRoots) === root);
     const ownedManifests = manifests.filter((relative) => path.posix.dirname(relative) === root);
@@ -58,6 +111,7 @@ export function discoverDevelopmentUnits(scan) {
       command: command.command ?? command.verification?.argv?.join(' ') ?? null,
       trust: command.verification?.trust?.level ?? 'declared',
     }));
+    const productionCode = ownedCode.filter((relative) => !TEST_PATH.test(relative));
     return {
       id: unitId(root),
       path: root,
@@ -66,11 +120,25 @@ export function discoverDevelopmentUnits(scan) {
       manifests: ownedManifests,
       stacks: stackIds.length ? stackIds : scan.stacks.map((stack) => stack.id),
       sourceFileCount: ownedCode.length,
-      sourceFiles: ownedCode.slice(0, 80),
-      sourceInventoryTruncated: ownedCode.length > 80,
-      entrypointCandidates: ownedCode.filter((relative) => ENTRY_PATH.test(relative)).slice(0, 24),
+      // Test files are listed once, under test evidence. Repeating them in source evidence
+      // made every unit document look twice as large as the code it describes.
+      sourceFiles: productionCode.slice(0, 80),
+      sourceInventoryTruncated: productionCode.length > 80,
+      entrypointCandidates: productionCode.filter((relative) => ENTRY_PATH.test(relative)).slice(0, 24),
       testFiles: ownedCode.filter((relative) => TEST_PATH.test(relative)).slice(0, 40),
       commands,
+      children: (childrenByContainer.get(root) ?? []).map((childPath) => {
+        const childCode = codeFiles.filter((relative) => within(relative, childPath));
+        const childProduction = childCode.filter((relative) => !TEST_PATH.test(relative));
+        return {
+          path: childPath,
+          manifests: manifests.filter((relative) => path.posix.dirname(relative) === childPath),
+          sourceFileCount: childCode.length,
+          sourceFiles: childProduction.slice(0, 40),
+          entrypointCandidates: childProduction.filter((relative) => ENTRY_PATH.test(relative)).slice(0, 12),
+          testFiles: childCode.filter((relative) => TEST_PATH.test(relative)).slice(0, 20),
+        };
+      }),
     };
   });
 }
@@ -81,6 +149,31 @@ function bullets(values, empty) {
 
 function commandBullets(commands, empty) {
   return commands.length ? commands.map((command) => `- \`${command.command ?? command.id}\` — trust: \`${command.trust}\``).join('\n') : `- ${empty}`;
+}
+
+/**
+ * Aggregator modules are inventoried inside the owning unit document instead of each
+ * receiving a full generated set. The information an agent needs to locate a module's
+ * source survives; the duplicate entrypoints do not.
+ */
+function childInventory(unit, zh) {
+  if (!unit.children?.length) return '';
+  const separator = zh ? '、' : ', ';
+  const header = zh ? '## 子模块清单' : '## Module inventory';
+  const note = zh
+    ? '下列模块属于同一个聚合构建，因此共享本单元的开发文档、规则和入口，不再各自生成重复文件。改动某个模块前，先在这里定位它的源码。'
+    : "These modules belong to one aggregator build, so they share this unit's document, rule, and entrypoint instead of each emitting a duplicate set. Locate a module's source here before changing it.";
+  const labels = zh
+    ? { manifests: '构建清单', sources: '源文件数量', entries: '入口点候选', tests: '测试文件' }
+    : { manifests: 'Build manifests', sources: 'Source files', entries: 'Entrypoint candidates', tests: 'Test files' };
+  const list = (values, empty) => (values.length ? values.map((value) => `\`${value}\``).join(separator) : empty);
+  const blocks = unit.children.map((child) => `### \`${child.path}\`
+
+- ${labels.manifests}: ${list(child.manifests, zh ? '未检测到' : 'not detected')}
+- ${labels.sources}: ${child.sourceFileCount}
+- ${labels.entries}: ${list(child.entrypointCandidates, zh ? '未通过文件名确认' : 'not confirmed by filename')}
+- ${labels.tests}: ${list(child.testFiles, zh ? '未通过路径识别' : 'not recognized by path')}`).join('\n\n');
+  return `\n${header}\n\n${note}\n\n${blocks}\n`;
 }
 
 function developmentDocument(unit, config) {
@@ -102,7 +195,7 @@ function developmentDocument(unit, config) {
 ## 构建清单
 
 ${bullets(unit.manifests, '未检测到构建清单。')}
-
+${childInventory(unit, true)}
 ## 入口点候选
 
 ${bullets(unit.entrypointCandidates, '未通过文件名确认入口点；需要阅读框架配置和调用链。')}
@@ -149,7 +242,7 @@ ${commandBullets(unit.commands, '当前扫描未发现属于本子工程的可�
 ## Build manifests
 
 ${bullets(unit.manifests, 'No build manifest was detected.')}
-
+${childInventory(unit, false)}
 ## Entrypoint candidates
 
 ${bullets(unit.entrypointCandidates, 'No entrypoint was confirmed by filename; inspect framework configuration and call paths.')}
@@ -195,6 +288,73 @@ function readmeBlock(unit, config) {
 - Development documentation for this unit: [\`${relativeDoc}\`](${relativeDoc})
 - Before changing code, reconcile the evidence, unverified areas, and verification commands in that document.
 - Put stable implementation decisions in project Skills; keep one-off facts in the development document.
+`;
+}
+
+function unitRule(unit) {
+  return `# ${unit.path} development rule
+
+Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as leads until the cited source and tests have been reviewed. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
+`;
+}
+
+function unitSkill(unit) {
+  return `---
+name: development-${unit.id}
+description: Use when changing the ${unit.path} development unit or its public contract.
+---
+
+# ${unit.path} development
+
+## When to use
+
+- A task changes source, tests, contracts, or build behavior owned by this unit.
+
+## When not to use
+
+- Do not apply this unit's conventions to another unit or treat a scanner baseline as verified business knowledge.
+
+## Evidence and prerequisites
+
+- Read \`${unit.documentation}\`, its cited source and tests, and the owning records in \`docs/memory/INDEX.json\`.
+- Candidate stacks: ${unit.stacks.map((stack) => `\`${stack}\``).join(', ') || 'unidentified'}; confirm actual versions from the build manifests.
+
+## Required invariants
+
+- Attribute every project-specific conclusion to a concrete source, test, contract, or owner decision.
+- Keep one owning development unit and Memory page for each verified business behavior.
+- New stable Skill content remains a candidate until the user approves it.
+
+## Decision flow
+
+1. Confirm the unit boundary and entrypoints from code evidence.
+2. State the affected contract, behavior, and acceptance cases before implementation.
+3. Ask for user confirmation before applying business-code changes.
+4. Keep the implementation within one owner where possible; update the development document and Memory for verified behavior changes.
+5. Run a trusted unit command or record why execution is blocked, then write a test result report.
+6. Propose any new stable Skill content as a candidate; add it only after the user approves it.
+
+## Exceptions and escalation
+
+- If scanner coverage is incomplete or sources disagree, record a gap and ask for a decision before adding behavior claims.
+- Public contracts, migrations, security, external actions, and cross-unit changes follow the stronger L2/L3 plan and review route.
+
+## Verification matrix
+
+| Scenario | Expected result | Command or evidence status |
+| --- | --- | --- |
+| Unit understanding | Every claim cites inspected source or test paths | Manual evidence review; unverified until completed |
+| Behavior change | Development document and owning Memory remain aligned with current code | \`aicg check .\` plus project tests when discovered |
+| New reusable Skill | One stable decision surface, explicit trigger, counterexample, and owner approval | Skill quality audit; candidate until approved |
+
+## Project evidence boundary
+
+- Current project-specific behavior remains unverified until the development document cites reviewed code or tests. A process exit alone does not prove the business meaning.
+
+## Sources
+
+- \`${unit.documentation}\`, its indexed build manifests, source inventory, tests, and owner-confirmed decisions.
+- \`docs/memory/INDEX.json\` and each owning module page for verified business behavior.
 `;
 }
 
@@ -244,8 +404,8 @@ description: ${zh ? '理解已有项目、补全各子工程开发文档、同�
 
 1. ${zh ? '打开索引并选择一个 `id`。' : 'Open the index and select one `id`.'}
 2. ${zh ? '加载该记录的 `documentation`，再按文档引用只读取必要的源码、测试与构建清单。' : 'Load that record\'s `documentation`, then read only the source, tests, and manifests referenced by the document.'}
-3. ${zh ? '逐项补全开发文档，每个结论附路径；不确定项写入缺口。' : 'Complete each section with path citations and put uncertainty in gaps.'}
-4. ${zh ? '同步 README；如发现稳定规则，创建一个通过 Skill 质量检查的项目 Skill。' : 'Synchronize README; if a stable rule exists, create one project Skill that passes the Skill quality audit.'}
+3. ${zh ? '逐项补全开发文档，以“已核对的业务行为”和“本地开发流程”为标题，每个结论附路径；不确定项写入缺口。' : 'Complete each document with Evidence-reviewed behavior and Local development workflow sections, citing paths for every conclusion and putting uncertainty in gaps.'}
+4. ${zh ? '把现有业务行为及代码证据写入 docs/memory/INDEX.json 和所属模块页；同步 README。如发现稳定规则，通过项目 Skill 发现和批准流程登记。' : 'Record existing business behavior and source evidence in docs/memory/INDEX.json and owning module pages; synchronize README. Register stable rules through project Skill discovery and approval.'}
 5. ${zh ? '运行验证，记录证据，再处理下一个子工程。' : 'Run verification, record evidence, then continue with the next unit.'}
 
 ## Exceptions and escalation
@@ -276,11 +436,15 @@ description: ${zh ? '理解已有项目、补全各子工程开发文档、同�
 
 export function buildDevelopmentDocumentationArtifacts(config, scan) {
   const units = discoverDevelopmentUnits(scan);
+  const adapterDirs = selectedSkillDirectories(config.clients ?? []);
   const index = {
     schemaVersion: 1,
     status: scan.scanBudget?.complete ? 'scanned-baseline' : 'incomplete-scan',
     boundary: 'Scanner evidence is a baseline. Behavioral meaning requires code review and verification.',
-    units: units.map(({ id, path: unitPath, documentation, readme, manifests, stacks }) => ({ id, path: unitPath, documentation, readme, manifests, stacks })),
+    units: units.map(({ id, path: unitPath, documentation, readme, manifests, stacks, children }) => ({
+      id, path: unitPath, documentation, readme, manifests, stacks,
+      modules: (children ?? []).map((child) => child.path),
+    })),
   };
   const artifacts = [{
     path: 'docs/ai/development/index.json', content: stableJson(index), ownership: 'full',
@@ -289,11 +453,19 @@ export function buildDevelopmentDocumentationArtifacts(config, scan) {
   for (const unit of units) {
     artifacts.push({ path: unit.documentation, content: developmentDocument(unit, config), ownership: 'seed', kind: 'development-documentation', source: 'repository-code-scan' });
     artifacts.push({ path: unit.readme, content: readmeBlock(unit, config), ownership: 'managed-block', kind: 'development-readme', source: 'repository-code-scan' });
+    const localRoot = unit.path === '.' ? 'docs/ai' : `${unit.path}/docs/ai`;
+    artifacts.push({ path: `${localRoot}/rules/development.md`, content: unitRule(unit), ownership: 'seed', kind: 'development-unit-rule', source: unit.documentation });
+    const skillPath = `${localRoot}/skills/development-${unit.id}/SKILL.md`;
+    const skill = unitSkill(unit);
+    artifacts.push({ path: skillPath, content: skill, ownership: 'seed', kind: 'development-unit-skill', source: unit.documentation });
+    const prefix = unit.path === '.' ? '' : `${unit.path}/`;
+    for (const directory of adapterDirs) artifacts.push({ path: `${prefix}${directory}/development-${unit.id}/SKILL.md`, content: skillAdapterContent(skillPath, skill), ownership: 'full', kind: 'development-unit-adapter-skill', source: skillPath });
+    if (unit.path !== '.') artifacts.push({ path: `${unit.path}/AGENTS.md`, content: `# ${unit.path} development\n\nRead \`${unit.documentation}\`, \`${localRoot}/rules/development.md\`, and \`${localRoot}/skills/development-${unit.id}/SKILL.md\` before changes. Follow root governance and record verified business behavior in Memory.\n`, ownership: 'managed-block', kind: 'development-unit-entrypoint', source: unit.documentation });
   }
   const skill = understandingSkill(config);
   const canonical = 'docs/ai/skills/brownfield-understanding/SKILL.md';
   artifacts.push({ path: canonical, content: skill, ownership: 'full', kind: 'brownfield-understanding-skill', source: 'repository-code-scan' });
-  if (config.clients.some((client) => ['codex', 'cursor', 'generic'].includes(client))) artifacts.push({ path: '.agents/skills/brownfield-understanding/SKILL.md', content: skill, ownership: 'full', kind: 'brownfield-understanding-adapter-skill', source: canonical });
-  if (config.clients.includes('claude-code')) artifacts.push({ path: '.claude/skills/brownfield-understanding/SKILL.md', content: skill, ownership: 'full', kind: 'brownfield-understanding-adapter-skill', source: canonical });
+  const adapter = skillAdapterContent(canonical, skill);
+  for (const directory of adapterDirs) artifacts.push({ path: `${directory}/brownfield-understanding/SKILL.md`, content: adapter, ownership: 'full', kind: 'brownfield-understanding-adapter-skill', source: canonical });
   return { units, index, artifacts };
 }

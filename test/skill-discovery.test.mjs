@@ -10,6 +10,8 @@ import { scanProject } from '../src/scanner.mjs';
 import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { sha256 } from '../src/shared/index.mjs';
+import { skillAdapterContent } from '../src/shared/index.mjs';
+import { TOOL_NAME } from '../src/constants.mjs';
 import { validateApprovedAgentTeam } from '../src/modules/skills/decisions.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions, validateAdaptiveDecisions } from '../src/modules/skills/index.mjs';
@@ -121,13 +123,13 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.equal(candidates[0].permissions[0], 'read-project');
   assert.equal(candidates[0].content, undefined);
   const scan = scanProject(root);
-  const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' };
   assert.deepEqual(base.skillDiscovery, { enabled: false });
   assert.deepEqual(base.agentTeam, { enabled: false });
   const { config, plan } = approvedConfig(base, scan, candidates);
   const management = (item) => /skill-discovery|team-orchestrator|agent-team|skill-index/.test(item.path);
   assert.equal(buildArtifacts({ ...config, governanceDepth: 'minimal' }, scan).some(management), false);
-  assert.equal(buildArtifacts(base, scan).some(management), false);
+  assert.equal(buildArtifacts({ ...config, governanceDepth: 'standard' }, scan).some(management), false);
   assert.throws(() => buildArtifacts({ ...config, skillDiscovery: { ...config.skillDiscovery, approvalPlanHash: null } }, scan), /approval/i);
   const artifacts = buildArtifacts(config, scan);
   assert.equal(artifacts.filter(management).length, 4);
@@ -135,8 +137,12 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.deepEqual(roster.professionalBoundaries, config.agentTeam.professionalBoundaries);
   assert.equal(roster.teamType, 'project-ai-agent-team');
   assert.equal(plan.cost.increment.files, 4);
-  assert.ok(plan.cost.total.files <= 30);
-  assert.ok(plan.cost.total.bytes <= 96 * 1024);
+  // The Skill management increment is the budgeted quantity; the retained governance
+  // tree is budgeted by the approved governance depth instead.
+  assert.ok(plan.cost.increment.files <= 30);
+  assert.ok(plan.cost.increment.bytes <= 96 * 1024);
+  assert.ok(plan.cost.increment.managerTokens <= 800);
+  assert.ok(plan.cost.total.files >= plan.cost.increment.files);
   const bodies = artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path));
   assert.ok(Math.ceil(bodies.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4) <= 800);
   const map = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
@@ -313,13 +319,23 @@ test('task activation remains bounded and team, permission and total-cost change
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, 'retained historical governance seed\n');
   }
-  const overBudgetScan = { ...scan, governanceUsage: ['anti-patterns'] };
-  assert.throws(() => approvedConfig(
+  // Regression: an existing Complete repository that already retains a large governance
+  // tree must still be able to adopt skills. Budgeting the retained tree against a fixed
+  // allowance made the brownfield "no evidence-backed project Skill" gap unreachable.
+  const retainedScan = { ...scan, governanceUsage: ['anti-patterns'] };
+  const retained = approvedConfig(
     { ...base, governanceDepth: 'complete', clients: ['codex', 'claude-code', 'cursor'] },
-    overBudgetScan,
+    retainedScan,
     candidates,
     candidates.map((candidate) => candidate.id),
-  ), /budget/);
+  );
+  assert.equal(retained.plan.cost.increment.files, 4);
+  assert.ok(retained.plan.cost.increment.managerTokens <= 800);
+  assert.ok(retained.plan.cost.total.files > retained.plan.cost.increment.files, 'the retained governance tree stays visible in total cost');
+  assert.ok(buildArtifacts(retained.config, retainedScan).length > retained.plan.cost.increment.files);
+  const tampered = structuredClone(retained.config);
+  tampered.skillDiscovery.artifactPlan.cost.total.files += 1;
+  assert.throws(() => buildArtifacts(tampered, retainedScan), /approval|planHash/);
 });
 
 test('exact decisions bind source, version, digest, permissions and task activation without doing work', (context) => {
@@ -418,7 +434,11 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       assert.equal(transaction.operations.length + 1, plan.cost.total.files);
       assert.equal(bytes, plan.cost.total.bytes);
       assert.ok(bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
-      assert.ok(transaction.operations.length <= 30);
+      // The depth owns the tree: the delivery loop now ships by default in both Standard and
+      // Complete, and this fixture also carries the four adaptive management artifacts. Both
+      // depths land on the same 43 operations because the remaining Complete artifacts stay
+      // lazy until the usage profile requests them. Tighten this deliberately, not by accident.
+      assert.ok(transaction.operations.length <= 43, `${governanceDepth} ${artifactLanguage} operations ${transaction.operations.length}`);
       for (const artifact of artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
         if (artifactLanguage !== 'en') assert.match(artifact.content, /审批/);
         assert.match(artifact.content, /planHash/);
@@ -430,4 +450,58 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       assert.deepEqual(ordinary(artifacts), ordinary(buildArtifacts(base, scan)));
     }
   }
+});
+
+test('a canonical project Skill and its generated client adapter are one owner, not an unresolved conflict', (context) => {
+  const root = fixture(context);
+  const canonicalRelative = 'docs/ai/skills/standards/alpha/SKILL.md';
+  const canonical = path.join(root, canonicalRelative);
+  fs.mkdirSync(path.dirname(canonical), { recursive: true });
+  const canonicalContent = '---\nname: alpha-standard\ndescription: Apply the alpha standard.\nversion: 1.0.0\ncapabilities: ["alpha-standard"]\npermissions: []\n---\n# Alpha standard\n';
+  fs.writeFileSync(canonical, canonicalContent);
+
+  const adapterRelative = '.agents/skills/standards/alpha/SKILL.md';
+  const adapter = path.join(root, adapterRelative);
+  fs.mkdirSync(path.dirname(adapter), { recursive: true });
+  const adapterContent = skillAdapterContent(canonicalRelative, canonicalContent);
+  fs.writeFileSync(adapter, adapterContent);
+  fs.mkdirSync(path.join(root, '.ai-governance'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.ai-governance', 'manifest.json'), JSON.stringify({
+    schemaVersion: 1, generatedBy: TOOL_NAME, toolVersion: '0.0.0', templateVersion: 1,
+    files: [{ path: adapterRelative, ownership: 'full', kind: 'technical-standard-adapter-skill', source: canonicalRelative, sha256: sha256(adapterContent) }],
+  }));
+
+  const candidates = discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] });
+  const owner = candidates.find((item) => item.capabilityOwner === 'alpha-standard');
+  assert.equal(owner.source, `project:${canonicalRelative}`);
+  assert.notEqual(owner.availability, 'needs-user-decision');
+  assert.equal(owner.overlaps.length, 1);
+  assert.equal(owner.overlaps[0].source, `project:${adapterRelative}`);
+
+  // Approval must succeed even though the generated copy differs byte-for-byte.
+  const decision = approvedDecision(candidates, [owner.id]);
+  assert.equal(decision.status, 'approved');
+  assert.equal(decision.candidates.find((item) => item.id === owner.id).decision, 'approved');
+});
+
+test('a recorded decision keeps its candidate visible past the bounded candidate list', (context) => {
+  const root = fixture(context);
+  for (let index = 0; index < 7; index += 1) skill(root, `docs/ai/skills/standards/standard-${index}`, `standard-${index}`);
+  const allIds = Array.from({ length: 7 }, (_unused, index) => `clause-review-${sha256(`project:docs/ai/skills/standards/standard-${index}/SKILL.md`).slice(0, 12)}`);
+  const capped = discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] });
+  const dropped = allIds.filter((id) => !capped.some((item) => item.id === id));
+  // The context budget keeps the discovery result bounded.
+  assert.equal(capped.length, 5);
+  assert.ok(dropped.length >= 2, 'seven candidates must exceed the five-slot budget');
+
+  // A candidate that a stored approval already names must not fall out of the list.
+  // Losing it turns a valid plan into an unknown id, and every later init fails with
+  // "Adaptive decisions require unique known ids and add, defer or reject."
+  const recordedId = dropped[0];
+  const pinned = discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [], keepIds: [recordedId] });
+  assert.equal(pinned.length, 5);
+  assert.ok(pinned.some((item) => item.id === recordedId), 'a recorded candidate must survive the context budget');
+  const decision = approvedDecision(pinned, [recordedId]);
+  assert.equal(decision.status, 'approved');
+  assert.equal(decision.candidates.find((item) => item.id === recordedId).decision, 'approved');
 });

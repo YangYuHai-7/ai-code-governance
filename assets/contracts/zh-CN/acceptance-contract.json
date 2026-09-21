@@ -3,11 +3,11 @@
   "claim_states": {
     "present": "产物存在，且其声明的引用均可解析。",
     "reachable": "默认启动入口、上下文路由、能力目录或原生适配器提供了通向该产物的具体路径。",
-    "enforced": "真实交付入口针对所声明的违规以非零退出，且针对性负向探针已证明该失败及后续恢复。",
+    "enforced": "显式强制的真实交付入口针对所声明的违规以非零退出，且针对性负向探针已证明该失败及后续恢复。AICG 检查默认仍仅报告。",
     "real_client_verified": "声明的客户端或平台已成功执行真实配置入口；仅有合成调用不足以证明。"
   },
   "failure_policy": {
-    "delivery_checker_exception": "作为完成、pre-commit 或 CI 证据调用的检查器，遇到内部错误或畸形受管输入时必须以非零退出。",
+    "delivery_checker_exception": "AICG 完成、pre-commit 和 CI 检查默认写入失败报告并以零退出。显式强制的检查器遇到内部错误或畸形受管输入时必须以非零退出。",
     "ambient_hook_exception": "环境客户端钩子可为保持仓库可用性而警告并以零退出，但受影响声明在修复前必须标记为 unverified。",
     "optional_environment_dependency": "缺少仅本地使用或明确可选的依赖时，只有在检查器指出跳过的断言且不将声明报告为 enforced 的情况下，才可仅发出警告。"
   },
@@ -205,7 +205,7 @@
       "id": "runtime-completion-freshness",
       "applies_when": "运行时可从 verifying 返回 implementing，随后再完成。",
       "negative_case": "通过或确认全部门禁，重新进入 implementing，再回到 verifying，随后尝试不重新运行或确认门禁就完成。",
-      "expected_failure": "完成操作以非零退出，因为回执属于更旧的实现代次。",
+      "expected_failure": "完成操作默认报告旧回执；显式使用 --enforce 时因回执属于更旧的实现代次而以非零退出。",
       "recovery_case": "为当前代次重新运行每项机器门禁，并重新确认每项人工门禁。",
       "expected_recovery": "完成操作成功并记录完成的代次。",
       "proves": "旧证据不能证明更新的实现。"
@@ -331,7 +331,7 @@
       "id": "generated-adapter-no-links",
       "applies_when": "aicg init 或 aicg sync 在任意支持平台生成客户端专属适配器。",
       "negative_case": "将生成的适配器或任意祖先替换为符号链接、junction 或其他链接式文件系统对象。",
-      "expected_failure": "aicg check 以非零退出并指出链接路径；除非已明确授权链接迁移，否则初始化或同步停止。",
+      "expected_failure": "aicg check 默认报告链接路径；使用 --enforce 时以非零退出。除非已明确授权链接迁移，否则初始化或同步停止。",
       "recovery_case": "评审计划后运行明确的链接迁移，重新生成普通文件，再重放相同检查。",
       "expected_recovery": "检查以零退出，全部受管适配器为普通文件，原链接目标仍存在且未改变。",
       "proves": "跨平台适配器不依赖符号链接或 junction 语义。"
@@ -340,7 +340,7 @@
       "id": "managed-adapter-drift",
       "applies_when": "manifest 记录了生成的完整文件适配器或受管入口区块。",
       "negative_case": "仅编辑 manifest 拥有的内容，不更新其正典来源。",
-      "expected_failure": "aicg check 以非零退出并指出内容哈希不匹配。",
+      "expected_failure": "aicg check 默认报告内容哈希不匹配；使用 --enforce 时以非零退出。",
       "recovery_case": "评审漂移后运行 aicg sync --force，再重放 aicg check。",
       "expected_recovery": "仅恢复 manifest 拥有的内容，保留周围用户内容，检查以零退出。",
       "proves": "生成副本保持同步，不成为第二维护来源。"

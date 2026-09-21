@@ -69,7 +69,7 @@ test('Chinese artifacts localize generated body instructions across selected dep
     const architecture = JSON.parse(body('docs/ai/architecture-profile.json'));
     for (const text of [architecture.profile.summary, ...architecture.invariants, ...architecture.boundaries]) assert.match(text, /[\u3400-\u9fff]/u);
     assert.match(JSON.parse(body('docs/ai/module-graph.json')).claimBoundary, /[\u3400-\u9fff]/u);
-    for (const artifact of artifacts.filter((item) => /\/skills\/standards\/.*\/SKILL\.md$/.test(item.path))) {
+    for (const artifact of artifacts.filter((item) => /^docs\/ai\/skills\/standards\/.*\/SKILL\.md$/.test(item.path))) {
       assert.match(artifact.content, /技术证据.*变更表面/, artifact.path);
       assert.match(artifact.content, /## Verification matrix/, artifact.path);
       assert.doesNotMatch(artifact.content, /Apply this technical standard|Read the installed|This generated/);
@@ -439,8 +439,11 @@ test('standard and complete governance route owner-confirmed constraints through
     assert.match(skill, /untrusted client-supplied identity headers/i);
     assert.match(skill, /inactive, suspended, or revoked membership/i);
     assert.match(skill, /cross-tenant read and write attempts/i);
-    assert.equal(fs.readFileSync(path.join(root, '.agents/skills/business-constraints/SKILL.md'), 'utf8'), skill);
-    assert.equal(fs.readFileSync(path.join(root, '.claude/skills/business-constraints/SKILL.md'), 'utf8'), skill);
+    for (const relative of ['.agents/skills/business-constraints/SKILL.md', '.claude/skills/business-constraints/SKILL.md']) {
+      const adapter = fs.readFileSync(path.join(root, relative), 'utf8');
+      assert.match(adapter, /Read the complete Skill at `docs\/ai\/skills\/business-constraints\/SKILL\.md`/);
+      assert.doesNotMatch(adapter, /untrusted client-supplied identity headers/i);
+    }
     const contextMap = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
     assert.match(contextMap, /behavior_change:[\s\S]*conditional:[\s\S]*business:/);
     assert.match(contextMap, /docs\/ai\/skills\/business-constraints\/SKILL\.md/);
@@ -1054,7 +1057,7 @@ test('detects adapter drift and force sync repairs only managed content', (conte
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
-test('preserves edited canonical files and synchronizes skill copies from canonical content', (context) => {
+test('preserves edited canonical files and keeps thin Skill discovery adapters', (context) => {
   const root = fixture('canonical-source');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root, (value) => ({ ...value, clients: ['codex', 'claude-code'], governanceDepth: 'complete' }));
@@ -1065,13 +1068,16 @@ test('preserves edited canonical files and synchronizes skill copies from canoni
 
   const canonicalSkill = path.join(root, 'docs/ai/skills/generic-unknown/SKILL.md');
   fs.appendFileSync(canonicalSkill, '\nProject-specific canonical guidance.\n');
-  assert.equal(checkProject(scanProject(root)).ok, false);
+  assert.equal(checkProject(scanProject(root)).ok, true);
   const scan = scanProject(root);
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
 
-  assert.match(fs.readFileSync(path.join(root, '.agents/skills/generic-unknown/SKILL.md'), 'utf8'), /Project-specific canonical guidance/);
-  assert.match(fs.readFileSync(path.join(root, '.claude/skills/generic-unknown/SKILL.md'), 'utf8'), /Project-specific canonical guidance/);
+  for (const relative of ['.agents/skills/generic-unknown/SKILL.md', '.claude/skills/generic-unknown/SKILL.md']) {
+    const adapter = fs.readFileSync(path.join(root, relative), 'utf8');
+    assert.match(adapter, /Read the complete Skill at `docs\/ai\/skills\/generic-unknown\/SKILL\.md`/);
+    assert.doesNotMatch(adapter, /Project-specific canonical guidance/);
+  }
   assert.match(fs.readFileSync(antiPatterns, 'utf8'), /Preserve this canonical edit/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

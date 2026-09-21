@@ -31,3 +31,15 @@ test('runs the normal agent command without bypass flags', () => {
   assert.ok(invocation.args.includes('/tmp/project'));
   assert.equal(invocation.args.some((arg) => /bypass|dangerously|force/.test(arg)), false);
 });
+
+test('brownfield assist asks the selected Agent for source-backed Memory, documentation, and project Skills', () => {
+  let invocation;
+  runAssist('codex', '/tmp/project', {
+    lifecycle: 'existing', commandExists: () => true,
+    spawnSync: (_command, args) => { invocation = args.join(' '); return { status: 0 }; },
+  });
+  assert.match(invocation, /docs\/memory\/INDEX\.json/);
+  assert.match(invocation, /Evidence-reviewed behavior/);
+  assert.match(invocation, /project Skills/);
+  assert.match(invocation, /Preserve all product code/);
+});

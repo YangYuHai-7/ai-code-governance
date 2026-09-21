@@ -1,5 +1,7 @@
 # L8 检查器 与 L10 运行时钩子
 
+Current CLI policy: AICG checks, including the installed pre-commit hook, write local JSON reports and return exit code 0 for findings by default. `--enforce` opts into a nonzero exit code. The historical design below describes result states and earlier delivery policy; it does not override this CLI default. Initialization still rejects invalid artifact transactions.
+
 这两层是整套框架里**唯一真正的强制力**。其余各层是内容；这两层决定内容是否活着。
 
 ---

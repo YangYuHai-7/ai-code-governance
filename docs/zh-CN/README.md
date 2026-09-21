@@ -18,7 +18,7 @@
 </div>
 
 > [!IMPORTANT]
-> 当前检出内容是 `0.3.0` 源码候选版。源码版本、npm 发布状态、平台认证和真实客户端执行属于不同的证据状态。
+> 当前检出内容是 `0.4.0` 源码候选版。源码版本、npm 发布状态、平台认证和真实客户端执行属于不同的证据状态。
 
 <!-- sync:quick-start -->
 ## 快速开始
@@ -87,6 +87,25 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 6. **治理预设**——根据证据从 Minimal 或 Standard 开始；Complete 必须主动选择，不会因一句模糊需求自动启用。
 7. **可选能力**——记忆、Git hooks、CI、工作流、Skills 和专家角色分别决策。
 
+需要重复配置时，可在任意目录打开本地可视化配置页，并在页面选择项目。页面提供最近项目、绝对路径输入和文件夹浏览；传入路径则直接打开该项目。页面与命令行共用同一份 `aicg.config.json`，提供带解释的选择项，并可上传或下载 JSON 以共享配置。交互式 npm 安装（项目内或全局）会尝试自动打开项目选择页；如果 npm 跳过安装脚本或浏览器不可用，可手动打开。服务仅监听 `127.0.0.1`。上传后先在页面校验和保存；应用治理前还需重新预览精确计划并明确确认。
+
+```bash
+aicg config open
+aicg config open /absolute/path/to/project
+```
+
+如需直接拖拽项目文件夹，先运行一次 `aicg config launcher --yes` 创建桌面入口，然后把项目文件夹拖到 **AICG Configure** 图标上，即可打开该项目的可视化配置页。macOS 使用 `.app`，Windows 使用 `.cmd`，Linux 使用 `.desktop` 和 shell 脚本；双击入口则打开项目选择页。桌面目录不在默认位置时可指定 `--output /绝对路径/目录`。重复安装不会覆盖已有修改或其他同名文件。Linux 文件管理器可能要求将 `.desktop` 入口标记为可信。网页本身无法可靠取得拖入文件夹的磁盘绝对路径，因此网页内继续使用文件夹浏览器。
+
+也可以先生成可编辑的配置文件。模板采用保守的扫描结果，初始只选择 Codex，并把需要负责人确认的决策集中保留在文件中。校验前必须检查内容；项目阶段存在歧义时，仍需明确填写生命周期决策。
+
+```bash
+aicg config init . --output aicg.config.json --yes
+aicg config validate . --config aicg.config.json --json
+aicg init . --config aicg.config.json --yes --dry-run
+```
+
+`config init` 只创建不存在的文件；相同内容重复执行会返回 unchanged，已有不同内容、符号链接、不安全路径和 `.git` 目录都会被拒绝。`config validate` 是只读操作，并与 `init` 使用同一份有效初始化计划。安装前设置 `AICG_NO_AUTO_OPEN=1` 可关闭自动打开浏览器的尝试。
+
 仓库家族使用一个可精确审批的计划，同时保留每个成员仓的独立所有权：
 
 ```bash
@@ -96,7 +115,9 @@ aicg init . --family --yes --clients codex --no-assist --approve <planHash>
 
 组合计划同时绑定编排仓和所有检测到的成员仓。成员仓先于编排仓执行；父清单永不拥有成员仓文件；任一仓写入或后置检查失败时，整个仓库家族都会回滚。
 
-旧项目会获得 `docs/ai/development/index.json`、每个已识别子工程各自的证据基线，以及各 README 中的简短受管入口。`brownfield-understanding` Skill 要求 Agent 每次只处理一个子工程，依据代码和测试补全文档，把未知项保留为未验证，并只把稳定决策面提炼为项目 Skill。实现型 Skill 必须提供正确、错误和例外代码形状；工作流 Skill 必须提供可执行流程。
+旧项目会获得 `docs/ai/development/index.json`、每个已识别子工程各自的证据基线，以及各 README 中的简短受管入口。使用 `aicg init ... --assist <已选 Agent>`，让已选 Agent 按 `brownfield-understanding` 流程逐个子工程阅读代码和测试、把现存业务写入 Memory、补全开发文档，并提交稳定项目 Skill 供批准。`aicg check --json` 的 `brownfield.gaps` 会列出未完成项；扫描基线本身不代表业务理解完成。实现型 Skill 必须提供正确、错误和例外代码形状；工作流 Skill 必须提供可执行流程。
+
+所有 AICG 检查默认仅报告提醒，退出码为 0，并把 JSON 结果写入 `reports/aicg/`。显式传入 `--enforce` 才会在检查失败时返回非零退出码。已安装的提交前 hook 默认使用报告模式。
 
 Standard 与 Complete 还会生成扩展后的 `professional-testing` Skill。它使用稳定 Case ID、共享上下文、最小 AI 执行包、证据绑定的 PASS/FAIL、幂等结果账本、自动补齐 `NOT_RUN` 和从账本生成的报告。自动化、AI 模拟真人与真实用户证据严格分开。
 

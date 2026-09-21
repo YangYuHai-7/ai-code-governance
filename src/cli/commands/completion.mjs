@@ -1,6 +1,8 @@
 import { inspectCommitHook, installCommitHook, prepareCommitHookInstall, runCompletion } from '../../commit-completion.mjs';
 import { runReleaseAcceptance } from '../../release-acceptance.mjs';
 import { usageError } from '../../kernel/index.mjs';
+import path from 'node:path';
+import { writeGateReport } from '../../adapters/filesystem/index.mjs';
 
 function printCompletion(result, json) {
   if (json) {
@@ -25,9 +27,17 @@ function printCompletion(result, json) {
 }
 
 export function completeCommand(target, options) {
-  const result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null, taskLevel: options['task-level'] ?? null, reviewMode: options['review-mode'] ?? null, approvalEvidence: options['approval-evidence'] ?? null, approve: options.approve ?? null, workUnit: options['work-unit'] ?? null });
-  printCompletion(result, Boolean(options.json));
-  if (!result.ok) process.exitCode = 1;
+  let result;
+  try {
+    result = runCompletion(target, { fromGitHook: Boolean(options['from-git-hook']), verificationCommand: options.verify ?? null, taskLevel: options['task-level'] ?? null, reviewMode: options['review-mode'] ?? null, approvalEvidence: options['approval-evidence'] ?? null, approve: options.approve ?? null, workUnit: options['work-unit'] ?? null });
+  } catch (error) {
+    result = { ok: false, status: 'error', errors: [error.message] };
+  }
+  const reportPath = writeGateReport(path.resolve(target), 'complete', result);
+  if (result.status === 'error') console.log(JSON.stringify({ ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' }, null, 2));
+  else printCompletion({ ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' }, Boolean(options.json));
+  if (!options.json) console.log(`REPORT: ${reportPath}`);
+  if (options.enforce && !result.ok) process.exitCode = 1;
 }
 
 export function hookCommand(target, action, options) {
@@ -44,12 +54,18 @@ export function hookCommand(target, action, options) {
 
 export function releaseCheckCommand(target, options) {
   if (!options.type) throw usageError('release-check requires --type bugfix, feature, or major.');
-  const result = runReleaseAcceptance(target, {
-    changeType: options.type,
-    evidencePath: options.evidence ?? null,
-    replayCommands: Boolean(options.replay),
-    replayApproval: options.approve ?? null,
-  });
-  console.log(JSON.stringify(result, null, 2));
-  if (!result.ok) process.exitCode = 1;
+  let result;
+  try {
+    result = runReleaseAcceptance(target, {
+      changeType: options.type,
+      evidencePath: options.evidence ?? null,
+      replayCommands: Boolean(options.replay),
+      replayApproval: options.approve ?? null,
+    });
+  } catch (error) {
+    result = { ok: false, status: 'error', errors: [error.message] };
+  }
+  const reportPath = writeGateReport(path.resolve(target), 'release-check', result);
+  console.log(JSON.stringify({ ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' }, null, 2));
+  if (options.enforce && !result.ok) process.exitCode = 1;
 }

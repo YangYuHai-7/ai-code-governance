@@ -18,13 +18,15 @@ const packageVersion = JSON.parse(fs.readFileSync(new URL('../package.json', imp
 if (part === 'unit') {
 
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
-  const expected = ['help', 'version', 'request', 'init', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  // The retired commands remain in the registry so existing scripts keep working and emit a
+  // single deprecation line. New code should call the surviving replacement.
+  const expected = ['help', 'version', 'request', 'route', 'init', 'config', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
   assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
   assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
   for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
     const module = await import(new URL(`../src/cli/${definition.module}`, import.meta.url));
     assert.equal(typeof module[definition.exportName], 'function', `${command}: missing export`);
-    assert.deepEqual(definition.argumentKeys, ['hook', 'evidence', 'work-unit', 'test-case'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
+    assert.deepEqual(definition.argumentKeys, ['config', 'hook', 'evidence', 'work-unit', 'test-case'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
   }
   const registry = fs.readFileSync(new URL('../src/cli/command-registry.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(registry, /^import .* from ['"]\.\/commands\//m, 'help/version must not eagerly load command implementations');
@@ -335,9 +337,10 @@ test('Chinese and English human discovery output gives one plain-language action
       const result = run([command, root, '--locale', locale]);
       assert.equal(result.status, 0, `${command}/${locale}: ${result.stderr}`);
       const lines = result.stdout.trim().split('\n');
-      assert.equal(lines.length, 4, `${command}/${locale}: ${result.stdout}`);
+      assert.equal(lines.length, command === 'doctor' ? 5 : 4, `${command}/${locale}: ${result.stdout}`);
       labels.forEach((label, index) => assert.ok(lines[index].startsWith(label), `${command}/${locale}: ${result.stdout}`));
       assert.match(lines[1], new RegExp(`aicg init \\. --guided --locale ${locale}$`));
+      if (command === 'doctor') assert.match(lines[4], /^REPORT: reports\/aicg\/latest-doctor\.json$/);
     }
   }
 
@@ -435,6 +438,58 @@ test('a confirmed new project records that architecture is not established', (co
   assert.ok(config.initialClassification.requiredDecisions.some((decision) => (
     decision.id === 'architecture-not-established' && decision.status === 'not-established'
   )));
+});
+
+test('a client directory already in the repository names the scope without --clients', (context) => {
+  const root = fixture('evidence-claude');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.claude', 'settings.json'), '{}\n');
+  const initialized = run(['init', root, '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
+  assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['claude-code'], source: 'inferred-repository' });
+  // The evidence is the directory, not a Skill inside it, and reading `.claude` must not
+  // drag in the codex adapter tree that shares nothing with Claude Code.
+  assert.equal(fs.existsSync(path.join(root, '.claude/skills')), true);
+  assert.equal(fs.existsSync(path.join(root, '.agents')), false);
+});
+
+test('shared governance roots only name a client when no unambiguous root already does', (context) => {
+  const root = fixture('evidence-cursor');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.cursor/rules'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.agents/skills'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.cursor/rules/00.mdc'), 'rule\n');
+  fs.writeFileSync(path.join(root, '.agents/skills/notes.md'), 'shared root evidence\n');
+  const initialized = run(['init', root, '--yes', '--no-assist']);
+  assert.equal(initialized.status, 0, initialized.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
+  // `.agents` is declared by codex, cursor and generic, so on its own it cannot decide.
+  // `.cursor/rules` can, and it must win instead of adding codex to a Cursor repository.
+  assert.deepEqual(config.clientSupport.selectedClients, ['cursor']);
+});
+
+test('an evidence-free repository still refuses an explicit scope while the chat surface resolves it', (context) => {
+  const root = fixture('no-evidence');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rejected = run(['init', root, '--yes', '--no-assist']);
+  assert.equal(rejected.status, 2);
+  assert.match(rejected.stderr, /Client support scope must be explicit/);
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
+
+  // The chat surface exists so the operator does not have to name flags, so it takes the
+  // smallest scope that still produces a working entry: codex reads AGENTS.md and
+  // .agents/skills, so one adapter tree is written instead of three. The plan is still
+  // approved by hash and the config records which route resolved the scope.
+  const preview = run(['request', root, '--text', '初始化治理框架', '--dry-run', '--json']);
+  assert.equal(preview.status, 0, preview.stderr);
+  const applied = run(['request', root, '--text', '初始化治理框架', `--approve=${JSON.parse(preview.stdout).plan.planHash}`, '--json']);
+  assert.equal(applied.status, 0, applied.stderr);
+  const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance', 'config.json'), 'utf8'));
+  assert.deepEqual(config.clientSupport, { mode: 'selected', selectedClients: ['codex'], source: 'inferred-default' });
+  assert.equal(fs.existsSync(path.join(root, '.agents/skills')), true);
+  assert.equal(fs.existsSync(path.join(root, '.claude')), false);
 });
 
 }
@@ -573,7 +628,7 @@ test('post-init source and scripts produce read-only rescan CTAs without mutatin
   assert.equal(fs.readFileSync(configPath, 'utf8'), configBefore);
 
   const completed = run(['complete', root, '--verify', 'npm test', '--json']);
-  assert.equal(completed.status, 1, `${completed.stderr}\n${completed.stdout}`);
+  assert.equal(completed.status, 0, `${completed.stderr}\n${completed.stdout}`);
   const completion = JSON.parse(completed.stdout);
   assert.equal(completion.ok, false);
   assert.equal(completion.taskRoute.status, 'unverified-declaration');

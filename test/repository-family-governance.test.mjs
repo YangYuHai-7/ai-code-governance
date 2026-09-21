@@ -86,6 +86,49 @@ test('family init binds root and autonomous members to one approved plan', (cont
   assert.equal(parentManifest.files.some((entry) => entry.path.startsWith('modules/frontend/')), false);
 });
 
+test('implicit init and a chat request govern a checked-out family without being told it is one', (context) => {
+  const root = fixture(context, 'family-implicit');
+  makeFamily(root);
+  const preview = runCli(['init', root, '--yes', '--clients', 'codex', '--no-assist', '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr);
+  const plan = JSON.parse(preview.stdout);
+  assert.equal(plan.family, true);
+  assert.deepEqual(plan.units.map((unit) => unit.path), ['modules/frontend', '.']);
+
+  const requested = runCli(['request', root, '--text', '根据aicg完成项目治理框架', '--dry-run', '--json', '--clients', 'codex']);
+  assert.equal(requested.status, 0, requested.stderr);
+  const payload = JSON.parse(requested.stdout);
+  assert.equal(payload.intent.id, 'governance.initialize');
+  assert.equal(payload.family, true);
+  assert.equal(payload.plan.planHash, plan.planHash);
+
+  // The operator can still ask for the orchestrator alone: --no-family opts out of the
+  // implicit decision, so the ordinary single-repository lifecycle rules apply again.
+  const lifecycle = path.join(root, 'lifecycle.json');
+  fs.writeFileSync(lifecycle, JSON.stringify({ initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing' } }));
+  const single = runCli(['init', root, '--yes', '--clients', 'codex', '--no-assist', '--no-family', '--config', lifecycle, '--dry-run']);
+  assert.equal(single.status, 0, single.stderr);
+  assert.equal(single.stdout.includes('"family": true'), false);
+});
+
+test('family init skips declared submodules that are not checked out', (context) => {
+  const root = fixture(context, 'family-uninitialized');
+  makeFamily(root);
+  write(root, '.gitmodules', '[submodule "frontend"]\n  path = modules/frontend\n  url = https://example.invalid/frontend.git\n[submodule "optional"]\n  path = modules/optional\n  url = https://example.invalid/optional.git\n');
+  fs.mkdirSync(path.join(root, 'modules/optional'), { recursive: true });
+  const baseArgs = ['init', root, '--family', '--yes', '--clients', 'codex', '--no-assist'];
+  const preview = runCli([...baseArgs, '--dry-run']);
+  assert.equal(preview.status, 0, preview.stderr);
+  const plan = JSON.parse(preview.stdout);
+  assert.deepEqual(plan.units.map((unit) => unit.path), ['modules/frontend', '.']);
+  const applied = runCli([...baseArgs, '--approve', plan.planHash]);
+  assert.equal(applied.status, 0, applied.stderr);
+  const checked = checkProject(scanProject(root));
+  assert.equal(checked.ok, true, JSON.stringify(checked.errors));
+  assert.ok(checked.warnings.some((warning) => warning.includes('modules/optional: uninitialized')));
+  assert.equal(fs.existsSync(path.join(root, 'modules/optional/AGENTS.md')), false);
+});
+
 test('check requires migration when a previously single repository becomes a repository family', (context) => {
   const root = fixture(context, 'family-migration');
   write(root, 'src/app.ts', 'export const app = true;\n');

@@ -14,7 +14,11 @@
         "diagnose governance",
         "repair governance diagnosis",
         "inspect governance environment"
-      ]
+      ],
+      "match": {
+        "objects": ["治理环境", "治理框架", "治理体系", "aicg", "governance", "治理"],
+        "actions": ["诊断", "修复", "体检", "排查", "治疗", "diagnose", "repair", "inspect", "doctor"]
+      }
     },
     {
       "id": "governance.validate",
@@ -26,7 +30,11 @@
         "检查项目ai治理框架",
         "check governance",
         "validate governance"
-      ]
+      ],
+      "match": {
+        "objects": ["治理框架", "治理体系", "aicg", "governance", "治理"],
+        "actions": ["检查", "验证", "校验", "核对", "复查", "check", "validate"]
+      }
     },
     {
       "id": "governance.complete",
@@ -38,7 +46,11 @@
         "完成治理验证",
         "run completion gate",
         "run governance completion"
-      ]
+      ],
+      "match": {
+        "objects": ["完成门禁", "交付门禁", "门禁", "收尾检查", "completion gate"],
+        "actions": ["运行", "跑", "执行", "触发", "run"]
+      }
     },
     {
       "id": "governance.install-precommit",
@@ -49,7 +61,11 @@
         "启用提交门禁",
         "install git commit gate",
         "install pre-commit governance gate"
-      ]
+      ],
+      "match": {
+        "objects": ["提交门禁", "git提交门禁", "提交钩子", "pre-commit", "钩子", "hook"],
+        "actions": ["安装", "启用", "装上", "加上", "install"]
+      }
     },
     {
       "id": "governance.precommit-status",
@@ -60,7 +76,11 @@
         "检查git提交门禁",
         "show pre-commit governance status",
         "check git commit gate"
-      ]
+      ],
+      "match": {
+        "objects": ["提交门禁", "git提交门禁", "提交钩子", "pre-commit", "钩子", "hook"],
+        "actions": ["检查", "查看", "状态", "show", "status", "check"]
+      }
     },
     {
       "id": "release.acceptance-check",
@@ -72,7 +92,11 @@
         "检查部署前验收标准",
         "check release acceptance",
         "run pre-deployment acceptance"
-      ]
+      ],
+      "match": {
+        "objects": ["发布验收", "部署前验收", "验收", "release"],
+        "actions": ["检查", "运行", "跑", "check", "run"]
+      }
     },
     {
       "id": "project.assess",
@@ -84,7 +108,11 @@
         "识别新旧项目治理策略",
         "assess governance project path",
         "assess project governance"
-      ]
+      ],
+      "match": {
+        "objects": ["治理路径", "项目治理路径", "治理策略", "项目治理策略"],
+        "actions": ["评估", "识别", "判断", "选择", "assess"]
+      }
     },
     {
       "id": "architecture.assess",
@@ -96,7 +124,11 @@
         "给出项目迁移方案",
         "assess project architecture",
         "assess project structure"
-      ]
+      ],
+      "match": {
+        "objects": ["项目架构", "项目目录结构", "目录结构", "项目结构", "架构"],
+        "actions": ["评估", "分析", "迁移方案", "assess", "architecture"]
+      }
     },
     {
       "id": "technical-standards.preview",
@@ -108,7 +140,11 @@
         "查看技术栈开发规范",
         "preview technical standards",
         "show technical standard skills"
-      ]
+      ],
+      "match": {
+        "objects": ["技术规范", "技术标准", "技术栈开发规范", "开发规范", "standards"],
+        "actions": ["生成", "预览", "查看", "preview", "show"]
+      }
     },
     {
       "id": "team.recommend",
@@ -120,7 +156,11 @@
         "根据技术栈和业务给出团队建议",
         "recommend a project team",
         "recommend team coverage"
-      ]
+      ],
+      "match": {
+        "objects": ["团队", "团队配置", "团队建议", "team"],
+        "actions": ["建议", "推荐", "recommend"]
+      }
     },
     {
       "id": "capability.harvest",
@@ -132,7 +172,11 @@
         "更新项目能力技能",
         "harvest project capabilities",
         "extract project capabilities"
-      ]
+      ],
+      "match": {
+        "objects": ["项目能力", "能力"],
+        "actions": ["提取", "收割", "收集", "harvest", "extract"]
+      }
     },
     {
       "id": "capability.promote",
@@ -143,7 +187,11 @@
         "确认项目能力复用",
         "promote project capability",
         "adopt project capability"
-      ]
+      ],
+      "match": {
+        "objects": ["项目能力", "能力"],
+        "actions": ["晋升", "确认复用", "提升", "promote", "adopt"]
+      }
     },
     {
       "id": "governance.initialize",
@@ -157,7 +205,11 @@
         "建立项目ai治理框架",
         "initialize governance",
         "initialize project governance"
-      ]
+      ],
+      "match": {
+        "objects": ["治理框架", "治理体系", "项目治理", "ai治理", "aicg治理", "governance", "治理", "aicg"],
+        "actions": ["初始化", "建立", "生成", "创建", "搭建", "配置", "完成", "做", "实施", "落地", "部署", "跑起来", "init", "initialize", "setup", "bootstrap"]
+      }
     },
     {
       "id": "governance.sync-managed",
@@ -168,7 +220,11 @@
         "同步治理适配器",
         "sync governance adapters",
         "sync managed governance"
-      ]
+      ],
+      "match": {
+        "objects": ["受管治理适配器", "受管适配器", "治理适配器", "适配器", "adapters"],
+        "actions": ["同步", "sync"]
+      }
     }
   ]
 }

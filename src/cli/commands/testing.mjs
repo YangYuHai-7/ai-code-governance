@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { readBoundedRepositoryFile } from '../../preconditions.mjs';
-import { exists, writeAtomicFile } from '../../adapters/filesystem/index.mjs';
+import { exists, writeAtomicFile, writeGateReport } from '../../adapters/filesystem/index.mjs';
 import { defaultConfig, validateConfig } from '../../generator.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { stableJson } from '../../shared/index.mjs';
@@ -65,9 +65,17 @@ function initCases(root, options, config) {
 }
 
 function validateCases(root, options) {
-  const manifest = jsonFile(root, options.manifest, '--manifest');
-  validateTestCaseManifest(manifest);
-  console.log(JSON.stringify({ valid: true, schemaVersion: manifest.schemaVersion, scope: manifest.scope, caseCount: manifest.cases.length }, null, 2));
+  let result;
+  try {
+    const manifest = jsonFile(root, options.manifest, '--manifest');
+    validateTestCaseManifest(manifest);
+    result = { ok: true, valid: true, schemaVersion: manifest.schemaVersion, scope: manifest.scope, caseCount: manifest.cases.length };
+  } catch (error) {
+    result = { ok: false, valid: false, errors: [error.message] };
+  }
+  const reportPath = writeGateReport(root, 'test-case', result);
+  console.log(JSON.stringify({ ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' }, null, 2));
+  if (options.enforce && !result.ok) process.exitCode = 1;
 }
 
 function selectCases(root, options) {
@@ -99,10 +107,9 @@ function recordCases(root, options, config) {
 
 export function testCaseCommand(target, action, options) {
   const root = path.resolve(target);
-  const config = configured(root);
-  if (action === 'init') return initCases(root, options, config);
   if (action === 'validate') return validateCases(root, options);
+  if (action === 'init') return initCases(root, options, configured(root));
   if (action === 'select') return selectCases(root, options);
-  if (action === 'record') return recordCases(root, options, config);
+  if (action === 'record') return recordCases(root, options, configured(root));
   throw usageError('test-case requires init, validate, select, or record.');
 }

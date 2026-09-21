@@ -286,6 +286,10 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
         hooks: false,
         externalWorkflows: false,
         ciIntegration: false,
+        // The delivery loop is a default part of the generated framework, so the guided path
+        // carries it instead of silently dropping it. An owner who already recorded `false`
+        // keeps that decision; only an absent value falls back to the default.
+        deliveryLoop: seed.features?.deliveryLoop ?? true,
         aiAssist: false,
       },
     };
@@ -366,6 +370,8 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
     const hooks = await yesNo(rl, 'Prepare project hooks?', false);
     const externalWorkflows = await yesNo(rl, 'Enable an external workflow provider configuration?', false);
     const ciIntegration = await yesNo(rl, 'Prepare target-project CI integration?', false);
+    const deliveryLoop = governanceDepth !== 'minimal'
+      && await yesNo(rl, 'Generate the requirement-to-tested-change delivery loop (decomposition, assignment, development, test-authoring, local-test, report, fix-loop)?', seed.features?.deliveryLoop ?? true);
     const constraintAnswer = (await rl.question('Optional project constraints (semicolon separated): ')).trim();
     const confirmedRiskSignals = !constraintAnswer ? [] : await chooseMany(rl, zh ? '已由负责人确认的风险信号（不从约束文本推断）' : 'Owner-confirmed risk signals (not inferred from constraint text)', [
       { label: 'Authentication', value: 'authentication' },
@@ -397,7 +403,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
         : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',
       supportedOs,
       initialization,
-      features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, aiAssist },
+      features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, deliveryLoop, aiAssist },
       domainConstraints: constraintAnswer ? constraintAnswer.split(';').map((item) => item.trim()).filter(Boolean) : [],
       confirmedRiskSignals,
     };

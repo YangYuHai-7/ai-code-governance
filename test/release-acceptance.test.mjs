@@ -407,7 +407,7 @@ test('CLI and exact chat intent use the same release acceptance core', (context)
   });
   const prepared = completeEvidence(root, 'feature', '3.1.4', '3.2.0');
   const directPreview = run(['release-check', root, '--type', 'feature', '--evidence', prepared.evidencePath, '--json']);
-  assert.equal(directPreview.status, 1);
+  assert.equal(directPreview.status, 0);
   const directPlan = JSON.parse(directPreview.stdout).replayPlan;
   const direct = run(['release-check', root, '--type', 'feature', '--evidence', prepared.evidencePath, '--replay', '--approve', directPlan.planHash, '--json']);
   assert.equal(direct.status, 0, direct.stderr);
@@ -417,7 +417,7 @@ test('CLI and exact chat intent use the same release acceptance core', (context)
     releaseAcceptance: { changeType: 'feature', evidencePath: prepared.evidencePath, replayCommands: true },
   })));
   const chatPreview = run(['request', root, '--text', '检查发布验收', '--config', config, '--json']);
-  assert.equal(chatPreview.status, 1);
+  assert.equal(chatPreview.status, 0);
   const chatPlan = JSON.parse(chatPreview.stdout).result.replayPlan;
   const chat = run(['request', root, '--text', '检查发布验收', '--config', config, '--approve', chatPlan.planHash, '--json']);
   assert.equal(chat.status, 0, chat.stderr);

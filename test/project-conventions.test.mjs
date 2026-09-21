@@ -37,6 +37,24 @@ test('repeated project-local calls yield evidence-bound candidates with stale ap
   assert.equal(reconcileAdaptiveDecisions([changed], [], receipts)[0].action, 'defer');
 });
 
+test('convention receipts bind the evidence surface, not the presentational prose', (t) => {
+  const root = memoryFixture(t);
+  const scan = scanProject(root);
+  const candidate = discoverProjectConventionCandidates(scan, scanProjectMemoryFacts(scan)).candidates.find((entry) => entry.id === 'project-api-client');
+  assert.ok(candidate);
+  // A reworded claim about identical evidence keeps the approval: trigger, why, example and
+  // the freshness note are prose, and a generator rewording must not reset owner decisions.
+  const reworded = { ...candidate, trigger: 'Reworded trigger.', why: 'Reworded summary.', example: "fetch('/rewritten')", staleOnChange: 'Reworded freshness note.' };
+  assert.equal(adaptiveDecisionEvidenceHash(reworded), adaptiveDecisionEvidenceHash(candidate));
+  // Changing the evidence itself still invalidates the receipt.
+  const rewrittenDigests = Object.fromEntries(Object.keys(candidate.sourceDigests).map((relative) => [relative, '0'.repeat(64)]));
+  assert.notEqual(adaptiveDecisionEvidenceHash({ ...candidate, sourceDigests: rewrittenDigests }), adaptiveDecisionEvidenceHash(candidate));
+  // Skill candidates are machine evidence rather than prose, so their metadata stays
+  // deny-list bound: a permission change there genuinely changes what was approved.
+  const skill = { id: 'offline-skill', permissions: ['read-project'] };
+  assert.notEqual(adaptiveDecisionEvidenceHash({ ...skill, permissions: ['network'] }), adaptiveDecisionEvidenceHash(skill));
+});
+
 test('conflicting API client styles produce a visible gap instead of a standard', (t) => {
   const root = memoryFixture(t);
   write(root, 'src/api/other.mjs', "import axios from 'axios';\nexport function other() { return axios.get('/api/widgets'); }\n");

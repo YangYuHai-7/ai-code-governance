@@ -36,6 +36,9 @@ try {
     const result = spawnSync(process.execPath, [path.join(root, 'bin/aicg.js'), ...args], { encoding: 'utf8' });
     assert.equal(result.status, 0, `${args.join(' ')} failed:\n${result.stdout}\n${result.stderr}`);
   }
+  // The retired `standards` / `harvest` / `promote` commands stay wired to their original
+  // implementations so existing CI keeps working; verify their write paths still require
+  // an exact approval gate and never bypass the transaction contract.
   for (const args of [
     ['harvest', fixture, '--yes', '--json'],
     ['promote', fixture, '--id', 'project-http-client', '--entrypoint', 'src/http-client.ts', '--verify', 'npm run verify', '--yes', '--json'],

@@ -52,6 +52,7 @@ export const BUILD_CONFIGURATION_NAMES = ['vite', 'next', 'webpack', 'rollup', '
 
 const GREENFIELD_SAFE_PATHS = [
   /^(?:README(?:\.[^/]+)?|LICENSE(?:\.[^/]+)?|NOTICE(?:\.[^/]+)?|CHANGELOG(?:\.[^/]+)?|CONTRIBUTING(?:\.[^/]+)?)$/i,
+  /^(?:.+\/)?aicg\.config\.json$/,
   /^(?:\.gitignore|\.gitattributes|\.editorconfig|\.npmrc|\.node-version|\.tool-versions)$/,
   /^docs\/(?!ai\/).+\.(?:md|mdx|rst|txt)$/i,
 ];
@@ -355,6 +356,11 @@ export function buildDecisionLedger(scan, config = null) {
       },
     ],
     pendingDecisions,
+    pendingArchitectureDecision: config?.architectureApproval ? null : {
+      id: 'architecture-adoption',
+      status: 'not-adopted',
+      question: 'Review the proposed directory and module boundaries after implementation evidence exists, then record owner adoption before claiming the architecture is established.',
+    },
   };
   return {
     ...base,
@@ -371,7 +377,7 @@ export function assessmentSummary(scan) {
     sourceFiles: (sourceFiles ?? []).map(({ absolute, ...file }) => file),
   }));
   const familyIncomplete = (scan.repositoryFamily?.issues?.length ?? 0) > 0
-    || governanceUnits.some((unit) => unit.status !== 'scanned');
+    || governanceUnits.some((unit) => !['scanned', 'uninitialized'].includes(unit.status));
   return {
     target: scan.root,
     assessmentStatus: scan.scanBudget?.complete === false || familyIncomplete ? 'incomplete' : 'complete',

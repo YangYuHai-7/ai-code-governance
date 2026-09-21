@@ -313,14 +313,15 @@ test('the installed hook accepts only explicit safe approval environment values'
   const invoke = (values) => spawnSync(path.join(root, '.git/hooks/pre-commit'), [], { cwd: root, env: values, encoding: 'utf8' });
   const approved = invoke(env);
   assert.equal(approved.status, 0, approved.stdout + approved.stderr);
-  assert.notEqual(invoke({ ...env, AICG_APPROVE: '0'.repeat(64) }).status, 0);
-  assert.notEqual(invoke({ ...env, AICG_TASK_LEVEL: '' }).status, 0);
-  assert.notEqual(invoke({ ...env, AICG_APPROVAL_EVIDENCE: '$(touch env-injection)' }).status, 0);
+  assert.equal(invoke({ ...env, AICG_APPROVE: '0'.repeat(64) }).status, 0);
+  assert.equal(invoke({ ...env, AICG_TASK_LEVEL: '' }).status, 0);
+  assert.equal(invoke({ ...env, AICG_APPROVAL_EVIDENCE: '$(touch env-injection)' }).status, 0);
   assert.equal(fs.existsSync(path.join(root, 'env-injection')), false);
   write(root, 'src/modules/widget/index.mjs', 'export const changed = true;\n');
   assert.equal(invoke(env).status, 0, 'unstaged source must not alter hook approval');
   assert.equal(git(root, ['add', 'src/modules/widget/index.mjs']).status, 0);
-  assert.notEqual(invoke(env).status, 0, 'staging changed bytes invalidates the old plan');
+  assert.equal(invoke(env).status, 0, 'staging changed bytes produces an advisory finding');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'reports/aicg/latest-complete.json'))).passed, false);
 });
 
 test('production completion cannot pass with an omitted task declaration or missing approval evidence', (context) => {
@@ -345,7 +346,7 @@ test('complete accepts explicit review and approval flags but rejects stale evid
   write(root, 'src/modules/widget/index.mjs');
   write(root, 'approval.json', JSON.stringify({ schemaVersion: 1, planHash: '0'.repeat(64), reviewEvidence: {}, professionalBoundaries: [], approvals: [] }));
   const result = run(['complete', root, '--task-level', 'L2', '--review-mode', 'quick-review', '--approval-evidence', 'approval.json', '--approve', '0'.repeat(64), '--json']);
-  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.status, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).taskApproval.status, 'stale-plan');
 });
 
@@ -544,7 +545,7 @@ test('completion rejects L1 after a production or high-risk diff', (context) => 
   initialize(root);
   write(root, 'src/payment.mjs');
   const result = run(['complete', root, '--task-level', 'L1', '--json']);
-  assert.equal(result.status, 1, result.stderr);
+  assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout);
   assert.equal(payload.taskRoute.status, 'upgrade-required');
   assert.equal(payload.taskRoute.minimumLevel, 'L3');
@@ -701,7 +702,8 @@ test('manual and hook completion require a commit HEAD on initial and orphan bra
     for (const fromGitHook of [true, false]) {
       assert.throws(() => runCompletion(root, { fromGitHook, taskLevel: 'L3' }), (error) => error.code === 'AICG_USAGE');
       const result = run(['complete', root, '--task-level', 'L3', '--json', ...(fromGitHook ? ['--from-git-hook'] : [])]);
-      assert.equal(result.status, 2, `${result.stderr}\n${result.stdout}`);
+      assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+      assert.equal(JSON.parse(result.stdout).ok, false);
     }
     assert.deepEqual(fs.readFileSync(path.join(root, '.git/index')), indexBefore);
     assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/config.json')), configBefore);
@@ -729,13 +731,13 @@ test('completion rejects invalid declarations and unreadable repository evidence
     assert.throws(() => runCompletion(root, { taskLevel }), (error) => error.code === 'AICG_USAGE' && /task.level/.test(error.message));
   }
   const invalid = run(['complete', root, '--task-level', 'L4', '--json']);
-  assert.equal(invalid.status, 2);
-  assert.match(invalid.stderr, /task.level/);
+  assert.equal(invalid.status, 0);
+  assert.match(invalid.stdout, /task.level/);
   write(root, '.git/HEAD', 'invalid head\n');
   assert.throws(() => runCompletion(root, { taskLevel: 'L1' }), (error) => error.code === 'AICG_USAGE');
   const noRepo = fixture('no-repository');
   context.after(() => fs.rmSync(noRepo, { recursive: true, force: true }));
-  assert.notEqual(run(['complete', noRepo, '--json']).status, 0);
+  assert.equal(run(['complete', noRepo, '--json']).status, 0);
 });
 
 function initializeWithConstraints(root, constraints, confirmedRiskSignals = ['authorization']) {
@@ -790,16 +792,16 @@ test('manual completion is read-only and runs only an explicitly discovered npm 
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
 
   const unknown = run(['complete', root, '--verify', 'npm run missing', '--json']);
-  assert.equal(unknown.status, 2);
-  assert.match(unknown.stderr, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
+  assert.equal(unknown.status, 0);
+  assert.match(unknown.stdout, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
 
   const injected = run(['complete', root, '--verify', 'npm test -- --watch', '--json']);
-  assert.equal(injected.status, 2);
-  assert.match(injected.stderr, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
+  assert.equal(injected.status, 0);
+  assert.match(injected.stdout, /Allowed commands: npm run test, npm run verify, npm run verify:broken/);
 
   const failed = run(['complete', root, '--verify', 'npm run verify:broken', '--json']);
-  assert.equal(failed.status, 1, failed.stderr);
+  assert.equal(failed.status, 0, failed.stderr);
   assert.equal(JSON.parse(failed.stdout).projectVerification.status, 'failed');
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
 });
@@ -832,12 +834,12 @@ test('completion exposes only verification scripts and never runs implicit npm l
   ]);
 
   const hooked = run(['complete', root, '--verify', 'npm test', '--json']);
-  assert.equal(hooked.status, 2);
-  assert.match(hooked.stderr, /Allowed commands: npm run test:unit, npm run verify/);
+  assert.equal(hooked.status, 0);
+  assert.match(hooked.stdout, /Allowed commands: npm run test:unit, npm run verify/);
   assert.equal(fs.existsSync(marker), false, 'implicit pretest hook must not execute');
 
   const deploy = run(['complete', root, '--verify', 'npm run deploy', '--json']);
-  assert.equal(deploy.status, 2);
+  assert.equal(deploy.status, 0);
   assert.equal(fs.existsSync(marker), false);
 
   const verified = runApproved(['complete', root, '--verify', 'npm run verify', '--json']);
@@ -873,7 +875,7 @@ for (const artifactLanguage of ['en', 'zh-CN']) test(`surface verification passe
   const profiles = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/surface-verification-profiles.json'), 'utf8'));
   assert.equal(/[\u3400-\u9fff]/u.test(profiles.claimBoundary), artifactLanguage === 'zh-CN');
   const fabricated = run(['complete', root, '--verify', 'npm run test:http', '--json']);
-  assert.equal(fabricated.status, 1, fabricated.stderr);
+  assert.equal(fabricated.status, 0, fabricated.stderr);
   const fabricatedPayload = JSON.parse(fabricated.stdout);
   assert.equal(fabricatedPayload.projectVerification.status, 'passed');
   assert.equal(fabricatedPayload.surfaceVerification.status, 'blocked');
@@ -931,7 +933,7 @@ test('surface verification rejects a successful command with a marker bound to a
     stories: [{ id: 'http-health', signalId: 'surface-node-http', profileId: 'http-contract', entrypoint: 'GET /health', reachability: 'reachable', environment: 'available', command: 'npm run test:http' }],
   }));
   const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
-  assert.equal(completed.status, 1, completed.stderr);
+  assert.equal(completed.status, 0, completed.stderr);
   assert.equal(JSON.parse(completed.stdout).surfaceVerification.status, 'blocked');
 });
 
@@ -956,7 +958,7 @@ test('surface verification blocks an explicitly internal-only unreachable story'
     }],
   }));
   const completed = run(['complete', root, '--verify', 'npm run test:http', '--json']);
-  assert.equal(completed.status, 1, completed.stderr);
+  assert.equal(completed.status, 0, completed.stderr);
   const payload = JSON.parse(completed.stdout);
   assert.equal(payload.projectVerification.status, 'passed');
   assert.equal(payload.surfaceVerification.status, 'blocked');
@@ -1174,7 +1176,7 @@ test('chat completion and the managed pre-commit hook validate only when explici
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { verify } }));
   assert.equal(run(['sync', root]).status, 0);
   const verifiedCompletion = run(['request', root, '--text', '运行完成门禁', '--config', completionInput, '--json']);
-  assert.equal(verifiedCompletion.status, 1, verifiedCompletion.stderr);
+  assert.equal(verifiedCompletion.status, 0, verifiedCompletion.stderr);
   assert.equal(JSON.parse(verifiedCompletion.stdout).result.taskRoute.status, 'unverified-declaration');
   assert.equal(JSON.parse(verifiedCompletion.stdout).result.projectVerification.status, 'passed');
 
@@ -1198,10 +1200,10 @@ test('chat completion and the managed pre-commit hook validate only when explici
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'flat.ts'), 'export const flat = true;\n');
   assert.equal(git(root, ['add', 'src/flat.ts']).status, 0);
-  const blocked = git(root, ['commit', '-m', 'blocked flat source']);
-  assert.notEqual(blocked.status, 0, `${blocked.stdout}\n${blocked.stderr}`);
-  assert.match(`${blocked.stdout}\n${blocked.stderr}`, /architecture placement: src\/flat\.ts/);
-  assert.match(git(root, ['diff', '--cached', '--name-only']).stdout, /src\/flat\.ts/);
+  const advised = git(root, ['commit', '-m', 'advisory flat source']);
+  assert.equal(advised.status, 0, `${advised.stdout}\n${advised.stderr}`);
+  assert.match(`${advised.stdout}\n${advised.stderr}`, /architecture placement: src\/flat\.ts/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'reports/aicg/latest-complete.json'))).passed, false);
 });
 
 test('pre-commit installation never overwrites a non-managed hook', (context) => {

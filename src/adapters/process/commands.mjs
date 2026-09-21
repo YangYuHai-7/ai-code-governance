@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 export function runCommand(command, args = [], options = {}) {
   return spawnSync(command, args, options);
@@ -44,4 +44,16 @@ export function commandVersion(command, env = process.env) {
   const result = runCommand(command, ['--version'], { env, encoding: 'utf8', timeout: 5000 });
   if (result.error || result.status !== 0) return null;
   return `${result.stdout || result.stderr}`.trim().split(/\r?\n/, 1)[0] || null;
+}
+
+export function openBrowserUrl(url) {
+  const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'rundll32.exe' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['url.dll,FileProtocolHandler', url] : [url];
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+      child.once('error', () => resolve(false));
+      child.once('spawn', () => { child.unref(); resolve(true); });
+    } catch { resolve(false); }
+  });
 }

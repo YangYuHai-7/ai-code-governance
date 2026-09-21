@@ -5,7 +5,7 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
-import { artifactDefinitions, buildArtifacts, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { artifactDefinitions, buildArtifactsWithDefinitions, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
 import { conditionalArtifactRoutes } from './artifact-selection.mjs';
 import {
   extractManagedBlock,
@@ -16,8 +16,9 @@ import {
 } from './managed-files.mjs';
 import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
-import { isSafeRelative, sha256 } from '../../shared/index.mjs';
-import { isRepositoryFamilyBoundary, repositoryTopologyMigrationRequired } from '../repository/index.mjs';
+import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { declaredSkillDirectories } from '../../catalogs/index.mjs';
+import { brownfieldProgress, isRepositoryFamilyBoundary, repositoryTopologyMigrationRequired } from '../repository/index.mjs';
 
 const ACCEPTANCE_CONTRACT_PATH = 'docs/ai/acceptance-contract.json';
 const ACCEPTANCE_RESULTS_PATH = 'docs/ai/acceptance-results.json';
@@ -32,7 +33,7 @@ const BASELINE_APPLICABLE_PROBES = new Set([
   'unmanaged-file-preservation',
   'noninteractive-required-input',
 ]);
-const EXECUTABLE_GOVERNANCE_SKILL = /^(?:docs\/ai\/skills|\.agents\/skills|\.claude\/skills)\/(?:[^/]+\/)*SKILL\.md$/;
+const EXECUTABLE_GOVERNANCE_SKILL = new RegExp(`^(?:docs\\/ai\\/skills|${declaredSkillDirectories().map((directory) => directory.replace(/\//g, '\\/')).join('|')})\\/(?:[^/]+\\/)*SKILL\\.md$`);
 
 function indexedProjectSkillPaths(config, scan) {
   if (config.skillDiscovery?.decision?.status !== 'approved') return [];
@@ -46,7 +47,7 @@ function indexedProjectSkillPaths(config, scan) {
     .map((candidate) => candidate.location.relative);
 }
 
-function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills = []) {
+function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills = [], config = null) {
   const registered = new Set([
     ...expected.map((artifact) => artifact.path),
     ...trustedHistoricalFiles.filter((entry) => entry && typeof entry.path === 'string').map((entry) => entry.path),
@@ -55,6 +56,15 @@ function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFi
       .map((definition) => definition.path),
     ...approvedProjectSkills,
   ]);
+  // Stack adapter skills emitted by the `generic-unknown` fallback stay on disk after a
+  // single-repo → repository-family migration: the family plan no longer regenerates
+  // them but the orchestrator client directories still need to mirror the previously
+  // installed set. Treat those exact paths as registered whenever the current scan is
+  // in family mode, so the migration does not leave orphan adapters behind.
+  if (config?.projectMode === 'repository-family') {
+    const suffix = 'generic-unknown/SKILL.md';
+    for (const directory of declaredSkillDirectories()) registered.add(`${directory}/${suffix}`);
+  }
   return scan.files
     .filter((entry) => ['file', 'link'].includes(entry.type) && EXECUTABLE_GOVERNANCE_SKILL.test(entry.relative) && !registered.has(entry.relative))
     .map((entry) => `${entry.relative}: unmanaged executable governance artifact; register it through the governance configuration and manifest or remove it`)
@@ -437,7 +447,8 @@ export function checkProject(scan) {
   }
   for (const issue of scan.repositoryFamily?.issues ?? []) structureErrors.push(`repository-family discovery: ${issue}`);
   for (const unit of scan.governanceUnits ?? []) {
-    if (unit.status !== 'scanned') structureErrors.push(`repository-family member ${unit.path}: ${unit.status}${unit.reason ? ` (${unit.reason})` : ''}`);
+    if (unit.status === 'uninitialized') warnings.push(`repository-family member ${unit.path}: uninitialized; skipped without reading or changing the member`);
+    else if (unit.status !== 'scanned') structureErrors.push(`repository-family member ${unit.path}: ${unit.status}${unit.reason ? ` (${unit.reason})` : ''}`);
   }
   let config;
   let manifest;
@@ -483,16 +494,22 @@ export function checkProject(scan) {
     let selected = [];
     let legalSeedDefinitions = [];
     let expectedResolved = false;
+    let governanceCostDrift = null;
     try {
       selected = selectedArtifactDefinitions(config, scan);
       legalSeedDefinitions = artifactDefinitions(config, scan);
       for (const assertion of selected.flatMap((definition) => definition.gateAssertions)) gateAssertions.add(assertion);
-      expected = config.skillDiscovery?.enabled && config.agentTeam?.enabled
-        ? buildArtifacts(config, scan)
-        : selected.map((definition) => definition.build(selected));
+      if (config.skillDiscovery?.enabled && config.agentTeam?.enabled) {
+        const built = buildArtifactsWithDefinitions(config, scan);
+        expected = built.artifacts;
+        governanceCostDrift = built.governanceCostDrift;
+      } else expected = selected.map((definition) => definition.build(selected));
       expectedResolved = true;
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
+    }
+    if (governanceCostDrift) {
+      warnings.push(`${CONFIG_PATH}: recorded Skill governance cost total ${stableJson(governanceCostDrift.recorded)} differs from the computed ${stableJson(governanceCostDrift.computed)}; the next approved init or sync records the current total. The governed increment and manager load are unchanged.`);
     }
     const manifestFiles = Array.isArray(manifest.files) ? manifest.files : [];
     if (!Array.isArray(manifest.files)) structureErrors.push(`${MANIFEST_PATH}: files must be an array`);
@@ -507,7 +524,7 @@ export function checkProject(scan) {
       structureErrors.push(`${MANIFEST_PATH}: parent manifest crosses repository boundary ${member?.path ?? '<unknown>'} with ${entry.path}`);
     }
     const approvedProjectSkills = expectedResolved ? indexedProjectSkillPaths(config, scan) : [];
-    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills));
+    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills, config));
     for (const relative of expectedPaths) {
       if (!manifestPaths.has(relative)) structureErrors.push(`${MANIFEST_PATH}: missing managed entry for ${relative}`);
     }
@@ -643,16 +660,26 @@ export function checkProject(scan) {
   }
 
   const acceptance = config && manifest && gateAssertions.has('acceptance-evidence') ? acceptanceEvidence(scan.root) : { status: 'unverified', issues: [] };
+  const brownfield = config && manifest ? brownfieldProgress(scan, config) : null;
+  if (brownfield?.gaps.length) warnings.push(`brownfield enrichment: ${brownfield.gaps.length} gap(s); see brownfield.gaps in the JSON report`);
   evidenceErrors.push(...acceptance.issues);
   if (acceptance.warning) warnings.push(acceptance.warning);
   const errors = [...structureErrors, ...reachabilityErrors, ...evidenceErrors];
   const present = structureErrors.length === 0;
   const reachable = Boolean(config && manifest) && reachabilityErrors.length === 0;
   const pass = errors.length === 0;
+  // Orphan scan: governance files that look like first-party artifacts but are not in the
+  // managed manifest. The check contract only validates managed files, so any file the
+  // generator created (or that an earlier tool version left behind) and never registered
+  // would otherwise be invisible. Reporting them here turns hidden orphans into an
+  // actionable cleanup signal without making the managed set pass or fail on them.
+  const orphans = manifest ? collectGovernanceOrphans(scan, manifest) : { status: 'no-manifest', count: 0, files: [], truncated: false };
+  if (orphans.count > 0) warnings.push(`governance orphans: ${orphans.count} unmanaged file(s) under docs/ai or client skill directories; see orphans in the JSON report`);
   return {
     ok: pass,
     errors,
     warnings,
+    brownfield,
     evidence: {
       present: present ? 'pass' : 'fail',
       reachable: reachable ? 'pass' : 'fail',
@@ -665,12 +692,46 @@ export function checkProject(scan) {
       moduleGraph,
       semanticDesign: 'stated-only',
     },
+    orphans,
     boundaries: [
       'aicg check proves structure, ownership, hashes, and configured entrypoint reachability.',
       'acceptance-results.json is validated for exact contract coverage, mandatory applicability, and negative/recovery receipt fields; aicg check keeps enforcement unverified because it does not replay those entrypoints.',
       'A declared active module graph checks statically analyzable relative JS/TS import and export directions plus cross-module public entrypoints; dynamic imports, aliases, cohesion, and single responsibility remain unverified.',
       'Real agent loading, project behavior, hooks, and operating-system execution require separate replay evidence.',
     ],
+  };
+}
+
+const ORPHAN_RUNTIME_PREFIXES = ['reports/', 'reviews/'];
+const ORPHAN_SEED_PREFIXES = ['docs/ai/skills/project-conventions/'];
+const ORPHAN_SELF_PATHS = new Set([MANIFEST_PATH, CONFIG_PATH]);
+
+function collectGovernanceOrphans(scan, manifest) {
+  const managed = new Set((manifest?.files ?? []).map((entry) => entry?.path).filter(Boolean));
+  const clientDirs = new Set(declaredSkillDirectories());
+  const candidates = [];
+  for (const file of scan.files ?? []) {
+    const relative = file.relative;
+    if (!relative) continue;
+    if (managed.has(relative)) continue;
+    if (ORPHAN_SELF_PATHS.has(relative)) continue;
+    if (ORPHAN_RUNTIME_PREFIXES.some((prefix) => relative === prefix.slice(0, -1) || relative.startsWith(prefix))) continue;
+    if (ORPHAN_SEED_PREFIXES.some((prefix) => relative.startsWith(prefix))) continue;
+    // Only flag paths the generator actually owns: the canonical docs/ai tree and every
+    // client skill directory the agent registry declares. Anything outside these roots is
+    // user content and is left to the operator's discretion.
+    if (!relative.startsWith('docs/ai/')) {
+      const matchesClient = [...clientDirs].some((directory) => relative === directory || relative.startsWith(`${directory}/`));
+      if (!matchesClient) continue;
+    }
+    candidates.push(relative);
+  }
+  candidates.sort((left, right) => left.localeCompare(right));
+  return {
+    status: candidates.length === 0 ? 'clean' : 'orphan-files-detected',
+    count: candidates.length,
+    files: candidates.slice(0, 64),
+    truncated: candidates.length > 64,
   };
 }
 
@@ -682,6 +743,7 @@ export function printCheck(result, json = false) {
   console.log(`governance_check=${result.ok ? 'pass' : 'fail'}`);
   console.log(`present=${result.evidence.present} reachable=${result.evidence.reachable} enforced=${result.evidence.enforced} real-client-verified=${result.evidence.realClientVerified}`);
   for (const warning of result.warnings) console.warn(`WARN: ${warning}`);
+  for (const gap of result.brownfield?.gaps.slice(0, 20) ?? []) console.warn(`BROWNFIELD_GAP: ${gap}`);
   for (const error of result.errors) console.error(`FAIL: ${error}`);
   for (const boundary of result.boundaries) console.log(`BOUNDARY: ${boundary}`);
 }

@@ -17,8 +17,36 @@ export function validateAdaptiveDecisions(value) {
   return value;
 }
 
+/**
+ * The evidence surface of a project-convention candidate: the fields an owner decision
+ * actually binds. Everything else on such a candidate - trigger, purpose, why, label,
+ * scope, example, staleOnChange - is presentational prose, and a reworded sentence must
+ * not invalidate an approved decision. The digest map keeps source-content binding, and
+ * the verification commands keep their source digests, so changing the evidence itself
+ * still invalidates the receipt.
+ */
+const CONVENTION_EVIDENCE_FIELDS = ['id', 'kind', 'surface', 'evidencePaths', 'sourceDigests', 'counterEvidence', 'observations', 'verificationCommands', 'verificationBoundary'];
+
+function conventionEvidenceSurface(item) {
+  const surface = {};
+  for (const field of CONVENTION_EVIDENCE_FIELDS) if (item[field] !== undefined) surface[field] = item[field];
+  // Observation labels are fixed prose from the layout table; the observation identity,
+  // count, and examples are the evidence.
+  if (Array.isArray(surface.observations)) {
+    surface.observations = surface.observations.map(({ id, count, examples }) => ({ id, count, examples }));
+  }
+  return surface;
+}
+
 export function adaptiveDecisionEvidenceHash(item) {
-  const snapshot = structuredClone(item);
+  // Convention candidates (the only items carrying a digest-per-path map) bind to their
+  // declared evidence surface. Every other item - skill discovery candidates, role
+  // proposals - keeps the deny-list below, because their metadata is machine-generated
+  // evidence rather than prose: a permission, version, or content digest change there
+  // genuinely changes what was approved.
+  const snapshot = item && typeof item === 'object' && item.sourceDigests !== undefined
+    ? conventionEvidenceSurface(item)
+    : structuredClone(item);
   // Discovery's transient state is not source evidence; all other metadata participates.
   delete snapshot.decision;
   return sha256(stableJson(snapshot));

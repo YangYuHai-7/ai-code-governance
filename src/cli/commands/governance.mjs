@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { checkProject, printCheck } from '../../checker.mjs';
 import { CONFIG_PATH, TOOL_VERSION } from '../../constants.mjs';
-import { buildArtifactsWithDefinitions, validateConfig } from '../../generator.mjs';
+import { buildArtifactsWithDefinitions, refreshSkillGovernanceReceipt, validateConfig } from '../../generator.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { applyArtifactPlan, planArtifacts } from '../../managed-files.mjs';
@@ -31,13 +31,20 @@ export async function syncCommand(target, options) {
     throw usageError(`Topology migration required: the current repository mode or family membership differs from the stored classification (${config.projectMode} -> ${scan.projectMode}). Run aicg init . --guided (or use an explicit --config lifecycle decision) and inspect the exact plan; ordinary sync will not rewrite this boundary.`);
   }
   assertManagedArchitectureConfigTrusted(scan.root, config);
-  const { artifacts, definitions } = buildArtifactsWithDefinitions(config, scan);
+  // A generator change can move the artifact set without touching the configuration,
+  // which leaves the approved Skill-governance receipt stale and blocks every command -
+  // including this read-only preview. Refresh it so the change is reviewable through the
+  // exact planHash this command asks the operator to approve.
+  const receipt = refreshSkillGovernanceReceipt(config, scan);
+  const effective = receipt?.config ?? config;
+  const { artifacts, definitions, governanceCostDrift } = buildArtifactsWithDefinitions(effective, scan);
   const plan = planArtifacts(scan.root, artifacts, {
     force: options.force,
     migrateLinks: options['migrate-links'],
     allowStaleRemoval: options.prune === true,
     seedPaths: options.prune ? definitions.filter((item) => item.ownership === 'seed').map((item) => item.path) : [],
   });
+  if (receipt) plan.skillGovernanceRefresh = receipt.refresh;
   const adaptiveChanges = plan.operations.some((entry) => entry.changed && ['skill-management-skill', 'skill-management-index', 'project-agent-team'].includes(entry.kind));
   if (options.approve && !options.prune && !adaptiveChanges) throw usageError('--approve requires a changed adaptive plan, --config or --prune for sync.');
   const executionPlan = options.prune || adaptiveChanges

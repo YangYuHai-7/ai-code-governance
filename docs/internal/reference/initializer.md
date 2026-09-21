@@ -1,6 +1,6 @@
 # AICG initializer contract
 
-`aicg init [path]` compiles filesystem evidence and owner decisions into governance. Node.js 22+ is required. Deterministic generation works without a model, network, or Agent login. Optional AI assistance is a separate high-confidence greenfield phase; missing/unavailable Agents leave it unverified.
+`aicg init [path]` compiles filesystem evidence and owner decisions into governance. Node.js 22+ is required. Deterministic generation works without a model, network, or Agent login. Optional AI assistance supports high-confidence greenfield and existing repositories with a selected Agent; missing/unavailable Agents leave it unverified. Existing-repository assistance completes code-backed development docs, records business behavior in Memory, and proposes project Skills for approval. `aicg check --json` reports remaining `brownfield.gaps`.
 
 ## Agent-first, artifact-language-second
 
@@ -20,6 +20,23 @@ The visible order is:
 `codeDocumentationPolicy` defaults to `inherit-existing` for existing projects and `en` for greenfield. The AICG repository's documentation/comments remain English according to its instructions; selecting Chinese governance in a target project is a separate product decision.
 
 ## Commands and authority
+
+### Reusable configuration file
+
+Use one editable JSON file when a project has too many choices for repeated interactive setup:
+
+```bash
+aicg config init . --output aicg.config.json --yes
+aicg config validate . --config aicg.config.json --json
+aicg config open
+aicg config open /absolute/path/to/project
+aicg config launcher --yes
+aicg init . --config aicg.config.json --yes --dry-run
+```
+
+The generated file contains owner-editable initialization input, not the final managed `.ai-governance/config.json`. It uses conservative scan-backed defaults, selects only Codex initially, preserves existing code by default, and leaves ambiguous lifecycle decisions unresolved. Generation is create-only: identical retries converge to `unchanged`, while different existing content, links, unsafe paths, and `.git` destinations fail closed. Validation uses the same `prepareInit` path as initialization and writes a local JSON report. The local visual editor reads and writes this same contract, offers JSON import/export, and requires a fresh exact-plan preview before applying governance. Without a path, `aicg config open` shows a project picker with recent projects, an absolute-path field, and folder browsing; an explicit path opens that project directly. After directory selection, a complete high-confidence existing-project scan presents its evidence and recorded or scan-backed choices without requiring each field again. The owner can adjust those choices, or save the suggested configuration and preview in one action. Greenfield, ambiguous, and incomplete scans keep the full choices visible; ambiguous lifecycle requires an explicit selection. An existing managed configuration supplies recorded choices when no editable configuration file exists. Switching projects invalidates the previous preview. It binds to loopback and uses a per-session token and origin check. Interactive npm installation (project-local or global) attempts to open the picker automatically. `AICG_NO_AUTO_OPEN=1` disables the installation attempt.
+
+The visual editor's exact-plan preview identifies existing governance paths that will be replaced. Confirmed application may replace only those selected generated or canonical seed paths; unrelated repository files, product code, links, and unsafe ancestors remain protected. This overwrite policy is specific to the visual editor and does not weaken CLI defaults. Declared but uninitialized repository-family members are skipped with a warning, without fetching or changing them; unreadable or incomplete initialized members still fail verification. During application the editor disables conflicting controls and shows a processing state. If post-apply verification fails, the response includes the concrete check errors and the transaction restores its preimages.
 
 ### Adaptive governance input
 
@@ -62,12 +79,13 @@ Each decision is `{ "id": "<displayed-id>", "action": "add|defer|reject" }`; abs
 
 Run `aicg init . --yes --config decisions.json --dry-run`, inspect all recommendations, diagnostics, professional gaps, file actions, context/permission costs and the single exact `planHash`, then repeat without `--dry-run` using `--approve <planHash>`. With adaptive inputs, omitting approval previews and writes nothing even with `--yes`. Existing governance uses `aicg sync . --config decisions.json` and then `aicg sync . --config decisions.json --approve <planHash>`; config-less ordinary sync retains its existing behavior. Config changes and prune are separate approvals. All candidate snapshots, including unselected indexed candidates, source diagnostics, decisions, explicit activation, files and costs are hash-bound; stale approval writes nothing.
 
-Minimal emits zero management artifacts. Exact-approved Standard/Complete emits `docs/ai/skills/skill-discovery/SKILL.md`, `docs/ai/skills/team-orchestrator/SKILL.md`, `docs/ai/skill-index.json`, and `docs/ai/agent-team.json` through the existing transaction and post-apply checker. The approved projection omits bootstrap prompts and empty reports/reviews placeholders. If business constraints are selected, their machine registry remains and the team manager carries the business evidence workflow; no redundant business Skill/adapter is generated. Defaults without this approved selection remain unchanged. Ordinary context stays 3 files / 900 estimated tokens, two manager bodies stay within 800 tokens, and all files including manifest and retained history stay within 30 files and 96 KiB Standard / 128 KiB Complete. `budget-blocked` explicitly lists retained cleanup candidates; seeds, drifted files and protected content require separate manual review and explicit cleanup authorization. Repeated prune never authorizes automatic seed deletion.
+Minimal emits zero management artifacts. Exact-approved Standard/Complete emits `docs/ai/skills/skill-discovery/SKILL.md`, `docs/ai/skills/team-orchestrator/SKILL.md`, `docs/ai/skill-index.json`, and `docs/ai/agent-team.json` through the existing transaction and post-apply checker. The approved projection omits bootstrap prompts and empty reports/reviews placeholders. If business constraints are selected, their machine registry remains and the team manager carries the business evidence workflow; no redundant business Skill/adapter is generated. Defaults without this approved selection remain unchanged. Ordinary context stays 3 files / 900 estimated tokens, two manager bodies stay within 800 tokens, and the Skill management increment itself stays within 30 files and 96 KiB Standard / 128 KiB Complete; the retained governance tree and manifest are budgeted by the approved governance depth instead, so an existing Complete repository can still adopt skills. `budget-blocked` explicitly lists retained cleanup candidates; seeds, drifted files and protected content require separate manual review and explicit cleanup authorization. Repeated prune never authorizes automatic seed deletion.
 
 Generation uses English by default; explicit `artifactLanguage: "zh-CN"` localizes generated manager and professional-boundary prose without translating machine keys, IDs, qualifications or paths. Owner-supplied text remains owner evidence. Generated availability is not task activation, independent-review evidence, real-client loading, or professional certification.
 
 | Command | Contract |
 | --- | --- |
+| `aicg config init|validate|open|launcher [path] ...` | Create or validate initialization input, open its local visual editor, or install an OS-native Desktop folder-drop launcher |
 | `aicg init [path] --guided` | Scan, collect decisions, preview, generate, check |
 | `aicg check [path] --json` | Read-only config, manifest, ownership/hash, link and structural route checks |
 | `aicg sync [path]` | Refresh selected managed artifacts from canonical sources; zero-delete ordinary sync |
@@ -139,7 +157,13 @@ Adapters are ordinary generated files or native imports: Claude Code's managed `
 
 ## Architecture and local output
 
-Existing-code baseline decisions persist through sync; later source growth does not change the recorded lifecycle. `new-code-standard` can govern new paths without retroactively rewriting baseline sources; `keep-existing` and `staged-migration` remain advisory. Unconfigured legacy architecture and unconfirmed monorepo package scopes remain gaps/advisory. Structural path checks do not prove dependency direction, cohesion, or successful architecture migration. A future greenfield layout policy is not evidence that the architecture already exists.
+Existing-code baseline decisions persist through sync; later source growth does not change the recorded lifecycle. `new-code-standard` can govern new paths without retroactively rewriting baseline sources; `keep-existing` and `staged-migration` remain advisory. Unconfigured legacy architecture and unconfirmed monorepo package scopes remain gaps/advisory. Structural path checks do not prove dependency direction, cohesion, or successful architecture migration. A generated greenfield layout policy is not evidence that the architecture already exists.
+
+For a greenfield Standard/Complete plan with a selected known stack, the compiler now projects a stack-specific development design, module/plugin/shared directory entrypoints, architecture rules, and canonical plus selected-client adapter Skills. Multiple selected stacks receive separate `apps/<frontend-stack>` or `services/<backend-stack>` child roots and a cross-project contract policy. The index records `active-template`, `planned-template`, or `roadmap-template` coverage and unresolved stacks. These are design proposals; they do not create executable manifests or certify production readiness. The decision ledger separately records pending architecture adoption until owner approval and implementation evidence exist. Generic-unknown alone keeps the compact baseline.
+
+For an existing Standard/Complete project, every discovered development unit receives a code-scan development baseline, local rule, local workflow Skill, selected-client adapter, and child `AGENTS.md` where applicable. The baseline and generated Skill are explicitly unverified until code and tests are reviewed. Business Memory remains evidence-bound, and project-specific Skill growth requires owner approval.
+
+The visual editor applies only an exact previewed plan. It writes a local structural check report and a multi-dimensional score report; when AI assistance is selected, it requests a fresh read-only Codex review. If no verified review adapter is selected or the review fails, the report remains `pending-unverified`. A low score returns remediation actions for a newly previewed and approved plan; it does not silently rewrite user or product files. The `aicg route . --text <task> [--paths <paths>]` command provides read-only L0-L3 process and approved-role advice. Role advice never launches an Agent or substitutes for qualified human legal review. The project entrypoint requires user confirmation before governance application and before business-code implementation, then applicable tests and a result report.
 
 Routing-enabled presets merge a scoped local-output `.gitignore` block. Fresh installs omit empty `reviews/.gitkeep` and `reports/.gitkeep` projections; actual local outputs create their directories on first use. Existing historical placeholders remain zero-delete and count toward cost. Working contents stay local; formal specs/ADRs and release evidence remain tracked. Sync never guesses which historical `docs/` files should move.
 

@@ -14,10 +14,10 @@ import { runReleaseAcceptance } from '../../release-acceptance.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { technicalStandardsSummary } from '../../technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from '../../team-recommendation.mjs';
-import { readJson } from '../../adapters/filesystem/index.mjs';
+import { readJson, writeGateReport } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { runPromotionVerification } from './capabilities.mjs';
-import { prepareInit } from './init.mjs';
+import { applyRepositoryFamilyInit, detectsRepositoryFamily, prepareInit, prepareRepositoryFamilyInit } from './init.mjs';
 import { addReadOnlyGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { assertManagedArchitectureConfigTrusted, configForStandards, loadConfiguredGovernance, loadExistingConfig } from '../shared.mjs';
 
@@ -73,6 +73,7 @@ function printRequest(payload, json) {
   }
   if (payload.result?.actionGuide?.recommendedAction) {
     printHumanGuidance(payload.result);
+    if (payload.result.reportPath) console.log(`report=${payload.result.reportPath}`);
     return;
   }
   if (payload.result?.mode === 'read-only-advice') {
@@ -85,7 +86,38 @@ function printRequest(payload, json) {
     console.log(`plan_hash=${payload.plan.planHash}${operations === null ? '' : ` operations=${operations}`}`);
   }
   if (typeof payload.result?.ok === 'boolean') console.log(`verification=${payload.result.ok ? 'pass' : 'fail'}`);
+  if (payload.result?.reportPath) console.log(`report=${payload.result.reportPath}`);
   if (payload.result?.replayPlan?.planHash) console.log(`replay_plan_hash=${payload.result.replayPlan.planHash}`);
+}
+
+/**
+ * A family request applies one combined plan across the orchestrator and every checked-out
+ * member. The combined hash is the approval boundary, exactly as on the explicit CLI path,
+ * so a chat request never gets a weaker gate than `aicg init --family`.
+ */
+async function applyFamilyRequest(prepared, intent, options, familyOptions) {
+  const family = await prepareRepositoryFamilyInit(prepared, familyOptions);
+  const { combined } = family;
+  const payload = { intent: { id: intent.id, mode: intent.mode }, family: true, plan: { planHash: combined.planHash, units: combined.units } };
+  if (options['dry-run']) {
+    printRequest({ ...payload, dryRun: true }, Boolean(options.json));
+    return;
+  }
+  if (!options.approve) throw usageError('Applying a chat governance request requires --approve <planHash> from a current dry-run plan.');
+  if (options.approve !== combined.planHash) throw usageError(`Approval does not match the current family plan hash ${combined.planHash}. Re-run the request as a dry run and approve the displayed hash.`);
+  const units = applyRepositoryFamilyInit(family, familyOptions);
+  const result = { ok: units.every((unit) => unit.governanceCheck === 'pass'), family: true, units };
+  printRequest({ ...payload, applied: { changed: units.reduce((total, unit) => total + unit.changedFiles, 0) }, result }, Boolean(options.json));
+  if (!result.ok) process.exitCode = 1;
+}
+
+function reportedRequest(root, command, run, options, intent) {
+  let result;
+  try { result = run(); }
+  catch (error) { result = { ok: false, status: 'error', errors: [error.message] }; }
+  const reportPath = writeGateReport(root, command, result);
+  printRequest({ intent: { id: intent.id, mode: intent.mode }, result: { ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' } }, Boolean(options.json));
+  if (options.enforce && result.ok === false) process.exitCode = 1;
 }
 
 export async function requestCommand(target, options) {
@@ -99,27 +131,19 @@ export async function requestCommand(target, options) {
     return;
   }
   if (intent.handler === 'doctor') {
-    const scan = scanProject(target, { probeEnvironment: false });
-    const result = addReadOnlyGuidance('doctor', doctor(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
-    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
-    if (!result.ok) process.exitCode = 1;
-    return;
+    return reportedRequest(path.resolve(target), 'doctor', () => {
+      const scan = scanProject(target, { probeEnvironment: false });
+      return addReadOnlyGuidance('doctor', doctor(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
+    }, options, intent);
   }
   if (intent.handler === 'release-check') {
     if (options['dry-run']) throw usageError('Release acceptance previews command execution whenever replay approval is absent; --dry-run is unnecessary.');
-    const input = releaseAcceptanceInputFromChatConfig(options);
-    const result = runReleaseAcceptance(target, input);
-    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
-    if (!result.ok) process.exitCode = 1;
-    return;
+    return reportedRequest(path.resolve(target), 'release-check', () => runReleaseAcceptance(target, releaseAcceptanceInputFromChatConfig(options)), options, intent);
+  }
+  if (intent.handler === 'check') {
+    return reportedRequest(path.resolve(target), 'check', () => checkProject(scanProject(target)), options, intent);
   }
   const scan = scanProject(target);
-  if (intent.handler === 'check') {
-    const result = checkProject(scan);
-    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
-    if (!result.ok) process.exitCode = 1;
-    return;
-  }
   if (intent.handler === 'assess') {
     const result = addReadOnlyGuidance('assess', assessmentSummary(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
     printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
@@ -137,10 +161,7 @@ export async function requestCommand(target, options) {
   }
   if (intent.handler === 'complete') {
     if (options.approve || options['dry-run']) throw usageError('Manual completion validation is read-only and does not accept --approve or --dry-run. Use aicg complete --verify for an explicit project command.');
-    const result = runCompletion(target, { verificationCommand: completionInputFromChatConfig(options) });
-    printRequest({ intent: { id: intent.id, mode: intent.mode }, result }, Boolean(options.json));
-    if (!result.ok) process.exitCode = 1;
-    return;
+    return reportedRequest(path.resolve(target), 'complete', () => runCompletion(target, { verificationCommand: completionInputFromChatConfig(options) }), options, intent);
   }
   if (intent.handler === 'hook-status') {
     if (options.approve || options['dry-run'] || options.config) throw usageError('Git pre-commit status is read-only and does not accept --approve, --dry-run, or --config.');
@@ -168,12 +189,15 @@ export async function requestCommand(target, options) {
   let promotion = null;
   let artifactPlan;
   if (intent.handler === 'init') {
-    const prepared = await prepareInit(
-      target,
-      { ...options, assist: undefined, yes: false, force: false, 'migrate-links': false },
-      { allowDefaults: true },
-    );
+    const initOptions = { ...options, assist: undefined, yes: false, force: false, 'migrate-links': false };
+    // A repository family is a property of the checkout, not of the sentence, so one chat
+    // request governs an entire family without the operator naming it.
+    const family = options['no-family'] === true ? false : detectsRepositoryFamily(target);
+    // Family generation is deterministic by design, and the chat surface has no flag for the
+    // restriction, so it is applied here rather than failing with a CLI-only instruction.
+    const prepared = await prepareInit(target, family ? { ...initOptions, family: true, 'no-assist': true } : initOptions, { allowDefaults: true });
     if (prepared.config.features.aiAssist) throw usageError('Chat requests do not invoke an AI agent. Use the explicit init command to request AI assist.');
+    if (family) return applyFamilyRequest(prepared, intent, options, initOptions);
     config = prepared.config;
     artifactPlan = prepared.plan;
   } else if (intent.handler === 'harvest') {

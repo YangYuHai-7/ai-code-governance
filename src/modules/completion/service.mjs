@@ -125,9 +125,12 @@ function stagedPaths(root) {
 function changedPaths(root) {
   const paths = [];
   // Disable rename collapsing so moving a sensitive source into docs cannot hide its removal.
+  // A gitlink is a member-repository boundary, not a parent directory change: the parent
+  // neither owns nor governs member content, so a moved or dirty submodule must not be
+  // rejected as an unapprovable directory path here.
   for (const args of [
-    ['diff', '--cached', '--name-only', '-z', '--no-renames', 'HEAD'],
-    ['diff', '--name-only', '-z', '--no-renames'],
+    ['diff', '--cached', '--name-only', '-z', '--no-renames', '--ignore-submodules=all', 'HEAD'],
+    ['diff', '--name-only', '-z', '--no-renames', '--ignore-submodules=all'],
     ['ls-files', '--others', '--exclude-standard', '-z'],
   ]) {
     const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });

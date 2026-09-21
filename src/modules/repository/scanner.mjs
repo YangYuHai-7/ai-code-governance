@@ -16,16 +16,7 @@ import {
 } from './repository-family.mjs';
 import { evaluateVerificationCommandTrust } from './verification-commands.mjs';
 import { isProductionScopePath } from './production-scope.mjs';
-
-const GOVERNANCE_PATHS = [
-  'AGENTS.md',
-  'CLAUDE.md',
-  '.cursor/rules',
-  '.claude/skills',
-  '.agents/skills',
-  'docs/ai',
-  '.ai-governance/config.json',
-];
+import { governanceRoots } from '../../catalogs/index.mjs';
 
 const DEFAULT_SCAN_BUDGET = Object.freeze({
   maxDepth: 32,
@@ -218,12 +209,27 @@ function detectCommands(root, unitId = 'root', cwd = '.') {
   return commands;
 }
 
+// Governance boundary prefixes: the framework-owned roots plus every client
+// Skill/rule directory the agent registry declares. Reading the registry here
+// means registering a new client teaches the scanner about its governance tree
+// with no generator change, instead of silently misclassifying its files as
+// production source. The legacy roots keep their historical form so existing
+// recorded scans stay unchanged.
+const GOVERNANCE_EXCLUSION_DIRECTORIES = [
+  '\\.ai-governance',
+  'docs\\/ai',
+  ...new Set(governanceRoots()
+    .filter((relative) => relative !== 'docs/ai' && relative.includes('/'))
+    .map((relative) => relative.split('/')[0])),
+];
+const GOVERNANCE_EXCLUSION_PATTERN = new RegExp(`^(?:${GOVERNANCE_EXCLUSION_DIRECTORIES.join('|')})(?:/|$)`);
+
 function exclusionCategory(entry) {
   if (entry.type === 'directory') return 'directory-subtree';
   const relative = entry.relative.toLowerCase();
   const base = path.posix.basename(relative);
   const extension = path.posix.extname(relative);
-  if (relative === '.gitmodules' || /^(?:\.ai-governance|docs\/ai|\.agents|\.claude|\.cursor)(?:\/|$)/.test(relative) || ['agents.md', 'claude.md'].includes(relative)) return 'governance-or-repository-boundary';
+  if (relative === '.gitmodules' || GOVERNANCE_EXCLUSION_PATTERN.test(relative) || ['agents.md', 'claude.md'].includes(relative)) return 'governance-or-repository-boundary';
   if (['package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle', 'settings.gradle.kts', 'pyproject.toml', 'go.mod', 'go.work', 'composer.json', 'pnpm-workspace.yaml', 'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock'].includes(base)) return 'manifest-or-lockfile';
   if (['.sql', '.tf', '.hcl'].includes(extension)) return 'infrastructure-or-data-source';
   if (['.yaml', '.yml'].includes(extension)) return 'configuration-or-contract';
@@ -314,7 +320,7 @@ function governanceUnitSummary(member, memberScan, unitId) {
     path: member.path,
     status: memberScan.scanBudget.complete
       && (memberScan.repositoryFamily?.issues?.length ?? 0) === 0
-      && (memberScan.governanceUnits ?? []).every((unit) => unit.status === 'scanned') ? 'scanned' : 'incomplete',
+      && (memberScan.governanceUnits ?? []).every((unit) => ['scanned', 'uninitialized'].includes(unit.status)) ? 'scanned' : 'incomplete',
     projectMode: memberScan.projectMode,
     repositoryFamily: memberScan.repositoryFamily,
     governanceUnits: (memberScan.governanceUnits ?? []).map(({ inventory, sourceFiles, ...unit }) => ({
@@ -457,7 +463,7 @@ export function scanProject(target, options = {}) {
     };
   });
 
-  const existingGovernance = GOVERNANCE_PATHS.filter((relative) => exists(path.join(root, relative)));
+  const existingGovernance = governanceRoots().filter((relative) => exists(path.join(root, relative)));
   const links = files.filter((file) => file.type === 'link').map((file) => file.relative);
   const externalWorkflows = [];
   if (['openspec/config.yaml', 'openspec/specs', 'openspec/changes'].some((relative) => exists(path.join(root, relative)))) {
@@ -521,7 +527,12 @@ export function scanProject(target, options = {}) {
         const memberScan = scanProject(memberRoot, {
           ...options,
           probeEnvironment: false,
-          discoverRepositoryFamily: true,
+          // Each first-level member is governed as its own single repository: we do not
+          // recurse into its nested family members, grandchild submodules or nested git
+          // directories. Treating the member as a single repo keeps plan output, manifest
+          // size and approval scope predictable for the operator and matches the
+          // repository-family contract (root owns the boundary, members are autonomous).
+          discoverRepositoryFamily: false,
           repositoryFamilyMaxDepth,
           _repositoryFamilyDepth: repositoryFamilyDepth + 1,
           _repositoryFamilyAncestry: repositoryFamilyAncestry,

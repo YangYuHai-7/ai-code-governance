@@ -3,12 +3,60 @@ import { CONFIG_PATH, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION, TEMPLATE_VERSION, 
 import { isSafeRelative, sha256 } from '../../shared/index.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
-import { loadCapabilityRegistry } from '../../catalogs/index.mjs';
+import { declaredSkillDirectories, loadCapabilityRegistry } from '../../catalogs/index.mjs';
 import { buildProjectConventionArtifacts, loadTechnicalStandardRegistry } from '../standards/index.mjs';
 import { buildCapabilityArtifacts } from '../capabilities/index.mjs';
 import { scanProject } from '../repository/index.mjs';
 import { scanProjectMemoryFacts } from '../memory/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from './business-constraints.mjs';
+import { DELIVERY_LOOP_SKILL, DELIVERY_PHASES } from './delivery-loop.mjs';
+
+const DEVELOPMENT_UNIT_KINDS = new Set([
+  'development-unit-rule',
+  'development-unit-skill',
+  'development-unit-adapter-skill',
+  'development-unit-entrypoint',
+]);
+
+function developmentUnitDescriptor(entry) {
+  // `source` for every development-unit artifact is the unit's documentation page
+  // (docs/ai/development/units/<id>.md, or <unit-path>/docs/ai/development/units/<id>.md).
+  // That page is the only handle we have to recover the unit id and prefix, so the
+  // kind/path/source contract must be reconstructed from `source` rather than from a
+  // precomputed relationship triple.
+  const source = entry?.source;
+  if (typeof source !== 'string') return null;
+  const match = source.match(/^(?:([^/]+)\/)?docs\/ai\/development\/units\/([^/]+)\.md$/);
+  if (!match) return null;
+  const unitPath = match[1] ?? '';
+  const unitId = match[2];
+  const localRoot = unitPath === '' ? 'docs/ai' : `${unitPath}/docs/ai`;
+  const adapterPrefix = unitPath === '' ? '' : `${unitPath}/`;
+  const canonicalSkill = `${localRoot}/skills/development-${unitId}/SKILL.md`;
+  return { unitPath, unitId, localRoot, adapterPrefix, canonicalSkill };
+}
+
+function isKnownDevelopmentUnitPath(entry) {
+  const descriptor = developmentUnitDescriptor(entry);
+  if (!descriptor) return false;
+  switch (entry.kind) {
+    case 'development-unit-rule':
+      return entry.path === `${descriptor.localRoot}/rules/development.md`;
+    case 'development-unit-skill':
+      return entry.path === descriptor.canonicalSkill;
+    case 'development-unit-adapter-skill':
+      // adapter source must equal the canonical skill path it mirrors; slug matching is
+      // rejected by requiring an exact source match and a client directory declared in the
+      // agent registry.
+      return entry.source === descriptor.canonicalSkill
+        && declaredSkillDirectories().some((directory) => entry.path === `${descriptor.adapterPrefix}${directory}/development-${descriptor.unitId}/SKILL.md`);
+    case 'development-unit-entrypoint':
+      // entrypoint only exists for non-root units (root is the shared AGENTS.md).
+      return descriptor.unitPath !== '' && entry.path === `${descriptor.unitPath}/AGENTS.md`;
+    default:
+      return false;
+  }
+}
 
 const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'full\0adapter\0docs/ai/rules/00_always.mdc',
@@ -32,9 +80,32 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   'managed-block\0adapter\0AGENTS.md',
   'managed-block\0entrypoint\0template:agents',
   'full\0development-documentation-index\0repository-code-scan',
+  // The repository family index is written by the family scan on the orchestrator root.
+  // Without this entry every `projectMode=repository-family` root manifests as untrusted,
+  // which makes `aicg check` report all of its artifacts as unmanaged and blocks apply.
+  'full\0repository-family-index\0repository-family-scan',
   'managed-block\0development-readme\0repository-code-scan',
   'full\0brownfield-understanding-skill\0repository-code-scan',
   'full\0brownfield-understanding-adapter-skill\0docs/ai/skills/brownfield-understanding/SKILL.md',
+  // The delivery loop is a first-party template surface. Registering it here is what lets a
+  // generated loop be retained and later pruned instead of being treated as an unmanaged
+  // file the tool must refuse to touch. Phase Skill paths are enumerated from the canonical
+  // phase list below rather than admitted by a slug pattern.
+  'full\0delivery-loop-skill\0template:delivery-loop',
+  'full\0delivery-loop-phase-skill\0template:delivery-loop',
+  // development-unit-* kinds cannot be enumerated up front because each unit has its own
+  // source path (docs/ai/development/units/<id>.md). They are trusted only when the path
+  // rule below reconstructs an exact match from `source`; an entry that fails to derive a
+  // descriptor stays untrusted so we cannot silently delete user-written content.
+  'seed\0development-unit-rule\0<recovered-from-source>',
+  'seed\0development-unit-skill\0<recovered-from-source>',
+  'full\0development-unit-adapter-skill\0<recovered-from-source>',
+  'managed-block\0development-unit-entrypoint\0<recovered-from-source>',
+  // repository-family orchestrator root writes a stable membership/governance-authority
+  // index (docs/ai/repository-family.json). It is a first-party generated artifact, so
+  // registering the relationship lets the parent manifest stay trusted instead of being
+  // reported as an unmanaged executable governance artifact on every check.
+  'full\0repository-family-index\0repository-family-scan',
 ]);
 
 const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
@@ -54,12 +125,18 @@ function supportedSkillDefinitions(root, manifest) {
   // Retired definitions must be enumerated here explicitly, never admitted by a slug pattern.
   if (![1, 2, 3].includes(manifest?.templateVersion)) return definitions;
   const add = (artifact, hash = true) => definitions.set(definitionKey({ ownership: 'full', ...artifact }), hash);
+  // Every client Skill directory the agent registry declares, not just `.agents` and `.claude`.
+  // A client whose directory is omitted here writes adapters the tool then refuses to trust,
+  // which silently disables prune authority for the whole repository.
+  const adapterDirs = declaredSkillDirectories();
   const adapters = (source, kind) => {
     const suffix = source.slice('docs/ai/skills/'.length);
-    for (const client of ['.agents', '.claude']) add({ path: `${client}/skills/${suffix}`, kind, source });
+    for (const directory of adapterDirs) add({ path: `${directory}/${suffix}`, kind, source });
   };
   for (const pack of loadCapabilityRegistry().packs) adapters(`docs/ai/skills/${pack.id}/SKILL.md`, 'adapter-skill');
   adapters(BUSINESS_CONSTRAINT_SKILL_PATH, 'adapter-skill');
+  adapters(DELIVERY_LOOP_SKILL, 'adapter-skill');
+  for (const phase of DELIVERY_PHASES) adapters(`docs/ai/skills/delivery-${phase}/SKILL.md`, 'adapter-skill');
   for (const standard of loadTechnicalStandardRegistry().standards) {
     const canonical = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
     add({ path: canonical, kind: 'technical-standard-skill', source: 'technical-standard-registry' });
@@ -117,18 +194,32 @@ const FIXED_MANAGED_PATHS = Object.freeze({
   'skill-management-index': ['docs/ai/skill-index.json'],
   'project-agent-team': ['docs/ai/agent-team.json'],
   'project-memory-schema': ['docs/memory/SCHEMA.md'],
+  'repository-family-index': ['docs/ai/repository-family.json'],
   'local-output-ignore': ['.gitignore'],
   entrypoint: ['AGENTS.md'],
+  'delivery-loop-skill': [DELIVERY_LOOP_SKILL],
+  'delivery-loop-phase-skill': DELIVERY_PHASES.map((phase) => `docs/ai/skills/delivery-${phase}/SKILL.md`),
 });
 
 function hasKnownManagedPath(entry, definitions) {
   if (entry.kind === 'development-documentation-index') return entry.path === 'docs/ai/development/index.json';
+  if (entry.kind === 'repository-family-index') return entry.path === 'docs/ai/repository-family.json';
   if (entry.kind === 'development-readme') return entry.path === 'README.md' || entry.path.endsWith('/README.md');
   if (entry.kind === 'brownfield-understanding-skill') return entry.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
-  if (entry.kind === 'brownfield-understanding-adapter-skill') return /^(?:\.agents|\.claude)\/skills\/brownfield-understanding\/SKILL\.md$/.test(entry.path);
+  if (entry.kind === 'brownfield-understanding-adapter-skill') return declaredSkillDirectories().some((directory) => entry.path === `${directory}/brownfield-understanding/SKILL.md`);
   if (entry.kind === 'adapter') return entry.path === (entry.ownership === 'full' ? '.cursor/rules/ai-code-governance.mdc' : 'CLAUDE.md');
   if (Object.hasOwn(FIXED_MANAGED_PATHS, entry.kind)) return FIXED_MANAGED_PATHS[entry.kind].includes(entry.path);
   if (entry.kind === 'canonical') return entry.path === (entry.source === 'capability-pack-registry' ? 'docs/ai/stack-profile.json' : 'docs/ai/decision-ledger.json');
+  // Stack adapter skills come from the capability pack registry; the per-stack
+  // definition list in `supportedSkillDefinitions` covers every pack, including the
+  // `generic-unknown` fallback that the orchestrator keeps around for any client
+  // directory. Treating this as a fallback lets the trust table accept adapters that
+  // were installed before a topology migration away from single-repo mode without
+  // listing each `(client, pack)` pair explicitly.
+  if (entry.kind === 'adapter-skill' && typeof entry.source === 'string'
+    && entry.source.startsWith('docs/ai/skills/') && entry.source.endsWith('/SKILL.md')) {
+    return declaredSkillDirectories().some((directory) => entry.path === `${directory}/${entry.source.slice('docs/ai/skills/'.length)}`);
+  }
   return hasSupportedSkillDefinition(entry, definitions);
 }
 
@@ -145,6 +236,10 @@ function supportedToolVersion(version) {
 function hasKnownManagedRelationship(entry, definitions) {
   const relationship = `${entry?.ownership}\0${entry?.kind}\0${entry?.source}`;
   if (KNOWN_MANAGED_RELATIONSHIPS.has(relationship)) return true;
+  // development-unit-* kinds have a per-unit source path, so the static relationship table
+  // cannot enumerate them. Trust the entry iff its path rule reconstructs from `source`,
+  // which is the only handle the contract has to recover the unit id.
+  if (DEVELOPMENT_UNIT_KINDS.has(entry?.kind) && isKnownDevelopmentUnitPath(entry)) return true;
   return hasSupportedSkillDefinition(entry, definitions);
 }
 

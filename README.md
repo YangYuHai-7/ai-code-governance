@@ -18,7 +18,7 @@ One canonical rule source · Small context by default · Evidence before claims 
 </div>
 
 > [!IMPORTANT]
-> This checkout is the `0.3.0` source candidate. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
+> This checkout is the `0.4.0` source candidate. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
 
 <!-- sync:quick-start -->
 ## Quick start
@@ -87,6 +87,25 @@ Installation is **Agent-first** and **artifact-language-second**. The stored `ar
 6. **Preset** — start with Minimal or Standard from evidence. Complete is opt-in, never the default consequence of a vague request.
 7. **Optional capabilities** — memory, hooks, CI, workflows, Skills, and specialist roles remain separate choices.
 
+For repeatable setup, open the local visual editor from any directory and select a project on the page. Recent projects, an absolute-path field, and a folder browser are available; passing a path opens that project directly. It uses the same `aicg.config.json` as the CLI, offers explained choices, and can import or download JSON for sharing. An interactive npm installation (project-local or global) attempts to open the project picker automatically; if npm skips installation scripts or a browser is unavailable, open it manually. The page listens only on `127.0.0.1`. Uploaded JSON stays in the form until validated and saved; applying governance requires a fresh exact-plan preview and explicit confirmation.
+
+```bash
+aicg config open
+aicg config open /absolute/path/to/project
+```
+
+For folder drag-and-drop, install an OS-native Desktop launcher once with `aicg config launcher --yes`. Drag a project folder onto **AICG Configure** to open that project's visual configuration. macOS uses a `.app` droplet, Windows a `.cmd` file, and Linux a `.desktop` entry with a shell helper. Double-clicking the launcher opens the project picker. Use `--output /absolute/directory` if your Desktop is elsewhere. Installation is create-only: reruns keep an identical launcher and refuse to replace modified or foreign files. On Linux, the file manager may require marking the `.desktop` entry as trusted. The browser page itself cannot recover a dropped folder's absolute disk path; use this desktop launcher or the existing folder browser.
+
+Alternatively, generate an editable configuration file. The template uses conservative scan-backed defaults, selects only Codex initially, and keeps all owner decisions visible. Review the file before validation; an ambiguous repository still requires an explicit lifecycle decision.
+
+```bash
+aicg config init . --output aicg.config.json --yes
+aicg config validate . --config aicg.config.json --json
+aicg init . --config aicg.config.json --yes --dry-run
+```
+
+`config init` creates only a missing file. An identical retry is reported as unchanged; different existing content, symlinks, unsafe paths, and `.git` destinations are rejected. `config validate` is read-only and builds the same effective initialization plan as `init`. Set `AICG_NO_AUTO_OPEN=1` before installation to suppress the best-effort browser launch.
+
 Repository families use one exact, reviewable plan while retaining autonomous member ownership:
 
 ```bash
@@ -96,7 +115,9 @@ aicg init . --family --yes --clients codex --no-assist --approve <planHash>
 
 The combined plan binds the orchestrator and every detected member. Member repositories are applied before the orchestrator, parent manifests never own member files, and a failed apply or post-check rolls the entire family back.
 
-Existing projects receive `docs/ai/development/index.json`, one evidence baseline per detected development unit, and a short managed entrypoint in each unit README. The `brownfield-understanding` Skill tells an Agent to complete one unit at a time from code/test evidence, keep unknowns unverified, and extract only stable decision surfaces into project Skills. Implementation Skills require correct, incorrect, and exception code shapes; workflow Skills require an executable flow.
+Existing projects receive `docs/ai/development/index.json`, one evidence baseline per detected development unit, and a short managed entrypoint in each unit README. Use `aicg init ... --assist <selected-agent>` to have the selected Agent complete the `brownfield-understanding` workflow: record existing business behavior in Memory, complete code-backed development docs, and propose stable project Skills for approval. `aicg check --json` reports `brownfield.gaps`; a scan baseline is not semantic completion. Implementation Skills require correct, incorrect, and exception code shapes; workflow Skills require an executable flow.
+
+AICG checks default to advisory exit code 0 and write JSON findings under `reports/aicg/`. Pass `--enforce` to opt into a nonzero exit code for failed findings. The installed pre-commit hook uses the advisory default.
 
 Standard and Complete governance also generate an expanded `professional-testing` Skill. It uses stable Case IDs, shared context, minimal AI execution packets, evidence-bound PASS/FAIL, an idempotent result ledger, automatic `NOT_RUN`, and ledger-derived reports. Automated, AI-simulated-human, and real-user evidence remain separate.
 

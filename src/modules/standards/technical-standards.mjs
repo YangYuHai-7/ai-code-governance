@@ -2,7 +2,8 @@ import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { stableJson, unique } from '../../shared/index.mjs';
+import { selectedSkillDirectories } from '../../catalogs/index.mjs';
+import { skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
 import { assertSkillQuality } from './skill-quality.mjs';
 
 const REGISTRY_PATH = 'assets/registries/technical-standard-registry.json';
@@ -433,14 +434,11 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
       kind: 'technical-standard-skill',
       source: 'technical-standard-registry',
     });
-    const adapters = [];
-    const agents = config?.clients ?? [];
-    if (agents.some((agent) => ['codex', 'cursor', 'generic'].includes(agent))) adapters.push(`.agents/skills/standards/${standard.id}/SKILL.md`);
-    if (agents.includes('claude-code')) adapters.push(`.claude/skills/standards/${standard.id}/SKILL.md`);
+    const adapters = selectedSkillDirectories(config?.clients ?? []).map((directory) => `${directory}/standards/${standard.id}/SKILL.md`);
     for (const adapterPath of unique(adapters)) {
       artifacts.push({
         path: adapterPath,
-        content,
+        content: skillAdapterContent(canonicalPath, content),
         ownership: 'full',
         kind: 'technical-standard-adapter-skill',
         source: canonicalPath,

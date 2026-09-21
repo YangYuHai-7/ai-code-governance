@@ -252,7 +252,7 @@ test('init planning never executes PATH probes before approval, including reject
   }
 });
 
-test('all existing-project strategies write governance only and AI assist is blocked before it can mutate code', (context) => {
+test('all existing-project strategies preserve code and Agent product edits are flagged', (context) => {
   const configRoot = fixture('strategy-config');
   context.after(() => fs.rmSync(configRoot, { recursive: true, force: true }));
   for (const strategy of ['keep-existing', 'new-code-standard', 'staged-migration']) {
@@ -294,10 +294,11 @@ test('all existing-project strategies write governance only and AI assist is blo
       AICG_ASSIST_TARGET: source,
     },
   });
-  assert.equal(result.status, 2);
-  assert.match(`${result.stdout}${result.stderr}`, /AI assist is unavailable/);
-  assert.equal(fs.readFileSync(source, 'utf8'), 'export const preserved = true;\n');
-  assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(`${result.stdout}${result.stderr}`, /ai_assist=unverified/);
+  assert.match(`${result.stdout}${result.stderr}`, /changed product files/);
+  assert.equal(fs.readFileSync(source, 'utf8'), 'overwritten');
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance')), true);
 });
 
 test('chat initialization accepts a partial explicit lifecycle decision and records it in its approved plan', (context) => {
@@ -447,5 +448,6 @@ test('the requested repair phrase keeps safe no-probe diagnostics and permits no
   assert.equal(doctorResult.checks.gitRepository, 'not-probed');
   assert.ok(doctorResult.agents.every((agent) => agent.availability === 'not-probed' || agent.availability === 'built-in'));
   assert.equal(fs.existsSync(marker), false);
-  assert.deepEqual(treeSnapshot(root), before);
+  assert.deepEqual(treeSnapshot(root).filter((entry) => !entry.relative.startsWith('reports/aicg/')), before);
+  assert.equal(fs.existsSync(path.join(root, 'reports/aicg/latest-doctor.json')), true);
 });

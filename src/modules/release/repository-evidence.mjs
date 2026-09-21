@@ -121,7 +121,8 @@ export function validateCandidate(root, evidence, errors) {
     if (unexpected.length > 0) errors.push(`Only release evidence may change after candidate.releaseRevision: ${unexpected.join(', ')}.`);
   }
   const status = git(root, ['status', '--porcelain=v1', '--untracked-files=all'], 'release worktree cleanliness', errors);
-  if (status?.stdout) errors.push('Release acceptance requires a clean Git worktree and index.');
+  const unrelatedStatus = status?.stdout.split('\n').filter(Boolean).filter((line) => !/^\?\? reports\/aicg\/latest-(?:check|complete|doctor|work-unit|test-case|config|release-check)\.json$/.test(line));
+  if (unrelatedStatus?.length) errors.push('Release acceptance requires a clean Git worktree and index.');
   return candidate;
 }
 

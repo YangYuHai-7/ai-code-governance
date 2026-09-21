@@ -27,7 +27,10 @@ export function parseArgs(argv, {
   if (!COMMAND_NAMES.includes(command)) throw usageError(`Unknown command: ${command}`);
 
   let action = null;
-  if (command === 'work-unit') {
+  if (command === 'config') {
+    action = args.shift() ?? null;
+    if (!['init', 'validate', 'open', 'launcher'].includes(action)) throw usageError('config requires an action: init, validate, open, or launcher.');
+  } else if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');
   } else if (command === 'test-case') {
@@ -69,5 +72,12 @@ export function parseArgs(argv, {
   for (const name of Object.keys(options)) {
     if (!COMMAND_FLAGS[command].has(name)) throw usageError(`Option --${name} is not valid for ${command}.`);
   }
+  if (command === 'config' && action === 'launcher') {
+    if (targetSet) throw usageError('config launcher does not take a project path; use --output <absolute-directory> for a custom launcher location.');
+    for (const name of Object.keys(options)) {
+      if (!['yes', 'json', 'output', 'help'].includes(name)) throw usageError(`Option --${name} is not valid for config launcher.`);
+    }
+  }
+  if (command === 'config' && action === 'open' && !targetSet) target = null;
   return action ? { command, action, target, options } : { command, target, options };
 }

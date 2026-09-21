@@ -67,11 +67,25 @@ try {
   const tarball = path.join(packDirectory, packResult[0].filename);
   assert.ok(fs.statSync(tarball).isFile());
 
-  runNpm(['install', '--prefix', installDirectory, tarball, '--ignore-scripts', '--no-audit', '--no-fund']);
+  const installed = runNpm(['install', '--prefix', installDirectory, tarball, '--foreground-scripts', '--no-audit', '--no-fund'], {
+    env: { ...process.env, AICG_NO_AUTO_OPEN: '1' },
+  });
+  assert.match(installed.stdout, /Open AICG configuration at any time/);
   const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.js');
   assert.ok(fs.statSync(installedBin).isFile());
+  const installedRoot = path.dirname(path.dirname(installedBin));
+  for (const relative of ['assets/config-ui/index.html', 'assets/config-ui/app.js', 'assets/config-ui/style.css', 'assets/config-ui/selector.css', 'scripts/postinstall-open-config.mjs']) {
+    assert.ok(fs.statSync(path.join(installedRoot, relative)).isFile(), `missing installed configuration UI asset: ${relative}`);
+  }
   const installedCommand = runNpm(['exec', '--prefix', installDirectory, '--', 'aicg', '--version']);
   assert.equal(installedCommand.stdout.trim(), packageVersion);
+  const launcherDirectory = path.join(fixture, 'launcher output');
+  fs.mkdirSync(launcherDirectory);
+  const launcherResult = run(process.execPath, [installedBin, 'config', 'launcher', '--yes', '--output', launcherDirectory, '--json']);
+  const launcher = JSON.parse(launcherResult.stdout);
+  assert.equal(launcher.status, 'created');
+  assert.ok(fs.statSync(launcher.path).isFile() || fs.statSync(launcher.path).isDirectory());
+  assert.equal(JSON.parse(run(process.execPath, [installedBin, 'config', 'launcher', '--yes', '--output', launcherDirectory, '--json']).stdout).status, 'unchanged');
   const requestPlan = run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--config', answers, '--dry-run', '--json']);
   const requestPayload = JSON.parse(requestPlan.stdout);
   assert.equal(requestPayload.plan.intent, 'governance.initialize');
@@ -79,7 +93,6 @@ try {
   run(process.execPath, [installedBin, 'request', projectDirectory, '--text', '初始化治理框架', '--config', answers, `--approve=${requestPayload.plan.planHash}`, '--json']);
   assert.ok(fs.existsSync(path.join(projectDirectory, '.ai-governance', 'manifest.json')));
   run(process.execPath, [installedBin, 'init', projectDirectory, '--yes', '--no-assist']);
-  const installedRoot = path.dirname(path.dirname(installedBin));
   const { buildArtifacts } = await import(pathToFileURL(path.join(installedRoot, 'src/generator.mjs')));
   const { scanProject } = await import(pathToFileURL(path.join(installedRoot, 'src/scanner.mjs')));
   const { applyArtifactPlan, planArtifacts } = await import(pathToFileURL(path.join(installedRoot, 'src/managed-files.mjs')));

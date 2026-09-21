@@ -207,8 +207,8 @@ const PATH_RULES = [
 ];
 
 const SURFACE_RULES = [
-  { id: 'web', patterns: ['web/**', 'frontend/**', 'client/**', 'ui/**'], examples: ['apps/web/editor.mjs'] },
-  { id: 'api', patterns: ['api/**', 'backend/**', 'server/**'], examples: ['apps/api/editor.mjs'] },
+  { id: 'web', patterns: ['web/**', 'frontend/**', 'client/**', 'ui/**', 'apps/frontend-*/**'], examples: ['apps/frontend-react/src/modules/orders/view.tsx'] },
+  { id: 'api', patterns: ['api/**', 'backend/**', 'server/**', 'services/backend-*/**'], examples: ['services/backend-node/src/modules/orders/interface/handler.ts'] },
   { id: 'ios', patterns: ['ios/**'], examples: ['apps/ios/editor.swift'] },
   { id: 'android', patterns: ['android/**'], examples: ['apps/android/Editor.kt'] },
   { id: 'mobile', patterns: ['mobile/**'], examples: ['apps/mobile/editor.dart'] },
@@ -433,7 +433,7 @@ export function taskRoutingPolicy(config) {
       externalAction: 'L3-with-separate-approval',
       deliveryRule: 'declared-level-must-not-be-lower-than-path-minimum',
       surfaceGroups: SURFACE_RULES.map(({ id, patterns, examples }) => ({ id, patterns: [...patterns], examples: [...examples] })),
-      multiSurfaceExamples: [['apps/web/editor.mjs', 'apps/api/editor.mjs']],
+      multiSurfaceExamples: [['apps/frontend-react/src/modules/orders/view.tsx', 'services/backend-node/src/modules/orders/interface/handler.ts']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),
     },
     pathRules: PATH_RULES.map(({ id, level, patterns = [], tokens = [], excludePatterns = [], examples }) => ({

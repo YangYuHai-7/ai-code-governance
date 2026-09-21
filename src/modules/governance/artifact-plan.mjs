@@ -319,8 +319,8 @@ export function planArtifacts(root, artifacts, options = {}) {
     const current = ancestor ? '' : readText(absolute, '');
     if (artifact.ownership === 'seed') {
       const seedExists = !ancestor && Boolean(existingStat);
-      let desired = seedExists ? current : artifact.content;
-      if (seedExists && relative === CONTEXT_MAP_PATH) {
+      let desired = seedExists && !options.replaceExisting ? current : artifact.content;
+      if (seedExists && !options.replaceExisting && relative === CONTEXT_MAP_PATH) {
         try {
           const merged = mergeLegacyContextMapSeed(current, artifact.content);
           if (legacyManagedProject) desired = merged;
@@ -354,11 +354,11 @@ export function planArtifacts(root, artifacts, options = {}) {
         && /^[a-f0-9]{64}$/.test(artifact.promotionSourceSha256 ?? '')
         && sha256(current) === artifact.promotionSourceSha256;
       const recognizableGenerated = current.includes(GENERATED_MARKER);
-      if (isPreviouslyOwned && currentHash !== previous.sha256 && !options.force) {
+      if (isPreviouslyOwned && currentHash !== previous.sha256 && !options.force && !options.replaceExisting) {
         conflicts.push(`${relative}: managed content changed; run sync --force to replace only the managed content`);
         continue;
       }
-      if (!isPreviouslyOwned && !isExactSeedPromotion && artifact.ownership === 'full' && !recognizableGenerated) {
+      if (!isPreviouslyOwned && !isExactSeedPromotion && artifact.ownership === 'full' && !recognizableGenerated && !options.replaceExisting) {
         conflicts.push(`${relative}: existing unowned file will not be overwritten`);
         continue;
       }

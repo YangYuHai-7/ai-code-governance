@@ -45,6 +45,15 @@
       "skill_directories": [".agents/skills"],
       "rule_directories": [],
       "assist": null
+    },
+    {
+      "id": "workbuddy",
+      "label": "WorkBuddy",
+      "detect_commands": [],
+      "instruction_entry": "AGENTS.md",
+      "skill_directories": [".workbuddy/skills"],
+      "rule_directories": [],
+      "assist": null
     }
   ]
 }

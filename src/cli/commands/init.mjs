@@ -5,10 +5,12 @@ import { deriveArchitectureDecision } from '../../architecture-policy.mjs';
 import { initializationForArchitectureOption, resolveArchitectureApproval } from '../../architecture-assessment.mjs';
 import { runAssist, assistCandidates } from '../../assist.mjs';
 import { checkProject, printCheck } from '../../checker.mjs';
-import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, validateConfig } from '../../generator.mjs';
+import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, refreshSkillGovernanceReceipt, validateConfig } from '../../generator.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprovedProjectAgentTeam } from '../../project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository } from '../../catalogs/index.mjs';
+import { BUSINESS_CONSTRAINT_SKILL_PATH } from '../../modules/governance/business-constraints.mjs';
 import { applyArtifactPlan, planArtifacts, restoreUserOwnedLink } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
 import { adaptivePreviewGuidance, initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
@@ -16,14 +18,22 @@ import { buildDecisionLedger, classifyProject, resolveInitializationDecision } f
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
-import { repositoryTopologyMigrationRequired } from '../../modules/repository/index.mjs';
-import { readJson, readText } from '../../adapters/filesystem/index.mjs';
+import { buildDevelopmentDocumentationArtifacts, isProductionScopePath, repositoryTopologyMigrationRequired } from '../../modules/repository/index.mjs';
+import { buildGreenfieldLayoutArtifacts } from '../../modules/repository/greenfield-layout.mjs';
+import { readBoundedRepositoryFile, readJson, readText, writeGateReport } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
 import { rollbackSnapshot, restoreRollbackSnapshot } from '../../modules/governance/artifact-rollback.mjs';
+import { reviewGeneratedGovernance } from '../../modules/governance/post-generation-review.mjs';
 
-const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/ai/', 'docs/memory/', '.cursor/', '.claude/', '.agents/'];
-const GOVERNANCE_WRITE_FILES = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'reports/.gitkeep', 'reviews/.gitkeep']);
+// The write boundary must cover every root an agent can read governance from, or a newly
+// registered client's adapter directory is rejected as a non-governance path. Both sets
+// derive from the agent registry so adding a client never widens or narrows them by accident.
+const GOVERNANCE_ROOTS = governanceRoots();
+const GOVERNANCE_ROOT_FILES = GOVERNANCE_ROOTS.filter((relative) => /\.[a-z0-9]+$/i.test(relative));
+const GOVERNANCE_ROOT_DIRECTORIES = GOVERNANCE_ROOTS.filter((relative) => !/\.[a-z0-9]+$/i.test(relative));
+const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/memory/', ...GOVERNANCE_ROOT_DIRECTORIES.map((relative) => `${relative}/`)];
+const GOVERNANCE_WRITE_FILES = new Set(['.gitignore', 'reports/.gitkeep', 'reviews/.gitkeep', ...GOVERNANCE_ROOT_FILES]);
 
 function requireConfiguredChoices(supplied) {
   for (const key of ['stacks', 'governanceDepth', 'artifactLanguage']) {
@@ -67,15 +77,36 @@ function recordArchitectureDecisionGap(config) {
   };
 }
 
-function assertInitializationWriteBoundary(plan) {
+function assertInitializationWriteBoundary(plan, config, scan) {
+  const approvedLayoutPaths = new Set(buildGreenfieldLayoutArtifacts(config).artifacts.map((artifact) => artifact.path));
+  if (config.initialization?.lifecycle === 'existing' && config.projectMode !== 'repository-family') {
+    for (const artifact of buildDevelopmentDocumentationArtifacts(config, scan).artifacts) {
+      if (['development-unit-rule', 'development-unit-skill', 'development-unit-adapter-skill', 'development-unit-entrypoint'].includes(artifact.kind)) approvedLayoutPaths.add(artifact.path);
+    }
+  }
   const unexpected = plan.operations
     .map((operation) => operation.path)
     .filter((relative) => !GOVERNANCE_WRITE_FILES.has(relative)
+      && !approvedLayoutPaths.has(relative)
       && !/(^|\/)README\.md$/.test(relative)
       && !GOVERNANCE_WRITE_PREFIXES.some((prefix) => relative.startsWith(prefix)));
   if (unexpected.length > 0) {
     throw usageError(`Initialization plan attempted to modify a non-governance path: ${unexpected.sort((left, right) => left.localeCompare(right)).join(', ')}.`);
   }
+}
+
+function productFingerprints(scan) {
+  const fingerprints = new Map();
+  for (const file of scan.files) {
+    if (file.type !== 'file' || !isProductionScopePath(file.relative) || /^(?:reports|reviews)\//.test(file.relative)) continue;
+    try { fingerprints.set(file.relative, sha256(readBoundedRepositoryFile(scan.root, file.relative).bytes)); }
+    catch { fingerprints.set(file.relative, 'unreadable'); }
+  }
+  return fingerprints;
+}
+
+function changedProductPaths(before, after) {
+  return [...new Set([...before.keys(), ...after.keys()])].filter((relative) => before.get(relative) !== after.get(relative));
 }
 
 function adaptiveChoices(items, choices = []) {
@@ -92,7 +123,14 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
     || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation'].includes(key))
     || !Array.isArray(request.installedRoots)) throw usageError('adaptiveGovernance requires bounded metadata and explicit installedRoots.');
-  const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog: request.curatedCatalog ?? [], requiredCapabilities: request.requiredCapabilities ?? [] };
+  // Recorded decisions name exact candidate ids. They must stay visible through the
+  // bounded candidate list, or a valid stored approval becomes an unknown id and every
+  // later init fails on decision validation instead of on the real change.
+  const keepIds = [...new Set([
+    ...(request.decisions?.skills ?? []).map((entry) => entry?.id).filter((id) => typeof id === 'string'),
+    ...(rememberedConfig?.adaptiveDecisions?.skills ?? []).map((entry) => entry?.id).filter((id) => typeof id === 'string'),
+  ])];
+  const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog: request.curatedCatalog ?? [], requiredCapabilities: request.requiredCapabilities ?? [], keepIds };
   const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
   const sourceSnapshot = stableJson(discovery);
   const conventionDiscovery = config.features.knowledge && config.initialization.lifecycle === 'existing' && config.governanceDepth !== 'minimal'
@@ -188,9 +226,12 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       if (!error.budgetCost) throw error;
       config = baseConfig;
       summary.status = 'budget-blocked';
-      summary.budget = { proposedCost: error.budgetCost, maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagerTokens: 800 };
+      summary.budget = { proposedCost: error.budgetCost, ...(error.budgetLimits ?? { maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagerTokens: 800 }) };
       summary.manualCleanup = {
-        paths: scan.files.map((entry) => entry.relative).filter((relative) => ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md', '.agents/skills/business-constraints/SKILL.md', '.claude/skills/business-constraints/SKILL.md'].includes(relative)),
+        paths: scan.files.map((entry) => entry.relative).filter((relative) => [
+          'docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH,
+          ...selectedSkillDirectories(config.clients).map((directory) => `${directory}/business-constraints/SKILL.md`),
+        ].includes(relative)),
         authorization: 'separate-explicit-approval-required', automaticDeletion: false,
         reason: config.artifactLanguage === 'zh-CN' ? '历史种子或漂移文件仍计入预算；先人工审查并另行批准清理，再重新预览。' : 'Retained seeds and drifted files still count toward the budget; review and separately authorize cleanup, then preview again.',
       };
@@ -268,10 +309,26 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     decisionSource = 'config';
   }
   if (!config.clientSupport) {
-    const locale = config.interactionLanguage === 'zh-CN' || options.locale === 'zh-CN';
-    throw usageError(locale
-      ? '必须显式选择客户端支持范围。使用 --clients all、--clients codex,cursor，或在 --config 中提供 clientSupport。'
-      : 'Client support scope must be explicit. Use --clients all, --clients codex,cursor, or provide clientSupport in --config.');
+    // Reading the scope off the repository is not the same as guessing it. A repository that
+    // already carries a client's governance directory has answered the question itself, and
+    // asking again only produces the same answer by hand. The chat surface is the one place
+    // that falls back to a default, because it exists so the operator does not have to name
+    // flags at all; even there the exact plan still has to be approved by hash, and the
+    // config records which route was taken so `check` and the operator can see it.
+    const inferred = inferClientScopeFromRepository(scan.files.map((entry) => entry.relative));
+    const clients = inferred?.clients ?? (allowDefaults ? ['codex'] : null);
+    if (clients) {
+      config = {
+        ...config,
+        clients,
+        clientSupport: clientSupportFromClients(clients, inferred ? 'inferred-repository' : 'inferred-default'),
+      };
+    } else {
+      const locale = config.interactionLanguage === 'zh-CN' || options.locale === 'zh-CN';
+      throw usageError(locale
+        ? '必须显式选择客户端支持范围。使用 --clients all、--clients codex,cursor，或在 --config 中提供 clientSupport。'
+        : 'Client support scope must be explicit. Use --clients all, --clients codex,cursor, or provide clientSupport in --config.');
+    }
   }
   config = { ...config, projectMode: scan.projectMode, projectName: scan.projectName, toolVersion: TOOL_VERSION, invocationMode: config.invocationMode ?? 'npm-exec-pinned' };
   if (options['no-assist']) config.features.aiAssist = false;
@@ -329,8 +386,8 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
         : 'en',
     };
   }
-  if (config.features.aiAssist && currentAssessment.codebase.lifecycle.value !== 'greenfield') {
-    throw usageError('AI assist is unavailable when the repository has existing or ambiguous product evidence; deterministic initialization must not modify business code.');
+  if (config.features.aiAssist && !['greenfield', 'existing'].includes(currentAssessment.codebase.lifecycle.value)) {
+    throw usageError('AI assist requires an established greenfield or existing-code classification.');
   }
   let request = config.adaptiveGovernance;
   const explicitAdaptiveRequest = Object.hasOwn(config, 'adaptiveGovernance');
@@ -358,8 +415,22 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     plan.contextCost = { status: 'not-recomputed-blocked', proposedIncrement: { files: 0, bytes: 0, managerTokens: 0 }, previouslyApprovedManagement: config.skillDiscovery?.artifactPlan?.cost ?? null };
     return { scan, config, plan, assertSourcesFresh: adaptive.assertSourcesFresh };
   }
+  // An approved Skill-governance receipt binds the exact artifact set it was approved
+  // against, and a generator change can move that set without touching the
+  // configuration. Refreshing the receipt here turns a permanent lock into an ordinary
+  // exact-planHash approval: the new cost is covered by the hash the operator approves.
+  let skillReceiptRefresh = null;
+  const refreshed = refreshSkillGovernanceReceipt(config, scan);
+  if (refreshed) {
+    config = refreshed.config;
+    skillReceiptRefresh = refreshed.refresh;
+  }
   const artifacts = buildArtifacts(config, scan);
-  const plan = planArtifacts(scan.root, artifacts, { force: options.force, migrateLinks: options['migrate-links'] });
+  const plan = planArtifacts(scan.root, artifacts, { force: options.force, replaceExisting: options.replaceExisting, migrateLinks: options['migrate-links'] });
+  if (skillReceiptRefresh) {
+    plan.requireAdaptiveApproval = true;
+    plan.skillGovernanceRefresh = skillReceiptRefresh;
+  }
   if (topologyMigrationRequired) plan.requireTopologyApproval = true;
   if (adaptive) {
     plan.adaptiveGovernance = adaptive.summary;
@@ -369,7 +440,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     const ordinaryMap = contextMap.slice(0, contextMap.indexOf('profiles:')) + 'profiles:\n' + (contextMap.match(/^  ordinary:[\s\S]*?(?=^  [a-z_]+:|$(?![\s\S]))/m)?.[0] ?? '');
     plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managerTokens: 0 } } };
   }
-  assertInitializationWriteBoundary(plan);
+  assertInitializationWriteBoundary(plan, config, scan);
   return { scan, config, plan, assertSourcesFresh: adaptive?.assertSourcesFresh };
 }
 
@@ -399,10 +470,10 @@ async function prepareRepositoryFamilyMembers(parent, options) {
     throw usageError('--family requires a detected repository family with at least one member.');
   }
   const units = parent.scan.governanceUnits ?? [];
-  const invalid = units.filter((unit) => unit.status !== 'scanned');
+  const invalid = units.filter((unit) => !['scanned', 'uninitialized'].includes(unit.status));
   if (invalid.length) throw usageError(`Cannot prepare the family while member scans are incomplete: ${invalid.map((unit) => `${unit.path} (${unit.status})`).join(', ')}.`);
   const members = [];
-  for (const unit of units) {
+  for (const unit of units.filter((entry) => entry.status === 'scanned')) {
     const memberRoot = path.join(parent.scan.root, unit.path);
     const memberOptions = {
       yes: true,
@@ -443,7 +514,13 @@ function familyExecutionPlan(parent, members) {
   return { ...base, planHash: sha256(stableJson(base)), executions: units };
 }
 
-async function initRepositoryFamily(parent, options) {
+/**
+ * Family preparation and application are separate entry points because the browser
+ * configuration page has to preview the exact plan the CLI applies. Preparation is
+ * pure: it scans every member, builds one combined plan, and reports conflicts. The
+ * combined approval binds all of them and one rollback boundary covers the run.
+ */
+export async function prepareRepositoryFamilyInit(parent, options = {}) {
   if (options.guided) throw usageError('--family uses one exact non-interactive plan; complete guided root decisions first, then run --family --dry-run.');
   if (parent.config.features.aiAssist) throw usageError('--family supports deterministic governance generation only; use --no-assist and run any AI completion separately per repository.');
   const members = await prepareRepositoryFamilyMembers(parent, options);
@@ -451,27 +528,16 @@ async function initRepositoryFamily(parent, options) {
   const all = [...members, { path: '.', ...parent }];
   const conflicts = all.flatMap((entry) => entry.plan.conflicts.map((conflict) => `${entry.path}: ${conflict}`));
   if (conflicts.length) throw usageError(`Cannot safely initialize the repository family:\n- ${conflicts.join('\n- ')}`);
+  return { parent, members, combined, all };
+}
 
-  if (options['dry-run'] || !options.approve) {
-    console.log(JSON.stringify({
-      dryRun: true,
-      family: true,
-      approvalRequired: true,
-      planHash: combined.planHash,
-      units: combined.units,
-      boundary: 'Each member remains an autonomous governance root. The combined approval binds every member plan and all repositories roll back if an apply or post-check fails.',
-    }, null, 2));
-    return;
-  }
-  if (options.approve !== combined.planHash) {
-    throw usageError(`Approval does not match the current family plan hash ${combined.planHash}. Re-run init --family --dry-run and approve the displayed hash.`);
-  }
-
+export function applyRepositoryFamilyInit(prepared, options = {}) {
+  const { combined, all } = prepared;
   for (const { path: relative, execution } of combined.executions) {
-    const prepared = all.find((entry) => entry.path === relative);
+    const member = all.find((entry) => entry.path === relative);
     assertPlanFresh(execution);
-    assertArtifactPlanMatches(execution, prepared.scan.root, prepared.plan);
-    prepared.assertSourcesFresh?.();
+    assertArtifactPlanMatches(execution, member.scan.root, member.plan);
+    member.assertSourcesFresh?.();
   }
   const snapshots = all.map((entry) => ({ entry, snapshot: rollbackSnapshot(entry.scan.root, entry.plan) }));
   const results = [];
@@ -495,12 +561,52 @@ async function initRepositoryFamily(parent, options) {
     if (rollbackFailures.length) error.message = `${error.message}\nFamily rollback failed:\n- ${rollbackFailures.join('\n- ')}`;
     throw error;
   }
-  console.log(JSON.stringify({ initialized: parent.scan.root, family: true, planHash: combined.planHash, units: results }, null, 2));
+  return results;
+}
+
+async function initRepositoryFamily(parent, options) {
+  const prepared = await prepareRepositoryFamilyInit(parent, options);
+  const { combined } = prepared;
+  if (options['dry-run'] || !options.approve) {
+    console.log(JSON.stringify({
+      dryRun: true,
+      family: true,
+      approvalRequired: true,
+      planHash: combined.planHash,
+      units: combined.units,
+      boundary: 'Each member remains an autonomous governance root. The combined approval binds every member plan and all repositories roll back if an apply or post-check fails.',
+    }, null, 2));
+    return;
+  }
+  if (options.approve !== combined.planHash) {
+    throw usageError(`Approval does not match the current family plan hash ${combined.planHash}. Re-run init --family --dry-run and approve the displayed hash.`);
+  }
+  const results = applyRepositoryFamilyInit(prepared, options);
+  console.log(JSON.stringify({ initialized: prepared.parent.scan.root, family: true, planHash: combined.planHash, units: results }, null, 2));
+}
+
+/**
+ * Whether a checkout is a repository family is a property of the checkout, not a flag the
+ * operator has to know in advance. A family is detected implicitly only when at least one
+ * declared member is actually checked out, because a declared-but-missing submodule has no
+ * files to govern. A recorded single-repository topology still fails closed: prepareInit
+ * raises the topology-migration requirement before any family plan is built.
+ */
+export function detectsRepositoryFamily(target) {
+  try {
+    const scan = scanProject(target, { probeEnvironment: false });
+    if (scan.projectMode !== 'repository-family') return false;
+    return (scan.governanceUnits ?? []).some((unit) => unit.status === 'scanned');
+  } catch {
+    return false;
+  }
 }
 
 export async function initCommand(target, options) {
-  const prepared = await prepareInit(target, options);
-  if (options.family) return initRepositoryFamily(prepared, options);
+  const family = options.family === true ? true : options['no-family'] === true ? false : detectsRepositoryFamily(target);
+  const effective = options.family === undefined ? { ...options, family } : options;
+  const prepared = await prepareInit(target, effective);
+  if (effective.family) return initRepositoryFamily(prepared, effective);
   const { scan, config, plan, assertSourcesFresh } = prepared;
   const needsApproval = Boolean(plan.requireTopologyApproval || plan.requireAdaptiveApproval || options.requireApproval || config.skillDiscovery?.enabled || config.agentTeam?.enabled);
   // Plain legacy --yes initialization does not expose or consume an execution digest.
@@ -564,21 +670,41 @@ export async function initCommand(target, options) {
     throw error;
   }
 
-  if (config.features.aiAssist && !options['no-assist']) {
+  if (config.features.aiAssist && !options['no-assist'] && !options.skipCompletionAssist) {
     const candidates = assistCandidates(config);
     let agentId = options.assist ?? null;
     if (!agentId && process.stdin.isTTY && process.stdout.isTTY) agentId = await chooseAssistAgent(candidates);
     if (!agentId) {
       console.warn('WARN: AI completion remains unverified because no selected installed agent was chosen.');
     } else {
-      const assist = runAssist(agentId, scan.root);
-      console.log(`ai_assist=${assist.status} reason=${assist.reason}`);
-      if (!assist.ok) console.log(`retry=${assist.retry}`);
+      const beforeProduct = config.initialization.lifecycle === 'existing' ? productFingerprints(scanProject(scan.root)) : null;
+      const assist = runAssist(agentId, scan.root, { lifecycle: config.initialization.lifecycle });
       const refreshed = scanProject(scan.root);
-      result = checkProject(refreshed);
-      if (!options.guided) printCheck(result, false);
-      if (!result.ok) process.exitCode = 1;
+      const productChanges = beforeProduct ? changedProductPaths(beforeProduct, productFingerprints(refreshed)) : [];
+      console.log(`ai_assist=${productChanges.length ? 'unverified' : assist.status} reason=${assist.reason}`);
+      if (!assist.ok) console.log(`retry=${assist.retry}`);
+      if (productChanges.length) console.warn(`WARN: Brownfield assistance changed product files; review these changes separately: ${productChanges.join(', ')}`);
+      try { result = checkProject(refreshed); }
+      catch (error) { result = { ok: false, status: 'error', errors: [error.message], warnings: [] }; }
+      if (!options.guided) {
+        if (result.status === 'error') console.warn(`WARN: Brownfield post-assist check failed: ${result.errors.join('; ')}`);
+        else printCheck(result, false);
+      }
+      const reportPath = writeGateReport(scan.root, 'check', result);
+      console.log(`report=${reportPath}`);
+      if (result.brownfield) console.log(`brownfield=${result.brownfield.status} gaps=${result.brownfield.gaps.length}`);
     }
   }
+  let governanceReview = null;
+  if (options.review) {
+    const checkReportPath = writeGateReport(scan.root, 'check', result);
+    governanceReview = reviewGeneratedGovernance(scan.root, {
+      lifecycle: config.initialization.lifecycle,
+      selectedAgents: config.features.aiAssist ? config.clients : [],
+      check: result,
+    });
+    console.log(`governance_review=${governanceReview.independentReview.status} score=${governanceReview.score.score} report=${governanceReview.reportPath} check_report=${checkReportPath}`);
+  }
   if (options.guided) printHumanGuidance(initSuccessGuidance(config));
+  return { applied, check: result, governanceReview };
 }
