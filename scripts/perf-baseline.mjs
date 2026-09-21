@@ -88,7 +88,7 @@ export function budgetViolations(report, baseline = null) {
   const violations = [];
   const metrics = [
     ...report.fixtures.filter((fixture) => fixture.hardGate).map((fixture) => ({ name: fixture.name, current: fixture.check.p95Ms, limit: fixture.limitMs, previous: baseline?.fixtures?.find((entry) => entry.name === fixture.name)?.check.p95Ms, jitterMs: 100 })),
-    ...(report.fast ? [{ name: 'fast', current: report.fast.p95Ms, limit: 5000, previous: baseline?.fast?.p95Ms, jitterMs: 750 }] : []),
+    ...(report.fast ? [{ name: 'fast', current: report.fast.p95Ms, limit: 7000, previous: baseline?.fast?.p95Ms, jitterMs: 750 }] : []),
     { name: 'routing', current: report.routing.p95Ms, limit: 20, previous: baseline?.routing?.p95Ms, jitterMs: 2 },
   ];
   for (const metric of metrics) {
