@@ -459,7 +459,11 @@ export function buildDevelopmentDocumentationArtifacts(config, scan) {
     const skill = unitSkill(unit);
     artifacts.push({ path: skillPath, content: skill, ownership: 'seed', kind: 'development-unit-skill', source: unit.documentation });
     const prefix = unit.path === '.' ? '' : `${unit.path}/`;
-    for (const directory of adapterDirs) artifacts.push({ path: `${prefix}${directory}/development-${unit.id}/SKILL.md`, content: skillAdapterContent(skillPath, skill), ownership: 'full', kind: 'development-unit-adapter-skill', source: skillPath });
+    // `source` names the artifact this one is derived from, so adapters mirror the unit's
+    // documentation page exactly like the rule, canonical Skill and entrypoint do. Recording
+    // the mirrored Skill path here instead made the manifest unresolvable for the adapter
+    // case in the trust table, which silently disabled `aicg sync --prune`.
+    for (const directory of adapterDirs) artifacts.push({ path: `${prefix}${directory}/development-${unit.id}/SKILL.md`, content: skillAdapterContent(skillPath, skill), ownership: 'full', kind: 'development-unit-adapter-skill', source: unit.documentation });
     if (unit.path !== '.') artifacts.push({ path: `${unit.path}/AGENTS.md`, content: `# ${unit.path} development\n\nRead \`${unit.documentation}\`, \`${localRoot}/rules/development.md\`, and \`${localRoot}/skills/development-${unit.id}/SKILL.md\` before changes. Follow root governance and record verified business behavior in Memory.\n`, ownership: 'managed-block', kind: 'development-unit-entrypoint', source: unit.documentation });
   }
   const skill = understandingSkill(config);

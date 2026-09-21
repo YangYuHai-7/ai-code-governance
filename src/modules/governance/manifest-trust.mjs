@@ -18,44 +18,82 @@ const DEVELOPMENT_UNIT_KINDS = new Set([
   'development-unit-entrypoint',
 ]);
 
-function developmentUnitDescriptor(entry) {
-  // `source` for every development-unit artifact is the unit's documentation page
-  // (docs/ai/development/units/<id>.md, or <unit-path>/docs/ai/development/units/<id>.md).
-  // That page is the only handle we have to recover the unit id and prefix, so the
-  // kind/path/source contract must be reconstructed from `source` rather than from a
-  // precomputed relationship triple.
-  const source = entry?.source;
-  if (typeof source !== 'string') return null;
-  const match = source.match(/^(?:([^/]+)\/)?docs\/ai\/development\/units\/([^/]+)\.md$/);
-  if (!match) return null;
-  const unitPath = match[1] ?? '';
-  const unitId = match[2];
-  const localRoot = unitPath === '' ? 'docs/ai' : `${unitPath}/docs/ai`;
-  const adapterPrefix = unitPath === '' ? '' : `${unitPath}/`;
-  const canonicalSkill = `${localRoot}/skills/development-${unitId}/SKILL.md`;
-  return { unitPath, unitId, localRoot, adapterPrefix, canonicalSkill };
+function escapePathSegment(value) {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/g, (match) => `\\${match}`);
 }
 
-function isKnownDevelopmentUnitPath(entry) {
-  const descriptor = developmentUnitDescriptor(entry);
-  if (!descriptor) return false;
+// A unit's documentation page never repeats the unit's own path: the root unit writes
+// docs/ai/development/root.md and every other unit writes docs/ai/development/units/<id>.md
+// against the repository root. `source` alone therefore cannot carry the prefix back, and
+// the artifact path is the only place the unit path and unit id can be recovered from.
+function recoverDevelopmentUnit(entry) {
+  const artifactPath = entry?.path;
+  if (typeof artifactPath !== 'string') return null;
+  const describe = (unitPath, unitId) => {
+    const localRoot = unitPath === '' ? 'docs/ai' : `${unitPath}/docs/ai`;
+    return {
+      unitPath,
+      unitId,
+      localRoot,
+      adapterPrefix: unitPath === '' ? '' : `${unitPath}/`,
+      documentation: unitPath === '' ? 'docs/ai/development/root.md' : `docs/ai/development/units/${unitId}.md`,
+      canonicalSkill: unitId === null ? null : `${localRoot}/skills/development-${unitId}/SKILL.md`,
+    };
+  };
+  switch (entry.kind) {
+    case 'development-unit-adapter-skill':
+      // Matching a client directory declared in the agent registry is what keeps this rule
+      // from accepting a slug-shaped directory nobody owns.
+      for (const directory of declaredSkillDirectories()) {
+        const match = artifactPath.match(new RegExp(`^(?:(.+)/)?${escapePathSegment(directory)}/development-([^/]+)/SKILL\\.md$`));
+        if (match) return describe(match[1] ?? '', match[2]);
+      }
+      return null;
+    case 'development-unit-skill': {
+      const match = artifactPath.match(/^(?:(.+)\/)?docs\/ai\/skills\/development-([^/]+)\/SKILL\.md$/);
+      return match ? describe(match[1] ?? '', match[2]) : null;
+    }
+    case 'development-unit-rule': {
+      const match = artifactPath.match(/^(?:(.+)\/)?docs\/ai\/rules\/development\.md$/);
+      return match ? describe(match[1] ?? '', null) : null;
+    }
+    case 'development-unit-entrypoint': {
+      const match = artifactPath.match(/^(.+)\/AGENTS\.md$/);
+      return match ? describe(match[1], null) : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function citesItsOwnUnitDocumentation(entry, unit) {
+  // Every artifact of a unit cites that unit's documentation page. Manifests written before
+  // this contract was unified cited the mirrored canonical Skill path instead, so that one
+  // shape is still accepted: otherwise an upgrade would reclassify an already installed
+  // governance tree as unmanaged files this tool refuses to touch.
+  if (entry.source === unit.documentation) return true;
+  return entry.kind === 'development-unit-adapter-skill' && entry.source === unit.canonicalSkill;
+}
+
+function matchesDevelopmentUnitShape(entry, unit) {
   switch (entry.kind) {
     case 'development-unit-rule':
-      return entry.path === `${descriptor.localRoot}/rules/development.md`;
+      return entry.path === `${unit.localRoot}/rules/development.md`;
     case 'development-unit-skill':
-      return entry.path === descriptor.canonicalSkill;
+      return entry.path === unit.canonicalSkill;
     case 'development-unit-adapter-skill':
-      // adapter source must equal the canonical skill path it mirrors; slug matching is
-      // rejected by requiring an exact source match and a client directory declared in the
-      // agent registry.
-      return entry.source === descriptor.canonicalSkill
-        && declaredSkillDirectories().some((directory) => entry.path === `${descriptor.adapterPrefix}${directory}/development-${descriptor.unitId}/SKILL.md`);
+      return declaredSkillDirectories().some((directory) => entry.path === `${unit.adapterPrefix}${directory}/development-${unit.unitId}/SKILL.md`);
     case 'development-unit-entrypoint':
-      // entrypoint only exists for non-root units (root is the shared AGENTS.md).
-      return descriptor.unitPath !== '' && entry.path === `${descriptor.unitPath}/AGENTS.md`;
+      // The entrypoint only exists for non-root units; the root unit uses the shared AGENTS.md.
+      return unit.unitPath !== '' && entry.path === `${unit.unitPath}/AGENTS.md`;
     default:
       return false;
   }
+}
+
+function isKnownDevelopmentUnitPath(entry) {
+  const unit = recoverDevelopmentUnit(entry);
+  return Boolean(unit) && citesItsOwnUnitDocumentation(entry, unit) && matchesDevelopmentUnitShape(entry, unit);
 }
 
 const KNOWN_MANAGED_RELATIONSHIPS = new Set([
@@ -202,6 +240,12 @@ const FIXED_MANAGED_PATHS = Object.freeze({
 });
 
 function hasKnownManagedPath(entry, definitions) {
+  if (DEVELOPMENT_UNIT_KINDS.has(entry.kind)) {
+    // Per-unit artifacts recover both their prefix and id from their own path, which is
+    // why they are listed in DEVELOPMENT_UNIT_KINDS rather than the static table above.
+    const unit = recoverDevelopmentUnit(entry);
+    return Boolean(unit) && matchesDevelopmentUnitShape(entry, unit);
+  }
   if (entry.kind === 'development-documentation-index') return entry.path === 'docs/ai/development/index.json';
   if (entry.kind === 'repository-family-index') return entry.path === 'docs/ai/repository-family.json';
   if (entry.kind === 'development-readme') return entry.path === 'README.md' || entry.path.endsWith('/README.md');
@@ -236,9 +280,10 @@ function supportedToolVersion(version) {
 function hasKnownManagedRelationship(entry, definitions) {
   const relationship = `${entry?.ownership}\0${entry?.kind}\0${entry?.source}`;
   if (KNOWN_MANAGED_RELATIONSHIPS.has(relationship)) return true;
-  // development-unit-* kinds have a per-unit source path, so the static relationship table
-  // cannot enumerate them. Trust the entry iff its path rule reconstructs from `source`,
-  // which is the only handle the contract has to recover the unit id.
+  // development-unit-* kinds have a per-unit documentation source path, so the static
+  // relationship table cannot enumerate them. Trust the entry iff its own path recovers the
+  // unit and its source cites that same unit. An entry that fails either check stays
+  // untrusted, so unmanaged content is never silently deleted.
   if (DEVELOPMENT_UNIT_KINDS.has(entry?.kind) && isKnownDevelopmentUnitPath(entry)) return true;
   return hasSupportedSkillDefinition(entry, definitions);
 }
