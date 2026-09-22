@@ -9,7 +9,9 @@ import { plannedLinkAncestor } from './link-paths.mjs';
 export function rollbackSnapshot(root, plan) {
   const linkPaths = [...new Set((plan.links ?? []).map((link) => normalizeRelative(path.relative(root, link))))];
   const coveredByMigration = (relative) => plannedLinkAncestor(root, plan.links, relative);
-  const paths = new Set([MANIFEST_PATH, ...plan.operations.map((operation) => operation.path)]);
+  const paths = new Set([MANIFEST_PATH, ...plan.operations
+    .filter((operation) => !(operation.candidate === true && operation.remove !== true))
+    .map((operation) => operation.path)]);
   const files = [...paths].map((relative) => {
     const absolute = path.join(root, relative);
     if (coveredByMigration(relative)) return { relative, kind: 'missing' };

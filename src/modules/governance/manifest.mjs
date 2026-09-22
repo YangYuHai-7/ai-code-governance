@@ -90,7 +90,7 @@ export function buildManifest(operations, { generatedAt = null, retained = [] } 
     toolVersion: TOOL_VERSION,
     templateVersion: TEMPLATE_VERSION,
     files: [
-      ...operations.filter((operation) => !operation.remove && operation.ownership !== 'seed').map((operation) => ({
+      ...operations.filter((operation) => !operation.remove && operation.ownership !== 'seed' && operation.candidate !== true).map((operation) => ({
         path: operation.path,
         ownership: operation.ownership,
         kind: operation.kind,

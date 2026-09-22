@@ -227,3 +227,30 @@ export function readCanonicalPath(root, legacyPath, footprint = null) {
   }
   return preferred;
 }
+
+/**
+ * Classify a retained/legacy artifact for safe migration and cleanup.
+ *
+ * Any link, any user or drifted content, and any entry whose recorded hash no longer matches
+ * the file on disk is 'historical-or-user': it is never an automatic move/delete target. A
+ * trusted, unedited artifact that a current context map, active configuration, or recorded
+ * evidence still references is 'reachable'; one required by the startup kernel is 'required';
+ * everything else is a 'dormant-managed' cleanup candidate.
+ */
+export function classifyRetainedArtifact(entry, {
+  referencedPaths = new Set(),
+  managedHashMatches = false,
+  isLink = false,
+  hasUserContent = false,
+} = {}) {
+  if (isLink || hasUserContent || !managedHashMatches) return 'historical-or-user';
+  if (referencedPaths.has(entry?.path)) return 'reachable';
+  if (entry?.requiredByKernel) return 'required';
+  return 'dormant-managed';
+}
+
+/** Compact destination for a legacy path, or null when the path does not move. */
+export function migrationTarget(legacyPath, footprint = 'compact') {
+  const target = canonicalPath(legacyPath, footprint);
+  return target === legacyPath ? null : target;
+}

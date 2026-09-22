@@ -14,6 +14,7 @@ import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { buildCapabilityArtifacts, prepareCapabilityHarvest } from '../src/modules/capabilities/index.mjs';
 import { syncCommand } from '../src/cli/commands/governance.mjs';
+import { initCommand } from '../src/cli/commands/init.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-sync-prune-${name}-`));
@@ -67,6 +68,41 @@ function legacyFixture(context, version = 2) {
   manifest.files.push({ path: relative, ownership: 'full', kind: 'adapter', source: 'docs/ai/rules/00_always.mdc', sha256: sha256(content) });
   writeManifest(root, manifest);
   return { root, manifest, relative };
+}
+
+/**
+ * A preserve (flat docs/ai) project plus the compact config that requests migration. The
+ * compact config lives outside the repository so it never becomes a scanned project file.
+ */
+async function preserveFixture(context, name = 'preserve-migration') {
+  const root = fixture(name);
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = {
+    ...defaultConfig(scan),
+    clients: ['codex'],
+    clientSupport: { mode: 'selected', selectedClients: ['codex'], source: 'user' },
+    governanceFootprint: 'preserve',
+    initialization: { lifecycle: 'greenfield', existingCodeStrategy: null, source: 'config' },
+  };
+  const preserveConfigPath = path.join(root, 'preserve-config.json');
+  fs.writeFileSync(preserveConfigPath, JSON.stringify(config));
+  await initCommand(root, { yes: true, config: preserveConfigPath, force: true });
+  const persisted = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
+  persisted.governanceFootprint = 'compact';
+  const compactConfigPath = path.join(os.tmpdir(), `aicg-compact-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+  fs.writeFileSync(compactConfigPath, JSON.stringify(persisted));
+  context.after(() => fs.rmSync(compactConfigPath, { force: true }));
+  return { root, compactConfigPath };
+}
+
+function linkFixtureArtifact(root, relative, context) {
+  const target = path.join(os.tmpdir(), `aicg-linked-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  fs.writeFileSync(target, 'owner-linked content\n');
+  context.after(() => fs.rmSync(target, { force: true }));
+  fs.rmSync(path.join(root, relative));
+  fs.symlinkSync(target, path.join(root, relative), process.platform === 'win32' ? 'file' : undefined);
+  return target;
 }
 
 function addManifestArtifact(root, manifest, artifact) {
@@ -383,6 +419,91 @@ test('approved CLI prune rolls back when the real checker rejects user-owned con
   const approved = run(['sync', root, '--prune', '--approve', JSON.parse(preview.stdout).planHash]);
   assert.equal(approved.status, 1, approved.stderr || approved.stdout);
   assert.match(approved.stderr, /Post-apply verification failed/);
+  assert.deepEqual(snapshotTree(root), before);
+});
+
+test('compact preview classifies but does not mutate a preserve project', async (context) => {
+  const { root, compactConfigPath } = await preserveFixture(context, 'migration-preview');
+  const legacy = 'docs/ai/task-routing-policy.json';
+  assert.equal(fs.existsSync(path.join(root, legacy)), true);
+  const before = snapshotTree(root);
+  const preview = await syncCommand(root, { config: compactConfigPath, 'dry-run': true });
+  assert.ok(preview.plan.operations.some((item) => item.classification === 'dormant-managed'));
+  const operation = preview.plan.operations.find((item) => item.path === legacy);
+  assert.ok(operation, 'the legacy artifact is reported as a migration candidate');
+  assert.equal(operation.classification, 'dormant-managed');
+  assert.equal(operation.action, 'migrate');
+  assert.deepEqual(operation.migration, { from: legacy, to: '.ai-governance/state/task-routing-policy.json' });
+  assert.equal(fs.existsSync(path.join(root, legacy)), true);
+  assert.deepEqual(snapshotTree(root), before);
+});
+
+test('user-edited and linked legacy artifacts are never automatic prune targets', async (context) => {
+  const { root, compactConfigPath } = await preserveFixture(context, 'migration-user-content');
+  const edited = 'docs/ai/task-routing-policy.json';
+  const linked = 'docs/ai/decision-ledger.json';
+  fs.appendFileSync(path.join(root, edited), '\n# owner note\n');
+  linkFixtureArtifact(root, linked, context);
+  const preview = await syncCommand(root, { config: compactConfigPath, 'dry-run': true });
+  for (const relative of [edited, linked]) {
+    const operation = preview.plan.operations.find((item) => item.path === relative);
+    assert.ok(operation, `${relative} is classified`);
+    assert.equal(operation.classification, 'historical-or-user');
+    assert.equal(operation.remove, false);
+    assert.equal(fs.existsSync(path.join(root, relative)), true);
+  }
+  assert.ok(preview.plan.manualCleanupCandidates.some((item) => item.path === edited));
+  assert.ok(preview.plan.manualCleanupCandidates.some((item) => item.path === linked));
+});
+
+test('an approved migration moves a trusted dormant artifact and retains drifted, edited and linked files', async (context) => {
+  const { root, compactConfigPath } = await preserveFixture(context, 'migration-approved');
+  const dormant = 'docs/ai/task-routing-policy.json';
+  const drifted = 'docs/ai/decision-ledger.json';
+  const linked = 'docs/ai/stack-profile.json';
+  assert.equal(fs.existsSync(path.join(root, dormant)), true);
+  fs.appendFileSync(path.join(root, drifted), '\nowner drift\n');
+  linkFixtureArtifact(root, linked, context);
+
+  const preview = await syncCommand(root, { config: compactConfigPath, 'dry-run': true });
+  const migration = preview.plan.operations.find((item) => item.path === dormant);
+  assert.equal(migration.classification, 'dormant-managed');
+  assert.equal(migration.action, 'migrate');
+  assert.equal(migration.remove, true);
+  for (const relative of [drifted, linked]) {
+    const operation = preview.plan.operations.find((item) => item.path === relative);
+    assert.equal(operation.classification, 'historical-or-user');
+    assert.equal(operation.remove, false);
+  }
+  assert.ok(preview.plan.manualCleanupCandidates.some((item) => item.path === drifted));
+  assert.ok(preview.plan.manualCleanupCandidates.some((item) => item.path === linked));
+
+  const before = snapshotTree(root);
+  await assert.rejects(
+    () => syncCommand(root, { config: compactConfigPath, approve: '0'.repeat(64) }),
+    /Approval does not match the current migration plan hash/,
+  );
+  assert.deepEqual(snapshotTree(root), before);
+
+  const applied = await syncCommand(root, { config: compactConfigPath, approve: preview.executionPlan.planHash });
+  assert.equal(applied.result.verification.ok, true);
+  assert.equal(fs.existsSync(path.join(root, dormant)), false);
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/task-routing-policy.json')), true);
+  assert.equal(fs.existsSync(path.join(root, drifted)), true);
+  assert.equal(fs.existsSync(path.join(root, linked)), true);
+  assert.equal(fs.lstatSync(path.join(root, linked)).isSymbolicLink(), true);
+});
+
+test('a post-apply failure during migration restores every moved, written and deleted file and the manifest', async (context) => {
+  const { root, compactConfigPath } = await preserveFixture(context, 'migration-rollback');
+  const dormant = 'docs/ai/task-routing-policy.json';
+  const before = snapshotTree(root);
+  const preview = await syncCommand(root, { config: compactConfigPath, 'dry-run': true });
+  assert.equal(preview.plan.operations.find((item) => item.path === dormant).remove, true);
+  assert.throws(() => applyArtifactPlan(root, preview.plan, {
+    transactional: true,
+    verify: () => ({ ok: false, errors: ['injected migration verification failure'] }),
+  }), /Post-apply verification failed/);
   assert.deepEqual(snapshotTree(root), before);
 });
 }

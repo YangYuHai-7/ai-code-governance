@@ -19,7 +19,10 @@ function executionFingerprint(root, intent, scan = null) {
 
 function operationAction(operation, before) {
   if (!operation.changed) return 'keep';
-  if (operation.remove) return operation.deleteWhenEmpty ? 'remove-owned' : 'update-managed-block';
+  if (operation.remove) {
+    if (operation.migration) return 'migrate';
+    return operation.deleteWhenEmpty ? 'remove-owned' : 'update-managed-block';
+  }
   if (before.kind === 'missing') return 'create';
   return ['managed-block', 'gitignore-block'].includes(operation.ownership) ? 'update-managed-block' : 'replace-owned';
 }
@@ -27,14 +30,22 @@ function operationAction(operation, before) {
 function actionOperation(root, operation) {
   const relative = normalizeRelative(operation.path);
   const before = snapshotPath(path.join(root, relative));
+  const desired = typeof operation.desired === 'string' ? operation.desired : null;
   return {
     action: operationAction(operation, before),
     path: relative,
     ownership: operation.ownership ?? null,
     kind: operation.kind ?? null,
     source: operation.source ?? null,
+    classification: operation.classification ?? null,
+    candidateAction: operation.action ?? null,
+    newPath: operation.migration?.to ?? null,
+    recordedSha256: operation.sha256 ?? null,
+    references: operation.referenced === true,
+    ...(operation.migration ? { migration: operation.migration } : {}),
+    candidate: operation.candidate === true,
     before,
-    afterSha256: operation.remove && operation.deleteWhenEmpty ? null : sha256(operation.desired),
+    afterSha256: operation.remove && operation.deleteWhenEmpty ? null : (desired === null ? null : sha256(desired)),
   };
 }
 
@@ -89,6 +100,7 @@ export function buildExecutionPlan({ intent, scan, artifactPlan = null, config =
     projectAssessment: classifyProject(scan),
     decisionLedger: buildDecisionLedger(scan, config),
     operations,
+    candidates: artifactPlan?.candidates ?? [],
     conflicts: artifactPlan?.conflicts ?? [],
     manualCleanupCandidates: artifactPlan?.manualCleanupCandidates ?? [],
     linksToMigrate,
@@ -116,6 +128,7 @@ export function assertPlanFresh(plan) {
     throw usageError(`Execution plan target root changed; generate a new plan. (${error.message})`);
   }
   for (const operation of plan.operations ?? []) {
+    if (operation.candidate === true && operation.remove !== true) continue;
     try {
       assertNoLinkAncestor(root, operation.path);
     } catch (error) {

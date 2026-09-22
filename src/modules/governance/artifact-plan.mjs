@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  CONFIG_PATH,
   GENERATED_MARKER,
   MANIFEST_PATH,
   MANIFEST_SCHEMA_VERSION,
@@ -12,7 +13,7 @@ import { lstatSafe, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { linkAncestor, nonDirectoryAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
-import { canonicalPathVariants } from './layout.mjs';
+import { canonicalPath, canonicalPathVariants, classifyRetainedArtifact, COMPACT_PATH_PAIRS, migrationTarget } from './layout.mjs';
 import { loadManifest } from './manifest-store.mjs';
 import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import {
@@ -151,6 +152,28 @@ function conditionalSeedLayout(profile) {
   return { lines, start, end, empty, conditions };
 }
 
+function routeEntryPath(line) {
+  return line.replace(/^ +- /, '');
+}
+
+function routesAreCounterparts(left, right) {
+  const a = routeEntryPath(left);
+  const b = routeEntryPath(right);
+  return a !== b && (canonicalPathVariants(a).includes(b) || canonicalPathVariants(b).includes(a));
+}
+
+/**
+ * Rewrite every generated route to its compact counterpart when the desired map names that
+ * destination. Owner-authored routes that never had a generated counterpart are left alone.
+ */
+function migrateGeneratedRoutes(content, desired) {
+  const desiredPaths = new Set([...desired.matchAll(/^ +- (\S+)$/gm)].map((match) => match[1]));
+  return content.replace(/^( +- )(\S+)$/gm, (line, indent, pathValue) => {
+    const compact = canonicalPath(pathValue, 'compact');
+    return compact !== pathValue && desiredPaths.has(compact) ? indent + compact : line;
+  });
+}
+
 function mergeConditionalSeedRoutes(current, desired) {
   const currentProfile = yamlProfileBlock(current, 'behavior_change');
   const desiredProfile = yamlProfileBlock(desired, 'behavior_change');
@@ -162,9 +185,23 @@ function mergeConditionalSeedRoutes(current, desired) {
   for (const [condition, route] of required.conditions) {
     const present = existing.conditions.get(condition);
     if (present) {
-      const missing = route.entries.filter((entry) => !present.entries.includes(entry));
+      const originalPresent = [...present.entries];
+      const missing = [];
+      // A footprint change rewrites a generated route to its compact counterpart in place,
+      // preserving every owner-authored entry and the surrounding order.
+      for (const desiredEntry of route.entries) {
+        if (present.entries.includes(desiredEntry)) continue;
+        const legacy = present.entries.find((entry) => routesAreCounterparts(entry, desiredEntry));
+        if (legacy) {
+          existing.lines[existing.lines.indexOf(legacy)] = desiredEntry;
+          present.entries[present.entries.indexOf(legacy)] = desiredEntry;
+          changed = true;
+          continue;
+        }
+        missing.push(desiredEntry);
+      }
       if (missing.length > 0) {
-        const overlapsGeneratedRoute = route.entries.some((entry) => present.entries.includes(entry));
+        const overlapsGeneratedRoute = route.entries.some((entry) => originalPresent.includes(entry));
         const generatedSkillExpansion = missing.every((entry) => /^        - docs\/ai\/skills\/(?:standards|project-conventions)\/[A-Za-z0-9._/-]+\/SKILL\.md$/.test(entry)
           || /^        - docs\/ai\/skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/SKILL\.md$/.test(entry));
         if (overlapsGeneratedRoute && !generatedSkillExpansion) {
@@ -270,7 +307,8 @@ function mergeLegacyContextMapSeed(current, desired, options = {}) {
     if (!releaseExtends) lines.splice(releaseStart + 1, 0, '    extends: ordinary');
     lines.splice(profilesStart + 1, 0, ...requiredOrdinary.split('\n'), ...requiredBehavior.split('\n'));
     lines.splice(profilesStart, 0, ...requiredBase.split('\n'));
-    return `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+    const rebuilt = `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+    return options.migration === true ? migrateGeneratedRoutes(rebuilt, desired) : rebuilt;
   }
 
   const desiredRelease = yamlProfileBlock(desired, 'release');
@@ -280,7 +318,10 @@ function mergeLegacyContextMapSeed(current, desired, options = {}) {
     const expanded = currentRelease.replace(/^    required: \[\]$/m, `    required:\n      - ${desiredReleaseRoute}`);
     current = current.replace(currentRelease.replaceAll('\n', newline), expanded.replaceAll('\n', newline));
   }
-  return mergeConditionalSeedRoutes(current, desired);
+  const merged = mergeConditionalSeedRoutes(current, desired);
+  // Only an explicit footprint migration rewrites generated routes to their compact form.
+  // Ordinary sync preserves the recorded layout, including a legacy base route.
+  return options.migration === true ? migrateGeneratedRoutes(merged, desired) : merged;
 }
 
 function trustedLegacyManifest(root, manifest) {
@@ -304,6 +345,90 @@ function trustedLegacyManifest(root, manifest) {
   } catch {
     return false;
   }
+}
+
+/** The startup closure: an artifact the first-run/kernel contract always depends on. */
+const KERNEL_REQUIRED_PATHS = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'docs/ai/README.md',
+  'docs/ai/context-map.yaml',
+  'docs/ai/rules/00_always.mdc',
+  'docs/ai/policies/00_always.mdc',
+  CONFIG_PATH,
+  MANIFEST_PATH,
+]);
+
+/**
+ * Paths a current context map, the active configuration, or a recorded manifest source still
+ * references. A trusted artifact that is still referenced is 'reachable' and may be migrated,
+ * never treated as dormant cleanup material.
+ */
+function referencedPathsFor(root, artifacts) {
+  const referenced = new Set();
+  // The target context map is the authority: a route the new plan still emits is reachable;
+  // a route only the stale tree carried is not.
+  const contextMap = (artifacts ?? []).find((artifact) => normalizeRelative(artifact.path) === CONTEXT_MAP_PATH);
+  if (contextMap) {
+    const content = typeof contextMap.content === 'string' ? contextMap.content
+      : (typeof contextMap.desired === 'string' ? contextMap.desired : '');
+    for (const match of content.matchAll(/^ +- (\S+)$/gm)) referenced.add(match[1]);
+  }
+  try {
+    const recorded = readText(path.join(root, CONFIG_PATH), '');
+    for (const [legacy] of COMPACT_PATH_PAIRS) if (recorded.includes(legacy)) referenced.add(legacy);
+  } catch { /* A missing configuration references nothing. */ }
+  return referenced;
+}
+
+/** Thin data-gathering wrapper: callers hold (root, entry, referencedPaths). */
+function classifyRetainedEntry(root, entry, relative, referencedPaths) {
+  const absolute = path.join(root, relative);
+  const stat = lstatSafe(absolute);
+  const isLink = Boolean(stat?.isSymbolicLink()) || Boolean(linkAncestor(root, relative));
+  let managedHashMatches = false;
+  let hasUserContent = false;
+  if (stat?.isFile() && !isLink && ['full', 'managed-block', 'gitignore-block'].includes(entry.ownership)
+    && /^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) {
+    try {
+      const current = readText(absolute, '');
+      managedHashMatches = managedContentHash(current, entry.ownership) === entry.sha256;
+      hasUserContent = !managedHashMatches;
+    } catch {
+      hasUserContent = true;
+    }
+  }
+  return classifyRetainedArtifact({ ...entry, path: relative, requiredByKernel: KERNEL_REQUIRED_PATHS.has(relative) }, {
+    referencedPaths,
+    managedHashMatches,
+    isLink,
+    hasUserContent,
+  });
+}
+
+function candidateAction(classification, newPath) {
+  if (classification === 'historical-or-user') return 'keep';
+  if (newPath) return 'migrate';
+  if (classification === 'dormant-managed') return 'delete';
+  return 'keep';
+}
+
+/** A report-only candidate: never written by apply, so the manifest contract is unchanged. */
+function candidateOperation(entry, relative, classification, newPath, referencedPaths) {
+  return {
+    path: relative,
+    ownership: entry.ownership,
+    kind: entry.kind ?? 'legacy',
+    source: entry.source ?? null,
+    sha256: entry.sha256 ?? null,
+    classification,
+    action: candidateAction(classification, newPath),
+    migration: newPath ? { from: relative, to: newPath } : null,
+    referenced: referencedPaths instanceof Set ? referencedPaths.has(relative) : false,
+    candidate: true,
+    remove: false,
+    changed: false,
+  };
 }
 
 export function planArtifacts(root, artifacts, options = {}) {
@@ -362,7 +487,7 @@ export function planArtifacts(root, artifacts, options = {}) {
       let desired = seedExists && !replaceExisting ? current : artifact.content;
       if (seedExists && relative === CONTEXT_MAP_PATH && !replaceExisting) {
         try {
-          const merged = mergeLegacyContextMapSeed(current, artifact.content, { adoptForeign });
+          const merged = mergeLegacyContextMapSeed(current, artifact.content, { adoptForeign, migration: options.migration === true });
           if (legacyManagedProject || adoptForeign) desired = merged;
           else if (merged !== current) conflicts.push(`${MANIFEST_PATH}: manifest is not trusted to extend ${CONTEXT_MAP_PATH}`);
         } catch (error) {
@@ -406,6 +531,11 @@ export function planArtifacts(root, artifacts, options = {}) {
     operations.push({ ...artifact, path: relative, absolute, desired, changed: current !== desired });
   }
 
+  const referencedPaths = referencedPathsFor(root, artifacts);
+  const candidates = [];
+  // Report-only candidate operations exist for the preview/migration surfaces; ordinary sync
+  // keeps its historical operation shape and only carries classifications on retained entries.
+  const reportCandidates = options.reportCandidates === true || options.migration === true;
   for (const entry of previousFiles) {
     if (!entry || typeof entry.path !== 'string') {
       conflicts.push(`${MANIFEST_PATH}: every managed entry must contain a string path`);
@@ -417,17 +547,34 @@ export function planArtifacts(root, artifacts, options = {}) {
       continue;
     }
     if (expectedPaths.has(relative)) continue;
+    const classification = classifyRetainedEntry(root, entry, relative, referencedPaths);
+    const target = migrationTarget(relative);
+    const newPath = target && expectedPaths.has(target) ? target : null;
+    candidates.push({
+      path: relative,
+      newPath,
+      source: entry.source ?? null,
+      sha256: entry.sha256 ?? null,
+      ownership: entry.ownership,
+      kind: entry.kind ?? null,
+      classification,
+      action: candidateAction(classification, newPath),
+      referenced: referencedPaths.has(relative),
+      requiredByKernel: KERNEL_REQUIRED_PATHS.has(relative),
+    });
     if (entry.ownership === 'seed') {
-      retained.push({ ...entry, path: relative });
-      if (options.allowStaleRemoval) manualCleanupCandidates.push({ path: relative, ownership: 'seed', reason: 'User-owned seed; review and remove manually.' });
+      retained.push({ ...entry, path: relative, classification });
+      if (options.allowStaleRemoval) manualCleanupCandidates.push({ path: relative, ownership: 'seed', classification, reason: 'User-owned seed; review and remove manually.' });
       continue;
     }
     if (options.allowStaleRemoval !== true) {
-      retained.push({ ...entry, path: relative });
+      retained.push({ ...entry, path: relative, classification });
+      if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, classification, newPath, referencedPaths), absolute: path.join(root, relative) });
       continue;
     }
     if (!manifestRemovalAuthority.trusted) {
-      retained.push({ ...entry, path: relative });
+      retained.push({ ...entry, path: relative, classification: 'historical-or-user' });
+      if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, 'historical-or-user', newPath, referencedPaths), absolute: path.join(root, relative) });
       continue;
     }
     const absolute = path.join(root, relative);
@@ -438,8 +585,10 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
     const ancestor = linkAncestor(root, relative);
     if (ancestor) {
-      retained.push({ ...entry, path: relative });
-      conflicts.push(`${relative}: stale path traverses a symbolic link and will not be removed`);
+      retained.push({ ...entry, path: relative, classification: 'historical-or-user' });
+      manualCleanupCandidates.push({ path: relative, ownership: entry.ownership, classification: 'historical-or-user', reason: 'Stale path traverses a symbolic link; review and remove manually.' });
+      if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, 'historical-or-user', newPath, referencedPaths), absolute });
+      if (options.migration !== true) conflicts.push(`${relative}: stale path traverses a symbolic link and will not be removed`);
       continue;
     }
     const stat = lstatSafe(absolute);
@@ -465,8 +614,18 @@ export function planArtifacts(root, artifacts, options = {}) {
       continue;
     }
     if (actualHash !== entry.sha256) {
-      retained.push({ ...entry, path: relative });
-      conflicts.push(`${relative}: stale managed content changed and will not be removed`);
+      retained.push({ ...entry, path: relative, classification: 'historical-or-user' });
+      manualCleanupCandidates.push({ path: relative, ownership: entry.ownership, classification: 'historical-or-user', reason: 'Managed content drifted or was user-edited; review and remove manually.' });
+      if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, 'historical-or-user', newPath, referencedPaths), absolute });
+      // A migration keeps drifted/user files and still converges the trusted ones; explicit
+      // stale removal (non-migration) refuses to touch them and reports the conflict.
+      if (options.migration !== true) conflicts.push(`${relative}: stale managed content changed and will not be removed`);
+      continue;
+    }
+    if (classification === 'historical-or-user') {
+      retained.push({ ...entry, path: relative, classification });
+      manualCleanupCandidates.push({ path: relative, ownership: entry.ownership, classification, reason: 'User, unknown, or link content; review and remove manually.' });
+      if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, classification, newPath, referencedPaths), absolute });
       continue;
     }
     if (['managed-block', 'gitignore-block'].includes(entry.ownership)) {
@@ -477,10 +636,34 @@ export function planArtifacts(root, artifacts, options = {}) {
         conflicts.push(`${relative}: ${error.message}`);
         continue;
       }
-      operations.push({ ...entry, absolute, desired, changed: current !== desired, remove: true, deleteWhenEmpty: desired.trim().length === 0 });
-    } else {
-      operations.push({ ...entry, absolute, changed: true, remove: true, deleteWhenEmpty: true });
+      operations.push({ ...entry, absolute, desired, changed: current !== desired, remove: true, deleteWhenEmpty: desired.trim().length === 0, classification });
+      continue;
     }
+    if (newPath) {
+      // A trusted, unedited artifact with a compact destination migrates by removing the
+      // legacy path; the compact artifact is written by the normal artifact plan. Both the
+      // removed source and the written destination are bound to their preimages.
+      operations.push({
+        ...entry,
+        path: relative,
+        absolute,
+        changed: true,
+        remove: true,
+        deleteWhenEmpty: true,
+        classification,
+        action: 'migrate',
+        migration: { from: relative, to: newPath },
+        referenced: referencedPaths.has(relative),
+        candidate: true,
+      });
+      continue;
+    }
+    if (classification === 'dormant-managed') {
+      operations.push({ ...entry, absolute, changed: true, remove: true, deleteWhenEmpty: true, classification, action: 'delete', referenced: referencedPaths.has(relative), candidate: true });
+      continue;
+    }
+    retained.push({ ...entry, path: relative, classification });
+    if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, classification, newPath, referencedPaths), absolute });
   }
   const linkPaths = [...links];
   if (options.allowStaleRemoval) {
@@ -491,14 +674,21 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
     manualCleanupCandidates.sort((left, right) => left.path.localeCompare(right.path));
   }
+  // A migration keeps drifted/user/link artifacts on disk but hands them back to the owner:
+  // removing them from the managed manifest is what stops the structural check from reporting
+  // them as managed drift, while nothing on disk is moved or deleted.
+  const manifestRetained = manifestRemovalAuthority.trusted
+    ? (options.migration === true ? retained.filter((entry) => entry.classification !== 'historical-or-user') : retained)
+    : [];
   const manifestValue = buildManifest(operations, {
     generatedAt: manifest?.generatedAt ?? null,
-    retained: manifestRemovalAuthority.trusted ? retained : [],
+    retained: manifestRetained,
   });
   const manifestContent = stableJson(manifestValue);
   const manifestPath = path.join(root, MANIFEST_PATH);
   return {
     operations,
+    candidates,
     conflicts,
     retained,
     manualCleanupCandidates,
@@ -511,7 +701,7 @@ export function planArtifacts(root, artifacts, options = {}) {
     },
     preconditions: {
       root: fs.realpathSync(root),
-      files: operations.map((operation) => {
+      files: operations.filter((operation) => !(operation.candidate === true && operation.remove !== true)).map((operation) => {
         const coveredByLink = plannedLinkAncestor(root, linkPaths, operation.path);
         return {
           path: operation.path,

@@ -52,6 +52,8 @@ export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLin
 
     const changed = [];
     for (const operation of plan.operations) {
+      // Report-only keep candidates are never written; a migration removal is a real operation.
+      if (operation.candidate === true && operation.remove !== true) continue;
       // Re-check immediately before every mutation to reject a symlink inserted after planning.
       assertOperationWritePath(root, operation.path);
       if (operation.remove) {
