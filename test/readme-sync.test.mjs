@@ -25,6 +25,17 @@ function localTargets(markdown, documentUrl) {
     .map((target) => path.relative(ROOT_PATH, fileURLToPath(new URL(target, documentUrl))));
 }
 
+test('public documentation names Copilot and distinguishes checked from runtime-verified', async () => {
+  const readme = await readFile(ENGLISH_URL, 'utf8');
+  assert.match(readme, /github-copilot/);
+  assert.match(readme, /runtime-verified/);
+  assert.match(readme, /governanceFootprint/);
+  const chinese = await readFile(CHINESE_URL, 'utf8');
+  assert.match(chinese, /github-copilot/);
+  assert.match(chinese, /runtime-verified/);
+  assert.match(chinese, /governanceFootprint/);
+});
+
 test('repository root keeps only the default English README', async () => {
   const rootReadmes = (await readdir(ROOT_URL))
     .filter((name) => /^README(?:\.|$)/i.test(name))

@@ -183,6 +183,15 @@ aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --pac
 | **Standard** | Minimal，加上路由、验证说明、决策账本、本地报告路径以及相关政策或技术规范 Skills |
 | **Complete** | Standard，加上选定的技术栈 Skills；任务运行时、hooks、CI、工作流桥接和其他集成仍然可选 |
 
+<!-- sync:clients-and-footprint -->
+## 客户端、正典布局与证据状态
+
+每个选中的客户端读取同一套正典：`docs/ai/`、`.ai-governance/config.json` 和 `.ai-governance/manifest.json`。客户端文件只是生成的薄投影，绝不是可独立编辑的规则副本。`--clients all` 选择 `codex`、`claude-code`、`cursor` 和 `github-copilot`；既有配置保留已经记录的客户端，不会因升级被悄悄扩大。GitHub Copilot 读取 `.github/copilot-instructions.md` 和 `.github/skills/`，两者都由正典派生；AICG 默认不启用 Copilot 自定义 Agent、Prompt、Hook、MCP 服务或 GitHub Actions。
+
+`governanceFootprint` 记录布局。新项目默认 `compact`：`docs/ai/` 只保留 `README.md` 和 `context-map.yaml`，机器账本移入 `.ai-governance/state/`，策略、路由、证据与集成材料各归其主题目录。上表中的扁平路径是既有项目保留的 `preserve` 布局。普通 `sync` 不会移动、覆盖或删除任何被保留的文件。要收敛既有项目，先用 `aicg sync . --prune --dry-run` 预览，逐项查看旧路径、新路径、来源、哈希、引用与分类（`required`、`reachable`、`dormant-managed`、`historical-or-user`），再批准该精确计划。链接、漂移文件、用户修改和未知内容永远不会被自动处理，而是保留为人工清理候选。
+
+`aicg check` 分别报告每个客户端的 `declared`、`projected`、`checked` 和 `runtime-verified`，它们彼此独立。`checked` 只代表受管投影与正典在结构上一致，绝不代表客户端已经加载或模型必然遵守。`runtime-verified` 必须有 `.ai-governance/state/client-runtime-verifications.json` 中匹配的真实探针回执；没有记录探针就保持未验证，`aicg check` 也绝不会为制造验证而启动客户端。
+
 <!-- sync:onboarding -->
 ## 项目接入
 

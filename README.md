@@ -183,6 +183,15 @@ aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --pac
 | **Standard** | Minimal plus routing, verification guidance, decision ledger, local report paths, and relevant policy/standard Skills |
 | **Complete** | Standard plus selected stack Skills; task runtime, hooks, CI, workflow bridges, and other integrations remain optional |
 
+<!-- sync:clients-and-footprint -->
+## Clients, canonical layout, and evidence states
+
+Every selected client reads the same canon: `docs/ai/`, `.ai-governance/config.json`, and `.ai-governance/manifest.json`. Client files are thin generated projections, never independently edited rule copies. `--clients all` selects `codex`, `claude-code`, `cursor`, and `github-copilot`; an existing configuration keeps the clients it already recorded and is never silently widened. GitHub Copilot reads `.github/copilot-instructions.md` and `.github/skills/`, both derived from the canon; AICG does not enable Copilot custom agents, prompts, hooks, MCP servers, or GitHub Actions by default.
+
+`governanceFootprint` records the layout. New projects start `compact`: `docs/ai/` keeps only `README.md` and `context-map.yaml`, machine ledgers move to `.ai-governance/state/`, and policy, routing, evidence, and integration material lives in its topic directory. The flat paths in the table above are the `preserve` layout that existing projects keep. An ordinary `sync` never moves, overwrites, or deletes a preserved file. To converge an existing project, preview with `aicg sync . --prune --dry-run`, read every candidate's old path, new path, source, hash, references, and classification (`required`, `reachable`, `dormant-managed`, `historical-or-user`), then approve that exact plan. Links, drifted files, owner edits, and unknown content are never automatic targets; they stay as manual cleanup candidates.
+
+`aicg check` reports each client as `declared`, `projected`, `checked`, and `runtime-verified`, and they are independent. `checked` means the managed projections match the canon structurally; it never means a client loaded them or that a model obeyed them. `runtime-verified` requires a matching real probe receipt in `.ai-governance/state/client-runtime-verifications.json`; without a recorded probe the state stays unverified, and `aicg check` never launches a client to manufacture one.
+
 <!-- sync:onboarding -->
 ## Project onboarding
 
