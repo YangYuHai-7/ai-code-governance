@@ -38,6 +38,7 @@ test('configuration template is editable, valid, and idempotent', (t) => {
   assert.deepEqual(template.clients, ['codex']);
   assert.deepEqual(template.initialization, { lifecycle: 'existing', existingCodeStrategy: 'keep-existing' });
   assert.equal(template.testing.caseFormat, 'aicg-json-v2');
+  assert.equal(template.governanceFootprint, 'compact');
 
   const replay = run(['config', 'init', root, '--output', relative, '--yes', '--json']);
   assert.equal(replay.status, 0, replay.stderr);

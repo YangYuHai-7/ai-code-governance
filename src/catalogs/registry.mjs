@@ -26,6 +26,18 @@ export function loadAgentRegistry() {
   return registry;
 }
 
+/**
+ * Built-in clients `--clients all` selects, in registry declaration order.
+ *
+ * `built_in` is deliberate: the registry also carries client entries (generic, workbuddy)
+ * that are selectable by id but are not part of the one-shot all-client scope, and a bare
+ * `SUPPORTED_CLIENTS` list cannot distinguish them. New built-in clients are declared once
+ * in the registry and every scope derivation follows.
+ */
+export function allBuiltInClientIds(registry = loadAgentRegistry()) {
+  return registry.agents.filter((agent) => agent.built_in === true).map((agent) => agent.id);
+}
+
 export function loadCapabilityRegistry() {
   const registry = readJson(path.join(PACKAGE_ROOT, 'assets/registries/capability-pack-registry.json'));
   if (registry.schema_version !== 1 || !Array.isArray(registry.packs)) {
@@ -133,6 +145,10 @@ export function inferClientScopeFromRepository(relativePaths, registry = loadAge
     if (!owners.get(root).includes(client)) owners.get(root).push(client);
   };
   for (const agent of registry.agents) {
+    // A client can opt out of repository inference when its declared roots are too common to
+    // prove anything: `.github/` is present in almost every repository, so seeing it must not
+    // silently switch Copilot on.
+    if (agent.inferable === false) continue;
     add(agent.instruction_entry, agent.id);
     for (const directory of [...(agent.skill_directories ?? []), ...(agent.rule_directories ?? [])]) {
       add(String(directory).split('/')[0], agent.id);

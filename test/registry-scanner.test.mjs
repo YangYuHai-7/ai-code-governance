@@ -5,10 +5,36 @@ import path from 'node:path';
 import test from 'node:test';
 import { scanProject } from '../src/scanner.mjs';
 import { walkFilesDetailed } from '../src/adapters/filesystem/index.mjs';
+import { allBuiltInClientIds, loadAgentRegistry } from '../src/catalogs/index.mjs';
+import { defaultConfig, validateConfig } from '../src/generator.mjs';
 
 function fixture(name) {
   return fs.mkdtempSync(path.join(os.tmpdir(), `aicg-${name}-`));
 }
+
+test('fresh all-client scope includes Copilot but legacy selection remains unchanged', (context) => {
+  const root = fixture('all-client-scope');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  assert.deepEqual(allBuiltInClientIds(loadAgentRegistry()), [
+    'codex', 'claude-code', 'cursor', 'github-copilot',
+  ]);
+  const legacy = { ...defaultConfig(scan), clients: ['codex', 'claude-code', 'cursor'] };
+  assert.deepEqual(validateConfig(legacy).clients, legacy.clients);
+  assert.equal(defaultConfig(scan).governanceFootprint, 'compact');
+});
+
+test('an existing managed configuration defaults to the preserve footprint', (context) => {
+  const root = fixture('legacy-footprint');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.ai-governance'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.ai-governance', 'config.json'), '{}\n');
+  const scan = scanProject(root);
+  assert.equal(defaultConfig(scan).governanceFootprint, 'preserve');
+  const legacy = { ...defaultConfig(scan) };
+  delete legacy.governanceFootprint;
+  assert.equal(validateConfig(legacy).governanceFootprint, 'preserve');
+});
 
 test('detects React and Node from manifest dependencies', (context) => {
   const root = fixture('react-node');

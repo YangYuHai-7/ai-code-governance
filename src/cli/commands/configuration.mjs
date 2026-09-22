@@ -40,6 +40,7 @@ export function buildTemplate(scan, locale) {
     clientSupport: clientSupportFromClients(clients, 'config'),
     stacks: defaults.stacks,
     governanceDepth: defaults.governanceDepth,
+    governanceFootprint: defaults.governanceFootprint,
     artifactLanguage: defaults.artifactLanguage,
     interactionLanguage: locale === 'zh-CN' ? 'zh-CN' : 'en',
     codeDocumentationPolicy: assessment.codebase.lifecycle.value === 'existing' ? 'inherit-existing' : 'en',

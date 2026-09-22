@@ -3,7 +3,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import { defaultConfig, governanceBootstrapCommand, projectLocalAvailable } from '../generator.mjs';
 import { classifyProject } from '../project-assessment.mjs';
 import { usageError } from '../kernel/index.mjs';
-import { loadCapabilityRegistry } from '../registry.mjs';
+import { allBuiltInClientIds, loadCapabilityRegistry } from '../registry.mjs';
 
 /** Recommendations start deferred; inspecting metadata never approves a candidate. */
 export async function promptAdaptiveDecisions(summary, { readline, locale = 'en' } = {}) {
@@ -79,11 +79,13 @@ function clientOptions(locale) {
     { label: 'Claude Code', value: 'claude-code' },
     { label: 'Cursor', value: 'cursor' },
     { label: localized(locale, 'Generic AGENTS.md-compatible agent', '通用 AGENTS.md 兼容 Agent'), value: 'generic' },
+    { label: 'GitHub Copilot', value: 'github-copilot' },
   ];
 }
 
 function clientSupportMode(clients) {
-  return clients.length === 3 && ['codex', 'claude-code', 'cursor'].every((client) => clients.includes(client))
+  const builtIn = allBuiltInClientIds();
+  return clients.length === builtIn.length && builtIn.every((client) => clients.includes(client))
     ? 'all-built-in'
     : 'selected';
 }

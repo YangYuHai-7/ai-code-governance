@@ -293,8 +293,9 @@ test('guided client multi-select normalizes unordered duplicate input to registr
   const scan = scanProject(root);
 
   for (const [answer, expectedClients, expectedMode] of [
-    ['3,2,1,1', ['codex', 'claude-code', 'cursor'], 'all-built-in'],
+    ['5,3,2,1,1', ['codex', 'claude-code', 'cursor', 'github-copilot'], 'all-built-in'],
     ['3,1,3', ['codex', 'cursor'], 'selected'],
+    ['3,2,1,1', ['codex', 'claude-code', 'cursor'], 'selected'],
   ]) {
     const config = await promptGuidedConfig(
       scan,

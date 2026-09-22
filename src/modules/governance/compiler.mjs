@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
-import { resolveAgents, resolvePacks, selectedSkillDirectories } from '../../catalogs/index.mjs';
+import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_GOVERNANCE_FOOTPRINTS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
+import { allBuiltInClientIds, resolveAgents, resolvePacks, selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, buildGreenfieldLayoutArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, hasDocumentableDevelopmentUnit, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
@@ -50,6 +50,27 @@ export function governanceCommand(config, args = '') {
 export function governanceBootstrapCommand(config, args = 'help') {
   const suffix = args ? ` ${args}` : '';
   return `npm exec --yes --package=ai-code-governance@${config.toolVersion ?? TOOL_VERSION} -- aicg${suffix}`;
+}
+
+/**
+ * Footprint of the managed configuration already recorded in this repository.
+ *
+ * A configuration created from scratch is `compact`. A repository that already carries a
+ * managed configuration keeps the layout it recorded; a pre-footprint configuration with no
+ * field at all is `preserve`, so an upgrade never silently converges an existing tree. Reading
+ * the value from the recorded config (instead of just testing for the file) keeps regeneration
+ * from defaults deterministic: applying a `compact` config and then rebuilding from defaults
+ * must not flip the footprint to `preserve`.
+ */
+function recordedGovernanceFootprint(root) {
+  try {
+    const existing = JSON.parse(fs.readFileSync(path.join(root, CONFIG_PATH), 'utf8'));
+    return SUPPORTED_GOVERNANCE_FOOTPRINTS.includes(existing?.governanceFootprint)
+      ? existing.governanceFootprint
+      : 'preserve';
+  } catch {
+    return 'compact';
+  }
 }
 
 export function projectLocalAvailable(root) {
@@ -101,6 +122,7 @@ export function defaultConfig(scan) {
     },
     canonicalRoot: 'docs/ai',
     clients: ['codex', 'claude-code', 'cursor'],
+    governanceFootprint: recordedGovernanceFootprint(scan.root),
     stacks: scan.stacks.map((stack) => stack.id),
     // `complete` is the default governance depth: every repository lands with the
     // Skill-management set (skill-discovery + team-orchestrator + skill-index +
@@ -161,6 +183,7 @@ function normalizeConfigDefaults(config, scan) {
   }
   return {
     ...config,
+    governanceFootprint: config.governanceFootprint ?? 'preserve',
     testing: {
       schemaVersion: 1,
       caseFormat: 'aicg-json-v2',
@@ -199,6 +222,10 @@ export function validateConfig(config) {
     throw usageError(`Unsupported project mode: ${config.projectMode}`);
   }
   if (config.canonicalRoot !== 'docs/ai') throw usageError('The first CLI release requires canonicalRoot to be docs/ai.');
+  config = { ...config, governanceFootprint: config.governanceFootprint ?? 'preserve' };
+  if (!SUPPORTED_GOVERNANCE_FOOTPRINTS.includes(config.governanceFootprint)) {
+    throw usageError(`config.governanceFootprint must be one of: ${SUPPORTED_GOVERNANCE_FOOTPRINTS.join(', ')}.`);
+  }
   resolveAgents(config.clients ?? []);
   if (config.clientSupport !== undefined) {
     if (!config.clientSupport || typeof config.clientSupport !== 'object') throw usageError('config.clientSupport must be an object.');
@@ -207,9 +234,9 @@ export function validateConfig(config) {
     if (!Array.isArray(config.clientSupport.selectedClients) || config.clientSupport.selectedClients.length === 0) throw usageError('config.clientSupport.selectedClients must contain at least one client.');
     resolveAgents(config.clientSupport.selectedClients);
     if (stableJson(config.clientSupport.selectedClients) !== stableJson(config.clients ?? [])) throw usageError('config.clients must match config.clientSupport.selectedClients.');
-    const builtIn = ['codex', 'claude-code', 'cursor'];
+    const builtIn = allBuiltInClientIds();
     if (config.clientSupport.mode === 'all-built-in' && stableJson(config.clientSupport.selectedClients) !== stableJson(builtIn)) {
-      throw usageError('config.clientSupport.mode all-built-in must select codex, claude-code, and cursor in registry order.');
+      throw usageError(`config.clientSupport.mode all-built-in must select ${builtIn.join(', ')} in registry order.`);
     }
   }
   resolvePacks(config.stacks ?? []);

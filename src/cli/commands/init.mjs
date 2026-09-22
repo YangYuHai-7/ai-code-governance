@@ -9,7 +9,7 @@ import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, refreshSkill
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprovedProjectAgentTeam } from '../../project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
-import { selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository } from '../../catalogs/index.mjs';
+import { allBuiltInClientIds, selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository } from '../../catalogs/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from '../../modules/governance/business-constraints.mjs';
 import { applyArtifactPlan, planArtifacts, restoreUserOwnedLink } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
@@ -42,7 +42,7 @@ function requireConfiguredChoices(supplied) {
 }
 
 function clientsFromOption(value) {
-  if (value === 'all') return ['codex', 'claude-code', 'cursor'];
+  if (value === 'all') return allBuiltInClientIds();
   const clients = [...new Set(String(value ?? '').split(',').map((item) => item.trim()).filter(Boolean))];
   if (clients.length === 0) throw usageError('--clients requires all or a comma-separated client list.');
   return clients;

@@ -2,18 +2,21 @@ import path from 'node:path';
 import { CONFIG_PATH, TOOL_NAME } from '../constants.mjs';
 import { defaultConfig, validateConfig } from '../generator.mjs';
 import { loadManifest } from '../managed-files.mjs';
+import { allBuiltInClientIds } from '../catalogs/index.mjs';
 import { scanSummary } from '../scanner.mjs';
 import { readJson, readText } from '../adapters/filesystem/index.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { sha256 } from '../shared/index.mjs';
 import { assertNoLinkAncestor } from '../preconditions.mjs';
 
-const BUILT_IN_CLIENTS = ['codex', 'claude-code', 'cursor'];
-
 export function clientSupportFromClients(clients, source) {
   const selectedClients = [...new Set(clients ?? [])];
-  const allBuiltIn = BUILT_IN_CLIENTS.every((client) => selectedClients.includes(client))
-    && selectedClients.every((client) => BUILT_IN_CLIENTS.includes(client));
+  const builtInClients = allBuiltInClientIds();
+  // Registry order is the canonical order, so an all-built-in scope is compared set-for-set
+  // rather than by a hard-coded length. A legacy three-client selection reads as `selected`
+  // because Copilot now completes the built-in scope; the clients array itself is untouched.
+  const allBuiltIn = builtInClients.every((client) => selectedClients.includes(client))
+    && selectedClients.every((client) => builtInClients.includes(client));
   return {
     mode: allBuiltIn ? 'all-built-in' : 'selected',
     selectedClients,

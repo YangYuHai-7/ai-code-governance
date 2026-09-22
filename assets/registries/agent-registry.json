@@ -4,55 +4,123 @@
     {
       "id": "codex",
       "label": "Codex",
-      "detect_commands": ["codex"],
+      "built_in": true,
+      "detect_commands": [
+        "codex"
+      ],
       "instruction_entry": "AGENTS.md",
-      "skill_directories": [".agents/skills"],
+      "skill_directories": [
+        ".agents/skills"
+      ],
       "rule_directories": [],
+      "surfaces": [
+        "repository-instructions",
+        "skills"
+      ],
       "assist": {
         "command": "codex",
-        "args": ["-C", "{target}", "{prompt}"]
+        "args": [
+          "-C",
+          "{target}",
+          "{prompt}"
+        ]
       }
     },
     {
       "id": "claude-code",
       "label": "Claude Code",
-      "detect_commands": ["claude"],
+      "built_in": true,
+      "detect_commands": [
+        "claude"
+      ],
       "instruction_entry": "CLAUDE.md",
-      "skill_directories": [".claude/skills"],
+      "skill_directories": [
+        ".claude/skills"
+      ],
       "rule_directories": [],
+      "surfaces": [
+        "repository-instructions",
+        "skills"
+      ],
       "assist": {
         "command": "claude",
-        "args": ["{prompt}"]
+        "args": [
+          "{prompt}"
+        ]
       }
     },
     {
       "id": "cursor",
       "label": "Cursor",
-      "detect_commands": ["cursor-agent"],
+      "built_in": true,
+      "detect_commands": [
+        "cursor-agent"
+      ],
       "instruction_entry": "AGENTS.md",
-      "skill_directories": [".agents/skills"],
-      "rule_directories": [".cursor/rules"],
+      "skill_directories": [
+        ".agents/skills"
+      ],
+      "rule_directories": [
+        ".cursor/rules"
+      ],
+      "surfaces": [
+        "repository-instructions",
+        "rules",
+        "skills"
+      ],
       "assist": {
         "command": "cursor-agent",
-        "args": ["{prompt}"]
+        "args": [
+          "{prompt}"
+        ]
       }
+    },
+    {
+      "id": "github-copilot",
+      "label": "GitHub Copilot",
+      "built_in": true,
+      "inferable": false,
+      "detect_commands": [
+        "copilot"
+      ],
+      "instruction_entry": ".github/copilot-instructions.md",
+      "skill_directories": [
+        ".github/skills"
+      ],
+      "rule_directories": [
+        ".github/instructions"
+      ],
+      "surfaces": [
+        "repository-instructions",
+        "agent-instructions",
+        "skills"
+      ],
+      "assist": null
     },
     {
       "id": "generic",
       "label": "Generic AGENTS.md-compatible agent",
+      "built_in": false,
       "detect_commands": [],
       "instruction_entry": "AGENTS.md",
-      "skill_directories": [".agents/skills"],
+      "skill_directories": [
+        ".agents/skills"
+      ],
       "rule_directories": [],
+      "surfaces": [],
       "assist": null
     },
     {
       "id": "workbuddy",
       "label": "WorkBuddy",
+      "built_in": false,
       "detect_commands": [],
       "instruction_entry": "AGENTS.md",
-      "skill_directories": [".workbuddy/skills"],
+      "skill_directories": [
+        ".workbuddy/skills"
+      ],
       "rule_directories": [],
+      "surfaces": [],
       "assist": null
     }
   ]
