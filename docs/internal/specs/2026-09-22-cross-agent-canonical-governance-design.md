@@ -76,6 +76,7 @@ docs/ai/
 ├── skills/            # on-demand reusable workflows
 ├── development/       # existing-project understanding, per development unit
 ├── memory/            # project business and code-backed memory indexes
+├── testing/           # configured test cases, execution ledgers and reports
 ├── evidence/          # acceptance policies and produced evidence indexes
 └── integrations/      # only when a selected integration is active
 
