@@ -235,7 +235,7 @@ if (part === 'prune-safety') {
 
 test('prune reports stale seed files as manual cleanup candidates and preserves them', (context) => {
   const { root } = legacyFixture(context);
-  const relative = 'docs/ai/lifecycle.md';
+  const relative = 'docs/ai/policies/lifecycle.md';
   fs.writeFileSync(path.join(root, relative), '# User lifecycle notes\n');
   const before = snapshotTree(root);
   const preview = run(['sync', root, '--prune', '--dry-run']);
@@ -323,7 +323,7 @@ for (const untrusted of ['foreign', 'future-template', 'future-tool', 'missing-t
     if (untrusted === 'prototype-kind') manifest.files.at(-1).kind = 'toString';
     if (untrusted === 'duplicate-path') manifest.files.push({ ...manifest.files.at(-1) });
     if (untrusted === 'wrong-path' || untrusted === 'seed-forgery') {
-      const wrongPath = untrusted === 'wrong-path' ? 'user-notes.md' : 'docs/ai/lifecycle.md';
+      const wrongPath = untrusted === 'wrong-path' ? 'user-notes.md' : 'docs/ai/policies/lifecycle.md';
       fs.copyFileSync(path.join(root, relative), path.join(root, wrongPath));
       manifest.files.at(-1).path = wrongPath;
     }

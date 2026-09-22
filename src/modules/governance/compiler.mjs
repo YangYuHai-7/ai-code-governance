@@ -16,6 +16,8 @@ import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, sel
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
 import { buildDeliveryLoopArtifacts, DELIVERY_LOOP_ENTRY_KIND, DELIVERY_LOOP_PHASE_KIND } from './delivery-loop.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
+import { canonicalPath, remapContentPaths, relativeReference } from './layout.mjs';
+import { clientProjectionDefinitions, SKILL_ADAPTER_FLAG } from './projections.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 
 const COMPACTED_SEED_PATHS = ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH];
@@ -239,6 +241,20 @@ export function validateConfig(config) {
       throw usageError(`config.clientSupport.mode all-built-in must select ${builtIn.join(', ')} in registry order.`);
     }
   }
+  if (config.externalGovernance !== undefined) {
+    const external = config.externalGovernance;
+    if (!external || typeof external !== 'object' || Array.isArray(external)) throw usageError('config.externalGovernance must be an object.');
+    if (external.schemaVersion !== 1) throw usageError('config.externalGovernance.schemaVersion must be 1.');
+    if (external.strategy !== 'adopt') throw usageError("config.externalGovernance.strategy must be 'adopt'.");
+    if (!Array.isArray(external.adopted)
+      || external.adopted.some((entry) => typeof entry !== 'string' || !isSafeRelative(entry) || normalizeRelative(entry) !== entry)) {
+      throw usageError('config.externalGovernance.adopted must be an array of safe repository-relative paths.');
+    }
+    config = {
+      ...config,
+      externalGovernance: { schemaVersion: 1, strategy: 'adopt', adopted: [...new Set(external.adopted)].sort((left, right) => left.localeCompare(right)) },
+    };
+  }
   resolvePacks(config.stacks ?? []);
   if (!SUPPORTED_DEPTHS.includes(config.governanceDepth)) throw usageError(`Unsupported governance depth: ${config.governanceDepth}`);
   if (!SUPPORTED_LANGUAGES.includes(config.artifactLanguage)) throw usageError(`Unsupported artifact language: ${config.artifactLanguage}`);
@@ -420,12 +436,15 @@ function contextMap(config, selected) {
   const selectedPaths = new Set(selected.map((definition) => definition.path));
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]');
+  const footprint = config.governanceFootprint ?? 'compact';
+  const alwaysPath = canonicalPath('docs/ai/rules/00_always.mdc', footprint);
+  const releasePath = canonicalPath('docs/ai/release-acceptance-policy.json', footprint);
   const conditional = [...conditionalArtifactRoutes(selected, 'behavior_change')]
     .flatMap(([condition, paths]) => [`      ${condition}:`, ...paths.map((relative) => `        - ${relative}`)]);
   return `version: 1
 base:
   required:
-    - docs/ai/rules/00_always.mdc
+    - ${alwaysPath}
 profiles:
   ordinary:
     extends: base
@@ -438,7 +457,7 @@ profiles:
   release:
     extends: ordinary
     description: ${languageTitle(config, '部署或发布前，验证对应风险等级的证据。', 'Validate risk-tiered evidence before deployment or publication.')}
-    required:${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? '\n      - docs/ai/release-acceptance-policy.json' : ' []'}
+    required:${selectedPaths.has(releasePath) ? `\n      - ${releasePath}` : ' []'}
     commandTemplate: ${releaseCommand}
 `;
 }
@@ -470,6 +489,12 @@ function governanceReadme(config, scan, packs, selected) {
   const checkCommand = governanceCommand(config, 'check .');
   const releaseCommand = governanceCommand(config, 'release-check . --type <type> --evidence <repository-relative-json>');
   const syncCommand = governanceCommand(config, 'sync .');
+  const footprint = config.governanceFootprint ?? 'compact';
+  const architectureProfile = canonicalPath('docs/ai/architecture-profile.json', footprint);
+  const releasePolicy = canonicalPath('docs/ai/release-acceptance-policy.json', footprint);
+  const decisionLedger = canonicalPath('docs/ai/decision-ledger.json', footprint);
+  const architectureLink = relativeReference('docs/ai/README.md', architectureProfile);
+  const releaseLink = relativeReference('docs/ai/README.md', releasePolicy);
   const familyBoundaryZh = config.projectMode === 'repository-family'
     ? '\n## 仓库族边界\n\n本仓库仅负责编排。[repository-family.json](repository-family.json) 只记录稳定的成员关系和治理权威边界；成员技术栈、代码约定、验证命令和运行时状态须在各成员仓库内分别检查和治理，父清单不得拥有成员文件。\n'
     : '';
@@ -480,9 +505,9 @@ function governanceReadme(config, scan, packs, selected) {
 
 本目录是人工维护的治理来源。客户端专属普通文件是生成的适配器，由 \`${checkCommand}\` 检查。
 
-${selectedPaths.has('docs/ai/architecture-profile.json') ? '生成的[架构配置](architecture-profile.json)是未来源码放置的唯一当前策略，不授权迁移业务代码。' : '尚未选择架构策略；依赖生成的放置指引前，需要确认架构决策。'}
+${selectedPaths.has(architectureProfile) ? '生成的[架构配置](${architectureLink})是未来源码放置的唯一当前策略，不授权迁移业务代码。' : '尚未选择架构策略；依赖生成的放置指引前，需要确认架构决策。'}
 
-${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `部署或发布前，结合[发布验收策略](release-acceptance-policy.json)及 Git 跟踪的证据运行 \`${releaseCommand}\`，检查具体重放计划后，使用 \`--replay --approve <planHash>\` 执行。` : '发布、端验证和验收策略在首次使用时生成。生成治理产物不授予部署或发布权限。'} 工具不会编造独立评审者的批准。
+${selectedPaths.has(releasePolicy) ? `部署或发布前，结合[发布验收策略](${releaseLink})及 Git 跟踪的证据运行 \`${releaseCommand}\`，检查具体重放计划后，使用 \`--replay --approve <planHash>\` 执行。` : '发布、端验证和验收策略在首次使用时生成。生成治理产物不授予部署或发布权限。'} 工具不会编造独立评审者的批准。
 
 ## 配置
 
@@ -491,14 +516,14 @@ ${familyBoundaryZh}
 
 ## 初始化边界
 
-唯一当前初始化决策保存在 \`.ai-governance/config.json\`${selectedPaths.has('docs/ai/decision-ledger.json') ? '，并派生到 `docs/ai/decision-ledger.json`' : ''}。修改架构或既有行为前，先读取已记录的决策。本种子文档不授权迁移。
+唯一当前初始化决策保存在 \`.ai-governance/config.json\`${selectedPaths.has(decisionLedger) ? '，并派生到 `docs/ai/decision-ledger.json`' : ''}。修改架构或既有行为前，先读取已记录的决策。本种子文档不授权迁移。
 
 ## 所有权
 
 | 路径 | 维护责任 |
 | --- | --- |
 | \`docs/ai/\` | 人工维护的治理正典 |
-${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `| \`docs/ai/release-acceptance-policy.json\` | 由 \`${syncCommand}\` 更新的受管基线，仅可通过独立覆盖策略收紧 |\n` : ''}| \`.ai-governance/config.json\` | 已确认的初始化决策 |
+${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | 由 \`${syncCommand}\` 更新的受管基线，仅可通过独立覆盖策略收紧 |\n` : ''}| \`.ai-governance/config.json\` | 已确认的初始化决策 |
 | \`.ai-governance/manifest.json\` | 生成的所有权和内容哈希 |
 | 客户端专属适配器 | 运行 \`${syncCommand}\` 生成，不直接编辑 |
 
@@ -512,9 +537,9 @@ ${config.domainConstraints.length > 0 ? config.domainConstraints.map((item) => `
 
 This directory is the human-maintained governance source. Client-specific regular files are generated adapters and are checked by \`${checkCommand}\`.
 
-${selectedPaths.has('docs/ai/architecture-profile.json') ? 'The generated [architecture profile](architecture-profile.json) is the sole current policy for future source placement. It never authorizes business-code migration.' : 'Architecture policy is not selected. Confirm an architecture decision before relying on generated placement guidance.'}
+${selectedPaths.has(architectureProfile) ? 'The generated [architecture profile](${architectureLink}) is the sole current policy for future source placement. It never authorizes business-code migration.' : 'Architecture policy is not selected. Confirm an architecture decision before relying on generated placement guidance.'}
 
-${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `Before deployment or publication, use the generated [release acceptance policy](release-acceptance-policy.json) and Git-tracked evidence with \`${releaseCommand}\`, inspect the exact replay plan, then execute it with \`--replay --approve <planHash>\`.` : 'Release, surface, and acceptance policies are materialized on first use. Generated governance does not grant deployment or publication authority.'} The tool never invents independent reviewer approval.
+${selectedPaths.has(releasePolicy) ? `Before deployment or publication, use the generated [release acceptance policy](${releaseLink}) and Git-tracked evidence with \`${releaseCommand}\`, inspect the exact replay plan, then execute it with \`--replay --approve <planHash>\`.` : 'Release, surface, and acceptance policies are materialized on first use. Generated governance does not grant deployment or publication authority.'} The tool never invents independent reviewer approval.
 
 ## Configuration
 
@@ -523,14 +548,14 @@ ${familyBoundaryEn}
 
 ## Initialization boundary
 
-The single current initialization decision is stored in \`.ai-governance/config.json\`${selectedPaths.has('docs/ai/decision-ledger.json') ? ' and derived into `docs/ai/decision-ledger.json`' : ''}. Read the recorded decisions before changing architecture or existing behavior. This seed document never grants migration authorization.
+The single current initialization decision is stored in \`.ai-governance/config.json\`${selectedPaths.has(decisionLedger) ? ' and derived into `docs/ai/decision-ledger.json`' : ''}. Read the recorded decisions before changing architecture or existing behavior. This seed document never grants migration authorization.
 
 ## Ownership
 
 | Path | Owner |
 | --- | --- |
 | \`docs/ai/\` | Human-maintained governance canon |
-${selectedPaths.has('docs/ai/release-acceptance-policy.json') ? `| \`docs/ai/release-acceptance-policy.json\` | Managed baseline updated by \`${syncCommand}\`; tighten only through a separate override |\n` : ''}| \`.ai-governance/config.json\` | Confirmed initialization decisions |
+${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | Managed baseline updated by \`${syncCommand}\`; tighten only through a separate override |\n` : ''}| \`.ai-governance/config.json\` | Confirmed initialization decisions |
 | \`.ai-governance/manifest.json\` | Generated ownership and content hashes |
 | Client-specific adapters | \`${syncCommand}\`; do not edit directly |
 
@@ -664,6 +689,8 @@ Inspect the repository and refine the human-maintained files under \`${config.ca
 }
 
 function cursorRule(config) {
+  const footprint = config.governanceFootprint ?? 'compact';
+  const alwaysPath = canonicalPath('docs/ai/rules/00_always.mdc', footprint);
   if (config.artifactLanguage === 'zh-CN') return `---
 description: 将 Cursor 路由到仓库的 AI 治理正典。
 alwaysApply: true
@@ -671,7 +698,7 @@ alwaysApply: true
 
 <!-- ${GENERATED_MARKER} -->
 
-读取 \`AGENTS.md\`，随后遵循 \`${config.canonicalRoot}/context-map.yaml\` 和 \`${config.canonicalRoot}/rules/00_always.mdc\`。客户端专属适配器由工具生成；修改正典治理后运行 \`${governanceCommand(config, 'sync .')}\`。
+读取 \`AGENTS.md\`，随后遵循 \`${config.canonicalRoot}/context-map.yaml\` 和 \`${alwaysPath}\`。客户端专属适配器由工具生成；修改正典治理后运行 \`${governanceCommand(config, 'sync .')}\`。
 `;
   return `---
 description: Route Cursor to the repository AI governance canon.
@@ -680,7 +707,7 @@ alwaysApply: true
 
 <!-- ${GENERATED_MARKER} -->
 
-Read \`AGENTS.md\`, then follow \`${config.canonicalRoot}/context-map.yaml\` and \`${config.canonicalRoot}/rules/00_always.mdc\`. Client-specific adapters are generated; change canonical governance and run \`${governanceCommand(config, 'sync .')}\`.
+Read \`AGENTS.md\`, then follow \`${config.canonicalRoot}/context-map.yaml\` and \`${alwaysPath}\`. Client-specific adapters are generated; change canonical governance and run \`${governanceCommand(config, 'sync .')}\`.
 `;
 }
 
@@ -700,11 +727,15 @@ function stableFamilyMembers(family, governanceUnits = []) {
 export function artifactDefinitions(config, scan) {
   const packs = resolvePacks(config.stacks);
   const definitions = [];
-  const add = (relative, capability, content, { activation = 'selected', requires = [], ownership = 'seed', routeProfiles = [], gateAssertions = [], kind = 'canonical', source = 'template:governance' } = {}) => {
+  const footprint = config.governanceFootprint ?? 'compact';
+  const locate = (relative) => canonicalPath(relative, footprint);
+  const add = (legacyRelative, capability, content, { activation = 'selected', requires = [], ownership = 'seed', routeProfiles = [], gateAssertions = [], kind = 'canonical', source = 'template:governance' } = {}) => {
+    const relative = locate(legacyRelative);
+    const mappedSource = typeof source === 'string' ? locate(source) : source;
     definitions.push({
       id: relative, path: relative, capability, activation, requires, ownership, routeProfiles,
       gateAssertions: [...gateAssertions, ...(routeProfiles.some((route) => route.startsWith('behavior_change:')) ? ['conditional-route'] : [])],
-      build: (selected) => ({ path: relative, content: content(selected), ownership, kind, source }),
+      build: (selected) => ({ path: relative, content: content(selected), ownership, kind, source: mappedSource }),
     });
   };
   const core = { activation: 'eager-core' };
@@ -716,11 +747,14 @@ export function artifactDefinitions(config, scan) {
   // Adapter roots come from the agent registry, so a new client is one registry entry rather
   // than a new `clients.includes(...)` branch at every generator site.
   const adapterDirs = selectedSkillDirectories(config.clients);
-  const addSkillAdapters = (canonicalPath, content, capability, requires) => {
-    const suffix = canonicalPath.slice('docs/ai/skills/'.length);
+  const addSkillAdapters = (legacyCanonicalPath, content, capability, requires) => {
+    const skillPath = locate(legacyCanonicalPath);
+    // Mark the canonical Skill so projections can derive the same discovery adapters.
+    if (definitions.at(-1)?.path === skillPath) definitions.at(-1)[SKILL_ADAPTER_FLAG] = true;
+    const suffix = skillPath.slice('docs/ai/skills/'.length);
     for (const directory of adapterDirs) {
-      add(`${directory}/${suffix}`, capability, () => skillAdapterContent(canonicalPath, readText(path.join(scan.root, canonicalPath), content())), {
-        requires, ownership: 'full', kind: 'adapter-skill', source: canonicalPath,
+      add(`${directory}/${suffix}`, capability, () => skillAdapterContent(skillPath, readText(path.join(scan.root, skillPath), content())), {
+        requires, ownership: 'full', kind: 'adapter-skill', source: skillPath,
       });
     }
   };
@@ -851,13 +885,14 @@ export function artifactDefinitions(config, scan) {
     standardRegistry = loadTechnicalStandardRegistry();
     const selection = selectTechnicalStandards(scan, config, standardRegistry);
     technicalSelection = selection;
-    const standardPaths = ['docs/ai/technical-standards.json'];
+    const standardManifestPath = locate('docs/ai/technical-standards.json');
+    const standardPaths = [standardManifestPath];
     for (const { standard } of selection.selected) {
       standardPaths.push(`docs/ai/skills/standards/${standard.id}/SKILL.md`);
       for (const directory of adapterDirs) standardPaths.push(`${directory}/standards/${standard.id}/SKILL.md`);
     }
     for (const relative of standardPaths) {
-      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === 'docs/ai/technical-standards.json' ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: relative.startsWith('docs/ai/') ? ['behavior_change:stack'] : [] });
+      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === standardManifestPath ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: relative.startsWith('docs/ai/') || relative.startsWith('.ai-governance/') ? ['behavior_change:stack'] : [] });
       definitions.at(-1).build = () => standardArtifacts().find((artifact) => artifact.path === relative);
     }
   }
@@ -909,14 +944,25 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/workflow-integrations.yaml', 'integration', () => 'schema_version: 1\nmode: project-native\nproviders: {}\nauthority:\n  current_product_behavior: project-code-and-tests\n  active_change: project-native\n  project_ai_governance: docs/ai\n  implementation_task_list: project-native\n  runtime_state: docs/ai/long-running\n  delivery_evidence: docs/ai/acceptance-results.json\n', { requires: [(value) => value.features.externalWorkflows] });
   add('docs/ai/hooks.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? '# 钩子集成候选\n\n已选择安装钩子，但各代理使用不同的生命周期 API。在真实客户端入口调用项目交付检查、且负向与恢复探针通过前，保持此能力为 `unverified`。不得安装仅适用于特定 shell 的适配器或绕过既有钩子链。\n' : '# Hook integration candidate\n\nHook installation was selected, but each agent uses a different lifecycle API. Keep this capability `unverified` until a real client entrypoint calls the project delivery check and a negative/recovery probe passes. Do not install a shell-specific adapter or bypass an existing hook chain.\n', { requires: [(value) => value.features.hooks] });
   add('docs/ai/ci-integration.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? `# CI 集成候选\n\n工具具备固定版本的安装来源后，才将 \`${governanceCommand(config, 'check .')}\` 加入仓库既有的 CI 任务执行器。在真实工作流完成重放、验证故意引入的漂移失败和恢复之前，将 CI 强制执行状态报告为 \`unverified\`。\n` : `# CI integration candidate\n\nAdd \`${governanceCommand(config, 'check .')}\` to the repository's existing CI task runner only after the tool has a pinned installation source. Until the real workflow is replayed with a deliberate drift failure and recovery, report CI enforcement as \`unverified\`.\n`, { requires: [(value) => value.features.ciIntegration] });
-  add('CLAUDE.md', 'integration', () => config.artifactLanguage === 'zh-CN' ? '@AGENTS.md\n\nClaude Code 通过上述原生导入加载共享的项目治理。' : '@AGENTS.md\n\nClaude Code loads the shared project governance through the native import above.', { requires: [(value) => value.clients.includes('claude-code')], ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md', gateAssertions: ['claude-adapter'] });
-  add('.cursor/rules/ai-code-governance.mdc', 'integration', () => cursorRule(config), { requires: [(value) => value.clients.includes('cursor')], ownership: 'full', kind: 'adapter', source: 'docs/ai/rules/00_always.mdc', gateAssertions: ['cursor-adapter'] });
 
   const evidenceLocale = config.artifactLanguage === 'zh-CN' ? 'zh-CN/' : '';
   add('docs/ai/release-acceptance-policy.json', 'evidence', () => readText(path.join(PACKAGE_ROOT, `assets/policies/${evidenceLocale}release-acceptance-policy.json`)), { activation: 'first-use', requires: [usage('release')], ownership: 'full', kind: 'release-policy', source: 'asset:release-acceptance-policy', routeProfiles: ['release'], gateAssertions: ['release-route'] });
   add('docs/ai/surface-verification-profiles.json', 'evidence', () => stableJson(surfaceVerificationProfiles(config)), { activation: 'first-use', requires: [usage('surface')], ownership: 'full', kind: 'surface-verification-profiles', source: 'asset:surface-verification-contract' });
   add('docs/ai/acceptance-contract.json', 'evidence', () => readText(path.join(PACKAGE_ROOT, `assets/contracts/${evidenceLocale}acceptance-contract.json`)), { activation: 'first-use', requires: [usage('acceptance')], source: 'asset:acceptance-contract', gateAssertions: ['acceptance-evidence'] });
-  for (const relative of ['docs/ai/acceptance-results.json', 'docs/ai/surface-results.json', 'docs/ai/certification-evidence.json']) add(relative, 'evidence', () => readText(path.join(scan.root, relative)), { activation: 'evidence-produced', kind: 'evidence', source: 'runtime-evidence' });
+  for (const relative of ['docs/ai/acceptance-results.json', 'docs/ai/surface-results.json', 'docs/ai/certification-evidence.json']) add(relative, 'evidence', () => readText(path.join(scan.root, locate(relative))), { activation: 'evidence-produced', kind: 'evidence', source: 'runtime-evidence' });
+
+  // Thin client projections come from the agent registry and the canonical definitions above.
+  // Paths already generated by a module-level adapter (standards, development, capability) are
+  // kept as-is so the projection step only fills genuine gaps.
+  {
+    const projected = clientProjectionDefinitions(config, definitions);
+    const existing = new Set(definitions.map((definition) => definition.path));
+    for (const definition of projected) {
+      if (existing.has(definition.path)) continue;
+      definitions.push(definition);
+      existing.add(definition.path);
+    }
+  }
   return definitions;
 }
 
@@ -944,7 +990,7 @@ export function buildArtifacts(config, scan) {
 export function buildArtifactsWithDefinitions(config, scan) {
   config = normalizeConfigDefaults(config, scan);
   const { definitions, selected } = prepareArtifactDefinitions(config, scan);
-  const artifacts = renderDefinitions(selected);
+  const artifacts = renderDefinitions(selected, config.governanceFootprint ?? 'compact');
   let governanceCostDrift = null;
   if (hasSkillManagement(config) && rendersSkillManagementArtifacts(artifacts)) {
     const cost = skillGovernanceCost(scan.root, artifacts);
@@ -1024,8 +1070,17 @@ function managementSkill(config, name) {
   return `---\nname: ${name}\ndescription: ${description}\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${name}\n\n${body}\n${business ? `\n${business.replaceAll('docs/ai/business-risk-evidence.json', BUSINESS_RISK_EVIDENCE_PATH)}\n` : ''}`;
 }
 
-function renderDefinitions(selected) {
-  return selected.map((definition) => definition.build(selected)).map((artifact) => ({ ...artifact, path: normalizeRelative(artifact.path) }));
+/** Render selected definitions through the layout mapping. Exposed for footprint-aware checkers. */
+export function renderSelectedArtifacts(selected, footprint = 'compact') {
+  return renderDefinitions(selected, footprint);
+}
+
+function renderDefinitions(selected, footprint = 'compact') {
+  return selected.map((definition) => definition.build(selected)).map((artifact) => ({
+    ...artifact,
+    path: canonicalPath(normalizeRelative(artifact.path), footprint),
+    content: remapContentPaths(artifact.content, footprint),
+  }));
 }
 
 function governanceContextHash(config) {
@@ -1076,7 +1131,8 @@ function skillGovernanceCost(root, artifacts) {
   const config = JSON.parse(artifacts.find((item) => item.path === CONFIG_PATH).content);
   const accounted = new Set([...transaction.operations, ...transaction.retained].map((item) => item.path));
   // Seed ownership is intentionally absent from manifests. Omitted historical seeds still cost context/storage.
-  if (hasCompactManagement(config)) for (const relative of COMPACTED_SEED_PATHS) {
+  const seedPaths = COMPACTED_SEED_PATHS.map((relative) => canonicalPath(relative, config.governanceFootprint ?? 'compact'));
+  if (hasCompactManagement(config)) for (const relative of seedPaths) {
     if (accounted.has(relative)) continue;
     let stat;
     try { stat = fs.lstatSync(path.join(root, relative)); } catch (error) { if (error.code === 'ENOENT') continue; throw error; }
@@ -1153,7 +1209,7 @@ export function prepareSkillGovernancePlan(config, scan) {
   }, approvalPlanHash: '0'.repeat(64) };
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const selected = selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));
-    const cost = skillGovernanceCost(scan.root, renderDefinitions(selected));
+    const cost = skillGovernanceCost(scan.root, renderDefinitions(selected, config.governanceFootprint ?? 'compact'));
     if (stableJson(cost) === stableJson(config.skillDiscovery.artifactPlan.cost)) {
       const planHash = skillGovernanceHash(config, config.skillDiscovery.artifactPlan);
       config.skillDiscovery.artifactPlan.planHash = planHash;

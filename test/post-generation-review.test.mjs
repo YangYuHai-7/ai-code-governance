@@ -8,7 +8,7 @@ import { reviewGeneratedGovernance } from '../src/modules/governance/post-genera
 test('post-generation review writes score and remediation without claiming acceptance for an unverified Agent', (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-post-review-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  for (const relative of ['docs/ai/development/index.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml', 'reports/aicg/latest-check.json']) {
+  for (const relative of ['docs/ai/development/index.json', '.ai-governance/state/task-routing-policy.json', '.ai-governance/state/verification-profiles.yaml', 'reports/aicg/latest-check.json']) {
     const absolute = path.join(root, relative);
     fs.mkdirSync(path.dirname(absolute), { recursive: true });
     fs.writeFileSync(absolute, '{}\n');

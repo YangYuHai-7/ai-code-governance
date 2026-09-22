@@ -70,7 +70,9 @@ const PATH_RULES = [
     level: 'L3',
     patterns: [
       'docs/ai/architecture-profile.json',
+      '.ai-governance/state/architecture-profile.json',
       'docs/ai/module-graph.json',
+      '.ai-governance/state/module-graph.json',
       '.github/workflows/deploy*.yml',
       '.github/workflows/deploy*.yaml',
       '.github/workflows/release*.yml',

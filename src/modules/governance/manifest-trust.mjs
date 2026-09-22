@@ -10,6 +10,13 @@ import { scanProject } from '../repository/index.mjs';
 import { scanProjectMemoryFacts } from '../memory/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from './business-constraints.mjs';
 import { DELIVERY_LOOP_SKILL, DELIVERY_PHASES } from './delivery-loop.mjs';
+import { canonicalPath, remapContentPaths } from './layout.mjs';
+
+/** Normalize an ownership-kind-source relationship so a preserve and compact tree both match. */
+function normalizeRelationship(value) {
+  const [ownership, kind, source] = String(value).split('\0');
+  return [ownership, kind, typeof source === 'string' ? canonicalPath(source, 'compact') : source].join('\0');
+}
 
 const DEVELOPMENT_UNIT_KINDS = new Set([
   'development-unit-rule',
@@ -96,7 +103,7 @@ function isKnownDevelopmentUnitPath(entry) {
   return Boolean(unit) && citesItsOwnUnitDocumentation(entry, unit) && matchesDevelopmentUnitShape(entry, unit);
 }
 
-const KNOWN_MANAGED_RELATIONSHIPS = new Set([
+const KNOWN_MANAGED_RELATIONSHIPS = new Set([...[
   'full\0adapter\0docs/ai/rules/00_always.mdc',
   'full\0architecture-module-graph\0architecture-profile-registry-and-initialization-decision',
   'full\0architecture-profile\0architecture-profile-registry-and-initialization-decision',
@@ -144,9 +151,13 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([
   // registering the relationship lets the parent manifest stay trusted instead of being
   // reported as an unmanaged executable governance artifact on every check.
   'full\0repository-family-index\0repository-family-scan',
-]);
+].map(normalizeRelationship)]);
 
 const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
+
+function isSameKnownPath(candidate, legacyPath) {
+  return canonicalPath(candidate ?? '', 'compact') === canonicalPath(legacyPath, 'compact');
+}
 
 function definitionKey(entry) {
   return [entry?.ownership, entry?.kind, entry?.source, entry?.path].join('\0');
@@ -187,25 +198,30 @@ function supportedSkillDefinitions(root, manifest) {
     if (config.schemaVersion === 1 && config.generatedBy === TOOL_NAME) configurations.push(config);
   } catch { /* Missing or unverifiable project definitions confer no deletion authority. */ }
   try {
-    const catalogPath = 'docs/ai/capability-evolution.json';
-    const entry = manifest.files.find((item) => item?.path === catalogPath);
-    const content = readLocalEvidence(root, catalogPath);
-    if (entry?.ownership === 'full' && entry.kind === 'capability-evolution-catalog'
-      && entry.source === 'project-capability-harvest' && sha256(content) === entry.sha256) {
-      const catalog = JSON.parse(content);
-      if (catalog.schemaVersion === 1) configurations.push({ projectCapabilities: catalog.capabilities, capabilityEvolution: { lastHarvest: catalog.lastHarvest } });
+    // Read the catalog from the manifest entry's own path so a preserve and a compact tree
+    // both resolve the preimage without hardcoding either layout.
+    const entry = manifest.files.find((item) => item?.ownership === 'full' && item?.kind === 'capability-evolution-catalog');
+    if (entry && entry.source === 'project-capability-harvest') {
+      const content = readLocalEvidence(root, entry.path);
+      if (sha256(content) === entry.sha256) {
+        const catalog = JSON.parse(content);
+        if (catalog.schemaVersion === 1) configurations.push({ projectCapabilities: catalog.capabilities, capabilityEvolution: { lastHarvest: catalog.lastHarvest } });
+      }
     }
   } catch { /* A historical catalog must still match its managed preimage. */ }
   for (const config of configurations) {
+    // The compiler remaps generated content onto the recorded footprint before writing it, so
+    // trust comparisons must hash the same remapped bytes the manifest recorded.
+    const footprint = config.governanceFootprint ?? 'compact';
     try {
       const artifacts = buildCapabilityArtifacts({ ...config, clients: ['codex', 'claude-code'] }).artifacts;
-      for (const artifact of artifacts.filter((item) => SKILL_KINDS.has(item.kind))) add(artifact, sha256(artifact.content));
+      for (const artifact of artifacts.filter((item) => SKILL_KINDS.has(item.kind))) add(artifact, sha256(remapContentPaths(artifact.content, footprint)));
     } catch { /* Invalid capability records cannot manufacture a supported definition. */ }
     try {
       const scan = scanProject(root);
       const memory = scanProjectMemoryFacts(scan);
       for (const artifact of buildProjectConventionArtifacts(config, scan, memory).artifacts.filter((item) => item.kind === 'project-convention-skill')) {
-        add(artifact, sha256(artifact.content));
+        add(artifact, sha256(remapContentPaths(artifact.content, footprint)));
       }
     } catch { /* Invalid or stale convention evidence cannot manufacture a supported definition. */ }
   }
@@ -247,13 +263,13 @@ function hasKnownManagedPath(entry, definitions) {
     return Boolean(unit) && matchesDevelopmentUnitShape(entry, unit);
   }
   if (entry.kind === 'development-documentation-index') return entry.path === 'docs/ai/development/index.json';
-  if (entry.kind === 'repository-family-index') return entry.path === 'docs/ai/repository-family.json';
+  if (entry.kind === 'repository-family-index') return isSameKnownPath(entry.path, 'docs/ai/repository-family.json');
   if (entry.kind === 'development-readme') return entry.path === 'README.md' || entry.path.endsWith('/README.md');
   if (entry.kind === 'brownfield-understanding-skill') return entry.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
   if (entry.kind === 'brownfield-understanding-adapter-skill') return declaredSkillDirectories().some((directory) => entry.path === `${directory}/brownfield-understanding/SKILL.md`);
   if (entry.kind === 'adapter') return entry.path === (entry.ownership === 'full' ? '.cursor/rules/ai-code-governance.mdc' : 'CLAUDE.md');
-  if (Object.hasOwn(FIXED_MANAGED_PATHS, entry.kind)) return FIXED_MANAGED_PATHS[entry.kind].includes(entry.path);
-  if (entry.kind === 'canonical') return entry.path === (entry.source === 'capability-pack-registry' ? 'docs/ai/stack-profile.json' : 'docs/ai/decision-ledger.json');
+  if (Object.hasOwn(FIXED_MANAGED_PATHS, entry.kind)) return FIXED_MANAGED_PATHS[entry.kind].some((fixed) => isSameKnownPath(entry.path, fixed));
+  if (entry.kind === 'canonical') return isSameKnownPath(entry.path, entry.source === 'capability-pack-registry' ? 'docs/ai/stack-profile.json' : 'docs/ai/decision-ledger.json');
   // Stack adapter skills come from the capability pack registry; the per-stack
   // definition list in `supportedSkillDefinitions` covers every pack, including the
   // `generic-unknown` fallback that the orchestrator keeps around for any client
@@ -278,7 +294,7 @@ function supportedToolVersion(version) {
 }
 
 function hasKnownManagedRelationship(entry, definitions) {
-  const relationship = `${entry?.ownership}\0${entry?.kind}\0${entry?.source}`;
+  const relationship = normalizeRelationship([entry?.ownership, entry?.kind, entry?.source].join('\0'));
   if (KNOWN_MANAGED_RELATIONSHIPS.has(relationship)) return true;
   // development-unit-* kinds have a per-unit documentation source path, so the static
   // relationship table cannot enumerate them. Trust the entry iff its own path recovers the

@@ -239,8 +239,8 @@ test('legacy pinned config retains its mode while daily artifacts require instal
   assert.equal(JSON.parse(content('.ai-governance/config.json')).invocationMode, 'npm-exec-pinned');
   assert.equal(governanceCommand(config, 'complete .'), 'aicg complete .');
   assert.match(content('AGENTS.md'), /unavailable.*stop.*install/i);
-  assert.ok(content('docs/ai/bootstrap-prompt.md').includes(`npm exec --yes --package=ai-code-governance@${packageVersion} -- aicg`));
-  for (const artifact of artifacts.filter((entry) => entry.path !== 'docs/ai/bootstrap-prompt.md')) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
+  assert.ok(content('docs/ai/routing/bootstrap-prompt.md').includes(`npm exec --yes --package=ai-code-governance@${packageVersion} -- aicg`));
+  for (const artifact of artifacts.filter((entry) => entry.path !== 'docs/ai/routing/bootstrap-prompt.md')) assert.doesNotMatch(artifact.content, /npm exec --yes --package/);
 });
 
 test('guided existing-project onboarding shows detected stacks and requires confirmation or correction', async (context) => {

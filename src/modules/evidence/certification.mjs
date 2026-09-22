@@ -4,6 +4,7 @@ import { assertNoLinkAncestor } from '../../adapters/filesystem/repository-state
 import { stableJson } from '../../shared/hashing.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/paths.mjs';
 import { usageError } from '../../kernel/errors/usage-error.mjs';
+import { readCanonicalPath } from '../governance/index.mjs';
 
 export const CERTIFICATION_EVIDENCE_PATH = 'docs/ai/certification-evidence.json';
 
@@ -112,11 +113,12 @@ export function validateCertificationReceipt(receipt) {
 }
 
 export function readCertificationLedger(root) {
-  assertNoLinkAncestor(root, CERTIFICATION_EVIDENCE_PATH);
-  const absolute = path.join(root, CERTIFICATION_EVIDENCE_PATH);
+  const relative = readCanonicalPath(root, CERTIFICATION_EVIDENCE_PATH);
+  assertNoLinkAncestor(root, relative);
+  const absolute = path.join(root, relative);
   const stat = lstatSafe(absolute);
   if (!stat) return { schemaVersion: 1, claimState: 'unverified', receipts: [] };
-  if (!stat.isFile() || stat.isSymbolicLink()) throw usageError(`${CERTIFICATION_EVIDENCE_PATH} must be a regular file.`);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw usageError(`${relative} must be a regular file.`);
   const ledger = readJson(absolute);
   if (ledger.schemaVersion !== 1 || !Array.isArray(ledger.receipts)) throw usageError('Certification evidence ledger must contain schemaVersion 1 and receipts.');
   const receipts = ledger.receipts.map(validateCertificationReceipt);
@@ -140,7 +142,8 @@ export function readCertificationReceiptInput(root, relativePath) {
 }
 
 export function recordCertificationEvidence(root, receipt) {
-  assertNoLinkAncestor(root, CERTIFICATION_EVIDENCE_PATH);
+  const relative = readCanonicalPath(root, CERTIFICATION_EVIDENCE_PATH);
+  assertNoLinkAncestor(root, relative);
   const ledger = readCertificationLedger(root);
   if (ledger.receipts.some((item) => item.id === receipt.id)) throw usageError(`Certification evidence id already exists: ${receipt.id}`);
   const next = {
@@ -149,7 +152,7 @@ export function recordCertificationEvidence(root, receipt) {
     receipts: [...ledger.receipts, receipt].sort((left, right) => left.id.localeCompare(right.id)),
     boundary: 'Receipts are evidence inputs, not automatic certification. Simulated personas never count as real projects or independent human approval.',
   };
-  writeAtomicFile(path.join(root, CERTIFICATION_EVIDENCE_PATH), stableJson(next));
+  writeAtomicFile(path.join(root, relative), stableJson(next));
   return next;
 }
 

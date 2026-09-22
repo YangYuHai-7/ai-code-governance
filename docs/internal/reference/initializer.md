@@ -155,6 +155,17 @@ Seed, drifted, and protected files are retained and listed only as manual cleanu
 
 Adapters are ordinary generated files or native imports: Claude Code's managed `CLAUDE.md` imports `@AGENTS.md`; selected client rules/Skills resolve to canonical sources. No symlink/junction adapter is created. Link migration requires explicit authorization; controlled rollback may restore the user's original link only.
 
+## Foreign governance adoption
+
+A repository that already carries executable governance under AICG's canonical roots (`docs/ai/skills/**/SKILL.md` and the declared client Skill directories) but has no `.ai-governance/manifest.json` cannot be taken over silently. `prepareInit` detects those files before it builds a plan and stops with one actionable conflict that names them and offers exactly two choices:
+
+- `aicg init . --config aicg.config.json --yes --adopt-foreign-governance` records the files under `config.externalGovernance` (`schemaVersion: 1`, `strategy: "adopt"`, `adopted: [...]`). Adopted paths join the checker's registered set, so `aicg check` and post-apply verification never report them as orphans again, and they are never overwritten: adoption drops any caller-supplied `replaceExisting` for the whole plan.
+- Running without the flag cancels before any write; nothing is created, changed, or deleted.
+
+Adoption also extends a pre-existing `docs/ai/context-map.yaml` instead of replacing it. When the existing file uses a single `profiles:` container but has none of AICG's required `base`/`ordinary`/`behavior_change`/`release` routing, the required layout is prepended and every owner-authored top-level key and profile is preserved. The decision is recorded in `.ai-governance/config.json`, so later non-interactive runs and the visual editor reuse it without a flag.
+
+This is adoption, not migration: AICG does not rewrite foreign Skills, does not merge conflicting `ordinary`/`behavior_change`/`release` profiles it did not generate, and does not consolidate a foreign canonical root. The visual editor surfaces the same conflict and disables apply. Files under `docs/ai/` that are not executable governance (for example a foreign `docs/ai/agents/` tree) remain ordinary unmanaged-content warnings; they are reported but never block.
+
 ## Architecture and local output
 
 Existing-code baseline decisions persist through sync; later source growth does not change the recorded lifecycle. `new-code-standard` can govern new paths without retroactively rewriting baseline sources; `keep-existing` and `staged-migration` remain advisory. Unconfigured legacy architecture and unconfirmed monorepo package scopes remain gaps/advisory. Structural path checks do not prove dependency direction, cohesion, or successful architecture migration. A generated greenfield layout policy is not evidence that the architecture already exists.

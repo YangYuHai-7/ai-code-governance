@@ -290,7 +290,7 @@ test('final audit: convention seed points to the canonical receipt and warns tha
   assert.doesNotMatch(generated.content, /Current decision|当前决策|\bdecision:\s*(?:add|defer|reject)\b/i);
   assert.match(generated.content, /adaptiveDecisions\.skills/);
 
-  write(root, 'docs/ai/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
+  write(root, '.ai-governance/state/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
   write(root, candidate.skill, `${generated.content}\nCurrent decision: defer\n`);
   assert.ok(projectConventionIssues(root).some((entry) => entry.status === 'warning' && /non-authoritative/i.test(entry.reason)));
 });

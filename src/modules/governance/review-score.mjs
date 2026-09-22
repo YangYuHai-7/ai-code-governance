@@ -135,13 +135,15 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
   // also lets `ready-for-owner-acceptance` hinge on genuinely closed gaps rather than on a
   // criterion that was force-failed for an unrelated reason.
   if (lifecycle === 'existing' && check?.brownfield?.gaps?.length) {
+    // A repository that still cannot account for its development units, evidence ownership,
+    // or Skill coverage must not keep points from an optimistic proof. Force the affected
+    // criteria to unverified so the gap is reported rather than scored away.
     for (const id of ['development-docs', 'source-traceability', 'memory-ownership', 'memory-evidence', 'stack-skill-coverage']) {
       const item = items.find((candidate) => candidate.id === id);
-      if (item.status !== 'pass') {
-        item.status = 'unverified';
-        item.points = 0;
-        item.reason = `Brownfield gaps remain (advisory): ${check.brownfield.gaps.join('; ')}`;
-      }
+      if (!item) continue;
+      item.status = 'unverified';
+      item.points = 0;
+      item.reason = `Brownfield gaps remain (advisory): ${check.brownfield.gaps.join('; ')}`;
     }
   }
   const score = items.reduce((total, item) => total + item.points, 0);

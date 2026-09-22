@@ -69,7 +69,7 @@ test('harvest eligibility requires a verified behavior route and production sour
   for (const status of ['not-requested', 'failed', 'skipped-after-governance-failure', 'skipped-after-task-route-failure']) {
     assert.deepEqual(assess({ ...input, verification: { status } }), { eligible: false, reason: `project-verification-${status}` });
   }
-  for (const relative of ['docs/guide.md', 'docs/example.ts', 'src/client.test.ts', 'src/fixtures/client.ts', 'packages/demo/test/client.ts', 'src/tmp/client.ts', 'src/temp-helper.ts', 'src/temporary/client.ts', 'scripts/temporary.ts', 'config/auth.yaml', 'src/config/auth.ts', 'db/migrations/001.sql', 'src/migrations/001.ts', '.ai-governance/config.json', 'docs/ai/architecture-profile.json', 'package.json']) {
+  for (const relative of ['docs/guide.md', 'docs/example.ts', 'src/client.test.ts', 'src/fixtures/client.ts', 'packages/demo/test/client.ts', 'src/tmp/client.ts', 'src/temp-helper.ts', 'src/temporary/client.ts', 'scripts/temporary.ts', 'config/auth.yaml', 'src/config/auth.ts', 'db/migrations/001.sql', 'src/migrations/001.ts', '.ai-governance/config.json', '.ai-governance/state/architecture-profile.json', 'package.json']) {
     assert.deepEqual(assess({ ...input, changedPaths: [relative] }), { eligible: false, reason: 'no-production-source-change' }, relative);
   }
   assert.equal(assess({ ...input, taskRoute: { level: 'L3' }, changedPaths: ['src/auth/policy.ts'] }).eligible, true);
@@ -304,7 +304,7 @@ test('harvest extracts Axios and authorization candidates with reuse Skills but 
     transactional: true,
     verify: () => checkProject(scanProject(root)),
   });
-  const catalog = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/capability-evolution.json'), 'utf8'));
+  const catalog = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/capability-evolution.json'), 'utf8'));
   assert.equal(catalog.lastHarvest.outcome, 'candidate-recorded');
   const skill = fs.readFileSync(path.join(root, 'docs/ai/skills/project/use-project-http-client/SKILL.md'), 'utf8');
   assert.match(skill, /automatically discovered candidate/);
@@ -412,7 +412,7 @@ test('harvest command has a zero-write preview and chat requires the exact appro
   const directApply = run(['harvest', directRoot, '--yes', '--json']);
   assert.equal(directApply.status, 0, directApply.stderr);
   assert.equal(JSON.parse(directApply.stdout).verification.ok, true);
-  assert.ok(fs.existsSync(path.join(directRoot, 'docs/ai/capability-evolution.json')));
+  assert.ok(fs.existsSync(path.join(directRoot, '.ai-governance/state/capability-evolution.json')));
 });
 
 test('promotion runs an exact discovered npm verification before adopting a candidate', (context) => {
@@ -606,7 +606,7 @@ test('minimal governance can explicitly harvest a candidate without falsely rout
   initialize(root, { governanceDepth: 'minimal' });
   const result = run(['harvest', root, '--yes', '--json']);
   assert.equal(result.status, 0, result.stderr);
-  assert.ok(fs.existsSync(path.join(root, 'docs/ai/capability-evolution.json')));
+  assert.ok(fs.existsSync(path.join(root, '.ai-governance/state/capability-evolution.json')));
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /capability-evolution/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });

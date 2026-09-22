@@ -22,7 +22,7 @@ test('adaptive generic guidance stays lazy and first-use requires fresh approval
   const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' };
   const { config, plan } = approvedConfig(base, scan);
   const initial = buildArtifacts(config, scan);
-  const paths = ['docs/ai/anti-patterns.md', 'docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'];
+  const paths = ['docs/ai/policies/anti-patterns.md', 'docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'];
   for (const relative of paths) assert.equal(initial.some((entry) => entry.path === relative), false);
   const used = { ...scan, governanceUsage: ['anti-patterns'] };
   assert.throws(() => buildArtifacts(config, used), /cost|planHash|approval/i);
@@ -133,7 +133,7 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.throws(() => buildArtifacts({ ...config, skillDiscovery: { ...config.skillDiscovery, approvalPlanHash: null } }, scan), /approval/i);
   const artifacts = buildArtifacts(config, scan);
   assert.equal(artifacts.filter(management).length, 4);
-  const roster = JSON.parse(artifacts.find((item) => item.path === 'docs/ai/agent-team.json').content);
+  const roster = JSON.parse(artifacts.find((item) => item.path === '.ai-governance/state/agent-team.json').content);
   assert.deepEqual(roster.professionalBoundaries, config.agentTeam.professionalBoundaries);
   assert.equal(roster.teamType, 'project-ai-agent-team');
   assert.equal(plan.cost.increment.files, 4);
@@ -181,7 +181,7 @@ test('sourceStatus is part of the exact decision and persisted artifact approval
   assert.notEqual(changed.planHash, approved.planHash);
   assert.throws(() => decideSkillCandidates(candidates, { approvalPlanHash: approved.planHash }), /planHash|approval/);
   const artifacts = buildArtifacts(config, scan);
-  const index = JSON.parse(artifacts.find((item) => item.path === 'docs/ai/skill-index.json').content);
+  const index = JSON.parse(artifacts.find((item) => item.path === '.ai-governance/state/skill-index.json').content);
   assert.deepEqual(index.sourceStatus, approved.sourceStatus);
   assert.ok(index.sourceStatus.some((item) => item.status === 'unavailable'));
   const tampered = structuredClone(config);
@@ -205,7 +205,7 @@ for (const [change, mutate] of [
     const scan = scanProject(root);
     const { config } = approvedConfig({ ...defaultConfig(scan), clients: ['codex'] }, scan, candidates, selectedIds);
     const artifacts = buildArtifacts(config, scan);
-    const index = JSON.parse(artifacts.find((item) => item.path === 'docs/ai/skill-index.json').content);
+    const index = JSON.parse(artifacts.find((item) => item.path === '.ai-governance/state/skill-index.json').content);
     assert.equal(index.candidates.length, 2);
     assert.equal(index.candidates[1].decision, 'discovered');
     applyArtifactPlan(root, planArtifacts(root, artifacts));
@@ -314,7 +314,7 @@ test('task activation remains bounded and team, permission and total-cost change
     mutate(changed);
     assert.throws(() => buildArtifacts(changed, scan), /approval|planHash/);
   }
-  for (const relative of ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md']) {
+  for (const relative of ['docs/ai/routing/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md']) {
     const target = path.join(root, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, 'retained historical governance seed\n');
@@ -371,7 +371,7 @@ test('approved artifacts reuse transactional generation and checker; stale sourc
   const checked = checkProject(scanProject(root));
   assert.equal(checked.ok, true, JSON.stringify(checked));
   const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
-  assert.ok(manifest.files.some((item) => item.path === 'docs/ai/agent-team.json'));
+  assert.ok(manifest.files.some((item) => item.path === '.ai-governance/state/agent-team.json'));
   const tampered = structuredClone(config);
   tampered.skillDiscovery.artifactPlan.cost.total.bytes += 1;
   assert.throws(() => buildArtifacts(tampered, scan), /planHash|approval/i);
@@ -394,7 +394,7 @@ test('the existing transaction rolls back approved artifacts when an installed s
     beforeApply: () => fs.appendFileSync(source, '\nChanged after planning.\n'),
     verify: () => checkProject(scanProject(root)),
   }), /Post-apply verification failed/);
-  for (const relative of ['.ai-governance/config.json', '.ai-governance/manifest.json', 'docs/ai/agent-team.json', 'docs/ai/skill-index.json']) {
+  for (const relative of ['.ai-governance/config.json', '.ai-governance/manifest.json', '.ai-governance/state/agent-team.json', '.ai-governance/state/skill-index.json']) {
     assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   }
 });
@@ -409,14 +409,14 @@ test('ordinary sync retains deselected managers and exact trusted prune removes 
   const sync = planArtifacts(root, inactive);
   assert.equal(sync.operations.some((item) => item.remove), false);
   applyArtifactPlan(root, sync);
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/agent-team.json')), true);
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/agent-team.json')), true);
   const prune = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.equal(prune.conflicts.length, 0);
   assert.equal(prune.operations.filter((item) => item.remove).length, 4);
-  fs.appendFileSync(path.join(root, 'docs/ai/agent-team.json'), '\nuser edit\n');
+  fs.appendFileSync(path.join(root, '.ai-governance/state/agent-team.json'), '\nuser edit\n');
   const drifted = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.ok(drifted.conflicts.some((item) => /agent-team.*changed/.test(item)));
-  assert.equal(drifted.operations.some((item) => item.path === 'docs/ai/agent-team.json' && item.remove), false);
+  assert.equal(drifted.operations.some((item) => item.path === '.ai-governance/state/agent-team.json' && item.remove), false);
 });
 
 test('approved Standard and Complete costs are exact, capped, localized and outside ordinary context', (context) => {
@@ -427,7 +427,7 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth, artifactLanguage };
       const { config, plan } = approvedConfig(base, scan);
       const artifacts = buildArtifacts(config, scan);
-      assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/anti-patterns.md'), false);
+      assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/policies/anti-patterns.md'), false);
       assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/skills/generic-unknown/SKILL.md'), false);
       const transaction = planArtifacts(root, artifacts);
       const bytes = transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content);
@@ -445,7 +445,7 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       }
       const ordinary = (items) => {
         const text = items.find((item) => item.path === 'docs/ai/context-map.yaml').content;
-        return [items.find((item) => item.path === 'AGENTS.md').content, text.slice(0, text.indexOf('profiles:')) + text.slice(text.indexOf('  ordinary:'), text.indexOf('  behavior_change:')), items.find((item) => item.path === 'docs/ai/rules/00_always.mdc').content];
+        return [items.find((item) => item.path === 'AGENTS.md').content, text.slice(0, text.indexOf('profiles:')) + text.slice(text.indexOf('  ordinary:'), text.indexOf('  behavior_change:')), items.find((item) => item.path === 'docs/ai/policies/00_always.mdc').content];
       };
       assert.deepEqual(ordinary(artifacts), ordinary(buildArtifacts(base, scan)));
     }

@@ -169,7 +169,7 @@ test('existing projects reject --yes and chat initialization until an explicit s
   });
   assert.equal(fs.readFileSync(path.join(root, 'src', 'App.tsx'), 'utf8'), 'export const App = () => null;\n');
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture profile|new code only/i);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8'), /new-code-standard/);
+  assert.match(fs.readFileSync(path.join(root, '.ai-governance/state/decision-ledger.json'), 'utf8'), /new-code-standard/);
 });
 
 test('manifest-only projects require lifecycle confirmation before direct or chat initialization', (context) => {
@@ -197,7 +197,7 @@ test('manifest-only projects require lifecycle confirmation before direct or cha
     source: 'config',
   });
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /greenfield/);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8'), /greenfield/);
+  assert.match(fs.readFileSync(path.join(root, '.ai-governance/state/decision-ledger.json'), 'utf8'), /greenfield/);
 });
 
 test('initialization rejects contradictory or incomplete existing-project decisions without writing files', (context) => {
@@ -373,9 +373,9 @@ test('reconfiguring an existing-code strategy updates only managed policy and le
   assert.equal(run(['init', root, '--config', keep, '--yes', '--no-assist']).status, 0);
   assert.equal(run(['init', root, '--config', newOnly, '--yes', '--no-assist']).status, 0);
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
-  const ledger = fs.readFileSync(path.join(root, 'docs', 'ai', 'decision-ledger.json'), 'utf8');
-  const seedRule = fs.readFileSync(path.join(root, 'docs', 'ai', 'rules', '00_always.mdc'), 'utf8');
-  const seedPrompt = fs.readFileSync(path.join(root, 'docs', 'ai', 'bootstrap-prompt.md'), 'utf8');
+  const ledger = fs.readFileSync(path.join(root, '.ai-governance', 'state', 'decision-ledger.json'), 'utf8');
+  const seedRule = fs.readFileSync(path.join(root, 'docs', 'ai', 'policies', '00_always.mdc'), 'utf8');
+  const seedPrompt = fs.readFileSync(path.join(root, 'docs', 'ai', 'routing', 'bootstrap-prompt.md'), 'utf8');
   assert.doesNotMatch(agents, /new-code-standard|keep-existing|staged-migration/);
   assert.match(ledger, /new-code-standard/);
   assert.doesNotMatch(agents, /Do not change its architecture or behavior unless a separate request/);

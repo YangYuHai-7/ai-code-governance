@@ -391,7 +391,7 @@ test('routing policy is selected through routing metadata only for standard and 
   const base = { ...defaultConfig(scan), clients: ['codex'] };
 
   const definition = artifactDefinitions({ ...base, governanceDepth: 'standard' }, scan)
-    .find((candidate) => candidate.path === 'docs/ai/task-routing-policy.json');
+    .find((candidate) => candidate.path === '.ai-governance/state/task-routing-policy.json');
   assert.equal(definition.capability, 'routing');
   assert.equal(definition.activation, 'selected');
   assert.deepEqual(definition.routeProfiles, []);
@@ -408,8 +408,8 @@ test('generated routing policy keeps stable English fields and localizes prose',
   const scan = scanProject(root);
   const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
   const generate = (artifactLanguage) => buildArtifacts({ ...base, artifactLanguage }, scan);
-  const english = JSON.parse(generate('en').find((artifact) => artifact.path === 'docs/ai/task-routing-policy.json').content);
-  const chinese = JSON.parse(generate('zh-CN').find((artifact) => artifact.path === 'docs/ai/task-routing-policy.json').content);
+  const english = JSON.parse(generate('en').find((artifact) => artifact.path === '.ai-governance/state/task-routing-policy.json').content);
+  const chinese = JSON.parse(generate('zh-CN').find((artifact) => artifact.path === '.ai-governance/state/task-routing-policy.json').content);
 
   assert.deepEqual(Object.keys(english), ['schemaVersion', 'input', 'output', 'workUnits', 'levels', 'escalation', 'pathRules']);
   assert.deepEqual(Object.keys(chinese), Object.keys(english));
@@ -427,7 +427,7 @@ test('minimal keeps a short localized routing summary in AGENTS without policy m
   const scan = scanProject(root);
   for (const [artifactLanguage, expected] of [['en', /L0.*read-only.*L1.*low-risk.*Escalate/s], ['zh-CN', /L0.*只读.*L1.*低风险.*升级/s]]) {
     const artifacts = buildArtifacts({ ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'minimal', artifactLanguage }, scan);
-    assert.equal(artifacts.some((artifact) => artifact.path === 'docs/ai/task-routing-policy.json'), false);
+    assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/task-routing-policy.json'), false);
     assert.match(artifacts.find((artifact) => artifact.path === 'AGENTS.md').content, expected);
   }
 });

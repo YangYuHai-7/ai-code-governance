@@ -17,7 +17,7 @@ Usage:
   aicg config <init|validate|launcher> [path] [--output aicg.config.json] [--config aicg.config.json] [--yes] [--json]
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist]
-                  [--assist codex|claude-code|cursor] [--review] [--migrate-links] [--force]
+                  [--assist codex|claude-code|cursor] [--review] [--migrate-links] [--force] [--adopt-foreign-governance]
   aicg check [path] [--json] [--enforce]
   aicg sync [path] [--dry-run] [--force] [--migrate-links] [--prune] [--approve planHash]
   aicg doctor [path] [--locale zh-CN|en] [--json] [--enforce]
@@ -36,6 +36,7 @@ Commands:
           Validation writes a local report. config launcher --yes installs a desktop folder-drop entry.
   init    Inspect a repository and initialize tailored AI governance.
           --family prepares one exact plan for the orchestrator and every detected member repository; preview with --dry-run, then approve the combined planHash. All repositories roll back if any apply or check fails.
+          Existing executable governance under the canonical roots stops the run before any write; re-run with --adopt-foreign-governance to keep and register those files as user-owned, or run without it to cancel.
   check   Validate configuration, managed files, drift, and reachability. Findings are written to reports/aicg/latest-check.json.
   sync    Regenerate managed adapters from canonical governance sources; --prune removes obsolete managed files when paired with --approve.
   doctor  Inspect the local environment and report; also covers the read-only classifications that used to live in assess / architecture / standards / team.
@@ -82,7 +83,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg config open [路径]   打开可视化配置页（127.0.0.1）；保存后立即以相同的精确 planHash 批准并应用治理框架。
   aicg config <init|validate|launcher> [路径] [--output aicg.config.json] [--config aicg.config.json] [--yes] [--json]
   aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
-                  [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist] [--review]
+                  [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist] [--review] [--adopt-foreign-governance]
   aicg check [路径] [--json] [--enforce]
   aicg sync [路径] [--dry-run] [--prune] [--approve planHash]
   aicg doctor [路径] [--locale zh-CN|en] [--json] [--enforce]
@@ -95,6 +96,7 @@ export const HELP_ZH = `AI 代码治理 CLI
 关键流程：
   config        生成或校验项目配置；open 打开可视化配置页（推荐入口）；launcher --yes 创建桌面文件夹拖拽入口。
   init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
+                docs/ai 下已有外部可执行治理时会在写入前停止；用 --adopt-foreign-governance 保留并登记为 user-owned，或不加该参数取消。
   check         检查配置、受管文件、漂移和入口可达性，并写入 reports/aicg/latest-check.json。
   sync          从治理正典重新生成客户端适配器；--prune 与 --approve 配合可清掉过期受管文件。
   doctor        检查本地环境并输出报告；同时覆盖原 assess / architecture / standards / team 的只读分类。

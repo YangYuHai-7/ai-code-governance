@@ -117,7 +117,7 @@ test('ordinary context excludes release harvest hooks and full standards', (cont
     },
   }, scan);
   const agents = content(artifacts, 'AGENTS.md');
-  const always = content(artifacts, 'docs/ai/rules/00_always.mdc');
+  const always = content(artifacts, 'docs/ai/policies/00_always.mdc');
   const contextMap = content(artifacts, 'docs/ai/context-map.yaml');
 
   for (const value of [agents, always, ordinaryProfile(contextMap)]) {
@@ -141,15 +141,15 @@ test('ordinary behavior and release profiles form an incremental context map', (
   const behavior = profileBlock(contextMap, 'behavior_change');
   const release = profileBlock(contextMap, 'release');
 
-  assert.match(contextMap, /^base:\n  required:\n    - docs\/ai\/rules\/00_always\.mdc$/m);
+  assert.match(contextMap, /^base:\n  required:\n    - docs\/ai\/policies\/00_always\.mdc$/m);
   assert.match(ordinary, /^  ordinary:\n    extends: base\n    required: \[\]$/m);
   assert.match(behavior, /conditional:/);
   assert.doesNotMatch(behavior, /architecture-profile/, 'unconfirmed architecture does not enter a route');
-  assert.match(behavior, /stack:\n        - docs\/ai\/stack-profile\.json\n        - docs\/ai\/rules\/20_stack\.mdc\n        - docs\/ai\/technical-standards\.json/);
+  assert.match(behavior, /stack:\n        - .ai-governance\/state\/stack-profile\.json\n        - docs\/ai\/policies\/20_stack\.mdc\n        - .ai-governance\/state\/technical-standards\.json/);
   assert.match(behavior, /docs\/ai\/skills\/standards\/react-component-purity\/SKILL\.md/);
-  assert.match(behavior, /business:\n        - docs\/ai\/business-constraints\.json\n        - docs\/ai\/skills\/business-constraints\/SKILL\.md/);
+  assert.match(behavior, /business:\n        - docs\/ai\/policies\/business-constraints\.json\n        - docs\/ai\/skills\/business-constraints\/SKILL\.md/);
   assert.doesNotMatch(behavior, /release-acceptance-policy/);
-  assert.match(release, /required:\n      - docs\/ai\/release-acceptance-policy\.json/);
+  assert.match(release, /required:\n      - docs\/ai\/evidence\/release-acceptance-policy\.json/);
   assert.doesNotMatch(release, /technical-standards|business-constraints|architecture-profile/);
 
   const ordinaryClosure = contextClosure(artifacts, 'ordinary');
@@ -176,15 +176,15 @@ test('explicitly selected capabilities remain available outside ordinary context
   const paths = new Set(artifacts.map((artifact) => artifact.path));
 
   for (const relative of [
-    'docs/ai/hooks.md',
-    'docs/ai/release-acceptance-policy.json',
-    'docs/ai/technical-standards.json',
+    'docs/ai/integrations/hooks.md',
+    'docs/ai/evidence/release-acceptance-policy.json',
+    '.ai-governance/state/technical-standards.json',
     'docs/memory/INDEX.json',
     'docs/memory/SCHEMA.md',
   ]) {
     assert.ok(paths.has(relative), `missing dormant artifact ${relative}`);
   }
-  assert.equal(paths.has('docs/ai/capability-evolution.json'), false);
-  assert.equal(paths.has('docs/ai/lifecycle.md'), false);
+  assert.equal(paths.has('.ai-governance/state/capability-evolution.json'), false);
+  assert.equal(paths.has('docs/ai/policies/lifecycle.md'), false);
   assert.doesNotMatch(contextClosure(artifacts, 'ordinary').join('\n'), /docs\/memory\/|project-conventions/);
 });

@@ -7,6 +7,7 @@ import { classifyReviewMode, minimumTaskLevelFromPaths, REVIEW_MODES, validateRe
 import { matchSimpleGlob } from '../../shared/index.mjs';
 import { TOOL_NAME, SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 import { validateApprovedProjectAgentTeam, validateProjectProfessionalBoundary } from '../agent-team/index.mjs';
+import { canonicalPath } from './layout.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/;
@@ -155,7 +156,11 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
 // Managed project decisions, not the completion operator, own professional scope.
 // The shared project-team validator owns all persisted role and boundary semantics.
 export function trustedProfessionalTaskContext(root, config, plannedPaths) {
-  const relative = 'docs/ai/agent-team.json';
+  const preferred = canonicalPath('docs/ai/agent-team.json', config?.governanceFootprint ?? 'compact');
+  // A caller may hold a pre-footprint legacy tree (or a hand-written fixture); accept either
+  // layout so the roster binding does not depend on which one the repository records.
+  const relative = fs.existsSync(path.join(root, preferred)) || !fs.existsSync(path.join(root, 'docs/ai/agent-team.json'))
+    ? preferred : 'docs/ai/agent-team.json';
   const result = { professionalBoundaries: [], professionalGap: null };
   const scopeNeedsMapping = ['L2', 'L3'].includes(minimumTaskLevelFromPaths(plannedPaths)) || plannedPaths.includes(relative);
   try {

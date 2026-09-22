@@ -12,6 +12,7 @@ import { lstatSafe, readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { linkAncestor, nonDirectoryAncestor, plannedLinkAncestor } from './link-paths.mjs';
 import { managedContentHash, previousManifestEntry, buildManifest } from './manifest.mjs';
+import { canonicalPathVariants } from './layout.mjs';
 import { loadManifest } from './manifest-store.mjs';
 import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import {
@@ -191,7 +192,39 @@ function mergeConditionalSeedRoutes(current, desired) {
   return current.replace(currentProfile.replaceAll('\n', newline), existing.lines.join(newline));
 }
 
-function mergeLegacyContextMapSeed(current, desired) {
+// Adopting a foreign canonical root must extend it, never replace it. When the existing
+// context-map already uses a single `profiles:` container but has none of AICG's required
+// base/ordinary/behavior_change/release routing, prepend the required layout and leave every
+// owner-authored key and profile exactly as it was. This is the only non-destructive way to
+// let AICG's own structure check pass on a repository whose routing predates AICG.
+function appendRequiredIncrementalLayout(current, desired) {
+  const requiredBase = yamlTopLevelBlock(desired, 'base');
+  const requiredOrdinary = yamlProfileBlock(desired, 'ordinary');
+  const requiredBehavior = yamlProfileBlock(desired, 'behavior_change');
+  const requiredRelease = yamlProfileBlock(desired, 'release');
+  if (!requiredBase || !requiredOrdinary || !requiredBehavior || !requiredRelease) {
+    throw new Error(`${CONTEXT_MAP_PATH}: generated incremental profile layout is incomplete`);
+  }
+  const newline = current.includes('\r\n') ? '\r\n' : '\n';
+  const { lines, start: profilesStart } = yamlProfilesBounds(current);
+  const additions = [
+    ['ordinary', requiredOrdinary],
+    ['behavior_change', requiredBehavior],
+    ['release', requiredRelease],
+  ].filter(([name]) => !yamlProfileBlock(current, name));
+  lines.splice(profilesStart + 1, 0, ...additions.flatMap(([, block]) => block.split('\n')));
+  lines.splice(profilesStart, 0, ...requiredBase.split('\n'));
+  const merged = `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
+  const mergedLines = merged.split(/\r?\n/);
+  const baseHeaders = mergedLines.filter((line) => line === 'base:').length;
+  const profileHeaders = mergedLines.filter((line) => line === 'profiles:').length;
+  if (baseHeaders !== 1 || profileHeaders !== 1) {
+    throw new Error(`${CONTEXT_MAP_PATH}: adopting the existing context-map would leave ambiguous base or profiles containers`);
+  }
+  return merged;
+}
+
+function mergeLegacyContextMapSeed(current, desired, options = {}) {
   const legacyProfile = yamlProfileBlock(current, 'business_constraints');
   if (legacyProfile && !recognizedLegacyBusinessProfile(legacyProfile)) {
     throw new Error(`${CONTEXT_MAP_PATH}: existing business_constraints profile conflicts with the required AICG route`);
@@ -210,9 +243,10 @@ function mergeLegacyContextMapSeed(current, desired) {
     const legacyImplementation = yamlProfileBlock(current, 'implementation');
     const legacyReview = yamlProfileBlock(current, 'review');
     if (!legacyImplementation || !legacyReview || !currentRelease) {
+      if (options.adoptForeign) return appendRequiredIncrementalLayout(current, desired);
       throw new Error(`${CONTEXT_MAP_PATH}: unrecognized legacy profile layout is not safe to merge`);
     }
-    if (!currentRelease.includes('      - docs/ai/release-acceptance-policy.json')) {
+    if (!canonicalPathVariants('docs/ai/release-acceptance-policy.json').some((route) => currentRelease.includes(`      - ${route}`))) {
       throw new Error(`${CONTEXT_MAP_PATH}: legacy release profile does not contain the generated release policy route`);
     }
     const releaseExtendsValues = [...currentRelease.matchAll(/^    extends:\s+["']?([A-Za-z0-9_-]+)["']?\s*$/gm)].map((match) => match[1]);
@@ -240,10 +274,10 @@ function mergeLegacyContextMapSeed(current, desired) {
   }
 
   const desiredRelease = yamlProfileBlock(desired, 'release');
-  if (desiredRelease?.includes('      - docs/ai/release-acceptance-policy.json')
-    && /^    required: \[\]$/m.test(currentRelease)) {
+  const desiredReleaseRoute = desiredRelease?.match(/^      - (\S*release-acceptance-policy\.json)$/m)?.[1] ?? null;
+  if (desiredReleaseRoute && /^    required: \[\]$/m.test(currentRelease)) {
     const newline = current.includes('\r\n') ? '\r\n' : '\n';
-    const expanded = currentRelease.replace(/^    required: \[\]$/m, '    required:\n      - docs/ai/release-acceptance-policy.json');
+    const expanded = currentRelease.replace(/^    required: \[\]$/m, `    required:\n      - ${desiredReleaseRoute}`);
     current = current.replace(currentRelease.replaceAll('\n', newline), expanded.replaceAll('\n', newline));
   }
   return mergeConditionalSeedRoutes(current, desired);
@@ -282,6 +316,9 @@ export function planArtifacts(root, artifacts, options = {}) {
   const expectedPaths = new Set(artifacts.map((artifact) => normalizeRelative(artifact.path)));
   const previousFiles = Array.isArray(manifest?.files) ? manifest.files : [];
   const manifestRemovalAuthority = validateManifestRemovalAuthority(root, manifest);
+  // Adopting foreign governance must never overwrite existing files, so the caller's
+  // replaceExisting request is dropped for the whole plan rather than only for known seeds.
+  const replaceExisting = options.replaceExisting === true && options.adoptForeignGovernance !== true;
   if (options.allowStaleRemoval && !manifestRemovalAuthority.trusted) {
     conflicts.push(`${MANIFEST_PATH}: manifest is not trusted for stale removal (${manifestRemovalAuthority.errors.join(', ')})`);
   }
@@ -319,11 +356,14 @@ export function planArtifacts(root, artifacts, options = {}) {
     const current = ancestor ? '' : readText(absolute, '');
     if (artifact.ownership === 'seed') {
       const seedExists = !ancestor && Boolean(existingStat);
-      let desired = seedExists && !options.replaceExisting ? current : artifact.content;
-      if (seedExists && !options.replaceExisting && relative === CONTEXT_MAP_PATH) {
+      const adoptForeign = options.adoptForeignGovernance === true;
+      // Adoption preserves every pre-existing canonical seed and extends the routing file
+      // instead of replacing it, even when the caller asked for replaceExisting.
+      let desired = seedExists && !replaceExisting ? current : artifact.content;
+      if (seedExists && relative === CONTEXT_MAP_PATH && !replaceExisting) {
         try {
-          const merged = mergeLegacyContextMapSeed(current, artifact.content);
-          if (legacyManagedProject) desired = merged;
+          const merged = mergeLegacyContextMapSeed(current, artifact.content, { adoptForeign });
+          if (legacyManagedProject || adoptForeign) desired = merged;
           else if (merged !== current) conflicts.push(`${MANIFEST_PATH}: manifest is not trusted to extend ${CONTEXT_MAP_PATH}`);
         } catch (error) {
           conflicts.push(error.message);
@@ -354,11 +394,11 @@ export function planArtifacts(root, artifacts, options = {}) {
         && /^[a-f0-9]{64}$/.test(artifact.promotionSourceSha256 ?? '')
         && sha256(current) === artifact.promotionSourceSha256;
       const recognizableGenerated = current.includes(GENERATED_MARKER);
-      if (isPreviouslyOwned && currentHash !== previous.sha256 && !options.force && !options.replaceExisting) {
+      if (isPreviouslyOwned && currentHash !== previous.sha256 && !options.force && !replaceExisting) {
         conflicts.push(`${relative}: managed content changed; run sync --force to replace only the managed content`);
         continue;
       }
-      if (!isPreviouslyOwned && !isExactSeedPromotion && artifact.ownership === 'full' && !recognizableGenerated && !options.replaceExisting) {
+      if (!isPreviouslyOwned && !isExactSeedPromotion && artifact.ownership === 'full' && !recognizableGenerated && !replaceExisting) {
         conflicts.push(`${relative}: existing unowned file will not be overwritten`);
         continue;
       }

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseNpmPackOutput } from '../src/modules/release/publication.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packageVersion = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
@@ -14,6 +15,11 @@ const packDirectory = path.join(fixture, 'pack');
 const installDirectory = path.join(fixture, 'install');
 const projectDirectory = path.join(fixture, 'project with 空格');
 const npmCli = process.env.npm_execpath;
+// The sandbox HOME makes npm's default cache and log directories unwritable.
+process.env.npm_config_cache = path.join(fixture, 'npm-cache');
+process.env.npm_config_logs_dir = path.join(fixture, 'npm-logs');
+fs.mkdirSync(process.env.npm_config_cache, { recursive: true });
+fs.mkdirSync(process.env.npm_config_logs_dir, { recursive: true });
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, { encoding: 'utf8', ...options });
@@ -63,12 +69,15 @@ try {
     domainConstraints: [],
   }));
   const packed = runNpm(['pack', '--json', '--pack-destination', packDirectory], { cwd: root });
-  const packResult = JSON.parse(packed.stdout);
-  const tarball = path.join(packDirectory, packResult[0].filename);
+  const packResult = parseNpmPackOutput(packed.stdout);
+  assert.ok(packResult, `npm pack returned no artifact:\n${packed.stdout}\n${packed.stderr}`);
+  const tarball = path.join(packDirectory, packResult.filename);
   assert.ok(fs.statSync(tarball).isFile());
 
   const installed = runNpm(['install', '--prefix', installDirectory, tarball, '--foreground-scripts', '--no-audit', '--no-fund'], {
-    env: { ...process.env, AICG_NO_AUTO_OPEN: '1' },
+    // npm >= 12 blocks install-time lifecycle scripts unless they are explicitly allowed; the
+    // smoke test must exercise the real postinstall banner this package ships.
+    env: { ...process.env, AICG_NO_AUTO_OPEN: '1', npm_config_dangerously_allow_all_scripts: 'true' },
   });
   assert.match(installed.stdout, /Open AICG configuration at any time/);
   const installedBin = path.join(installDirectory, 'node_modules', 'ai-code-governance', 'bin', 'aicg.js');
@@ -98,8 +107,11 @@ try {
   const { applyArtifactPlan, planArtifacts } = await import(pathToFileURL(path.join(installedRoot, 'src/managed-files.mjs')));
   const installedConfig = JSON.parse(fs.readFileSync(path.join(projectDirectory, '.ai-governance/config.json'), 'utf8'));
   const firstUse = buildArtifacts(installedConfig, { ...scanProject(projectDirectory), governanceUsage: ['release', 'surface', 'acceptance'] });
+  const { canonicalPath } = await import(pathToFileURL(path.join(installedRoot, 'src/modules/governance/layout.mjs')));
   for (const relative of ['release-acceptance-policy.json', 'surface-verification-profiles.json', 'acceptance-contract.json']) {
-    const artifact = firstUse.find((entry) => entry.path === `docs/ai/${relative}`);
+    const expected = canonicalPath(`docs/ai/${relative}`, installedConfig.governanceFootprint ?? 'compact');
+    const artifact = firstUse.find((entry) => entry.path === expected);
+    assert.ok(artifact, `missing installed Chinese first-use artifact: ${relative} (${expected})`);
     assert.match(artifact.content, /[\u3400-\u9fff]/u, `installed Chinese first-use artifact: ${relative}`);
   }
   applyArtifactPlan(projectDirectory, planArtifacts(projectDirectory, firstUse));

@@ -18,7 +18,7 @@ test('selected frontend and backend stacks produce isolated production-oriented 
   };
   const artifacts = buildArtifacts(config, scan);
   const paths = new Set(artifacts.map((artifact) => artifact.path));
-  const ledger = JSON.parse(artifacts.find((artifact) => artifact.path === 'docs/ai/decision-ledger.json').content);
+  const ledger = JSON.parse(artifacts.find((artifact) => artifact.path === '.ai-governance/state/decision-ledger.json').content);
   assert.equal(ledger.pendingArchitectureDecision?.status, 'not-adopted');
   for (const prefix of ['apps/frontend-react', 'services/backend-node']) {
     for (const file of ['AGENTS.md', 'docs/ai/development.md', 'docs/ai/rules/architecture.md',
@@ -45,7 +45,7 @@ test('one selected stack uses root project boundary', (context) => {
   const artifacts = buildArtifacts({ ...defaultConfig(scan), clients: ['codex'], stacks: ['frontend-vue'],
     initialization: { lifecycle: 'greenfield', existingCodeStrategy: null, source: 'config' } }, scan);
   const paths = new Set(artifacts.map((artifact) => artifact.path));
-  assert.ok(paths.has('docs/ai/development.md'));
+  assert.ok(paths.has('docs/ai/development/README.md'));
   assert.ok(paths.has('src/modules/README.md'));
   assert.ok(paths.has('docs/ai/skills/frontend-vue-architecture/SKILL.md'));
   assert.equal([...paths].some((relative) => relative.startsWith('apps/')), false);

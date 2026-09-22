@@ -6,12 +6,13 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { parseNpmPackOutput } from '../../src/modules/release/publication.mjs';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const gitExecutable = process.platform === 'win32' ? 'git.exe' : 'git';
 const governanceFiles = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'reports/.gitkeep', 'reviews/.gitkeep']);
-const governancePrefixes = ['.ai-governance/', '.agents/', '.claude/', '.cursor/', 'docs/ai/', 'docs/memory/', 'harness/', 'tools/hooks/'];
+const governancePrefixes = ['.ai-governance/', '.agents/', '.claude/', '.cursor/', '.github/', 'docs/ai/', 'docs/memory/', 'harness/', 'tools/hooks/'];
 
 function run(command, args, options = {}) {
   return spawnSync(command, args, {
@@ -133,15 +134,18 @@ function installPackedCli(evidence, scenarioRoot) {
   const packDirectory = path.join(scenarioRoot, 'pack');
   const installDirectory = path.join(scenarioRoot, 'installed tool');
   const npmCache = path.join(scenarioRoot, 'npm-cache');
+  // The sandbox HOME makes npm's default cache and log directories unwritable.
+  const npmLogs = path.join(scenarioRoot, 'npm-logs');
   fs.mkdirSync(packDirectory, { recursive: true });
-  const env = { ...process.env, npm_config_cache: npmCache };
+  fs.mkdirSync(npmLogs, { recursive: true });
+  const env = { ...process.env, npm_config_cache: npmCache, npm_config_logs_dir: npmLogs };
   const packed = runRecorded(evidence, npmExecutable, [
     'pack', '--ignore-scripts', '--json', '--pack-destination', packDirectory,
   ], { cwd: packageRoot, env });
   expectExit(packed, 0, 'npm pack');
-  const packResult = parseJsonOutput(packed, 'npm pack');
-  assert.equal(packResult.length, 1);
-  const tarball = path.join(packDirectory, packResult[0].filename);
+  const packResult = parseNpmPackOutput(packed.stdout);
+  assert.ok(packResult, `npm pack returned no artifact:\n${packed.stdout}\n${packed.stderr}`);
+  const tarball = path.join(packDirectory, packResult.filename);
   assert.ok(fs.statSync(tarball).isFile(), `missing packed tarball ${tarball}`);
   const installed = runRecorded(evidence, npmExecutable, [
     'install', '--prefix', installDirectory, tarball, '--ignore-scripts', '--no-audit', '--no-fund',
@@ -153,7 +157,7 @@ function installPackedCli(evidence, scenarioRoot) {
   expectExit(version, 0, 'installed aicg --version');
   const offline = runRecorded(evidence, npmExecutable, ['exec', '--', 'aicg', '--version'], {
     cwd: installDirectory,
-    env: { ...process.env, npm_config_offline: 'true', npm_config_cache: path.join(scenarioRoot, 'empty-offline-cache'), npm_config_update_notifier: 'false' },
+    env: { ...process.env, npm_config_offline: 'true', npm_config_cache: path.join(scenarioRoot, 'empty-offline-cache'), npm_config_logs_dir: npmLogs, npm_config_update_notifier: 'false' },
   });
   expectExit(offline, 0, 'installed offline npm exec with an empty cache');
   assert.equal(offline.stdout.trim(), version.stdout.trim());

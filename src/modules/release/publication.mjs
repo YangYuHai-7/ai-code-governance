@@ -35,6 +35,17 @@ export function resolvePrepublishMode(environment = process.env) {
   };
 }
 
+/**
+ * npm < 11 emits an array for `npm pack --json`; npm >= 11 emits an object keyed by package
+ * name. Return the first packed entry regardless of the installed npm version.
+ */
+export function parseNpmPackOutput(stdout) {
+  const parsed = JSON.parse(stdout);
+  if (Array.isArray(parsed)) return parsed[0];
+  if (parsed && typeof parsed === 'object') return Object.values(parsed)[0];
+  return undefined;
+}
+
 function gitResult(root, args, label, errors) {
   const result = runGit(root, args);
   if (result.error || result.status !== 0) {
@@ -72,7 +83,7 @@ function packedArtifact(root, packageDocument, errors) {
   }
   let packed;
   try {
-    packed = JSON.parse(result.stdout)?.[0];
+    packed = parseNpmPackOutput(result.stdout);
   } catch (error) {
     errors.push(`npm package shape output is invalid: ${error.message}`);
     return null;

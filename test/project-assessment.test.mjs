@@ -115,18 +115,18 @@ test('an empty project remains greenfield after governance generation', (context
   const beforeLedger = buildDecisionLedger(before, config);
   assert.equal(classifyProject(before).codebase.kind, 'greenfield-empty');
   const artifacts = buildArtifacts(config, before);
-  const ledger = artifacts.find((artifact) => artifact.path === 'docs/ai/decision-ledger.json');
+  const ledger = artifacts.find((artifact) => artifact.path === '.ai-governance/state/decision-ledger.json');
   assert.ok(ledger);
   assert.deepEqual(JSON.parse(ledger.content), beforeLedger);
   applyArtifactPlan(root, planArtifacts(root, artifacts), { transactional: true });
   const after = scanProject(root);
   assert.equal(classifyProject(after).codebase.kind, 'greenfield-empty');
-  assert.equal(buildArtifacts(config, after).find((artifact) => artifact.path === 'docs/ai/decision-ledger.json').content, ledger.content);
+  assert.equal(buildArtifacts(config, after).find((artifact) => artifact.path === '.ai-governance/state/decision-ledger.json').content, ledger.content);
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src/app.ts'), 'export const app = true;\n');
   const grown = scanProject(root);
   assert.equal(classifyProject(grown).codebase.lifecycle.value, 'existing');
-  assert.equal(buildArtifacts(config, grown).find((artifact) => artifact.path === 'docs/ai/decision-ledger.json').content, ledger.content);
+  assert.equal(buildArtifacts(config, grown).find((artifact) => artifact.path === '.ai-governance/state/decision-ledger.json').content, ledger.content);
   const result = checkProject(grown);
   assert.equal(result.ok, true);
   assert.ok(result.warnings.some((warning) => warning.includes('legacy-unconfirmed initialization decision')));
@@ -376,14 +376,14 @@ test('first sync of a legacy config persists its baseline and preserves it after
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(legacyConfig, initialScan)), { transactional: true });
   const persisted = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   assert.equal(persisted.initialClassification.codebase.lifecycle.value, 'greenfield');
-  const beforeLedger = fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8');
+  const beforeLedger = fs.readFileSync(path.join(root, '.ai-governance/state/decision-ledger.json'), 'utf8');
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src/app.ts'), 'export const app = true;\n');
   const grown = scanProject(root);
   assert.equal(classifyProject(grown).codebase.lifecycle.value, 'existing');
   const syncPlan = planArtifacts(root, buildArtifacts(persisted, grown));
   applyArtifactPlan(root, syncPlan, { transactional: true });
-  assert.equal(fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8'), beforeLedger);
+  assert.equal(fs.readFileSync(path.join(root, '.ai-governance/state/decision-ledger.json'), 'utf8'), beforeLedger);
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).initialClassification.codebase.lifecycle.value, 'greenfield');
 });
 
@@ -399,7 +399,7 @@ test('configured project identity survives a copy to a checkout with a different
   const initialized = run(['init', root, '--clients', 'all', '--yes', '--no-assist']);
   assert.equal(initialized.status, 0, initialized.stderr);
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
-  const originalLedger = fs.readFileSync(path.join(root, 'docs/ai/decision-ledger.json'), 'utf8');
+  const originalLedger = fs.readFileSync(path.join(root, '.ai-governance/state/decision-ledger.json'), 'utf8');
   assert.notEqual(config.projectName, path.basename(copiedRoot));
 
   fs.cpSync(root, copiedRoot, { recursive: true });
@@ -410,7 +410,7 @@ test('configured project identity survives a copy to a checkout with a different
   const synced = run(['sync', copiedRoot]);
   assert.equal(synced.status, 0, synced.stderr);
   assert.match(synced.stdout, /"changed": \[\]/);
-  const copiedLedger = fs.readFileSync(path.join(copiedRoot, 'docs/ai/decision-ledger.json'), 'utf8');
+  const copiedLedger = fs.readFileSync(path.join(copiedRoot, '.ai-governance/state/decision-ledger.json'), 'utf8');
   assert.equal(copiedLedger, originalLedger);
   assert.equal(JSON.parse(copiedLedger).project.name, config.projectName);
 });

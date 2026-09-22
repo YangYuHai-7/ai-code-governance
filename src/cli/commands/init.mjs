@@ -4,9 +4,10 @@ import { discoverProjectConventionCandidates } from '../../modules/standards/ind
 import { deriveArchitectureDecision } from '../../architecture-policy.mjs';
 import { initializationForArchitectureOption, resolveArchitectureApproval } from '../../architecture-assessment.mjs';
 import { runAssist, assistCandidates } from '../../assist.mjs';
-import { checkProject, printCheck } from '../../checker.mjs';
+import { checkProject, detectForeignExecutableGovernance, printCheck } from '../../checker.mjs';
 import { buildArtifacts, defaultConfig, prepareSkillGovernancePlan, refreshSkillGovernanceReceipt, validateConfig } from '../../generator.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprovedProjectAgentTeam } from '../../project-agent-team.mjs';
+import { canonicalPath } from '../../modules/governance/index.mjs';
 import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { allBuiltInClientIds, selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository } from '../../catalogs/index.mjs';
@@ -16,7 +17,7 @@ import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, 
 import { adaptivePreviewGuidance, initSuccessGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
 import { buildDecisionLedger, classifyProject, resolveInitializationDecision } from '../../project-assessment.mjs';
 import { assertArtifactPlanMatches, assertPlanFresh, buildExecutionPlan } from '../../execution-plan.mjs';
-import { SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
+import { MANIFEST_PATH, SUPPORTED_CONFIRMED_RISK_SIGNALS, TOOL_VERSION } from '../../constants.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { buildDevelopmentDocumentationArtifacts, isProductionScopePath, repositoryTopologyMigrationRequired } from '../../modules/repository/index.mjs';
 import { buildGreenfieldLayoutArtifacts } from '../../modules/repository/greenfield-layout.mjs';
@@ -229,7 +230,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       summary.budget = { proposedCost: error.budgetCost, ...(error.budgetLimits ?? { maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagerTokens: 800 }) };
       summary.manualCleanup = {
         paths: scan.files.map((entry) => entry.relative).filter((relative) => [
-          'docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH,
+          canonicalPath('docs/ai/bootstrap-prompt.md', config.governanceFootprint), 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH,
           ...selectedSkillDirectories(config.clients).map((directory) => `${directory}/business-constraints/SKILL.md`),
         ].includes(relative)),
         authorization: 'separate-explicit-approval-required', automaticDeletion: false,
@@ -425,8 +426,36 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     config = refreshed.config;
     skillReceiptRefresh = refreshed.refresh;
   }
+  // A repository that already carries executable governance under AICG's canonical roots but
+  // has no manifest cannot be taken over silently. Detect it once, before any plan is built,
+  // so the owner chooses adopt-or-cancel instead of meeting a rollback wall of per-file
+  // orphan errors after AICG has already started writing.
+  const hasManifest = readText(path.join(scan.root, MANIFEST_PATH), '').trim().length > 0;
+  const detectedForeignGovernance = hasManifest ? [] : detectForeignExecutableGovernance(scan, config);
+  const adoptForeignGovernance = options['adopt-foreign-governance'] === true || config.externalGovernance?.strategy === 'adopt';
+  if (adoptForeignGovernance && detectedForeignGovernance.length > 0) {
+    config = {
+      ...config,
+      externalGovernance: {
+        schemaVersion: 1,
+        strategy: 'adopt',
+        adopted: [...new Set([...(config.externalGovernance?.adopted ?? []), ...detectedForeignGovernance])]
+          .sort((left, right) => left.localeCompare(right)),
+      },
+    };
+    validateConfig(config);
+  }
   const artifacts = buildArtifacts(config, scan);
-  const plan = planArtifacts(scan.root, artifacts, { force: options.force, replaceExisting: options.replaceExisting, migrateLinks: options['migrate-links'] });
+  const plan = planArtifacts(scan.root, artifacts, { force: options.force, replaceExisting: options.replaceExisting, migrateLinks: options['migrate-links'], adoptForeignGovernance });
+  if (detectedForeignGovernance.length > 0 && !adoptForeignGovernance) {
+    const zh = config.interactionLanguage === 'zh-CN';
+    const listed = detectedForeignGovernance.slice(0, 8).join(', ');
+    const more = detectedForeignGovernance.length > 8 ? ` (+${detectedForeignGovernance.length - 8})` : '';
+    const suppressed = plan.conflicts.length;
+    plan.conflicts = [zh
+      ? `检测到 ${detectedForeignGovernance.length} 个既有外部可执行治理文件（${listed}${more}），且仓库没有 AICG 账本。AICG 不会自动接管、覆盖或删除它们。请二选一后重试：\n      - 登记接管：aicg init . --config aicg.config.json --yes --adopt-foreign-governance（保留原文件、写入账本、永不覆盖）\n      - 取消：不加该参数即为取消，本次不写入任何文件。${suppressed ? `\n      （已折叠 ${suppressed} 项由此决定产生的衍生冲突）` : ''}`
+      : `Detected ${detectedForeignGovernance.length} existing executable governance file(s) under the canonical roots (${listed}${more}) with no AICG manifest. AICG will not take over, overwrite, or delete them. Choose one and retry:\n      - Adopt: aicg init . --config aicg.config.json --yes --adopt-foreign-governance (keep the files, record them, never overwrite)\n      - Cancel: run without the flag; nothing is written.${suppressed ? `\n      (${suppressed} downstream conflict(s) folded into this decision)` : ''}`];
+  }
   if (skillReceiptRefresh) {
     plan.requireAdaptiveApproval = true;
     plan.skillGovernanceRefresh = skillReceiptRefresh;
@@ -659,7 +688,7 @@ export async function initCommand(target, options) {
       assertArtifactPlanMatches(executionPlan, scan.root, plan);
       assertSourcesFresh?.();
     } : undefined,
-    verify: () => checkProject(scanProject(scan.root)),
+    verify: () => checkProject(scanProject(scan.root), { externalGovernancePaths: config.externalGovernance?.adopted ?? [] }),
   });
   if (!options.guided) console.log(`initialized=${scan.root} changed_files=${applied.changed.length}`);
   let result = applied.verification;

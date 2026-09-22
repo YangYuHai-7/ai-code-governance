@@ -4,6 +4,7 @@ import { readJson } from '../../adapters/filesystem/files.mjs';
 import { PACKAGE_ROOT } from '../../kernel/config/constants.mjs';
 import { usageError } from '../../kernel/errors/usage-error.mjs';
 import { repositoryFile, sha256File } from './repository-evidence.mjs';
+import { readCanonicalPath } from '../governance/index.mjs';
 
 const POLICY_PATH = path.join(PACKAGE_ROOT, 'assets', 'policies', 'release-acceptance-policy.json');
 const CHINESE_POLICY_PATH = path.join(PACKAGE_ROOT, 'assets', 'policies', 'zh-CN', 'release-acceptance-policy.json');
@@ -127,16 +128,18 @@ function assertPolicyNotWeaker(projectPolicy, baseline) {
 }
 
 export function loadProjectReleaseAcceptancePolicy(root) {
-  const projectPolicy = path.join(root, 'docs', 'ai', 'release-acceptance-policy.json');
-  const projectOverride = path.join(root, 'docs', 'ai', 'release-acceptance-override.json');
+  const projectPolicy = readCanonicalPath(root, 'docs/ai/release-acceptance-policy.json');
+  const projectOverride = readCanonicalPath(root, 'docs/ai/release-acceptance-override.json');
+  const projectPolicyAbsolute = path.join(root, projectPolicy);
+  const projectOverrideAbsolute = path.join(root, projectOverride);
   const baseline = loadReleaseAcceptancePolicy();
   const baselineDigest = sha256File(POLICY_PATH);
   let selected = { policy: baseline, source: 'built-in', absolutePath: POLICY_PATH, digest: baselineDigest };
-  if (!fs.existsSync(projectPolicy)) {
-    if (!fs.existsSync(projectOverride)) return selected;
+  if (!fs.existsSync(projectPolicyAbsolute)) {
+    if (!fs.existsSync(projectOverrideAbsolute)) return selected;
   } else {
     const errors = [];
-    const safePolicy = repositoryFile(root, 'docs/ai/release-acceptance-policy.json', 'release acceptance policy', errors);
+    const safePolicy = repositoryFile(root, projectPolicy, 'release acceptance policy', errors);
     if (!safePolicy) throw usageError(errors.join(' '));
     const policy = loadReleaseAcceptancePolicy(safePolicy);
     const snapshotDigest = sha256File(safePolicy);
@@ -145,9 +148,9 @@ export function loadProjectReleaseAcceptancePolicy(root) {
     assertPolicy(snapshotDigest === baselineDigest || snapshotDigest === sha256File(CHINESE_POLICY_PATH), 'project policy snapshot is stale or drifted; review and run aicg sync before release.');
     selected = { policy, source: 'project-snapshot', absolutePath: safePolicy, digest: snapshotDigest };
   }
-  if (!fs.existsSync(projectOverride)) return selected;
+  if (!fs.existsSync(projectOverrideAbsolute)) return selected;
   const errors = [];
-  const safeOverride = repositoryFile(root, 'docs/ai/release-acceptance-override.json', 'release acceptance override', errors);
+  const safeOverride = repositoryFile(root, projectOverride, 'release acceptance override', errors);
   if (!safeOverride) throw usageError(errors.join(' '));
   const override = loadReleaseAcceptancePolicy(safeOverride);
   assertPolicyNotWeaker(normalizeBuiltInPolicyProse(override, baseline), baseline);

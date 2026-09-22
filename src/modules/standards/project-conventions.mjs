@@ -3,6 +3,7 @@ import { sha256, stableJson } from '../../shared/index.mjs';
 import { readMemoryFile, scanProjectMemoryFacts } from '../memory/index.mjs';
 import { adaptiveDecisionEvidenceHash } from '../skills/index.mjs';
 import { assertSkillQuality } from './skill-quality.mjs';
+import { readCanonicalPath, remapContentPaths } from '../governance/index.mjs';
 
 const LAYOUT_GROUPS = [
   { id: 'http-entrypoints', label: 'HTTP entrypoints', match: /(^|\/)(?:controller|controllers|routes?)\// },
@@ -136,7 +137,7 @@ export function discoverProjectConventionCandidates(scan, memory) {
 
 export function projectConventionIssues(root, scan = null) {
   let catalog;
-  try { catalog = JSON.parse(readMemoryFile(root, 'docs/ai/project-conventions.json')); }
+  try { catalog = JSON.parse(readMemoryFile(root, readCanonicalPath(root, 'docs/ai/project-conventions.json'))); }
   catch (error) { return error.code === 'ENOENT' ? [] : [{ status: 'invalid', reason: error.message }]; }
   if (catalog?.schemaVersion !== 1 || !Array.isArray(catalog.candidates) || catalog.candidates.length > 32) return [{ status: 'invalid', reason: 'Invalid project convention catalog' }];
   const issues = [];
@@ -353,7 +354,13 @@ ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新
       },
     };
     const seedByPath = new Map(buildProjectConventionArtifacts(seedConfig, scan, memory).artifacts.map((artifact) => [artifact.path, artifact]));
-    for (const artifact of artifacts.filter((entry) => entry.adopted === true)) artifact.promotionSourceSha256 = sha256(seedByPath.get(artifact.path)?.content ?? '');
+    // The compiler remaps generated content onto the recorded footprint before writing it, so
+    // the promotion preimage must be hashed after the same remap; otherwise an untouched seed
+    // never matches and promotion is refused as an unowned file.
+    const footprint = config.governanceFootprint ?? 'compact';
+    for (const artifact of artifacts.filter((entry) => entry.adopted === true)) {
+      artifact.promotionSourceSha256 = sha256(remapContentPaths(seedByPath.get(artifact.path)?.content ?? '', footprint));
+    }
   }
   return { ...discoveryKept, artifacts };
 }

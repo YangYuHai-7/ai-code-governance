@@ -51,7 +51,7 @@ test('repeated CLI check and fast-suite samples stay inside absolute performance
   for (const fixture of report.fixtures) {
     assert.equal(fixture.check.processesPerSample, 1);
     assert.equal(fixture.context.files, 3);
-    assert.deepEqual(fixture.context.paths, ['AGENTS.md', 'docs/ai/context-map.yaml', 'docs/ai/rules/00_always.mdc']);
+    assert.deepEqual(fixture.context.paths, ['AGENTS.md', 'docs/ai/context-map.yaml', 'docs/ai/policies/00_always.mdc']);
     assert.ok(fixture.context.bytes <= 3600);
   }
   for (const [name, limit] of [['small', 250], ['10k', 1000]]) {

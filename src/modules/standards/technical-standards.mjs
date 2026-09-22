@@ -5,6 +5,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
 import { assertSkillQuality } from './skill-quality.mjs';
+import { canonicalPath } from '../governance/index.mjs';
 
 const REGISTRY_PATH = 'assets/registries/technical-standard-registry.json';
 const STANDARD_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -387,7 +388,7 @@ function technicalStandardsManifest(selection, config = {}) {
     skills: selection.selected.map(({ standard, selection: reason }) => ({
       id: standard.id,
       title: standard.title,
-      path: `docs/ai/skills/standards/${standard.id}/SKILL.md`,
+      path: canonicalPath(`docs/ai/skills/standards/${standard.id}/SKILL.md`, config.governanceFootprint ?? 'compact'),
       applicability: reason,
       sources: standard.sources.map(sourceSnapshot),
       verification: standard.verification,
@@ -418,7 +419,7 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
   }));
   const manifest = technicalStandardsManifest(selection, config);
   const artifacts = [{
-    path: 'docs/ai/technical-standards.json',
+    path: canonicalPath('docs/ai/technical-standards.json', config.governanceFootprint ?? 'compact'),
     content: stableJson(manifest),
     ownership: 'full',
     kind: 'technical-standard-manifest',

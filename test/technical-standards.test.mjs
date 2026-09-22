@@ -93,7 +93,7 @@ test('detects the <sample-app> technology set and generates traceable standard S
   const integritySkill = artifacts.find((artifact) => artifact.path.endsWith('critical-api-integrity-and-replay/SKILL.md'));
   assert.match(integritySkill.content, /RFC 9421/);
   assert.match(integritySkill.content, /concurrent duplicate submissions/);
-  const sourceManifest = JSON.parse(artifacts.find((artifact) => artifact.path === 'docs/ai/technical-standards.json').content);
+  const sourceManifest = JSON.parse(artifacts.find((artifact) => artifact.path === '.ai-governance/state/technical-standards.json').content);
   assert.equal(sourceManifest.status, 'reviewed-offline-snapshot');
   assert.equal(sourceManifest.skills.find((skill) => skill.id === 'bullmq-idempotent-jobs').claimState, 'stated');
   assert.deepEqual(sourceManifest.technologyEvidence.installedPackages.includes('bullmq'), true);
@@ -130,11 +130,11 @@ test('minimal governance does not route to technical standard artifacts it did n
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   const artifacts = buildArtifacts({ ...defaultConfig(scan), governanceDepth: 'minimal' }, scan);
-  assert.equal(artifacts.some((artifact) => artifact.path === 'docs/ai/technical-standards.json'), false);
+  assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/technical-standards.json'), false);
   const contextMap = artifacts.find((artifact) => artifact.path === 'docs/ai/context-map.yaml').content;
   assert.doesNotMatch(contextMap, /technical-standards/);
   assert.equal([...contextMap.matchAll(/^profiles:$/gm)].length, 1);
-  assert.doesNotMatch(artifacts.find((artifact) => artifact.path === 'docs/ai/rules/00_always.mdc').content, /technical-standards/);
+  assert.doesNotMatch(artifacts.find((artifact) => artifact.path === 'docs/ai/policies/00_always.mdc').content, /technical-standards/);
 });
 
 test('technical standards CLI and exact chat preview are read-only', (context) => {

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { CONFIG_PATH, LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
-import { BUSINESS_RISK_EVIDENCE_PATH, validateConfig } from '../governance/index.mjs';
+import { BUSINESS_RISK_EVIDENCE_PATH, readCanonicalPath, validateConfig } from '../governance/index.mjs';
 
 export const RISK_EVIDENCE_PATH = BUSINESS_RISK_EVIDENCE_PATH;
 
@@ -55,10 +55,10 @@ export function riskEvidenceFingerprint(scan, config) {
   }));
 }
 
-function base(status, expected, fingerprint, issues = [], covered = 0) {
+function base(status, expected, fingerprint, issues = [], covered = 0, pathValue = RISK_EVIDENCE_PATH) {
   return {
     status,
-    path: RISK_EVIDENCE_PATH,
+    path: pathValue,
     required: expected.length,
     covered,
     expectedRiskIds: expected,
@@ -76,17 +76,18 @@ export function evaluateRiskEvidence(scan) {
   }
   const expected = requiredRiskProbeIds(config);
   const fingerprint = riskEvidenceFingerprint(scan, config);
-  if (expected.length === 0) return base('not-applicable', expected, fingerprint);
-  const absolute = path.join(scan.root, RISK_EVIDENCE_PATH);
+  const relative = readCanonicalPath(scan.root, RISK_EVIDENCE_PATH, config.governanceFootprint);
+  if (expected.length === 0) return base('not-applicable', expected, fingerprint, [], 0, relative);
+  const absolute = path.join(scan.root, relative);
   const stat = lstatSafe(absolute);
-  if (!stat) return base('missing', expected, fingerprint, [`${RISK_EVIDENCE_PATH}: missing owner-confirmed negative and recovery evidence.`]);
+  if (!stat) return base('missing', expected, fingerprint, [`${relative}: missing owner-confirmed negative and recovery evidence.`], 0, relative);
   let receipt;
   try {
-    assertNoLinkAncestor(scan.root, RISK_EVIDENCE_PATH);
+    assertNoLinkAncestor(scan.root, relative);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('must be a regular repository-local file.');
     receipt = readJson(absolute);
   } catch (error) {
-    return base('invalid', expected, fingerprint, [`${RISK_EVIDENCE_PATH}: ${error.message}`]);
+    return base('invalid', expected, fingerprint, [`${relative}: ${error.message}`], 0, relative);
   }
   const issues = [];
   if (receipt.schemaVersion !== 1) issues.push('schemaVersion must be 1.');
@@ -94,7 +95,7 @@ export function evaluateRiskEvidence(scan) {
     issues.push('owner and source must be product-owner and owner-confirmed.');
   }
   if (!Array.isArray(receipt.risks)) issues.push('risks must be an array.');
-  if (issues.length > 0) return base('invalid', expected, fingerprint, issues);
+  if (issues.length > 0) return base('invalid', expected, fingerprint, issues, 0, relative);
   const expectedSet = new Set(expected);
   const seen = new Set();
   let covered = 0;
@@ -126,7 +127,7 @@ export function evaluateRiskEvidence(scan) {
   for (const id of expected) {
     if (!seen.has(id)) issues.push(`${id}: missing owner-confirmed applicability and evidence record.`);
   }
-  if (issues.length > 0) return base('invalid', expected, fingerprint, issues, covered);
-  if (incomplete) return base('incomplete', expected, fingerprint, [], covered);
-  return base('recorded-unverified', expected, fingerprint, [], covered);
+  if (issues.length > 0) return base('invalid', expected, fingerprint, issues, covered, relative);
+  if (incomplete) return base('incomplete', expected, fingerprint, [], covered, relative);
+  return base('recorded-unverified', expected, fingerprint, [], covered, relative);
 }

@@ -164,13 +164,13 @@ test('visual apply replaces colliding governance files and skips uninitialized s
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-web-collision-'));
   const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-state-collision-'));
   fs.mkdirSync(path.join(root, 'src'));
-  fs.mkdirSync(path.join(root, 'docs/ai/rules'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'docs/ai/policies'), { recursive: true });
   fs.mkdirSync(path.join(root, 'optional-client'));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"existing-app"}\n');
   fs.writeFileSync(path.join(root, 'src/app.mjs'), 'export const ready = true;\n');
   fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "optional-client"]\n\tpath = optional-client\n\turl = git@example.invalid:optional-client.git\n');
   fs.writeFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'version: 1\nprofiles:\n  custom:\n    level: L1\n');
-  fs.writeFileSync(path.join(root, 'docs/ai/rules/00_always.mdc'), 'User-owned text that must be in the preview.\n');
+  fs.writeFileSync(path.join(root, 'docs/ai/policies/00_always.mdc'), 'User-owned text that must be in the preview.\n');
   const { child, ready } = start(root, stateHome);
   try {
     const url = await ready;
@@ -192,7 +192,7 @@ test('visual apply replaces colliding governance files and skips uninitialized s
     assert.deepEqual(preview.value.conflicts, []);
     assert.deepEqual(preview.value.skippedMembers, ['optional-client']);
     assert.ok(preview.value.files.some((entry) => entry.path === 'docs/ai/context-map.yaml' && entry.action === 'replace-owned'));
-    assert.ok(preview.value.files.some((entry) => entry.path === 'docs/ai/rules/00_always.mdc' && entry.action === 'replace-owned'));
+    assert.ok(preview.value.files.some((entry) => entry.path === 'docs/ai/policies/00_always.mdc' && entry.action === 'replace-owned'));
     const applied = await request('apply', { planHash: preview.value.planHash });
     assert.equal(applied.status, 200, JSON.stringify(applied.value));
     assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /behavior_change:/);
@@ -206,7 +206,7 @@ test('visual apply replaces colliding governance files and skips uninitialized s
   }
 });
 
-test('visual apply returns post-check details and rolls back on failure', async () => {
+test('visual apply refuses foreign governance before writing and leaves the project untouched', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-web-check-failure-'));
   const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-state-check-failure-'));
   fs.mkdirSync(path.join(root, '.agents/skills/foreign'), { recursive: true });
@@ -228,11 +228,15 @@ test('visual apply returns post-check details and rolls back on failure', async 
     assert.equal((await request('save', { config: boot.template, expectedSha: null })).status, 200);
     const preview = await request('preview', {});
     assert.equal(preview.status, 200, JSON.stringify(preview.value));
+    // The foreign Skill is a pre-write decision the owner has not made yet, so the preview
+    // surfaces it and disables apply instead of generating and then rolling back 100+ files.
+    assert.ok(preview.value.conflicts.some((entry) => entry.includes('--adopt-foreign-governance')));
     const applied = await request('apply', { planHash: preview.value.planHash });
     assert.equal(applied.status, 400);
-    assert.match(applied.value.error, /Post-apply verification failed/);
-    assert.ok(applied.value.verificationErrors.some((entry) => entry.includes('.agents/skills/foreign/SKILL.md')));
+    assert.match(applied.value.error, /--adopt-foreign-governance/);
     assert.equal(fs.existsSync(path.join(root, '.ai-governance/config.json')), false);
+    assert.equal(fs.existsSync(path.join(root, 'docs/ai')), false);
+    assert.equal(fs.existsSync(path.join(root, 'AGENTS.md')), false);
     assert.equal(fs.readFileSync(path.join(root, '.agents/skills/foreign/SKILL.md'), 'utf8'), '# Foreign skill\n');
     assert.equal((await request('close', {})).status, 200);
   } finally {

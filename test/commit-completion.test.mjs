@@ -565,7 +565,7 @@ test('manual completion classifies staged unstaged untracked deleted and renamed
     ['package-lock.json', true, 'L2'],
     ['db/migrations/001.sql', false, 'L3'],
     ['test/fixtures/contracts/openapi.yaml', false, 'L2'],
-    ['docs/ai/architecture-profile.json', false, 'L3'],
+    ['.ai-governance/state/architecture-profile.json', false, 'L3'],
   ]) {
     write(root, relative, '{}\n');
     if (staged) assert.equal(git(root, ['add', relative]).status, 0);
@@ -872,7 +872,7 @@ for (const artifactLanguage of ['en', 'zh-CN']) test(`surface verification passe
   const config = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'));
   const firstUse = { ...scanProject(root), governanceUsage: ['surface'] };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, firstUse)));
-  const profiles = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/surface-verification-profiles.json'), 'utf8'));
+  const profiles = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/surface-verification-profiles.json'), 'utf8'));
   assert.equal(/[\u3400-\u9fff]/u.test(profiles.claimBoundary), artifactLanguage === 'zh-CN');
   const fabricated = run(['complete', root, '--verify', 'npm run test:http', '--json']);
   assert.equal(fabricated.status, 0, fabricated.stderr);
@@ -1033,9 +1033,10 @@ test('business acceptance evidence must bind the current stable constraint id, t
   const root = fixture('production-readiness-binding');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.'], []);
-  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
+  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/policies/business-constraints.json'), 'utf8'));
   const current = registry.constraints[0];
-  const evidencePath = path.join(root, 'docs/ai/business-acceptance-results.json');
+  const evidencePath = path.join(root, 'docs/ai/evidence/business-acceptance-results.json');
+  fs.mkdirSync(path.dirname(evidencePath), { recursive: true });
   fs.writeFileSync(evidencePath, JSON.stringify({
     schemaVersion: 1,
     constraints: [{
@@ -1080,8 +1081,9 @@ test('production readiness requires owner-confirmed negative and recovery eviden
   const root = fixture('production-readiness-risk-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initializeWithConstraints(root, ['Only a trusted actor may change the record.'], ['authorization']);
-  const constraint = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8')).constraints[0];
-  fs.writeFileSync(path.join(root, 'docs/ai/business-acceptance-results.json'), JSON.stringify({
+  const constraint = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/policies/business-constraints.json'), 'utf8')).constraints[0];
+  fs.mkdirSync(path.join(root, 'docs/ai/evidence'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'docs/ai/evidence/business-acceptance-results.json'), JSON.stringify({
     schemaVersion: 1,
     constraints: [{
       id: constraint.id,
@@ -1099,7 +1101,7 @@ test('production readiness requires owner-confirmed negative and recovery eviden
   assert.equal(missingReadiness.constraintEvidence.status, 'recorded-unverified');
   assert.equal(missingReadiness.riskEvidence.status, 'missing');
 
-  fs.writeFileSync(path.join(root, 'docs/ai/risk-evidence.json'), JSON.stringify({
+  fs.writeFileSync(path.join(root, 'docs/ai/evidence/risk-evidence.json'), JSON.stringify({
     schemaVersion: 1,
     owner: 'product-owner',
     source: 'owner-confirmed',
@@ -1131,7 +1133,7 @@ test('business acceptance evidence cannot traverse a symbolic link', (context) =
     fs.rmSync(outside, { recursive: true, force: true });
   });
   initializeWithConstraints(root, ['Every issue belongs to exactly one tenant.']);
-  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/business-constraints.json'), 'utf8'));
+  const registry = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/policies/business-constraints.json'), 'utf8'));
   const current = registry.constraints[0];
   const outsideEvidence = path.join(outside, 'business-acceptance-results.json');
   fs.writeFileSync(outsideEvidence, JSON.stringify({
@@ -1145,7 +1147,8 @@ test('business acceptance evidence cannot traverse a symbolic link', (context) =
       failureOrBoundaryEvidence: 'boundary',
     }],
   }));
-  fs.symlinkSync(outsideEvidence, path.join(root, 'docs/ai/business-acceptance-results.json'));
+  fs.mkdirSync(path.join(root, 'docs/ai/evidence'), { recursive: true });
+  fs.symlinkSync(outsideEvidence, path.join(root, 'docs/ai/evidence/business-acceptance-results.json'));
 
   const completed = runApproved(['complete', root, '--json']);
   assert.equal(completed.status, 0, completed.stderr);

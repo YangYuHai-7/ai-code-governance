@@ -4,6 +4,7 @@ import { assertNoLinkAncestor, writeAtomicFile } from '../../adapters/filesystem
 import { sha256 } from '../../shared/index.mjs';
 import { createGovernanceReviewBrief, scoreGovernanceFramework } from './review-score.mjs';
 import { runIndependentReview } from './independent-review.mjs';
+import { readCanonicalPath } from './layout.mjs';
 
 const SCORE_PATH = 'reports/aicg/latest-governance-score.json';
 
@@ -34,11 +35,13 @@ export function reviewGeneratedGovernance(root, { lifecycle, selectedAgents, che
     findings: independent.review?.findings ?? [],
     receipt,
   } : null;
+  const footprint = config?.governanceFootprint ?? null;
+  const developmentIndex = readCanonicalPath(root, 'docs/ai/development/index.json', footprint);
   const proofs = {
-    'project-layout': staticProof(root, 'docs/ai/development/index.json'),
-    'development-docs': staticProof(root, 'docs/ai/development/index.json'),
-    'process-scaling': staticProof(root, 'docs/ai/task-routing-policy.json'),
-    'test-plan': staticProof(root, 'docs/ai/verification-profiles.yaml'),
+    'project-layout': staticProof(root, developmentIndex),
+    'development-docs': staticProof(root, developmentIndex),
+    'process-scaling': staticProof(root, readCanonicalPath(root, 'docs/ai/task-routing-policy.json', footprint)),
+    'test-plan': staticProof(root, readCanonicalPath(root, 'docs/ai/verification-profiles.yaml', footprint)),
     'test-result-report': staticProof(root, 'reports/aicg/latest-check.json'),
   };
   const score = scoreGovernanceFramework({ root, lifecycle, check, proofs, review, config });

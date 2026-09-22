@@ -9,9 +9,10 @@ import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { resolveGovernanceCapabilities, selectArtifactDefinitions } from '../src/modules/governance/artifact-selection.mjs';
-import { DELIVERY_LOOP_LEDGER, DELIVERY_PHASES } from '../src/modules/governance/delivery-loop.mjs';
+import { DELIVERY_PHASES } from '../src/modules/governance/delivery-loop.mjs';
 import { deriveArchitectureDecision } from '../src/modules/architecture/index.mjs';
 import { surfaceVerificationProfiles } from '../src/modules/repository/index.mjs';
+import { remapContentPaths } from '../src/modules/governance/layout.mjs';
 import { sha256, stableJson } from '../src/shared/index.mjs';
 
 const MINIMAL_CODEX_ALLOWLIST = [
@@ -19,7 +20,7 @@ const MINIMAL_CODEX_ALLOWLIST = [
   'AGENTS.md',
   'docs/ai/README.md',
   'docs/ai/context-map.yaml',
-  'docs/ai/rules/00_always.mdc',
+  'docs/ai/policies/00_always.mdc',
   'docs/memory/INDEX.json',
   'docs/memory/README.md',
   'docs/memory/SCHEMA.md',
@@ -90,15 +91,15 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
   const { config, scan } = fixture(context);
   for (const governanceDepth of ['standard', 'complete']) {
     const paths = buildArtifacts({ ...config, governanceDepth }, scan).map((item) => item.path).sort();
-    const policy = ['docs/ai/anti-patterns.md', 'docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standards/standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standards/professional-testing/SKILL.md'];
-    const routing = ['.gitignore', 'docs/ai/bootstrap-prompt.md', 'docs/ai/decision-ledger.json', 'docs/ai/task-routing-policy.json', 'docs/ai/verification-profiles.yaml'];
+    const policy = ['docs/ai/policies/anti-patterns.md', '.ai-governance/state/stack-profile.json', 'docs/ai/policies/20_stack.mdc', '.ai-governance/state/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standards/standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standards/professional-testing/SKILL.md'];
+    const routing = ['.gitignore', 'docs/ai/routing/bootstrap-prompt.md', '.ai-governance/state/decision-ledger.json', '.ai-governance/state/task-routing-policy.json', '.ai-governance/state/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
     // The delivery loop is a default part of both depths. It is a workflow surface, not an
     // evidence or lifecycle family, so the point of this test — that neither depth eagerly
     // pulls in release/surface/acceptance artifacts — still holds. Derived from the canonical
     // phase list so adding a phase cannot silently drift this expectation.
     const deliveryLoop = [
-      DELIVERY_LOOP_LEDGER,
+      '.ai-governance/state/delivery-loop.json',
       'docs/ai/skills/delivery-loop/SKILL.md',
       '.agents/skills/delivery-loop/SKILL.md',
       ...DELIVERY_PHASES.flatMap((phase) => [
@@ -127,9 +128,9 @@ test('selection is pure and never calls builders for dormant definitions', (cont
 test('first-use materializes only the requested evidence family and never manufactures results', (context) => {
   const { config, scan } = fixture(context);
   for (const [usage, relative] of [
-    ['release', 'docs/ai/release-acceptance-policy.json'],
-    ['surface', 'docs/ai/surface-verification-profiles.json'],
-    ['acceptance', 'docs/ai/acceptance-contract.json'],
+    ['release', 'docs/ai/evidence/release-acceptance-policy.json'],
+    ['surface', '.ai-governance/state/surface-verification-profiles.json'],
+    ['acceptance', 'docs/ai/evidence/acceptance-contract.json'],
   ]) {
     const snapshot = { ...scan, governanceUsage: [usage] };
     const paths = buildArtifacts(config, snapshot).map((item) => item.path).sort();
@@ -141,13 +142,13 @@ test('first-use materializes only the requested evidence family and never manufa
 test('first-use Chinese evidence artifacts localize prose and preserve every machine field', (context) => {
   const { root, config, scan } = fixture(context);
   const expected = new Map([
-    ['docs/ai/release-acceptance-policy.json', fs.readFileSync('assets/policies/release-acceptance-policy.json', 'utf8')],
-    ['docs/ai/surface-verification-profiles.json', stableJson(surfaceVerificationProfiles())],
-    ['docs/ai/acceptance-contract.json', fs.readFileSync('assets/contracts/acceptance-contract.json', 'utf8')],
+    ['docs/ai/evidence/release-acceptance-policy.json', fs.readFileSync('assets/policies/release-acceptance-policy.json', 'utf8')],
+    ['.ai-governance/state/surface-verification-profiles.json', remapContentPaths(stableJson(surfaceVerificationProfiles()), 'compact')],
+    ['docs/ai/evidence/acceptance-contract.json', remapContentPaths(fs.readFileSync('assets/contracts/acceptance-contract.json', 'utf8'), 'compact')],
   ]);
-  assert.equal(sha256(expected.get('docs/ai/release-acceptance-policy.json')), 'bf8b8f04edd635455efb10334140d5b628d82f8ebebab06cbcaac42558e61e50');
-  assert.equal(sha256(expected.get('docs/ai/surface-verification-profiles.json')), '7e0779fbe78c372c8e2b0fd73b768df9808aeb5256060780b7bd3aa4ee113246');
-  assert.equal(sha256(expected.get('docs/ai/acceptance-contract.json')), '26418012693591ef5baaeb0ce78cb59ff9bf409ab357940388bbe88f0b516487');
+  assert.equal(sha256(expected.get('docs/ai/evidence/release-acceptance-policy.json')), 'bf8b8f04edd635455efb10334140d5b628d82f8ebebab06cbcaac42558e61e50');
+  assert.equal(sha256(expected.get('.ai-governance/state/surface-verification-profiles.json')), '88aa04ba15670083cf35903d457f91ff58cac1899becd8b12fc8e7ba53d3eae1');
+  assert.equal(sha256(expected.get('docs/ai/evidence/acceptance-contract.json')), 'dab0093dbf16b694a1091d0148570d3776dd23faf29cede8854ad8093d2240cd');
   const proseKeys = new Set(['description', 'reason', 'claimBoundary', 'binding', 'coverage', 'applies_when', 'negative_case', 'expected_failure', 'recovery_case', 'expected_recovery', 'proves']);
   const machineFields = (value, location = [], requireChinese = false) => {
     if (typeof value === 'string' && (proseKeys.has(location.at(-1)) || ['claim_states', 'failure_policy'].includes(location.at(-2)))) {
@@ -169,7 +170,7 @@ test('first-use Chinese evidence artifacts localize prose and preserve every mac
     if (artifactLanguage === 'zh-CN') {
       applyArtifactPlan(root, planArtifacts(root, artifacts));
       assert.equal(checkProject(scanProject(root)).ok, true);
-      const results = 'docs/ai/acceptance-results.json';
+      const results = 'docs/ai/evidence/acceptance-results.json';
       fs.writeFileSync(path.join(root, results), JSON.stringify({ contract_schema_version: 2, results: [] }));
       assert.equal(checkProject(scanProject(root)).ok, false, 'localized acceptance contract must still enforce full probe coverage');
     }
@@ -180,10 +181,10 @@ test('minimal checker passes with optional policies absent and still rejects mis
   const { root, config, scan } = fixture(context);
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
   assert.equal(checkProject(scanProject(root)).ok, true);
-  fs.unlinkSync(path.join(root, 'docs/ai/rules/00_always.mdc'));
+  fs.unlinkSync(path.join(root, 'docs/ai/policies/00_always.mdc'));
   const failed = checkProject(scanProject(root));
   assert.equal(failed.ok, false);
-  assert.ok(failed.errors.some((error) => error.includes('docs/ai/rules/00_always.mdc')));
+  assert.ok(failed.errors.some((error) => error.includes('docs/ai/policies/00_always.mdc')));
 });
 
 test('selected clients receive only their native adapters at minimal depth', (context) => {
@@ -202,12 +203,12 @@ test('downgrading to minimal retains former managed and seed artifacts without d
   const { root, config, scan } = fixture(context);
   const standard = { ...config, governanceDepth: 'complete' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(standard, scan)));
-  const canonical = path.join(root, 'docs/ai/anti-patterns.md');
+  const canonical = path.join(root, 'docs/ai/policies/anti-patterns.md');
   fs.appendFileSync(canonical, '\nOwner guidance.\n');
   const original = fs.readFileSync(canonical, 'utf8');
   const plan = planArtifacts(root, buildArtifacts(config, scanProject(root)));
   assert.equal(plan.operations.some((operation) => operation.remove), false);
-  assert.ok(plan.retained.some((entry) => entry.path === 'docs/ai/stack-profile.json'));
+  assert.ok(plan.retained.some((entry) => entry.path === '.ai-governance/state/stack-profile.json'));
   applyArtifactPlan(root, plan);
   assert.equal(fs.readFileSync(canonical, 'utf8'), original);
   assert.equal(checkProject(scanProject(root)).ok, true);
@@ -224,7 +225,7 @@ test('first release use extends an existing empty release route and preserves us
     verify: () => checkProject(scanProject(root)),
   });
   assert.match(fs.readFileSync(contextPath, 'utf8'), /Keep this user route/);
-  assert.match(fs.readFileSync(contextPath, 'utf8'), /required:\n      - docs\/ai\/release-acceptance-policy.json/);
+  assert.match(fs.readFileSync(contextPath, 'utf8'), /required:\n      - docs\/ai\/evidence\/release-acceptance-policy.json/);
 });
 
 test('lifecycle features remain independent at every depth', (context) => {
@@ -232,20 +233,20 @@ test('lifecycle features remain independent at every depth', (context) => {
   for (const governanceDepth of ['minimal', 'standard', 'complete']) {
     const paths = buildArtifacts({ ...config, governanceDepth, features: { ...config.features, taskRuntime: true } }, scan).map((item) => item.path);
     assert.ok(paths.includes('docs/ai/long-running/README.md'));
-    assert.ok(paths.includes('docs/ai/lifecycle.md'));
+    assert.ok(paths.includes('docs/ai/policies/lifecycle.md'));
     assert.equal(paths.includes('docs/memory/INDEX.json'), true);
-    assert.equal(paths.includes('docs/ai/hooks.md'), false);
-    assert.equal(paths.includes('docs/ai/ci-integration.md'), false);
-    assert.equal(paths.includes('docs/ai/workflow-integrations.yaml'), false);
+    assert.equal(paths.includes('docs/ai/integrations/hooks.md'), false);
+    assert.equal(paths.includes('docs/ai/integrations/ci-integration.md'), false);
+    assert.equal(paths.includes('docs/ai/integrations/workflow-integrations.yaml'), false);
   }
 });
 
 test('produced evidence and certification receipts are preserved without creating placeholders', (context) => {
   const { root, config, scan } = fixture(context);
-  const resultPaths = ['docs/ai/acceptance-results.json', 'docs/ai/surface-results.json', 'docs/ai/certification-evidence.json'];
+  const resultPaths = ['docs/ai/evidence/acceptance-results.json', 'docs/ai/evidence/surface-results.json', 'docs/ai/evidence/certification-evidence.json'];
   const fresh = buildArtifacts(config, scan);
   for (const relative of resultPaths) assert.equal(fresh.some((item) => item.path === relative), false);
-  fs.mkdirSync(path.join(root, 'docs/ai'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'docs/ai/evidence'), { recursive: true });
   const receipt = '{"ownerEvidence":"verbatim"}\n';
   for (const relative of resultPaths) fs.writeFileSync(path.join(root, relative), receipt);
   const snapshot = scanProject(root);
@@ -275,9 +276,9 @@ for (const scenario of ['business', 'architecture-active', 'architecture-advisor
     applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) });
     const map = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
     const expected = {
-      business: ['docs/ai/business-constraints.json', 'docs/ai/skills/business-constraints/SKILL.md'],
-      architecture: ['docs/ai/architecture-profile.json', 'docs/ai/rules/15_architecture.mdc'],
-      stack: ['docs/ai/stack-profile.json', 'docs/ai/rules/20_stack.mdc', 'docs/ai/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md'],
+      business: ['docs/ai/policies/business-constraints.json', 'docs/ai/skills/business-constraints/SKILL.md'],
+      architecture: ['.ai-governance/state/architecture-profile.json', 'docs/ai/policies/15_architecture.mdc'],
+      stack: ['.ai-governance/state/stack-profile.json', 'docs/ai/policies/20_stack.mdc', '.ai-governance/state/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md'],
     }[scenario.startsWith('architecture-') ? 'architecture' : scenario];
     for (const relative of expected) {
       assert.ok(map.includes(`        - ${relative}\n`), `missing route ${relative}`);
@@ -331,7 +332,7 @@ test('untrusted and ambiguous conditional upgrades fail closed without changing 
     const plan = planArtifacts(root, buildArtifacts(upgraded, scanProject(root)));
     assert.throws(() => applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) }));
     for (const [file, bytes] of before) assert.equal(fs.readFileSync(file, 'utf8'), bytes);
-    assert.equal(fs.existsSync(path.join(root, 'docs/ai/technical-standards.json')), false);
+    assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/technical-standards.json')), false);
   }
 });
 
@@ -349,7 +350,7 @@ test('a trusted conditional upgrade appends generated paths to an existing owner
   assert.deepEqual(plan.conflicts, []);
   applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) });
   const after = fs.readFileSync(target, 'utf8');
-  assert.match(after, /stack:\n        - docs\/owner\.md\n        - docs\/ai\/stack-profile\.json/);
+  assert.match(after, /stack:\n        - docs\/owner\.md\n        - .ai-governance\/state\/stack-profile\.json/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 

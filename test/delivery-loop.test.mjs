@@ -25,7 +25,7 @@ test('every supported client resolves to a Skill directory declared by the agent
   const registry = loadAgentRegistry();
   assert.deepEqual(registry.agents.map((agent) => agent.id), [...SUPPORTED_CLIENTS]);
   const directories = declaredSkillDirectories();
-  assert.deepEqual(directories, ['.agents/skills', '.claude/skills', '.workbuddy/skills']);
+  assert.deepEqual(directories, ['.agents/skills', '.claude/skills', '.github/skills', '.workbuddy/skills']);
   // Clients that share a directory must resolve to it once, not once per client.
   assert.deepEqual(selectedSkillDirectories(['codex', 'cursor', 'generic']), ['.agents/skills']);
   assert.deepEqual(selectedSkillDirectories(['claude-code']), ['.claude/skills']);
@@ -61,7 +61,7 @@ test('the delivery loop ships by default in Standard and Complete and stays out 
   // Complete carry it by default rather than requiring the owner to opt in.
   assert.equal(base.features.deliveryLoop, true);
   const on = buildArtifacts(base, scan).map((entry) => entry.path);
-  assert.ok(on.includes(DELIVERY_LOOP_LEDGER));
+  assert.ok(on.includes('.ai-governance/state/delivery-loop.json'));
   for (const phase of DELIVERY_PHASES) {
     assert.ok(on.includes(`.workbuddy/skills/delivery-${phase}/SKILL.md`), phase);
   }
@@ -78,7 +78,7 @@ test('the delivery loop ships by default in Standard and Complete and stays out 
 
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(base, scan)));
   assert.equal(checkProject(scanProject(root)).ok, true);
-  const ledger = JSON.parse(fs.readFileSync(path.join(root, DELIVERY_LOOP_LEDGER), 'utf8'));
+  const ledger = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/delivery-loop.json'), 'utf8'));
   assert.equal(ledger.phase, 'decomposition');
   assert.deepEqual(ledger.phases, DELIVERY_PHASES);
   assert.equal(ledger.iterations.used, 0);

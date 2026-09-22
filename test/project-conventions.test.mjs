@@ -129,7 +129,7 @@ test('repeated project layout becomes an evidence-backed project Skill candidate
   for (const heading of ['When to use', 'When not to use', 'Observed current patterns', 'Approved new-code decisions', 'Confirmed business invariants', 'Conflicts and unverified gaps', 'Verification matrix', 'Evidence catalog']) assert.match(skill, new RegExp(`## ${heading}`));
   assert.match(skill, /owner-approved for new code/);
   assert.match(skill, /mvn test.*declared/s);
-  write(root, 'docs/ai/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
+  write(root, '.ai-governance/state/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
   write(root, 'src/main/java/example/controller/DeltaController.java', 'class DeltaController {}\n');
   assert.ok(projectConventionIssues(root, scanProject(root)).some((entry) => entry.status === 'stale' && entry.reason.includes('observed project convention evidence changed')));
 });

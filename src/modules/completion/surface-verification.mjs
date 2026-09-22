@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { assertNoLinkAncestor, lstatSafe, readJson } from '../../adapters/filesystem/index.mjs';
-import { detectSurfaceSignals, SURFACE_VERIFICATION_PATH, surfaceVerificationProfiles, verificationNpmCommands } from '../repository/index.mjs';
+import { detectSurfaceSignals, surfaceVerificationProfiles, verificationNpmCommands } from '../repository/index.mjs';
+import { readCanonicalPath } from '../governance/index.mjs';
 
 const PROFILES = surfaceVerificationProfiles().profiles;
 
@@ -30,36 +31,37 @@ function blocked(signal, reason, extra = {}) {
 }
 
 export function evaluateSurfaceVerification(scan, projectVerification) {
+  const surfaceVerificationRelative = readCanonicalPath(scan.root, 'docs/ai/surface-verification.json');
   const signals = detectSurfaceSignals(scan);
-  if (signals.length === 0) return { status: 'not-applicable', path: SURFACE_VERIFICATION_PATH, signals, results: [], issues: [] };
-  const absolute = path.join(scan.root, SURFACE_VERIFICATION_PATH);
+  if (signals.length === 0) return { status: 'not-applicable', path: surfaceVerificationRelative, signals, results: [], issues: [] };
+  const absolute = path.join(scan.root, surfaceVerificationRelative);
   const stat = lstatSafe(absolute);
   if (!stat) {
     const results = signals.map((signal) => ({
       signalId: signal.id,
       kind: signal.kind,
       status: 'unverified',
-      reason: `${SURFACE_VERIFICATION_PATH} does not declare a reachable project-owned story for this detected surface.`,
+      reason: `${surfaceVerificationRelative} does not declare a reachable project-owned story for this detected surface.`,
       suggestedVerificationProfile: signal.suggestedVerificationProfile,
     }));
-    return { status: 'unverified', path: SURFACE_VERIFICATION_PATH, signals, results, issues: [] };
+    return { status: 'unverified', path: surfaceVerificationRelative, signals, results, issues: [] };
   }
   let declaration;
   try {
-    assertNoLinkAncestor(scan.root, SURFACE_VERIFICATION_PATH);
+    assertNoLinkAncestor(scan.root, surfaceVerificationRelative);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('must be a regular repository-local file.');
     declaration = readJson(absolute);
   } catch (error) {
-    const issue = `${SURFACE_VERIFICATION_PATH}: ${error.message}`;
+    const issue = `${surfaceVerificationRelative}: ${error.message}`;
     const results = signals.map((signal) => blocked(signal, issue));
-    return { status: 'blocked', path: SURFACE_VERIFICATION_PATH, signals, results, issues: [issue] };
+    return { status: 'blocked', path: surfaceVerificationRelative, signals, results, issues: [issue] };
   }
   const issues = [];
   if (declaration.schemaVersion !== 1) issues.push('schemaVersion must be 1.');
   if (!Array.isArray(declaration.stories)) issues.push('stories must be an array.');
   if (issues.length > 0) {
-    const results = signals.map((signal) => blocked(signal, `${SURFACE_VERIFICATION_PATH}: ${issues.join(' ')}`));
-    return { status: 'blocked', path: SURFACE_VERIFICATION_PATH, signals, results, issues };
+    const results = signals.map((signal) => blocked(signal, `${surfaceVerificationRelative}: ${issues.join(' ')}`));
+    return { status: 'blocked', path: surfaceVerificationRelative, signals, results, issues };
   }
   const signalIds = new Set(signals.map((signal) => signal.id));
   const seenStories = new Set();
@@ -127,9 +129,9 @@ export function evaluateSurfaceVerification(scan, projectVerification) {
   if (issues.length > 0) {
     for (const signal of signals) {
       if (!results.some((result) => result.signalId === signal.id && result.status === 'blocked')) {
-        results.push(blocked(signal, `${SURFACE_VERIFICATION_PATH}: declaration contains invalid or unauditable stories.`));
+        results.push(blocked(signal, `${surfaceVerificationRelative}: declaration contains invalid or unauditable stories.`));
       }
     }
   }
-  return { status: issues.length > 0 ? 'blocked' : aggregate(results), path: SURFACE_VERIFICATION_PATH, signals, results, issues };
+  return { status: issues.length > 0 ? 'blocked' : aggregate(results), path: surfaceVerificationRelative, signals, results, issues };
 }

@@ -1,3 +1,5 @@
+import { canonicalPathVariants } from './layout.mjs';
+
 const EVIDENCE_PATHS = {
   release: ['docs/ai/release-acceptance-policy.json'],
   surface: ['docs/ai/surface-verification-profiles.json', 'docs/ai/surface-results.json'],
@@ -6,7 +8,10 @@ const EVIDENCE_PATHS = {
 };
 
 export function hasArtifactEvidence(scan, relative) {
-  return (scan?.files ?? []).some((file) => file.type === 'file' && file.relative === relative);
+  // A preserve tree keeps the historical path; a compact tree moves the same artifact. Accept
+  // either so evidence detection never depends on which footprint the caller reads.
+  const variants = new Set(canonicalPathVariants(relative));
+  return (scan?.files ?? []).some((file) => file.type === 'file' && variants.has(file.relative));
 }
 
 // Usage is a caller-supplied first-use request, never inferred from task text.

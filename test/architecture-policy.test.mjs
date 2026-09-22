@@ -19,8 +19,8 @@ test('minimal checker does not require unselected architecture artifacts or rout
   const scan = scanProject(root);
   const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'minimal' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/architecture-profile.json')), false);
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/rules/15_architecture.mdc')), false);
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/architecture-profile.json')), false);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/policies/15_architecture.mdc')), false);
   const result = run(['check', root, '--json']);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(JSON.parse(result.stdout).evidence.reachable, 'pass');
@@ -204,16 +204,16 @@ test('greenfield initialization records an active module boundary without creati
     topologyBinding: 'single-repo',
   });
   assert.equal(fs.existsSync(path.join(root, 'src')), false);
-  const profile = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/architecture-profile.json'), 'utf8'));
+  const profile = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/architecture-profile.json'), 'utf8'));
   assert.equal(profile.status, 'active');
   assert.equal(profile.verification.newFilePlacement, 'aicg-check-detects-current-tree');
   assert.equal(profile.verification.dependencyDirection, 'aicg-check-js-ts-module-graph');
-  const moduleGraph = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/module-graph.json'), 'utf8'));
+  const moduleGraph = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/module-graph.json'), 'utf8'));
   assert.equal(moduleGraph.status, 'active');
   assert.deepEqual(moduleGraph.layers.map((layer) => layer.id), ['app', 'modules', 'shared']);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8'), /architecture-profile\.json/);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /behavior_change:[\s\S]*architecture:\n        - docs\/ai\/architecture-profile\.json/);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /enforces current-tree placement plus statically analyzable relative JS\/TS dependency directions/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8'), /behavior_change:[\s\S]*architecture:\n        - .ai-governance\/state\/architecture-profile\.json/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/policies/15_architecture.mdc'), 'utf8'), /enforces current-tree placement plus statically analyzable relative JS\/TS dependency directions/);
 });
 
 test('check detects new flat source placement but accepts a named module without claiming semantic enforcement', (context) => {
@@ -413,7 +413,7 @@ test('existing new-code-standard module graph skips baseline dependency debt but
   writeSource(root, 'src/shared/legacy.ts', "import { orders } from '../modules/orders/index.ts';\nexport { orders };\n");
   const initialized = run(['init', root, '--config', decision.config, '--yes', '--no-assist']);
   assert.equal(initialized.status, 0, `${initialized.stderr}\n${initialized.stdout}`);
-  const graph = JSON.parse(fs.readFileSync(path.join(root, 'docs/ai/module-graph.json'), 'utf8'));
+  const graph = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/module-graph.json'), 'utf8'));
   assert.equal(graph.scope.appliesTo, 'new-modules-only');
   assert.ok(graph.scope.baselineSourcePaths.includes('src/shared/legacy.ts'));
   assert.equal(run(['check', root, '--json']).status, 0);
@@ -442,7 +442,7 @@ test('keep-existing and staged-migration remain advisory and do not block existi
     assert.equal(config.architecture.verification.newFilePlacement, 'not-enabled');
     fs.writeFileSync(path.join(root, 'src', 'unstructured.ts'), 'export const retained = true;\n');
     assert.equal(run(['check', root, '--json']).status, 0);
-    const rule = fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8');
+    const rule = fs.readFileSync(path.join(root, 'docs/ai/policies/15_architecture.mdc'), 'utf8');
     assert.ok(rule.includes(`mode is \`${config.architecture.mode}\``));
     assert.match(rule, /request a separately approved architecture decision/);
   }
@@ -607,7 +607,7 @@ test('a stale context-map seed fails closed without expanding the refreshed root
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.equal(run(['init', root, '--yes', '--no-assist']).status, 0);
   const contextMap = path.join(root, 'docs/ai/context-map.yaml');
-  fs.writeFileSync(contextMap, fs.readFileSync(contextMap, 'utf8').replace('        - docs/ai/rules/15_architecture.mdc\n', ''));
+  fs.writeFileSync(contextMap, fs.readFileSync(contextMap, 'utf8').replace('        - docs/ai/policies/15_architecture.mdc\n', ''));
   const result = run(['init', root, '--yes', '--no-assist', '--force']);
   assert.equal(result.status, 2, result.stderr);
   assert.match(result.stderr, /architecture condition conflicts with the required AICG route/);
@@ -630,13 +630,13 @@ test('profile or rule drift is detected and strategy reconfiguration updates the
   fs.mkdirSync(path.join(root, 'src'));
   fs.writeFileSync(path.join(root, 'src', 'legacy.ts'), 'export const legacy = true;\n');
   assert.equal(run(['init', root, '--config', keep.config, '--yes', '--no-assist']).status, 0);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /preserve-current/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/policies/15_architecture.mdc'), 'utf8'), /preserve-current/);
   assert.equal(run(['init', root, '--config', newOnly.config, '--yes', '--no-assist']).status, 0);
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/rules/15_architecture.mdc'), 'utf8'), /module-first-new-code/);
+  assert.match(fs.readFileSync(path.join(root, 'docs/ai/policies/15_architecture.mdc'), 'utf8'), /module-first-new-code/);
   assert.equal(run(['init', root, '--config', staged.config, '--yes', '--no-assist']).status, 0);
-  const rule = path.join(root, 'docs/ai/rules/15_architecture.mdc');
+  const rule = path.join(root, 'docs/ai/policies/15_architecture.mdc');
   assert.match(fs.readFileSync(rule, 'utf8'), /staged-migration-pending/);
-  fs.appendFileSync(path.join(root, 'docs/ai/architecture-profile.json'), '\nmanual drift\n');
+  fs.appendFileSync(path.join(root, '.ai-governance/state/architecture-profile.json'), '\nmanual drift\n');
   const drift = run(['check', root, '--json']);
   assert.equal(drift.status, 1);
   assert.match(drift.stdout, /architecture-profile\.json: managed content drifted/);

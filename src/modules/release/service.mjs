@@ -4,6 +4,7 @@ import { readJson } from '../../adapters/filesystem/files.mjs';
 import { runNpm } from '../../adapters/process/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/paths.mjs';
 import { loadProjectReleaseAcceptancePolicy, requirementFor } from './policy.mjs';
+import { parseNpmPackOutput } from './publication.mjs';
 import {
   claimArtifact,
   git,
@@ -381,7 +382,7 @@ function validatePackageArtifact(root, evidence, errors) {
   }
   let packed;
   try {
-    packed = JSON.parse(result.stdout)?.[0];
+    packed = parseNpmPackOutput(result.stdout);
   } catch (error) {
     errors.push(`npm package artifact output is invalid: ${error.message}`);
     return null;

@@ -43,7 +43,7 @@ test('repository-family governance is a stable orchestrator index and does not e
   const scan = scanProject(root);
   const artifacts = buildArtifacts({ ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' }, scan);
   assert.equal(artifacts.some((entry) => entry.path === 'docs/ai/skills/generic-unknown/SKILL.md'), false);
-  const artifact = artifacts.find((entry) => entry.path === 'docs/ai/repository-family.json');
+  const artifact = artifacts.find((entry) => entry.path === '.ai-governance/state/repository-family.json');
   assert.ok(artifact);
   const family = JSON.parse(artifact.content);
   assert.equal(family.role, 'orchestrator');
@@ -59,7 +59,7 @@ test('repository-family governance is a stable orchestrator index and does not e
   write(root, 'modules/frontend/src/AAA.tsx', 'export const AAA = () => null;\n');
   const changedScan = scanProject(root);
   const changedArtifact = buildArtifacts({ ...defaultConfig(changedScan), clients: ['codex'], governanceDepth: 'complete' }, changedScan)
-    .find((entry) => entry.path === 'docs/ai/repository-family.json');
+    .find((entry) => entry.path === '.ai-governance/state/repository-family.json');
   assert.equal(changedArtifact.content, artifact.content);
 });
 
@@ -173,7 +173,7 @@ test('an explicit config decision still requires exact planHash approval before 
   const planHash = preview.stdout.match(/"planHash": "([a-f0-9]{64})"/)?.[1];
   assert.match(planHash, /^[a-f0-9]{64}$/);
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/repository-family.json')), false);
+  assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/repository-family.json')), false);
 
   const applied = runCli([...args, '--approve', planHash]);
   assert.equal(applied.status, 0, applied.stderr);

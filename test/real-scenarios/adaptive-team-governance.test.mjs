@@ -12,7 +12,7 @@ import { decideSkillCandidates } from '../../src/skill-discovery.mjs';
 import { proposeProjectAgentTeam } from '../../src/project-agent-team.mjs';
 
 const cli = path.resolve('bin/aicg.js');
-const managementPaths = ['docs/ai/skills/skill-discovery/SKILL.md', 'docs/ai/skills/team-orchestrator/SKILL.md', 'docs/ai/skill-index.json', 'docs/ai/agent-team.json'];
+const managementPaths = ['docs/ai/skills/skill-discovery/SKILL.md', 'docs/ai/skills/team-orchestrator/SKILL.md', '.ai-governance/state/skill-index.json', '.ai-governance/state/agent-team.json'];
 
 function fixture(context) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-adaptive-scenario-'));
@@ -256,7 +256,7 @@ for (const governanceDepth of ['complete']) {
     assert.equal(applied.status, 0, `${applied.stdout}\n${applied.stderr}`);
     for (const relative of managementPaths) assert.equal(fs.existsSync(path.join(f.root, relative)), true);
     const stored = JSON.parse(fs.readFileSync(path.join(f.root, '.ai-governance/config.json'), 'utf8'));
-    const roster = JSON.parse(fs.readFileSync(path.join(f.root, 'docs/ai/agent-team.json'), 'utf8'));
+    const roster = JSON.parse(fs.readFileSync(path.join(f.root, '.ai-governance/state/agent-team.json'), 'utf8'));
     assert.equal(roster.roles[0].status, 'approved-available');
     assert.equal(roster.roles[0].approval.source, 'user');
     assert.match(roster.roles[0].approval.evidenceId, /^[a-zA-Z0-9:._-]+$/);
@@ -269,13 +269,13 @@ for (const governanceDepth of ['complete']) {
     const unrelated = trustedProfessionalTaskContext(f.root, stored, ['docs/unrelated.md']);
     assert.deepEqual(unrelated.professionalBoundaries, []);
     const manifest = JSON.parse(fs.readFileSync(path.join(f.root, '.ai-governance/manifest.json'), 'utf8'));
-    assert.equal(manifest.files.find((item) => item.path === 'docs/ai/agent-team.json').ownership, 'full');
-    for (const relative of ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md', '.agents/skills/business-constraints/SKILL.md']) {
+    assert.equal(manifest.files.find((item) => item.path === '.ai-governance/state/agent-team.json').ownership, 'full');
+    for (const relative of ['docs/ai/routing/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', 'docs/ai/skills/business-constraints/SKILL.md', '.agents/skills/business-constraints/SKILL.md']) {
       assert.equal(fs.existsSync(path.join(f.root, relative)), false);
       for (const file of ['docs/ai/README.md', 'docs/ai/context-map.yaml']) assert.equal(fs.readFileSync(path.join(f.root, file), 'utf8').includes(relative), false);
     }
     const routes = fs.readFileSync(path.join(f.root, 'docs/ai/context-map.yaml'), 'utf8');
-    assert.match(routes, /business:\n\s+- docs\/ai\/skills\/team-orchestrator\/SKILL.md\n\s+- docs\/ai\/business-constraints.json/);
+    assert.match(routes, /business:\n\s+- docs\/ai\/skills\/team-orchestrator\/SKILL.md\n\s+- docs\/ai\/policies\/business-constraints.json/);
     assert.match(fs.readFileSync(path.join(f.root, managementPaths[1]), 'utf8'), /risk-evidence.json/);
   });
 }
@@ -330,7 +330,7 @@ test('Chinese governance localizes generated manager and professional prose with
   const applied = command(['init', f.root, '--yes', '--config', f.answers, '--approve', result.planHash]);
   assert.equal(applied.status, 0, `${applied.stdout}\n${applied.stderr}`);
   for (const relative of managementPaths.filter((value) => value.endsWith('SKILL.md'))) assert.match(fs.readFileSync(path.join(f.root, relative), 'utf8'), /审批/);
-  const roster = JSON.parse(fs.readFileSync(path.join(f.root, 'docs/ai/agent-team.json'), 'utf8'));
+  const roster = JSON.parse(fs.readFileSync(path.join(f.root, '.ai-governance/state/agent-team.json'), 'utf8'));
   assert.equal(roster.teamType, 'project-ai-agent-team');
   assert.equal(roster.roles[0].professionalBoundaries[0].qualification, 'licensed-lawyer');
   assert.match(roster.roles[0].professionalBoundaries[0].reason, /真人/);
@@ -366,7 +366,7 @@ test('existing Minimal governance upgrades with selected roles only after exact 
   const applied = command(['sync', f.root, '--config', f.answers, '--approve', result.planHash]);
   assert.equal(applied.status, 0, applied.stderr);
   assert.equal(checkProject(scanProject(f.root)).ok, true);
-  const rosterPath = path.join(f.root, 'docs/ai/agent-team.json');
+  const rosterPath = path.join(f.root, '.ai-governance/state/agent-team.json');
   fs.unlinkSync(rosterPath);
   const drifted = snapshot(f.root);
   const repair = output(command(['sync', f.root]));
@@ -393,7 +393,7 @@ test('a retained historical governance tree stays adoptable and is never removed
   assert.deepEqual(snapshot(f.root), before, 'an unapproved preview never writes');
   const applied = command(['sync', f.root, '--config', f.answers, '--approve', result.planHash]);
   assert.equal(applied.status, 0, applied.stderr);
-  for (const retained of ['docs/ai/bootstrap-prompt.md']) {
+  for (const retained of ['docs/ai/routing/bootstrap-prompt.md']) {
     assert.ok(fs.existsSync(path.join(f.root, retained)), `${retained} must be retained, not deleted`);
   }
 });

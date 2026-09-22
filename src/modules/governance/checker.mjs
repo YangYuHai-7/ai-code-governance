@@ -5,7 +5,8 @@ import path from 'node:path';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
-import { artifactDefinitions, buildArtifactsWithDefinitions, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { artifactDefinitions, buildArtifactsWithDefinitions, renderSelectedArtifacts, selectedArtifactDefinitions, validateConfig } from './compiler.mjs';
+import { canonicalPath, isCanonicalPath } from './layout.mjs';
 import { conditionalArtifactRoutes } from './artifact-selection.mjs';
 import {
   extractManagedBlock,
@@ -35,6 +36,27 @@ const BASELINE_APPLICABLE_PROBES = new Set([
 ]);
 const EXECUTABLE_GOVERNANCE_SKILL = new RegExp(`^(?:docs\\/ai\\/skills|${declaredSkillDirectories().map((directory) => directory.replace(/\//g, '\\/')).join('|')})\\/(?:[^/]+\\/)*SKILL\\.md$`);
 
+// Executable governance files AICG did not generate are "foreign". They become orphans the
+// moment an AICG manifest exists, which is why a brownfield repository that already carries
+// its own docs/ai fails post-apply verification and rolls back. Adoption records the owner's
+// decision in .ai-governance/config.json so every later check agrees with it instead of
+// re-reporting the same foreign files on each run.
+export function adoptedForeignGovernancePaths(config) {
+  const adopted = config?.externalGovernance?.adopted;
+  if (!Array.isArray(adopted)) return [];
+  return adopted.filter((entry) => typeof entry === 'string' && entry.length > 0);
+}
+
+export function detectForeignExecutableGovernance(scan, config = null, { registered = [] } = {}) {
+  const adopted = new Set([...adoptedForeignGovernancePaths(config), ...registered]);
+  return scan.files
+    .filter((entry) => ['file', 'link'].includes(entry.type)
+      && EXECUTABLE_GOVERNANCE_SKILL.test(entry.relative)
+      && !adopted.has(entry.relative))
+    .map((entry) => entry.relative)
+    .sort((left, right) => left.localeCompare(right));
+}
+
 function indexedProjectSkillPaths(config, scan) {
   if (config.skillDiscovery?.decision?.status !== 'approved') return [];
   return (config.skillDiscovery.decision.candidates ?? [])
@@ -47,7 +69,7 @@ function indexedProjectSkillPaths(config, scan) {
     .map((candidate) => candidate.location.relative);
 }
 
-function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills = [], config = null) {
+function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills = [], config = null, extraRegistered = []) {
   const registered = new Set([
     ...expected.map((artifact) => artifact.path),
     ...trustedHistoricalFiles.filter((entry) => entry && typeof entry.path === 'string').map((entry) => entry.path),
@@ -55,6 +77,8 @@ function unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFi
       .filter((definition) => definition.ownership === 'seed')
       .map((definition) => definition.path),
     ...approvedProjectSkills,
+    ...adoptedForeignGovernancePaths(config),
+    ...extraRegistered,
   ]);
   // Stack adapter skills emitted by the `generic-unknown` fallback stay on disk after a
   // single-repo → repository-family migration: the family plan no longer regenerates
@@ -246,10 +270,12 @@ function profileExtends(profile) {
   return values.length === 1 ? values[0] : null;
 }
 
-function contextMapStructureIssues(structure, gateAssertions) {
+function contextMapStructureIssues(structure, gateAssertions, footprint = 'compact') {
   const issues = [...structure.issues];
-  if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has('docs/ai/rules/00_always.mdc')) {
-    issues.push('base profile must require docs/ai/rules/00_always.mdc');
+  const alwaysPath = canonicalPath('docs/ai/rules/00_always.mdc', footprint);
+  const releasePolicyPath = canonicalPath('docs/ai/release-acceptance-policy.json', footprint);
+  if (structure.base && !blockRequiredPaths(structure.base, 2, 4).has(alwaysPath)) {
+    issues.push(`base profile must require ${alwaysPath}`);
   }
   let baseRequiredSeen = false;
   let inBaseRequired = false;
@@ -286,8 +312,8 @@ function contextMapStructureIssues(structure, gateAssertions) {
     else if (parent !== expectedParent) issues.push(`profile ${name} must extend ${expectedParent}, not ${parent}`);
   }
   const release = structure.profiles.get('release');
-  if (gateAssertions.has('release-route') && release && !blockRequiredPaths(release, 4, 6).has('docs/ai/release-acceptance-policy.json')) {
-    issues.push('release profile must require docs/ai/release-acceptance-policy.json');
+  if (gateAssertions.has('release-route') && release && !blockRequiredPaths(release, 4, 6).has(releasePolicyPath)) {
+    issues.push(`release profile must require ${releasePolicyPath}`);
   }
 
   const known = new Set(['base', ...structure.profiles.keys()]);
@@ -317,7 +343,9 @@ function contextMapStructureIssues(structure, gateAssertions) {
   return [...new Set(issues)];
 }
 
-function acceptanceEvidence(root) {
+function acceptanceEvidence(root, footprint = 'compact') {
+  const ACCEPTANCE_CONTRACT_PATH = canonicalPath('docs/ai/acceptance-contract.json', footprint);
+  const ACCEPTANCE_RESULTS_PATH = canonicalPath('docs/ai/acceptance-results.json', footprint);
   const resultsPath = path.join(root, ACCEPTANCE_RESULTS_PATH);
   if (!fs.existsSync(resultsPath)) {
     return {
@@ -427,7 +455,7 @@ function linkInPath(root, relative) {
   return null;
 }
 
-export function checkProject(scan) {
+export function checkProject(scan, options = {}) {
   const structureErrors = [];
   const reachabilityErrors = [];
   const evidenceErrors = [];
@@ -503,7 +531,7 @@ export function checkProject(scan) {
         const built = buildArtifactsWithDefinitions(config, scan);
         expected = built.artifacts;
         governanceCostDrift = built.governanceCostDrift;
-      } else expected = selected.map((definition) => definition.build(selected));
+      } else expected = renderSelectedArtifacts(selected, config.governanceFootprint ?? 'compact');
       expectedResolved = true;
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
@@ -524,7 +552,7 @@ export function checkProject(scan) {
       structureErrors.push(`${MANIFEST_PATH}: parent manifest crosses repository boundary ${member?.path ?? '<unknown>'} with ${entry.path}`);
     }
     const approvedProjectSkills = expectedResolved ? indexedProjectSkillPaths(config, scan) : [];
-    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills, config));
+    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills, config, options.externalGovernancePaths ?? []));
     for (const relative of expectedPaths) {
       if (!manifestPaths.has(relative)) structureErrors.push(`${MANIFEST_PATH}: missing managed entry for ${relative}`);
     }
@@ -593,12 +621,13 @@ export function checkProject(scan) {
     }
 
     try {
-      const declarationPath = path.join(scan.root, 'docs/ai/module-graph.json');
+      const moduleGraphRelative = canonicalPath('docs/ai/module-graph.json', config.governanceFootprint ?? 'compact');
+      const declarationPath = path.join(scan.root, moduleGraphRelative);
       const declarationStat = lstatSafe(declarationPath);
       let declaration = null;
       if (gateAssertions.has('module-graph') && declarationStat) {
-        assertNoLinkAncestor(scan.root, 'docs/ai/module-graph.json');
-        if (!declarationStat.isFile() || declarationStat.isSymbolicLink()) throw new Error('docs/ai/module-graph.json must be a regular repository-local file.');
+        assertNoLinkAncestor(scan.root, moduleGraphRelative);
+        if (!declarationStat.isFile() || declarationStat.isSymbolicLink()) throw new Error(`${moduleGraphRelative} must be a regular repository-local file.`);
         declaration = readJson(declarationPath);
       }
       moduleGraph = evaluateModuleGraph(scan, declaration);
@@ -616,7 +645,7 @@ export function checkProject(scan) {
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
     const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
     const contextMapRouting = contextMapStructure(contextMap);
-    for (const issue of contextMapStructureIssues(contextMapRouting, gateAssertions)) {
+    for (const issue of contextMapStructureIssues(contextMapRouting, gateAssertions, config.governanceFootprint ?? 'compact')) {
       structureErrors.push(`docs/ai/context-map.yaml: ${issue}`);
     }
     if (!managedAgentsContent) {
@@ -659,7 +688,7 @@ export function checkProject(scan) {
     }
   }
 
-  const acceptance = config && manifest && gateAssertions.has('acceptance-evidence') ? acceptanceEvidence(scan.root) : { status: 'unverified', issues: [] };
+  const acceptance = config && manifest && gateAssertions.has('acceptance-evidence') ? acceptanceEvidence(scan.root, config.governanceFootprint ?? 'compact') : { status: 'unverified', issues: [] };
   const brownfield = config && manifest ? brownfieldProgress(scan, config) : null;
   if (brownfield?.gaps.length) warnings.push(`brownfield enrichment: ${brownfield.gaps.length} gap(s); see brownfield.gaps in the JSON report`);
   evidenceErrors.push(...acceptance.issues);
@@ -727,6 +756,7 @@ function generatorSeedPaths(config, scan) {
 
 function collectGovernanceOrphans(scan, manifest, config = null) {
   const managed = new Set((manifest?.files ?? []).map((entry) => entry?.path).filter(Boolean));
+  const adopted = new Set(adoptedForeignGovernancePaths(config));
   const seedPaths = generatorSeedPaths(config, scan);
   const clientDirs = new Set(declaredSkillDirectories());
   const candidates = [];
@@ -734,6 +764,7 @@ function collectGovernanceOrphans(scan, manifest, config = null) {
     const relative = file.relative;
     if (!relative) continue;
     if (managed.has(relative)) continue;
+    if (adopted.has(relative)) continue;
     if (seedPaths.has(relative)) continue;
     if (ORPHAN_SELF_PATHS.has(relative)) continue;
     if (ORPHAN_RUNTIME_PREFIXES.some((prefix) => relative === prefix.slice(0, -1) || relative.startsWith(prefix))) continue;
