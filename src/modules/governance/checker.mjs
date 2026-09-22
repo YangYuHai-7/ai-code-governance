@@ -24,6 +24,8 @@ import { brownfieldProgress, isRepositoryFamilyBoundary, repositoryTopologyMigra
 const ACCEPTANCE_CONTRACT_PATH = 'docs/ai/acceptance-contract.json';
 const ACCEPTANCE_RESULTS_PATH = 'docs/ai/acceptance-results.json';
 const ACCEPTANCE_STATUSES = new Set(['pass', 'fail', 'not-applicable', 'unverified']);
+const RUNTIME_VERIFICATIONS_PATH = '.ai-governance/state/client-runtime-verifications.json';
+const RUNTIME_RECEIPT_MAX_AGE_DAYS = 90;
 const BASELINE_APPLICABLE_PROBES = new Set([
   'broken-exact-path',
   'client-selection-adapter-parity',
@@ -455,12 +457,159 @@ function linkInPath(root, relative) {
   return null;
 }
 
+function runtimeReceiptEvidencePath(receipt) {
+  if (typeof receipt?.evidence === 'string') return receipt.evidence;
+  if (typeof receipt?.evidencePath === 'string') return receipt.evidencePath;
+  return null;
+}
+
+/**
+ * A receipt only proves the exact canon + projection bytes it names, at the surface it was
+ * probed on, while it is fresh and backed by a repository-local regular evidence file. This
+ * reader never spawns a client: a missing, stale or mismatched receipt keeps the client
+ * unverified instead of claiming a real client loaded anything.
+ */
+function runtimeReceiptMatches(receipt, clientId, projection, root, actualContent) {
+  if (!receipt || typeof receipt !== 'object') return false;
+  if (receipt.clientId !== clientId || receipt.surface !== projection.surfaceId) return false;
+  if (typeof receipt.canonicalSha256 !== 'string' || receipt.canonicalSha256 !== sha256(projection.canonicalContent ?? '')) return false;
+  if (typeof actualContent !== 'string' || typeof receipt.projectionSha256 !== 'string' || receipt.projectionSha256 !== sha256(actualContent)) return false;
+  if (typeof receipt.timestamp !== 'string' || !Number.isFinite(Date.parse(receipt.timestamp))) return false;
+  if (Date.now() - Date.parse(receipt.timestamp) > RUNTIME_RECEIPT_MAX_AGE_DAYS * 24 * 60 * 60 * 1000) return false;
+  if (receipt.templateVersion !== undefined && receipt.templateVersion !== projection.templateVersion) return false;
+  const evidence = runtimeReceiptEvidencePath(receipt);
+  if (typeof evidence !== 'string' || evidence.length === 0 || !isSafeRelative(evidence)
+    || evidence.split('/').some((part) => part.toLowerCase() === '.git')) return false;
+  if (linkInPath(root, evidence)) return false;
+  const stat = lstatSafe(path.join(root, evidence));
+  return Boolean(stat?.isFile()) && !stat.isSymbolicLink();
+}
+
+function readRuntimeVerificationReceipts(root, structureErrors, warnings) {
+  if (!isSafeRelative(RUNTIME_VERIFICATIONS_PATH)) {
+    structureErrors.push(`${RUNTIME_VERIFICATIONS_PATH}: runtime verification receipts must use a safe repository-relative path`);
+    return [];
+  }
+  const link = linkInPath(root, RUNTIME_VERIFICATIONS_PATH);
+  if (link) {
+    structureErrors.push(`${RUNTIME_VERIFICATIONS_PATH}: traverses link ${link} and cannot be trusted`);
+    return [];
+  }
+  const absolute = path.join(root, RUNTIME_VERIFICATIONS_PATH);
+  const stat = lstatSafe(absolute);
+  if (!stat) return [];
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    structureErrors.push(`${RUNTIME_VERIFICATIONS_PATH}: runtime verification receipts must be a regular non-link file`);
+    return [];
+  }
+  let parsed;
+  try {
+    parsed = readJson(absolute);
+  } catch (error) {
+    warnings.push(`${RUNTIME_VERIFICATIONS_PATH}: ${error.message}; runtime verification stays unverified`);
+    return [];
+  }
+  if (!Array.isArray(parsed?.receipts)) {
+    warnings.push(`${RUNTIME_VERIFICATIONS_PATH}: receipts must be an array; runtime verification stays unverified`);
+    return [];
+  }
+  return parsed.receipts;
+}
+
+/**
+ * Per-client projection evidence. declared/projected/checked are structural; runtimeVerified is
+ * only ever true from a matching runtime receipt. checked never implies runtimeVerified.
+ */
+function clientCoverageReport({ root, clients, expected, manifestProjections, managedCanonicalPaths, projectionLayerRecorded, runtimeReceipts, structureErrors }) {
+  const coverage = [];
+  for (const clientId of clients) {
+    if (!projectionLayerRecorded) {
+      coverage.push({
+        clientId, declared: true, projected: false, checked: false, runtimeVerified: false,
+        findings: [`${clientId}: projection receipts are not recorded in ${MANIFEST_PATH}; run aicg sync .`],
+      });
+      continue;
+    }
+    const projections = expected.filter((artifact) => Array.isArray(artifact?.projection?.clientIds) && artifact.projection.clientIds.includes(clientId));
+    const structural = [];
+    const runtimeNotes = [];
+    const actualContentByPath = new Map();
+    let projected = true;
+    for (const artifact of projections) {
+      const projection = artifact.projection;
+      const relative = artifact.path;
+      const canonicalPath = projection.canonicalPath;
+      const record = manifestProjections.find((entry) => entry?.clientId === clientId && entry?.path === relative) ?? null;
+      if (!record) {
+        projected = false;
+        structural.push(`${clientId}: missing projection ${relative}; expected canonical ${canonicalPath}; run aicg sync .`);
+        continue;
+      }
+      if (record.surfaceId !== projection.surfaceId) {
+        structural.push(`${clientId}: projection ${relative} records surface ${record.surfaceId ?? '<none>'} but expected ${projection.surfaceId}; review and sync`);
+      }
+      const link = linkInPath(root, relative);
+      if (link) {
+        structural.push(`${clientId}: ${relative} (surface ${projection.surfaceId}) is a link (${link}) and cannot be managed; replace it with a regular file and run aicg sync .`);
+        continue;
+      }
+      let content;
+      try {
+        content = readText(path.join(root, relative));
+      } catch {
+        structural.push(`${clientId}: missing projection ${relative}; expected canonical ${canonicalPath}; run aicg sync .`);
+        continue;
+      }
+      actualContentByPath.set(relative, content);
+      if (record.canonicalPath !== projection.canonicalPath) {
+        structural.push(`${clientId}: projection ${relative} (surface ${projection.surfaceId}) source mismatch; expected canonical ${canonicalPath} but the manifest records ${record.canonicalPath ?? '<none>'}; review and sync`);
+      }
+      // A canonical seed is owner-editable by design and its body is not embedded in the
+      // thin adapter, so only a managed canonical artifact has recorded hash authority.
+      if (managedCanonicalPaths.has(canonicalPath) && record.canonicalSha256 !== sha256(projection.canonicalContent ?? '')) {
+        structural.push(`${clientId}: projection ${relative} (surface ${projection.surfaceId}) source mismatch from ${canonicalPath}; sync the canonical source then run aicg sync .`);
+      }
+      let expectedHash;
+      let actualHash;
+      try {
+        expectedHash = expectedManagedHash(artifact);
+        actualHash = actualManagedHash(content, artifact.ownership);
+      } catch (error) {
+        structural.push(`${clientId}: ${relative} has an unknown managed block (${error.message}); review and sync`);
+        continue;
+      }
+      if (actualHash !== expectedHash || record.projectionSha256 !== sha256(content)) {
+        structural.push(`${clientId}: projection drift from ${canonicalPath} for surface ${projection.surfaceId} at ${relative}; review and sync`);
+      }
+      if (record.templateVersion !== projection.templateVersion) {
+        structural.push(`${clientId}: projection ${relative} template version is ${record.templateVersion ?? '<none>'} but expected ${projection.templateVersion}; review and sync`);
+      }
+    }
+    const expectedPaths = new Set(projections.map((artifact) => artifact.path));
+    for (const record of manifestProjections.filter((entry) => entry?.clientId === clientId)) {
+      if (typeof record.path === 'string' && !expectedPaths.has(record.path)) {
+        structural.push(`${clientId}: unknown projection record ${record.path}; remove it from ${MANIFEST_PATH} or run aicg sync .`);
+      }
+    }
+    const runtimeVerified = projections.some((artifact) => runtimeReceipts.some((receipt) => runtimeReceiptMatches(receipt, clientId, artifact.projection, root, actualContentByPath.get(artifact.path))));
+    if (!runtimeVerified && projections.length > 0) {
+      for (const surface of [...new Set(projections.map((artifact) => artifact.projection.surfaceId))]) {
+        runtimeNotes.push(`${clientId}: runtime verification is not recorded for surface ${surface}`);
+      }
+    }
+    structureErrors.push(...structural);
+    coverage.push({ clientId, declared: true, projected, checked: projected && structural.length === 0, runtimeVerified, findings: [...structural, ...runtimeNotes] });
+  }
+  return coverage;
+}
+
 export function checkProject(scan, options = {}) {
   const structureErrors = [];
   const reachabilityErrors = [];
   const evidenceErrors = [];
   const warnings = [];
   let moduleGraph = { status: 'stated-only', issues: [], inspectedFiles: [], unsupportedFiles: [] };
+  let clientCoverage = [];
   if (scan.scanBudget?.complete === false) {
     const truncation = scan.scanBudget.truncation ?? {};
     const details = [
@@ -614,6 +763,28 @@ export function checkProject(scan, options = {}) {
       if (!expectedPaths.has(relative)) warnings.push(`${relative}: managed by an earlier configuration and no longer selected`);
     }
 
+    const projectionLayerRecorded = Array.isArray(manifest.projections);
+    if (manifest.projections !== undefined && !projectionLayerRecorded) {
+      structureErrors.push(`${MANIFEST_PATH}: projections must be an array`);
+    }
+    const runtimeReceipts = projectionLayerRecorded ? readRuntimeVerificationReceipts(scan.root, structureErrors, warnings) : [];
+    const declaredClients = config.clients ?? [];
+    clientCoverage = expectedResolved
+      ? clientCoverageReport({
+        root: scan.root,
+        clients: declaredClients,
+        expected,
+        manifestProjections: projectionLayerRecorded ? manifest.projections : [],
+        managedCanonicalPaths: new Set(manifestFiles.filter((entry) => typeof entry?.path === 'string').map((entry) => entry.path)),
+        projectionLayerRecorded,
+        runtimeReceipts,
+        structureErrors,
+      })
+      : declaredClients.map((clientId) => ({
+        clientId, declared: true, projected: false, checked: false, runtimeVerified: false,
+        findings: [`${clientId}: expected projections could not be resolved; fix the configuration errors above`],
+      }));
+
     try {
       if (gateAssertions.has('architecture-placement')) for (const issue of architecturePlacementIssues(scan, config)) structureErrors.push(`architecture placement: ${issue}`);
     } catch (error) {
@@ -722,8 +893,11 @@ export function checkProject(scan, options = {}) {
       semanticDesign: 'stated-only',
     },
     orphans,
+    clientCoverage,
     boundaries: [
       'aicg check proves structure, ownership, hashes, and configured entrypoint reachability.',
+      'Client coverage distinguishes declared, projected, checked and runtime-verified; a structural checked pass never proves a real client loaded the projection.',
+      `Runtime verification is read only from ${RUNTIME_VERIFICATIONS_PATH} receipts that match the current canon and projection exactly; a missing or mismatched receipt stays unverified and is not a structural failure.`,
       'acceptance-results.json is validated for exact contract coverage, mandatory applicability, and negative/recovery receipt fields; aicg check keeps enforcement unverified because it does not replay those entrypoints.',
       'A declared active module graph checks statically analyzable relative JS/TS import and export directions plus cross-module public entrypoints; dynamic imports, aliases, cohesion, and single responsibility remain unverified.',
       'Real agent loading, project behavior, hooks, and operating-system execution require separate replay evidence.',
@@ -794,6 +968,16 @@ export function printCheck(result, json = false) {
   }
   console.log(`governance_check=${result.ok ? 'pass' : 'fail'}`);
   console.log(`present=${result.evidence.present} reachable=${result.evidence.reachable} enforced=${result.evidence.enforced} real-client-verified=${result.evidence.realClientVerified}`);
+  for (const coverage of result.clientCoverage ?? []) {
+    console.log(`client=${coverage.clientId} declared=${coverage.declared} projected=${coverage.projected} checked=${coverage.checked ? 'pass' : 'fail'} runtime-verified=${coverage.runtimeVerified ? 'pass' : 'unverified'}`);
+  }
+  const structuralErrors = new Set(result.errors ?? []);
+  for (const coverage of result.clientCoverage ?? []) {
+    for (const finding of coverage.findings ?? []) {
+      if (structuralErrors.has(finding)) continue;
+      console.log(`CLIENT_BOUNDARY: ${finding}`);
+    }
+  }
   for (const warning of result.warnings) console.warn(`WARN: ${warning}`);
   for (const gap of result.brownfield?.gaps.slice(0, 20) ?? []) console.warn(`BROWNFIELD_GAP: ${gap}`);
   for (const error of result.errors) console.error(`FAIL: ${error}`);

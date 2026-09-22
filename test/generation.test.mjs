@@ -1299,5 +1299,25 @@ test('compact generation has only two docs/ai root entries and generates a Copil
   assert.match(copilot, /ai-code-governance:start/);
   assert.match(copilot, /AGENTS\.md/);
   assert.match(copilot, /docs\/ai\/context-map\.yaml/);
-  assert.equal(checkProject(scanProject(root)).ok, true);
+
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+  const receipts = (manifest.projections ?? []).filter((entry) => entry.clientId === 'github-copilot');
+  const entryReceipt = receipts.find((entry) => entry.path === '.github/copilot-instructions.md');
+  const skillReceipt = receipts.find((entry) => entry.path === '.github/skills/generic-unknown/SKILL.md');
+  assert.ok(entryReceipt, 'generated Copilot entry projection receipt is recorded');
+  assert.ok(skillReceipt, 'generated Copilot Skill adapter receipt is recorded');
+  assert.equal(entryReceipt.canonicalPath, 'AGENTS.md');
+  assert.equal(skillReceipt.canonicalPath, 'docs/ai/skills/generic-unknown/SKILL.md');
+  for (const receipt of receipts) {
+    assert.match(receipt.canonicalSha256, /^[a-f0-9]{64}$/);
+    assert.match(receipt.projectionSha256, /^[a-f0-9]{64}$/);
+  }
+
+  const checked = checkProject(scanProject(root));
+  assert.equal(checked.ok, true, checked.errors.join('; '));
+  const coverage = checked.clientCoverage.find((entry) => entry.clientId === 'github-copilot');
+  assert.equal(coverage.declared, true);
+  assert.equal(coverage.projected, true);
+  assert.equal(coverage.checked, true);
+  assert.equal(coverage.runtimeVerified, false);
 });

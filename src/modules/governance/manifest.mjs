@@ -11,6 +11,7 @@ import {
   renderGitignoreBlock,
   renderManagedBlock,
 } from './managed-block.mjs';
+import { buildProjectionReceipt, PROJECTION_TEMPLATE_VERSION } from './projections.mjs';
 
 function renderedManagedContent(content, ownership) {
   if (ownership === 'managed-block') return renderManagedBlock(content);
@@ -33,6 +34,53 @@ export function managedContentHash(content, ownership) {
     return block ? sha256(block.replaceAll('\r\n', '\n')) : null;
   }
   return sha256(content);
+}
+
+/**
+ * One receipt per (projection, owning client). A shared client directory such as
+ * .agents/skills is written once but owned by every selected client that declares it, so the
+ * same path can produce more than one receipt with identical hashes.
+ */
+function projectionReceipts(operations) {
+  const receipts = [];
+  // The canonical artifact this plan writes is the receipt's source of truth. Reading it from
+  // disk before apply would bind a stale preimage when the same transaction replaces it, which
+  // then looked like a source mismatch on post-apply verification.
+  const canonicalDesired = new Map();
+  for (const operation of operations) {
+    if (operation.remove || typeof operation.path !== 'string') continue;
+    if (operation.ownership !== 'full' && operation.ownership !== 'seed') continue;
+    canonicalDesired.set(operation.path, operation.desired ?? operation.content ?? '');
+  }
+  for (const operation of operations) {
+    if (operation.remove || !operation.projection) continue;
+    const projection = typeof operation.projection === 'function' ? operation.projection(operation) : operation.projection;
+    const clientIds = Array.isArray(projection?.clientIds) ? projection.clientIds : [];
+    const content = operation.desired ?? operation.content ?? '';
+    const canonicalContent = canonicalDesired.has(projection.canonicalPath)
+      ? canonicalDesired.get(projection.canonicalPath)
+      : (projection.canonicalContent ?? '');
+    for (const clientId of clientIds) {
+      if (typeof clientId !== 'string') continue;
+      receipts.push({
+        ...buildProjectionReceipt({
+          clientId,
+          surfaceId: projection.surfaceId,
+          path: operation.path,
+          canonicalPath: projection.canonicalPath,
+          content,
+          canonicalContent,
+          templateVersion: projection.templateVersion ?? PROJECTION_TEMPLATE_VERSION,
+        }),
+        ...(projection.template ? { template: projection.template } : {}),
+        ...(typeof operation.source === 'string' ? { source: operation.source } : {}),
+      });
+    }
+  }
+  receipts.sort((left, right) => left.path.localeCompare(right.path)
+    || left.clientId.localeCompare(right.clientId)
+    || String(left.surfaceId).localeCompare(String(right.surfaceId)));
+  return receipts;
 }
 
 export function buildManifest(operations, { generatedAt = null, retained = [] } = {}) {
@@ -58,6 +106,7 @@ export function buildManifest(operations, { generatedAt = null, retained = [] } 
       })),
     ],
   };
+  manifest.projections = projectionReceipts(operations);
   if (generatedAt) manifest.generatedAt = generatedAt;
   return manifest;
 }

@@ -1,5 +1,5 @@
-import { resolveAgents, selectedSkillDirectories } from '../../catalogs/index.mjs';
-import { skillAdapterContent } from '../../shared/index.mjs';
+import { resolveAgents, selectedSkillDirectories, skillDirectoryOwners } from '../../catalogs/index.mjs';
+import { sha256, skillAdapterContent } from '../../shared/index.mjs';
 import { canonicalPath } from './layout.mjs';
 
 /**
@@ -24,6 +24,24 @@ export const PROJECTION_TEMPLATES = Object.freeze({
 /** Stable source/template reference recorded on a generated projection for receipts. */
 export function projectionTemplate(clientId, surfaceId = 'repository-instructions') {
   return Object.freeze({ clientId, surfaceId, template: PROJECTION_TEMPLATES[clientId] ?? null, templateVersion: PROJECTION_TEMPLATE_VERSION });
+}
+
+/**
+ * Manifest receipt binding one generated projection to its canonical source. The receipt is
+ * the only store of cross-client projection evidence: it records what the projection was
+ * generated from (canonicalPath/canonicalSha256) and what was written (projectionSha256),
+ * never a claim that a real client loaded either.
+ */
+export function buildProjectionReceipt({ clientId, surfaceId, path, canonicalPath, content, canonicalContent, templateVersion }) {
+  return {
+    clientId,
+    surfaceId,
+    path,
+    canonicalPath,
+    canonicalSha256: sha256(canonicalContent),
+    projectionSha256: sha256(content),
+    templateVersion,
+  };
 }
 
 function governanceCommand(config, args = '') {
@@ -112,7 +130,28 @@ function copilotBody(config) {
   ].join('\n');
 }
 
-function entryProjection(config, clientId) {
+function projectionMetadata(clientId, surfaceId, canonicalPath, canonicalContent) {
+  return {
+    clientIds: [clientId],
+    surfaceId,
+    canonicalPath,
+    canonicalContent,
+    templateVersion: PROJECTION_TEMPLATE_VERSION,
+    template: projectionTemplate(clientId, surfaceId).template,
+  };
+}
+
+/** Canonical content the projection was compiled from, resolved from the compiler definitions. */
+export function resolveArtifactContent(artifact, selected = []) {
+  return canonicalSkillContent(artifact, selected);
+}
+
+function canonicalDefinitionContent(relative, canonicalArtifacts = [], selected = canonicalArtifacts) {
+  const definition = canonicalArtifacts.find((candidate) => (candidate?.path ?? candidate?.id) === relative);
+  return definition ? canonicalSkillContent(definition, selected) : null;
+}
+
+function entryProjection(config, clientId, canonicalArtifacts = []) {
   if (clientId === 'claude-code') {
     return {
       id: 'CLAUDE.md',
@@ -123,12 +162,13 @@ function entryProjection(config, clientId) {
       ownership: 'managed-block',
       routeProfiles: [],
       gateAssertions: ['claude-adapter'],
-      build: () => ({
+      build: (selected) => ({
         path: 'CLAUDE.md',
         content: claudeBody(config.artifactLanguage === 'zh-CN'),
         ownership: 'managed-block',
         kind: 'adapter',
         source: 'AGENTS.md',
+        projection: projectionMetadata('claude-code', 'repository-instructions', 'AGENTS.md', canonicalDefinitionContent('AGENTS.md', canonicalArtifacts, selected)),
       }),
     };
   }
@@ -143,7 +183,14 @@ function entryProjection(config, clientId) {
       ownership: 'full',
       routeProfiles: [],
       gateAssertions: ['cursor-adapter'],
-      build: () => ({ path: '.cursor/rules/ai-code-governance.mdc', content: cursorBody(config), ownership: 'full', kind: 'adapter', source }),
+      build: (selected) => ({
+        path: '.cursor/rules/ai-code-governance.mdc',
+        content: cursorBody(config),
+        ownership: 'full',
+        kind: 'adapter',
+        source,
+        projection: projectionMetadata('cursor', 'rules', source, canonicalDefinitionContent(source, canonicalArtifacts, selected)),
+      }),
     };
   }
   if (clientId === 'github-copilot') {
@@ -156,7 +203,14 @@ function entryProjection(config, clientId) {
       ownership: 'managed-block',
       routeProfiles: [],
       gateAssertions: ['copilot-adapter'],
-      build: () => ({ path: '.github/copilot-instructions.md', content: copilotBody(config), ownership: 'managed-block', kind: 'adapter', source: 'AGENTS.md' }),
+      build: (selected) => ({
+        path: '.github/copilot-instructions.md',
+        content: copilotBody(config),
+        ownership: 'managed-block',
+        kind: 'adapter',
+        source: 'AGENTS.md',
+        projection: projectionMetadata('github-copilot', 'repository-instructions', 'AGENTS.md', canonicalDefinitionContent('AGENTS.md', canonicalArtifacts, selected)),
+      }),
     };
   }
   return null;
@@ -179,7 +233,7 @@ function adapterEligible(artifact) {
   return artifact[SKILL_ADAPTER_FLAG] === true || typeof artifact.content === 'string';
 }
 
-function skillAdapterDefinition(source, adapterPath) {
+function skillAdapterDefinition(source, adapterPath, clientIds = []) {
   return {
     id: adapterPath,
     path: adapterPath,
@@ -197,6 +251,14 @@ function skillAdapterDefinition(source, adapterPath) {
         ownership: 'full',
         kind: 'adapter-skill',
         source: source.path,
+        projection: {
+          clientIds: [...clientIds],
+          surfaceId: 'skills',
+          canonicalPath: source.path,
+          canonicalContent: content,
+          templateVersion: PROJECTION_TEMPLATE_VERSION,
+          template: 'template:skill-adapter',
+        },
       };
     },
   };
@@ -209,16 +271,22 @@ function skillAdapterDefinition(source, adapterPath) {
  */
 export function clientProjectionDefinitions(config, canonicalArtifacts = []) {
   const definitions = [];
+  const selected = selectedClients(config);
   for (const agent of resolveAgents(config.clients ?? [])) {
-    const projection = entryProjection(config, agent.id);
+    const projection = entryProjection(config, agent.id, canonicalArtifacts);
     if (projection) definitions.push(projection);
   }
   const skillDirectories = selectedSkillDirectories(config.clients ?? []);
+  const owners = skillDirectoryOwners();
   const adapters = [];
   for (const artifact of canonicalArtifacts) {
     if (!adapterEligible(artifact)) continue;
     const suffix = artifact.path.slice('docs/ai/skills/'.length);
-    for (const directory of skillDirectories) adapters.push(skillAdapterDefinition(artifact, directory + '/' + suffix));
+    for (const directory of skillDirectories) {
+      const clientIds = (owners.get(directory) ?? []).filter((id) => selected.has(id));
+      if (clientIds.length === 0) continue;
+      adapters.push(skillAdapterDefinition(artifact, directory + '/' + suffix, clientIds));
+    }
   }
   return [...definitions, ...adapters];
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_GOVERNANCE_FOOTPRINTS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
-import { allBuiltInClientIds, resolveAgents, resolvePacks, selectedSkillDirectories } from '../../catalogs/index.mjs';
+import { allBuiltInClientIds, resolveAgents, resolvePacks, selectedSkillDirectories, skillDirectoryOwners } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, buildGreenfieldLayoutArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, hasDocumentableDevelopmentUnit, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
@@ -17,7 +17,7 @@ import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
 import { buildDeliveryLoopArtifacts, DELIVERY_LOOP_ENTRY_KIND, DELIVERY_LOOP_PHASE_KIND } from './delivery-loop.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
 import { canonicalPath, remapContentPaths, relativeReference } from './layout.mjs';
-import { clientProjectionDefinitions, SKILL_ADAPTER_FLAG } from './projections.mjs';
+import { clientProjectionDefinitions, PROJECTION_TEMPLATE_VERSION, resolveArtifactContent, SKILL_ADAPTER_FLAG } from './projections.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 
 const COMPACTED_SEED_PATHS = ['docs/ai/bootstrap-prompt.md', 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH];
@@ -724,6 +724,50 @@ function stableFamilyMembers(family, governanceUnits = []) {
   });
 }
 
+/**
+ * Every Skill written into a declared client directory is a projection of one canonical
+ * Skill. Compiler-generated adapters (delivery loop, business constraints, standards,
+ * capability Skills) predate the projections module, so tag each of them with the same
+ * receipt shape here instead of re-writing every generator site. canonicalContent is read
+ * back from the canonical artifact so a tampered source becomes a source mismatch.
+ */
+function tagClientSkillProjections(definitions, config, scan) {
+  const selected = new Set(config.clients ?? []);
+  const owners = skillDirectoryOwners();
+  const canonicalByPath = new Map(definitions.map((definition) => [definition.path, definition]));
+  const footprint = config.governanceFootprint ?? 'compact';
+  for (const definition of definitions) {
+    if (definition.projection || typeof definition.path !== 'string') continue;
+    const match = [...owners.entries()].find(([directory]) => definition.path.startsWith(directory + '/') && definition.path.endsWith('/SKILL.md'));
+    if (!match) continue;
+    const [directory, directoryOwners] = match;
+    const clientIds = directoryOwners.filter((id) => selected.has(id));
+    if (clientIds.length === 0) continue;
+    const suffix = definition.path.slice(directory.length + 1);
+    const canonicalPath = 'docs/ai/skills/' + suffix;
+    const canonicalDefinition = canonicalByPath.get(canonicalPath);
+    const originalBuild = definition.build;
+    definition.build = (selectedDefinitions) => {
+      const artifact = originalBuild(selectedDefinitions);
+      const generated = canonicalDefinition ? resolveArtifactContent(canonicalDefinition, selectedDefinitions) : null;
+      const fallback = generated == null ? null : remapContentPaths(generated, footprint);
+      let canonicalContent = fallback;
+      try { canonicalContent = readText(path.join(scan.root, canonicalPath), fallback); } catch { canonicalContent = fallback; }
+      return {
+        ...artifact,
+        projection: {
+          clientIds,
+          surfaceId: 'skills',
+          canonicalPath,
+          canonicalContent,
+          templateVersion: PROJECTION_TEMPLATE_VERSION,
+          template: typeof artifact.source === 'string' && artifact.source.startsWith('template:') ? artifact.source : 'template:skill-adapter',
+        },
+      };
+    };
+  }
+}
+
 export function artifactDefinitions(config, scan) {
   const packs = resolvePacks(config.stacks);
   const definitions = [];
@@ -963,6 +1007,7 @@ export function artifactDefinitions(config, scan) {
       existing.add(definition.path);
     }
   }
+  tagClientSkillProjections(definitions, config, scan);
   return definitions;
 }
 
