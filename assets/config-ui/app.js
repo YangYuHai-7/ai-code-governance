@@ -307,6 +307,26 @@ async function saveConfiguration() {
   sha = result.sha; base = structuredClone(config); invalidate(); dirty = false; $('preview').disabled = false; message('配置已保存到项目中的 aicg.config.json。');
   $('quick-preview').textContent = '直接预览现有配置';
   $('assessment-details').children[1].textContent = '配置来源：项目配置';
+  showHandoff();
+}
+// The page owns the owner decisions; the coding agent owns the semantic completion. This
+// prompt is the handoff between them, so the owner never has to translate the page into a
+// command sequence by hand.
+function handoffPrompt() {
+  const target = currentRoot || '<项目路径>';
+  return [
+    '用 aicg 为当前项目生成治理框架（项目：' + target + '）。',
+    '先运行 aicg init . --config aicg.config.json --yes --dry-run 预览并逐项让我确认，再应用。',
+    '若预览提示「外部可执行治理」，停下来让我选择登记接管（--adopt-foreign-governance）或取消，不要覆盖我的旧文件。',
+    '然后读取 aicg check . --json 的 brownfield.gaps，补全 docs/ai/development 与 docs/memory，并把候选项目 Skill 提给我批准。',
+    '不要修改业务代码。',
+  ].join('\n');
+}
+function showHandoff() {
+  const box = $('handoff'); const text = $('handoff-text');
+  if (!box || !text) return;
+  text.value = handoffPrompt();
+  box.hidden = false;
 }
 async function previewConfiguration() {
   const mark = generation; const result = await api('preview', {});
@@ -347,6 +367,11 @@ $('upload').addEventListener('change', () => action(async () => {
   fill(config); dirty = true; $('upload').value = ''; message('已载入上传的配置，尚未写入项目。请校验后保存。');
   $('configuration-fields').hidden = false; $('quick-preview').hidden = true;
   for (const id of ['validate', 'save', 'preview']) $(id).hidden = false;
+}));
+$('handoff-copy')?.addEventListener('click', () => action(async () => {
+  const text = $('handoff-text')?.value ?? '';
+  if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); message('提示词已复制，粘贴给你的 AI 编程助手即可。'); }
+  else { $('handoff-text').select(); document.execCommand('copy'); message('提示词已复制。'); }
 }));
 $('close').addEventListener('click', () => action(async () => { await api('close', {}); message('本地配置服务已关闭，可关闭此标签页。'); }));
 window.addEventListener('pagehide', () => { if (!applying) controller?.abort(); if (downloadUrl) URL.revokeObjectURL(downloadUrl); });

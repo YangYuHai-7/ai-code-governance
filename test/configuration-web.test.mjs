@@ -216,7 +216,9 @@ test('visual apply refuses foreign governance before writing and leaves the proj
     const url = await ready;
     const page = await (await fetch(url)).text();
     assert.match(page, /progress\.css/);
+    assert.match(page, /handoff-text/);
     assert.match((await (await fetch(new URL('progress.css', url))).text()), /aicg-spin/);
+    assert.match((await (await fetch(new URL('app.js', url))).text()), /handoffPrompt/);
     const token = page.match(/name="aicg-session" content="([a-f0-9]+)"/)[1];
     const request = async (route, body) => {
       const response = await fetch(new URL(`api/${route}`, url), { method: body === undefined ? 'GET' : 'POST',

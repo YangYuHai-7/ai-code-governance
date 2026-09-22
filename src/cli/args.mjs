@@ -11,9 +11,13 @@ function defaultInteractionLocale(environment, runtimeLocale) {
 export function parseArgs(argv, {
   environment = process.env,
   runtimeLocale = Intl.DateTimeFormat().resolvedOptions().locale,
+  interactive = Boolean(process.stdin.isTTY),
 } = {}) {
   const args = [...argv];
   if (args.length === 0) {
+    // Page-first: a bare `aicg` in an interactive terminal opens the visual editor. Headless
+    // callers keep the explicit guided-init surface so a script never starts a server.
+    if (interactive) return { command: 'config', action: 'open', target: '.', options: {} };
     return {
       command: 'init',
       target: '.',
@@ -27,9 +31,18 @@ export function parseArgs(argv, {
   if (!COMMAND_NAMES.includes(command)) throw usageError(`Unknown command: ${command}`);
 
   let action = null;
+  let subAction = null;
   if (command === 'config') {
     action = args.shift() ?? null;
     if (!['init', 'validate', 'open', 'launcher'].includes(action)) throw usageError('config requires an action: init, validate, open, or launcher.');
+  } else if (command === 'delivery') {
+    action = args.shift() ?? null;
+    if (!['work-unit', 'test-case', 'complete', 'hook', 'release-check'].includes(action)) throw usageError('delivery requires an action: work-unit, test-case, complete, hook, or release-check.');
+    const SUB_ACTIONS = { 'work-unit': ['plan', 'status'], 'test-case': ['init', 'validate', 'select', 'record'], hook: ['install', 'status'] };
+    if (SUB_ACTIONS[action]) {
+      subAction = args.shift() ?? null;
+      if (!SUB_ACTIONS[action].includes(subAction)) throw usageError(`delivery ${action} requires an action: ${SUB_ACTIONS[action].join(', ')}.`);
+    }
   } else if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');
@@ -79,5 +92,6 @@ export function parseArgs(argv, {
     }
   }
   if (command === 'config' && action === 'open' && !targetSet) target = null;
-  return action ? { command, action, target, options } : { command, target, options };
+  if (action) return { command, action, ...(subAction ? { subAction } : {}), target, options };
+  return { command, target, options };
 }

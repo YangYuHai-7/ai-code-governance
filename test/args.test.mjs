@@ -16,6 +16,29 @@ test('starts guided initialization in the current directory when no arguments ar
   });
 });
 
+test('an interactive bare aicg opens the page while headless keeps guided init', () => {
+  assert.deepEqual(parseArgs([], { interactive: true }), { command: 'config', action: 'open', target: '.', options: {} });
+  const headless = parseArgs([], { environment: {}, runtimeLocale: 'en-US', interactive: false });
+  assert.equal(headless.command, 'init');
+  assert.equal(headless.options.guided, true);
+});
+
+test('the delivery namespace parses governed delivery actions and rejects unknown ones', () => {
+  assert.deepEqual(parseArgs(['delivery', 'work-unit', 'plan', '.', '--work-unit', 'docs/ai/wu.json', '--json']), {
+    command: 'delivery', action: 'work-unit', subAction: 'plan', target: '.',
+    options: { 'work-unit': 'docs/ai/wu.json', json: true },
+  });
+  assert.deepEqual(parseArgs(['delivery', 'hook', 'install', '.', '--yes']), {
+    command: 'delivery', action: 'hook', subAction: 'install', target: '.', options: { yes: true },
+  });
+  assert.throws(() => parseArgs(['delivery', 'work-unit', 'nope']), (error) => error.exitCode === 2);
+  assert.deepEqual(parseArgs(['delivery', 'release-check', '--type', 'feature', '--replay', '--approve', 'h']), {
+    command: 'delivery', action: 'release-check', target: '.',
+    options: { type: 'feature', replay: true, approve: 'h' },
+  });
+  assert.throws(() => parseArgs(['delivery', 'nope']), (error) => error.exitCode === 2);
+});
+
 test('parses init flags and a target with spaces', () => {
   const parsed = parseArgs(['init', 'project with spaces', '--yes', '--config=answers.json', '--migrate-links']);
   assert.deepEqual(parsed, {

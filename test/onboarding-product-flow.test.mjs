@@ -20,13 +20,13 @@ if (part === 'unit') {
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
   // The retired commands remain in the registry so existing scripts keep working and emit a
   // single deprecation line. New code should call the surviving replacement.
-  const expected = ['help', 'version', 'request', 'route', 'init', 'config', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  const expected = ['help', 'version', 'request', 'route', 'init', 'config', 'delivery', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
   assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
   assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
   for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
     const module = await import(new URL(`../src/cli/${definition.module}`, import.meta.url));
     assert.equal(typeof module[definition.exportName], 'function', `${command}: missing export`);
-    assert.deepEqual(definition.argumentKeys, ['config', 'hook', 'evidence', 'work-unit', 'test-case'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
+    assert.deepEqual(definition.argumentKeys, command === 'delivery' ? ['target', 'action', 'options', 'subAction'] : ['config', 'hook', 'evidence', 'work-unit', 'test-case'].includes(command) ? ['target', 'action', 'options'] : command === 'standards' ? ['target'] : ['target', 'options']);
   }
   const registry = fs.readFileSync(new URL('../src/cli/command-registry.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(registry, /^import .* from ['"]\.\/commands\//m, 'help/version must not eagerly load command implementations');

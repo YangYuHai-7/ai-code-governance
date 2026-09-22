@@ -12,9 +12,11 @@ import { governanceBootstrapCommand } from '../generator.mjs';
 export const HELP = `AI Code Governance CLI
 
 Usage:
-  aicg            Start guided setup for the current project in the detected terminal language.
-  aicg config open [path]   Open the visual editor at 127.0.0.1; on save, the same exact-planHash approval applies the governance framework.
-  aicg config <init|validate|launcher> [path] [--output aicg.config.json] [--config aicg.config.json] [--yes] [--json]
+  aicg                       Open the visual configuration page for the current project (recommended).
+  aicg config open [path]    Open the page for an explicit project path.
+  aicg check [path]          Read-only health check of the generated governance.
+
+For AI coding agents (drive these from the chat, not by hand):
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist]
                   [--assist codex|claude-code|cursor] [--review] [--migrate-links] [--force] [--adopt-foreign-governance]
@@ -22,18 +24,9 @@ Usage:
   aicg sync [path] [--dry-run] [--force] [--migrate-links] [--prune] [--approve planHash]
   aicg doctor [path] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [path] --text <task> [--paths <relative-path,...>] [--json]
-  aicg work-unit <plan|status> [path] --work-unit <relative-json> [--json] [--enforce]
-  aicg test-case <init|validate|select|record> [path] [--manifest <relative-json>] [--scope <id>] [--output <relative-path>]
-  aicg complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json] [--enforce]
-  aicg hook <install|status> [path] [--yes] [--json]
-  aicg release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
-  aicg request [path] --text <exact-supported-request> [--config answers.json] [--clients all|client,...] [--locale zh-CN|en] [--dry-run] [--approve planHash] [--json]
+  aicg delivery <name> ...   Governed delivery loop; names: work-unit, test-case, complete, hook, release-check.
   aicg --version
 
-Commands:
-  config  Create, validate, or open the visual editor. The editor is the recommended entry point:
-          open the page, walk through every owner decision, preview the exact plan, save to apply.
-          Validation writes a local report. config launcher --yes installs a desktop folder-drop entry.
   init    Inspect a repository and initialize tailored AI governance.
           --family prepares one exact plan for the orchestrator and every detected member repository; preview with --dry-run, then approve the combined planHash. All repositories roll back if any apply or check fails.
           Existing executable governance under the canonical roots stops the run before any write; re-run with --adopt-foreign-governance to keep and register those files as user-owned, or run without it to cancel.
@@ -41,6 +34,14 @@ Commands:
   sync    Regenerate managed adapters from canonical governance sources; --prune removes obsolete managed files when paired with --approve.
   doctor  Inspect the local environment and report; also covers the read-only classifications that used to live in assess / architecture / standards / team.
   route   Plan task depth and recommend approved project Agent roles without launching an Agent or editing code.
+
+Advanced delivery (agent runtime, optional; each name keeps its full reference below):
+  aicg delivery work-unit <plan|status> [path] --work-unit <relative-json> [--json] [--enforce]
+  aicg delivery test-case <init|validate|select|record> [path] [--manifest <relative-json>] [--scope <id>] [--output <relative-path>]
+  aicg delivery complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json] [--enforce]
+  aicg delivery hook <install|status> [path] [--yes] [--json]
+  aicg delivery release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
+
   work-unit  Preview or validate one bounded vertical feature document. Writes a local report and never launches Agents.
   test-case  Create and validate schema-v2 cases, emit minimal AI packets, and record evidence-bound results.
   complete  Report completion findings; a selected project verification command is explicit and never inferred.
@@ -53,7 +54,10 @@ Commands:
             Approved professional roles in managed docs/ai/agent-team.json require explicit activation.signals (owner-confirmed risk IDs) and activation.paths (repository-relative globs). Relevant missing mappings are reported; unrelated documentation or mapped out-of-scope tasks do not acquire professional risk.
   hook  Install or inspect the managed Git pre-commit completion gate. Installation requires --yes.
   release-check  Apply the risk-tiered acceptance policy; replay requires approval of the exact command plan hash.
-  request Route an exact Chinese or English governance request through a safe plan and verification workflow.
+
+Hidden advanced commands (still work; use only when automating):
+  aicg config init|validate|launcher   Create, validate, or install a launcher for aicg.config.json without the page.
+  aicg request [path] --text <request> Legacy one-line chat routing; prefer your coding agent with the AICG Skill.
 
 All AICG checks write a JSON report and return exit code 0 by default, including failed findings. Pass --enforce to a check command to return exit code 1 for failed findings. Initialization transactions still reject invalid writes.
 
@@ -79,34 +83,42 @@ Daily commands require an installed project-local or global AICG. If unavailable
 export const HELP_ZH = `AI 代码治理 CLI
 
 用法：
-  aicg            使用自动识别的终端语言，为当前项目启动引导式设置。
-  aicg config open [路径]   打开可视化配置页（127.0.0.1）；保存后立即以相同的精确 planHash 批准并应用治理框架。
-  aicg config <init|validate|launcher> [路径] [--output aicg.config.json] [--config aicg.config.json] [--yes] [--json]
+  aicg                       打开当前项目可视化配置页（推荐入口）。
+  aicg config open [路径]    对指定项目打开配置页。
+  aicg check [路径]          只读检查已生成治理的健康状况。
+
+给 AI 编码助手（由对话驱动，不建议手敲）：
   aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist] [--review] [--adopt-foreign-governance]
   aicg check [路径] [--json] [--enforce]
   aicg sync [路径] [--dry-run] [--prune] [--approve planHash]
   aicg doctor [路径] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [路径] --text <任务> [--paths <相对路径,...>] [--json]
-  aicg work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json] [--enforce]
-  aicg test-case <init|validate|select|record> [路径] [--manifest <相对路径.json>] [--scope <标识>] [--output <相对路径>]
-  aicg complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json] [--enforce]
+  aicg delivery <任务> ...   受治理交付闭环；任务：work-unit、test-case、complete、hook、release-check。
   aicg --version
 
-关键流程：
-  config        生成或校验项目配置；open 打开可视化配置页（推荐入口）；launcher --yes 创建桌面文件夹拖拽入口。
   init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
                 docs/ai 下已有外部可执行治理时会在写入前停止；用 --adopt-foreign-governance 保留并登记为 user-owned，或不加该参数取消。
-  check         检查配置、受管文件、漂移和入口可达性，并写入 reports/aicg/latest-check.json。
   sync          从治理正典重新生成客户端适配器；--prune 与 --approve 配合可清掉过期受管文件。
   doctor        检查本地环境并输出报告；同时覆盖原 assess / architecture / standards / team 的只读分类。
   route         按任务证据规划流程并建议已审批的项目 Agent 角色，不启动 Agent 或修改代码。
+
+高级交付（Agent 运行时，可选；每个任务保留下方完整说明）：
+  aicg delivery work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json] [--enforce]
+  aicg delivery test-case <init|validate|select|record> [路径] [--manifest <相对路径.json>] [--scope <标识>] [--output <相对路径>]
+  aicg delivery complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json] [--enforce]
+  aicg delivery hook <install|status> [路径] [--yes] [--json]
+  aicg delivery release-check [路径] --type <bugfix|feature|major> [--evidence <相对路径.json>] [--json] [--enforce]
+
   work-unit     预览或校验一个垂直功能工作单元，只写本地报告，不启动 Agent。
   test-case     创建和校验 schema v2 测试用例、生成最小 AI 执行包，并记录证据绑定结果。
   complete      报告交付收尾；所选项目验证命令必须显式给出，工具不会自动推断。
   hook          安装或检查受管的 Git pre-commit 收尾门；安装必须带 --yes。
   release-check 应用分级发布验收策略；replay 需要对精确命令 planHash 批准。
-  request       把一句中英文治理请求路由到安全的计划与验证流程。
+
+隐藏的高级命令（仍可用，仅自动化时使用）：
+  aicg config init|validate|launcher   不打开页面，直接创建/校验 aicg.config.json 或安装桌面入口。
+  aicg request [路径] --text <请求>     旧版一句话治理路由；建议改用 AI 助手 + AICG Skill。
 
 所有 AICG 检查默认写入 JSON 报告并以退出码 0 提醒问题。显式传入 --enforce 才在发现失败时返回退出码 1；初始化事务仍会拒绝无效写入。
 

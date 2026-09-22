@@ -10,6 +10,7 @@ export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided
 export const COMMAND_FLAGS = Object.freeze({
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'family', 'no-family', 'no-assist', 'review', 'migrate-links', 'adopt-foreign-governance', 'approve', 'clients', 'locale', 'help']),
   config: new Set(['config', 'output', 'yes', 'json', 'locale', 'no-open', 'auto-exit', 'enforce', 'help']),
+  delivery: new Set(['work-unit', 'json', 'enforce', 'help', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'yes', 'verify', 'task-level', 'review-mode', 'approval-evidence', 'approve', 'from-git-hook', 'type', 'evidence', 'replay']),
   check: new Set(['json', 'enforce', 'help']),
   sync: new Set(['dry-run', 'force', 'migrate-links', 'prune', 'approve', 'config', 'help']),
   doctor: new Set(['json', 'locale', 'enforce', 'help']),

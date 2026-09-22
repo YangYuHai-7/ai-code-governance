@@ -20,6 +20,7 @@ export const COMMAND_HANDLERS = Object.freeze({
   route: handler('./commands/task-plan.mjs', 'taskPlanCommand'),
   init: handler('./commands/init.mjs', 'initCommand'),
   config: handler('./commands/configuration.mjs', 'configurationCommand', ['target', 'action', 'options']),
+  delivery: handler('./commands/delivery.mjs', 'deliveryCommand', ['target', 'action', 'options', 'subAction']),
   enrich: handler('./commands/enrich.mjs', 'enrichCommand'),
   evidence: handler('./commands/evidence.mjs', 'evidenceCommand', ['target', 'action', 'options']),
   team: handler('./commands/read-only.mjs', 'teamCommand'),
@@ -44,6 +45,12 @@ export const COMMAND_HANDLERS = Object.freeze({
 // repository diagnostics: it does not expose these assessments. Claiming otherwise would
 // make the notice advertise a capability the surviving command does not actually have.
 export const RETIRED_COMMANDS = Object.freeze({
+  'work-unit': { replacement: 'aicg delivery work-unit' },
+  'test-case': { replacement: 'aicg delivery test-case' },
+  complete: { replacement: 'aicg delivery complete' },
+  hook: { replacement: 'aicg delivery hook' },
+  'release-check': { replacement: 'aicg delivery release-check' },
+  request: { capability: 'one-line chat governance routing; use your coding agent with the AICG Skill' },
   enrich: { replacement: 'aicg config open <path>' },
   evidence: { replacement: 'aicg complete <path> --approval-evidence <file>' },
   assess: { capability: 'the repository assessment summary' },
