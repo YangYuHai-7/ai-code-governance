@@ -501,9 +501,15 @@ test('completion fails closed when a verified command leaves HEAD source evidenc
   const source = 'src/modules/http/index.ts';
   write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 1000 });\n");
   baseline(root);
-  const blob = git(root, ['rev-parse', `HEAD:${source}`]).stdout.trim();
-  const objectPath = `.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`;
-  const verify = verificationTest(root, 'remove-git-object', `require('node:fs').unlinkSync(${JSON.stringify(objectPath)});\n`);
+  // Resolve HEAD's blob inside the verification run so an intervening sync or commit cannot
+  // leave the deletion pointing at an object HEAD no longer references.
+  const verify = verificationTest(root, 'remove-git-object', [
+    "const { execFileSync } = require('node:child_process');",
+    "const fs = require('node:fs');",
+    `const blob = execFileSync('git', ['rev-parse', 'HEAD:${source}'], { encoding: 'utf8' }).trim();`,
+    'fs.unlinkSync(`.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`);',
+    '',
+  ].join('\n'));
   write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: verify } }));
   assert.equal(run(['sync', root]).status, 0);
   baseline(root);
