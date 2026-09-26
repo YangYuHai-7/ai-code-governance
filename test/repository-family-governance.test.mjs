@@ -391,12 +391,15 @@ test('.aicgignore treats database, infrastructure and schema files as reviewable
   write(root, '.aicgignore', 'db/schema.sql\ninfra/main.tf\ndeploy/app.yaml\nschema/api.graphql\n');
   const scan = scanProject(root);
   assert.equal(scan.scanIgnore.unverifiedExclusionCount, 4);
-  assert.deepEqual(scan.scanIgnore.unverifiedExclusions.map((entry) => entry.category), [
-    'infrastructure-or-data-source',
-    'configuration-or-contract',
-    'product-source',
-    'infrastructure-or-data-source',
-  ]);
+  // The walk reads directory entries in filesystem order, so assert the exclusion set and its
+  // per-path classification instead of an incidental macOS-specific traversal order.
+  const categoriesByPath = Object.fromEntries(scan.scanIgnore.unverifiedExclusions.map((entry) => [entry.path, entry.category]));
+  assert.deepEqual(categoriesByPath, {
+    'db/schema.sql': 'infrastructure-or-data-source',
+    'deploy/app.yaml': 'configuration-or-contract',
+    'infra/main.tf': 'infrastructure-or-data-source',
+    'schema/api.graphql': 'product-source',
+  });
 });
 
 test('.aicgignore evidence snapshots enforce one aggregate byte budget', (context) => {
