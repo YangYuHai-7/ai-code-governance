@@ -494,20 +494,23 @@ test('completion returns current verified capability candidates without writing 
   assert.equal(formatOnly.reason, 'no-production-source-change');
 });
 
-test('completion fails closed when a verified command leaves HEAD source evidence unreadable', (context) => {
+test('completion fails closed when a verified command leaves HEAD evidence unreadable', (context) => {
   const root = fixture('harvest-missing-source-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root);
   const source = 'src/modules/http/index.ts';
   write(root, source, "import axios from 'axios'; export const client = axios.create({ timeout: 1000 });\n");
   baseline(root);
-  // Resolve HEAD's blob inside the verification run so an intervening sync or commit cannot
-  // leave the deletion pointing at an object HEAD no longer references.
-  const verify = verificationTest(root, 'remove-git-object', [
+  // Delete HEAD's commit object inside the verification run. Removing the source blob only
+  // failed the later `git diff --cached HEAD` when git happened to read that blob, which flaked
+  // on shared CI; an unresolvable HEAD fails the gate deterministically on every platform.
+  const verify = verificationTest(root, 'remove-head-object', [
     "const { execFileSync } = require('node:child_process');",
     "const fs = require('node:fs');",
-    `const blob = execFileSync('git', ['rev-parse', 'HEAD:${source}'], { encoding: 'utf8' }).trim();`,
-    'fs.unlinkSync(`.git/objects/${blob.slice(0, 2)}/${blob.slice(2)}`);',
+    "const path = require('node:path');",
+    "const root = path.resolve(__dirname, '..', '..');",
+    "const commit = execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();",
+    "fs.unlinkSync(path.join(root, '.git', 'objects', commit.slice(0, 2), commit.slice(2)));",
     '',
   ].join('\n'));
   write(root, 'package.json', JSON.stringify({ dependencies: { axios: '1.7.0' }, scripts: { test: verify } }));
