@@ -48,8 +48,8 @@ test('a code-less orchestrator generates no development documents and reports th
   // An orchestrator parent: submodule pointers, specs and prototypes, but no code and
   // no build manifest of its own.
   fs.mkdirSync(path.join(root, 'openspec', 'specs'), { recursive: true });
-  fs.mkdirSync(path.join(root, '<sample-repo>'));
-  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "<sample-repo>"]\n\tpath = <sample-repo>\n\turl = git@example.invalid:<sample-repo>.git\n');
+  fs.mkdirSync(path.join(root, 'member-app'));
+  fs.writeFileSync(path.join(root, '.gitmodules'), '[submodule "member-app"]\n\tpath = member-app\n\turl = git@example.invalid:member-app.git\n');
   fs.writeFileSync(path.join(root, 'openspec', 'config.yaml'), 'schema: spec-driven\n');
   fs.writeFileSync(path.join(root, 'openspec', 'specs', 'sample.md'), '# Sample\n');
   const scan = scanProject(root);

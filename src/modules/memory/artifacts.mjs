@@ -11,7 +11,7 @@ export function loadProjectMemory(root) {
 
 /**
  * A module page explains business behavior rather than restating the file list. The eight
- * sections mirror the <reference-project> service memory contract; an agent or human fills them, and the
+ * sections form the business memory contract; an agent or human fills them, and the
  * tool only guarantees the structure exists and that nothing claims verified business meaning
  * before the owner confirms it.
  */

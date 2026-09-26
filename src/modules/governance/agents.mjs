@@ -1,7 +1,7 @@
 /**
  * Project delivery roles are agent definitions, not process Skills.
  *
- * <reference-project> keeps each reusable role as a small `docs/ai/agents/<role>.md` prompt. The delivery
+ * Each reusable role is a small `docs/ai/agents/<role>.md` prompt. The delivery
  * workflow in `docs/WORKFLOW.md` says what happens at each step; these files say who does it,
  * what they receive, and what they must not decide alone. All roles are AI role-play; a
  * specialised or regulated requirement adds a human specialist instead of inventing one here.

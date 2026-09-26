@@ -312,10 +312,10 @@ test('oversized non-code payloads do not make a code scan incomplete', (context)
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const large = Buffer.alloc(2 * 1024 * 1024 + 1, 'x');
   for (const relative of [
-    'modules/<sample-repo>/service/target/service.jar',
-    'modules/<sample-repo>/logs/service.log',
-    'modules/<sample-repo>/site/src/main/resources/static/res.txt',
-    'modules/<sample-repo>/site/src/main/resources/test/wsclc.json',
+    'modules/legacy/service/target/service.jar',
+    'modules/legacy/logs/service.log',
+    'modules/legacy/site/src/main/resources/static/res.txt',
+    'modules/legacy/site/src/main/resources/test/wsclc.json',
     'modules/management/public/amap.js',
     'modules/management/src/views/Taxation/assets/identify.gif',
     'modules/app/.swc/plugins/cache.bin',

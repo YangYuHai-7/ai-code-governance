@@ -11,13 +11,20 @@ Thumbs.db
 .env.*
 !.env.example
 
-# Local AI workflow and review artifacts
+# Local working notes (plans, reviews, reports, design drafts).
+# Canonical location: local/ — on disk only, never committed, never packed into npm.
+local/
+
+# Legacy note locations and tool state, kept ignored so old habits cannot leak back.
 .superpowers/
 docs/superpowers/
 docs/pilots/
 docs/reports/
 reports/
 reviews/
+docs/评测-*.md
+docs/整改-*.md
+docs/*报告*.md
 
 # Vendored third-party Skill sources used only to rebuild the packaged catalog
 vendor/
@@ -29,6 +36,3 @@ playwright-report/
 .nyc_output/
 *.log
 junit*.xml
-docs/评测-*.md
-docs/整改-*.md
-docs/*报告*.md

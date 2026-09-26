@@ -47,8 +47,8 @@ function run(args) {
   return spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });
 }
 
-test('detects the <sample-app> technology set and generates traceable standard Skills', (context) => {
-  const root = fixture('<sample-app>');
+test('detects a React + Mantine + NestJS technology set and generates traceable standard Skills', (context) => {
+  const root = fixture('sample-web-stack');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
     dependencies: {

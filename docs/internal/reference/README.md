@@ -33,3 +33,7 @@ The existing reference filenames remain stable because they are linked from the 
 - `repository-family-and-project-conventions.md`
 - `team-orchestration.md`
 - `ui-selection.md`
+
+## Repository self-governance
+
+- `public-surface-hygiene.md`

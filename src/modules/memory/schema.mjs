@@ -27,7 +27,7 @@ export function validateMemoryShape(index) {
   return index;
 }
 
-// The <reference-project>-style business memory contract. A module page explains business behavior, not just
+// The business memory contract. A module page explains business behavior, not just
 // which files it owns, and every named endpoint or method can be drift-checked against code.
 export const MEMORY_SECTIONS = [
   'Module Summary',

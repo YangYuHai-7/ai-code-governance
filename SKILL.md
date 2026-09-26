@@ -127,6 +127,10 @@ Capability promotion (`aicg promote`) is likewise retired with no surviving comm
 
 The evolution probe names `feature-skill-harvest-freshness`, `capability-promotion-evidence`, `skill-implementation-drift`, and `canonical-capability-reuse` identify separate obligations. Do not claim they are enforced in a target repository merely because these names exist.
 
+## Repository self-governance
+
+This repository is public and ships as an npm package. Working notes (plans, reviews, reports, pilots, design drafts) belong under `local/`, which is git-ignored and excluded from the package. Never commit or pack absolute home paths, private project codenames, internal organization or repository names, or private contact details; describe design generically in code comments, tests, fixtures, and docs. The npm `files` field is an explicit allow list — a broad directory there cannot be narrowed again by `.npmignore`. `scripts/public-surface-check.mjs` enforces this over both the Git tracked set and the npm pack set and runs inside `npm run validate`. Read [public-surface-hygiene.md](docs/internal/reference/public-surface-hygiene.md).
+
 ## Verification and handoff
 
 Use TDD for machine behavior; preserve unrelated work. Run focused checks after edits and full candidate checks when integrating:
