@@ -8,7 +8,7 @@
       "qualification": "licensed-lawyer",
       "jurisdictionRequired": true,
       "decisionAuthority": "human-only",
-      "reason": "AI output is issue spotting and analysis, not final legal advice."
+      "reason": "AI roles may spot issues, analyse and recommend; their participation alone never triggers this gate. A final external legal conclusion still requires a licensed human."
     },
     {
       "domainNeedId": "financial-services",
@@ -16,7 +16,7 @@
       "qualification": "licensed-financial-professional",
       "jurisdictionRequired": true,
       "decisionAuthority": "human-only",
-      "reason": "AI output may support analysis but cannot make a regulated financial decision."
+      "reason": "AI roles may spot issues, analyse and recommend; their participation alone never triggers this gate. A final regulated financial decision still requires a licensed human."
     },
     {
       "domainNeedId": "food-safety",
@@ -24,7 +24,7 @@
       "qualification": "qualified-food-safety-professional",
       "jurisdictionRequired": true,
       "decisionAuthority": "human-only",
-      "reason": "AI output cannot approve food-safety controls, compliance, or operational release."
+      "reason": "AI roles may spot issues, analyse and recommend; their participation alone never triggers this gate. Final food-safety approval still requires a qualified human."
     },
     {
       "domainNeedId": "medical-care",
@@ -32,7 +32,7 @@
       "qualification": "licensed-clinician",
       "jurisdictionRequired": true,
       "decisionAuthority": "human-only",
-      "reason": "AI output cannot diagnose, prescribe, or make final clinical decisions."
+      "reason": "AI roles may spot issues, analyse and recommend; their participation alone never triggers this gate. Diagnosis, prescription and final clinical decisions still require a licensed human."
     }
   ]
 }

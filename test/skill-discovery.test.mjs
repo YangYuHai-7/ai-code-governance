@@ -129,22 +129,29 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   const { config, plan } = approvedConfig(base, scan, candidates);
   const management = (item) => /skill-discovery|team-orchestrator|agent-team|skill-index/.test(item.path);
   assert.equal(buildArtifacts({ ...config, governanceDepth: 'minimal' }, scan).some(management), false);
-  assert.equal(buildArtifacts({ ...config, governanceDepth: 'standard' }, scan).some(management), false);
+  // Role routing now ships at Standard; skill discovery and the index stay Complete-only.
+  const standard = approvedConfig({ ...base, governanceDepth: 'standard' }, scan, candidates).config;
+  const standardArtifacts = buildArtifacts(standard, scan);
+  assert.equal(standardArtifacts.some((item) => /skill-discovery|skill-index/.test(item.path)), false);
+  // The team-orchestrator process Skill no longer ships; Standard still carries the approved
+  // project team record, but no process Skill.
+  assert.equal(standardArtifacts.some((item) => /team-orchestrator/.test(item.path)), false);
+  assert.equal(standardArtifacts.some((item) => item.path === '.ai-governance/state/agent-team.json'), true);
   assert.throws(() => buildArtifacts({ ...config, skillDiscovery: { ...config.skillDiscovery, approvalPlanHash: null } }, scan), /approval/i);
   const artifacts = buildArtifacts(config, scan);
-  assert.equal(artifacts.filter(management).length, 4);
+  assert.equal(artifacts.filter(management).length, 3);
   const roster = JSON.parse(artifacts.find((item) => item.path === '.ai-governance/state/agent-team.json').content);
   assert.deepEqual(roster.professionalBoundaries, config.agentTeam.professionalBoundaries);
   assert.equal(roster.teamType, 'project-ai-agent-team');
-  assert.equal(plan.cost.increment.files, 4);
+  assert.equal(plan.cost.increment.files, 3);
   // The Skill management increment is the budgeted quantity; the retained governance
   // tree is budgeted by the approved governance depth instead.
   assert.ok(plan.cost.increment.files <= 30);
   assert.ok(plan.cost.increment.bytes <= 96 * 1024);
-  assert.ok(plan.cost.increment.managerTokens <= 800);
+  assert.ok(plan.cost.increment.managementProfileTokens <= 2400);
   assert.ok(plan.cost.total.files >= plan.cost.increment.files);
   const bodies = artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path));
-  assert.ok(Math.ceil(bodies.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4) <= 800);
+  assert.ok(Math.ceil(bodies.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4) <= 2400);
   const map = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
   assert.doesNotMatch(map.slice(map.indexOf('  ordinary:'), map.indexOf('  behavior_change:')), /skill-discovery|team-orchestrator|agent-team|skill-index/);
   assert.match(map.slice(map.indexOf('  behavior_change:')), /skill-discovery/);
@@ -329,8 +336,8 @@ test('task activation remains bounded and team, permission and total-cost change
     candidates,
     candidates.map((candidate) => candidate.id),
   );
-  assert.equal(retained.plan.cost.increment.files, 4);
-  assert.ok(retained.plan.cost.increment.managerTokens <= 800);
+  assert.equal(retained.plan.cost.increment.files, 3);
+  assert.ok(retained.plan.cost.increment.managementProfileTokens <= 2400);
   assert.ok(retained.plan.cost.total.files > retained.plan.cost.increment.files, 'the retained governance tree stays visible in total cost');
   assert.ok(buildArtifacts(retained.config, retainedScan).length > retained.plan.cost.increment.files);
   const tampered = structuredClone(retained.config);
@@ -412,7 +419,9 @@ test('ordinary sync retains deselected managers and exact trusted prune removes 
   assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/agent-team.json')), true);
   const prune = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.equal(prune.conflicts.length, 0);
-  assert.equal(prune.operations.filter((item) => item.remove).length, 4);
+  // The fixed team roster and team-orchestrator Skill stay by default; only the three
+  // discovery-and-dynamic-roster managers are pruned when the team is disabled.
+  assert.equal(prune.operations.filter((item) => item.remove).length, 3);
   fs.appendFileSync(path.join(root, '.ai-governance/state/agent-team.json'), '\nuser edit\n');
   const drifted = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.ok(drifted.conflicts.some((item) => /agent-team.*changed/.test(item)));
@@ -433,12 +442,12 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       const bytes = transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content);
       assert.equal(transaction.operations.length + 1, plan.cost.total.files);
       assert.equal(bytes, plan.cost.total.bytes);
-      assert.ok(bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
-      // The depth owns the tree: the delivery loop now ships by default in both Standard and
-      // Complete, and this fixture also carries the four adaptive management artifacts. Both
-      // depths land on the same 43 operations because the remaining Complete artifacts stay
-      // lazy until the usage profile requests them. Tighten this deliberately, not by accident.
-      assert.ok(transaction.operations.length <= 43, `${governanceDepth} ${artifactLanguage} operations ${transaction.operations.length}`);
+      assert.ok(bytes <= (governanceDepth === 'standard' ? 144 : 160) * 1024);
+      // The depth owns the tree: the delivery loop and the project flow now ship by default in
+      // both Standard and Complete, and this fixture also carries the four adaptive management
+      // artifacts. The remaining Complete artifacts stay lazy until the usage profile requests
+      // them. Tighten this deliberately, not by accident.
+      assert.ok(transaction.operations.length <= 56, `${governanceDepth} ${artifactLanguage} operations ${transaction.operations.length}`);
       for (const artifact of artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
         if (artifactLanguage !== 'en') assert.match(artifact.content, /审批/);
         assert.match(artifact.content, /planHash/);

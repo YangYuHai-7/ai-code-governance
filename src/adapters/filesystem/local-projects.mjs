@@ -31,6 +31,14 @@ export function homeDirectory() {
   return os.homedir();
 }
 
+/** Immediate child names of any directory, used to locate a folder the browser dropped. */
+export function listDirectoryEntries(directory) {
+  if (typeof directory !== 'string' || !path.isAbsolute(directory) || directory.includes('\0')) return [];
+  try {
+    return fs.readdirSync(directory, { withFileTypes: true }).map((entry) => ({ name: entry.name, dir: entry.isDirectory() }));
+  } catch { return []; }
+}
+
 export function listDirectories(candidate) {
   const directory = resolveProjectDirectory(candidate, { allowBroad: true });
   const names = fs.readdirSync(directory, { withFileTypes: true })

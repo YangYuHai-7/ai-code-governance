@@ -224,7 +224,7 @@ test('initialization creates local review and report workspaces without ignoring
   assert.notEqual(git(root, ['check-ignore', '-q', 'docs/ai/release-evidence/0.2.0.json']).status, 0);
 
   const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
-  assert.equal(manifest.templateVersion, 3);
+  assert.equal(manifest.templateVersion, 4);
   assert.equal(manifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
   assert.equal(manifest.files.some((entry) => entry.path === 'reviews/.gitkeep'), false);
   assert.equal(manifest.files.some((entry) => entry.path === 'reports/.gitkeep'), false);
@@ -294,7 +294,7 @@ test('sync upgrades a v1 manifest to the current local output layout without mov
   assert.equal(fs.existsSync(path.join(root, 'reviews')), false);
   assert.equal(fs.existsSync(path.join(root, 'reports')), false);
   const upgradedManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  assert.equal(upgradedManifest.templateVersion, 3);
+  assert.equal(upgradedManifest.templateVersion, 4);
   assert.equal(upgradedManifest.files.find((entry) => entry.path === '.gitignore').ownership, 'gitignore-block');
 });
 

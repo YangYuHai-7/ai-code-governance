@@ -2,7 +2,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { isSafeRelative, normalizeRelative } from '../../shared/index.mjs';
 import { minimumTaskLevelFromPaths } from './task-routing.mjs';
 
-const LEVELS = ['L0', 'L1', 'L2', 'L3'];
+const LEVELS = ['L0', 'L1', 'L1.5', 'L2', 'L3'];
 const ROLE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const CAPABILITIES = {
   frontend: new Set(['frontend-engineering', 'frontend-development', 'frontend-delivery', 'client-ui-implementation', 'ui-implementation', 'frontend-bug-fixing']),
@@ -85,15 +85,15 @@ function matchingRole(roles, category) {
 }
 
 /** Returns bounded advice only. The caller must separately approve and launch any Agent. */
-export function recommendTaskRoles({ taskText, changedPaths = [], route, availableRoles = [] } = {}) {
+export function recommendTaskRoles({ taskText, changedPaths = [], route, availableRoles = [], taskKind = 'feature', bugfix } = {}) {
   if (typeof taskText !== 'string' || taskText.length > 4000 || !taskText.trim()) throw usageError('taskText must be non-empty text of at most 4000 characters.');
   const paths = normalizePaths(changedPaths);
-  if (!route || !LEVELS.includes(route.level)) throw usageError('route.level must be L0, L1, L2, or L3.');
+  if (!route || !LEVELS.includes(route.level)) throw usageError('route.level must be one of ' + LEVELS.join(', ') + '.');
   if (route.reasonCodes !== undefined && (!Array.isArray(route.reasonCodes) || route.reasonCodes.length > 16 || route.reasonCodes.some((code) => typeof code !== 'string' || code.length > 128))) {
     throw usageError('route.reasonCodes must be an array of at most 16 short strings.');
   }
   const roles = normalizeRoles(availableRoles);
-  const minimumLevel = paths.length ? minimumTaskLevelFromPaths(paths, {}) : 'L0';
+  const minimumLevel = paths.length ? minimumTaskLevelFromPaths(paths, {}, { taskKind, bugfix }) : 'L0';
   const effectiveLevel = LEVELS[Math.max(LEVELS.indexOf(route.level), LEVELS.indexOf(minimumLevel))];
   const signals = signalsFor(taskText, paths);
   const requestedCategories = ['frontend', 'backend', 'businessAnalysis'].filter((category) => signals.some((signal) => signal.category === category));

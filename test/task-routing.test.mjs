@@ -431,3 +431,93 @@ test('minimal keeps a short localized routing summary in AGENTS without policy m
     assert.match(artifacts.find((artifact) => artifact.path === 'AGENTS.md').content, expected);
   }
 });
+
+test('L1.5 bugfix fast track needs an explicit signal and keeps the L2 production default', () => {
+  const sample = { mutation: 'product-behavior', scope: 'single-module', risk: 'low', clarity: 'clear' };
+  // The conservative default is unchanged: a generic production diff requires L2.
+  assert.equal(classifyTaskRoute(sample).level, 'L2');
+  assert.equal(minimumTaskLevelFromPaths(['src/widget.mjs'], {}), 'L2');
+  const route = classifyTaskRoute({ ...sample, taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true } });
+  assert.equal(route.level, 'L1.5');
+  assert.equal(route.profile, 'bugfix');
+  assert.equal(route.verificationClass, 'targeted');
+  // requirements/design/architect-PK approvals are skipped, but the fast-track artifacts remain required.
+  assert.deepEqual(route.requiredApprovals, []);
+  assert.deepEqual(route.requiredArtifacts, ['reproduction-case', 'fix', 'verification', 'report']);
+  assert.deepEqual(route.reasonCodes, [
+    'mutation:product-behavior', 'scope:single-module', 'risk:low', 'clarity:clear',
+    'taskKind:bugfix', 'bugfix:reproducible', 'bugfix:bounded-fix',
+  ]);
+  // The path-based route reaches L1.5 only through the same explicit option.
+  assert.equal(minimumTaskLevelFromPaths(['src/widget.mjs'], {}, { taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true } }), 'L1.5');
+});
+
+test('L1.5 escalates to L2 when the defect, fix, contract, scope or data signals fail', () => {
+  const base = { mutation: 'product-behavior', scope: 'single-module', risk: 'low', clarity: 'clear', taskKind: 'bugfix' };
+  const good = { reproducible: true, boundedFix: true };
+  for (const [override, code, level] of [
+    [{ bugfix: { reproducible: true } }, 'fix-not-bounded', 'L2'],
+    [{ bugfix: { boundedFix: true } }, 'defect-not-reproduced', 'L2'],
+    [{ bugfix: { ...good, publicContract: true } }, 'public-contract-change', 'L2'],
+    [{ bugfix: { ...good, behaviorBeyondDefect: true } }, 'behaviour-beyond-defect', 'L2'],
+    [{ bugfix: { ...good, dataMigration: true } }, 'migration-or-data-change', 'L2'],
+    [{ bugfix: good, scope: 'multi-module' }, 'multi-module', 'L2'],
+    [{ bugfix: good, scope: 'multi-surface' }, 'multi-module', 'L3'],
+    [{ bugfix: good, risk: 'business' }, 'risk-exceeds-low', 'L2'],
+    [{ bugfix: good, mutation: 'non-production' }, 'requires-production-change', 'L1'],
+    [{ bugfix: good, mutation: 'external-action' }, 'requires-production-change', 'L3'],
+  ]) {
+    const route = classifyTaskRoute({ ...base, ...override });
+    assert.equal(route.level, level, code);
+    assert.ok(route.reasonCodes.includes(`bugfix-escalation:${code}`), `${code}: ${route.reasonCodes.join(', ')}`);
+    assert.equal(route.requiredArtifacts, undefined);
+  }
+  // Missing evidence entirely still fails closed to L2.
+  const bare = classifyTaskRoute({ ...base });
+  assert.equal(bare.level, 'L2');
+  assert.ok(bare.reasonCodes.includes('bugfix-escalation:defect-not-reproduced'));
+  assert.ok(bare.reasonCodes.includes('bugfix-escalation:fix-not-bounded'));
+  // The path-based route never lowers a stronger machine rule or a multi-module span.
+  assert.equal(minimumTaskLevelFromPaths(['src/widget.mjs'], {}, { taskKind: 'bugfix', bugfix: { ...good, publicContract: true } }), 'L2');
+  assert.equal(minimumTaskLevelFromPaths(['src/widget.mjs'], {}, { taskKind: 'bugfix', bugfix: { ...good, dataMigration: true } }), 'L2');
+  assert.equal(minimumTaskLevelFromPaths(['src/modules/a/x.mjs', 'src/modules/b/y.mjs'], {}, { taskKind: 'bugfix', bugfix: good }), 'L2');
+  assert.equal(minimumTaskLevelFromPaths(['src/payment.mjs'], {}, { taskKind: 'bugfix', bugfix: good }), 'L3');
+  assert.equal(minimumTaskLevelFromPaths(['db/migrations/001.sql'], {}, { taskKind: 'bugfix', bugfix: good }), 'L3');
+});
+
+test('bugfix signal fails closed on malformed, unpaired or unknown input', () => {
+  const base = { mutation: 'product-behavior', scope: 'single-module', risk: 'low', clarity: 'clear' };
+  const good = { reproducible: true, boundedFix: true };
+  const usage = (pattern) => (error) => error.code === 'AICG_USAGE' && pattern.test(error.message);
+  assert.throws(() => classifyTaskRoute({ ...base, bugfix: good }), usage(/bugfix/));
+  assert.throws(() => classifyTaskRoute({ ...base, taskKind: 'feature', bugfix: good }), usage(/bugfix/));
+  assert.throws(() => classifyTaskRoute({ ...base, taskKind: 'bugfix', bugfix: { reproducible: 'yes', boundedFix: true } }), usage(/bugfix/));
+  assert.throws(() => classifyTaskRoute({ ...base, taskKind: 'bugfix', bugfix: { unknown: true } }), usage(/bugfix/));
+  assert.throws(() => classifyTaskRoute({ ...base, taskKind: 'hotfix' }), usage(/taskKind/));
+  assert.throws(() => minimumTaskLevelFromPaths(['src/widget.mjs'], {}, { bugfix: good }), usage(/bugfix/));
+});
+
+test('completion routing verifies an explicit L1.5 declaration against the bugfix floor', () => {
+  const signal = { taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true } };
+  const verified = routing.evaluateCompletionTaskRoute(['src/widget.mjs'], {}, 'L1.5', signal);
+  assert.equal(verified.minimumLevel, 'L1.5');
+  assert.equal(verified.status, 'verified');
+  const unproven = routing.evaluateCompletionTaskRoute(['src/widget.mjs'], {}, 'L1.5');
+  assert.equal(unproven.minimumLevel, 'L2');
+  assert.equal(unproven.status, 'upgrade-required');
+});
+
+test('routing policy documents the L1.5 signal, approvals and required artifacts', () => {
+  const policy = taskRoutingPolicy({ artifactLanguage: 'en' });
+  const level = policy.levels.find((entry) => entry.id === 'L1.5');
+  assert.equal(level.profile, 'bugfix');
+  assert.deepEqual(level.requiredApprovals, []);
+  assert.equal(level.verificationClass, 'targeted');
+  assert.match(level.description, /reproducible/i);
+  assert.deepEqual(policy.escalation.bugfixFastTrack.signal, 'taskKind:bugfix');
+  assert.equal(policy.escalation.bugfixFastTrack.productionFloorWithoutSignal, 'L2');
+  assert.deepEqual(policy.escalation.bugfixFastTrack.requiredArtifacts, ['reproduction-case', 'fix', 'verification', 'report']);
+  assert.deepEqual(policy.escalation.bugfixFastTrack.escalations, [...routing.BUGFIX_ESCALATIONS]);
+  assert.ok(policy.input.taskKind.includes('bugfix'));
+  assert.deepEqual(policy.output, ['level', 'profile', 'requiredApprovals', 'verificationClass', 'overlays', 'reasonCodes', 'requiredArtifacts']);
+});

@@ -7,13 +7,10 @@ import { scanProject } from '../src/scanner.mjs';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { checkProject } from '../src/checker.mjs';
-import { loadAgentRegistry, selectedSkillDirectories, declaredSkillDirectories, governanceRoots } from '../src/catalogs/index.mjs';
+import { allBuiltInClientIds, clientGovernanceHomeDirectories, inferClientScopeFromRepository, loadAgentRegistry, selectedSkillDirectories, declaredSkillDirectories, governanceRoots } from '../src/catalogs/index.mjs';
 import { SUPPORTED_CLIENTS } from '../src/constants.mjs';
-import { auditSkillQuality } from '../src/modules/standards/skill-quality.mjs';
 import { isProductionScopePath } from '../src/modules/repository/production-scope.mjs';
-import {
-  buildDeliveryLoopArtifacts, DELIVERY_PHASES, DELIVERY_LOOP_ENTRY_KIND, DELIVERY_LOOP_LEDGER, DELIVERY_LOOP_PHASE_KIND,
-} from '../src/modules/governance/delivery-loop.mjs';
+import { buildDeliveryLoopArtifacts, DELIVERY_PHASES, DELIVERY_LOOP_LEDGER } from '../src/modules/governance/delivery-loop.mjs';
 
 function fixture(context, name) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), `aicg-${name}-`));
@@ -25,54 +22,65 @@ test('every supported client resolves to a Skill directory declared by the agent
   const registry = loadAgentRegistry();
   assert.deepEqual(registry.agents.map((agent) => agent.id), [...SUPPORTED_CLIENTS]);
   const directories = declaredSkillDirectories();
-  assert.deepEqual(directories, ['.agents/skills', '.claude/skills', '.github/skills', '.workbuddy/skills']);
-  // Clients that share a directory must resolve to it once, not once per client.
+  assert.deepEqual(directories, ['.agents/skills', '.claude/skills', '.github/skills', '.dsh/skills']);
   assert.deepEqual(selectedSkillDirectories(['codex', 'cursor', 'generic']), ['.agents/skills']);
   assert.deepEqual(selectedSkillDirectories(['claude-code']), ['.claude/skills']);
-  assert.deepEqual(selectedSkillDirectories(['workbuddy']), ['.workbuddy/skills']);
-  assert.deepEqual(selectedSkillDirectories(['workbuddy', 'claude-code']), ['.claude/skills', '.workbuddy/skills']);
+  assert.deepEqual(selectedSkillDirectories(['deepseek']), ['.dsh/skills']);
+  assert.deepEqual(selectedSkillDirectories(['deepseek', 'claude-code']), ['.claude/skills', '.dsh/skills']);
 });
 
 test('a newly registered client directory is governance, not production source', () => {
-  // The scanner must not count a client adapter directory as product code, or every governed
-  // repository would report the generated Skills as unowned production files.
   for (const directory of declaredSkillDirectories()) {
     assert.equal(isProductionScopePath(`${directory}/sample/SKILL.md`), false, directory);
   }
-  assert.ok(governanceRoots().includes('.workbuddy/skills'));
+  assert.ok(governanceRoots().includes('.dsh/skills'));
 });
 
-test('WorkBuddy is written to its own Skill directory and leaves other client directories untouched', (context) => {
-  const root = fixture(context, 'workbuddy-client');
+test('DeepSeek Harness stays selectable-only and reads its own project Skill root', () => {
+  assert.equal(allBuiltInClientIds().includes('deepseek'), false);
+  const deepseek = loadAgentRegistry().agents.find((agent) => agent.id === 'deepseek');
+  assert.equal(deepseek.built_in, false);
+  assert.deepEqual(deepseek.detect_commands, ['dsh']);
+  assert.equal(deepseek.instruction_entry, 'AGENTS.md');
+  assert.deepEqual(deepseek.skill_directories, ['.dsh/skills']);
+  assert.deepEqual(deepseek.assist, { command: 'dsh', args: ['--profile', 'headless', '{prompt}'] });
+  assert.deepEqual(inferClientScopeFromRepository(['.dsh/skills/standards/SKILL.md']).clients, ['deepseek']);
+});
+
+test('client governance homes derive from the agent registry instead of client names', () => {
+  assert.deepEqual(clientGovernanceHomeDirectories(), ['.agents', '.claude', '.cursor', '.dsh', '.github']);
+  const synthetic = {
+    schema_version: 1,
+    agents: [{ id: 'future', label: 'Future', built_in: false, detect_commands: [], instruction_entry: 'AGENTS.md', skill_directories: ['.future/skills'], rule_directories: [] }],
+  };
+  assert.deepEqual(clientGovernanceHomeDirectories(synthetic), ['.future']);
+});
+
+test('DeepSeek Harness adapters land in .dsh/skills and leave other client directories untouched', (context) => {
+  const root = fixture(context, 'deepseek-client');
   const scan = scanProject(root);
-  const config = { ...defaultConfig(scan), clients: ['workbuddy'], governanceDepth: 'standard' };
+  const config = { ...defaultConfig(scan), clients: ['deepseek'], governanceDepth: 'standard' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
-  assert.ok(fs.existsSync(path.join(root, '.workbuddy', 'skills', 'standards')));
+  assert.ok(fs.existsSync(path.join(root, '.dsh', 'skills', 'standards')));
   assert.equal(fs.existsSync(path.join(root, '.agents')), false);
   assert.equal(fs.existsSync(path.join(root, '.claude')), false);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
-test('the delivery loop ships by default in Standard and Complete and stays out of Minimal', (context) => {
+test('the delivery loop ships as a runtime ledger and stays out of Minimal', (context) => {
   const root = fixture(context, 'delivery-loop-flag');
   const scan = scanProject(root);
-  const base = { ...defaultConfig(scan), clients: ['workbuddy'], governanceDepth: 'standard' };
-  // The requirement-to-convergence workflow is part of what "governed" means, so Standard and
-  // Complete carry it by default rather than requiring the owner to opt in.
+  const base = { ...defaultConfig(scan), clients: ['deepseek'], governanceDepth: 'standard' };
   assert.equal(base.features.deliveryLoop, true);
   const on = buildArtifacts(base, scan).map((entry) => entry.path);
   assert.ok(on.includes('.ai-governance/state/delivery-loop.json'));
-  for (const phase of DELIVERY_PHASES) {
-    assert.ok(on.includes(`.workbuddy/skills/delivery-${phase}/SKILL.md`), phase);
-  }
+  // The loop is a ledger plus the shared workflow document, never one Skill per phase.
+  assert.equal(on.some((entry) => entry.includes('skills/delivery-')), false);
 
-  // An owner who declines it must keep their exact previous artifact set, and therefore their
-  // exact previous recorded approval.
   const declined = { ...base, features: { ...base.features, deliveryLoop: false } };
   const off = buildArtifacts(declined, scan).map((entry) => entry.path);
-  assert.equal(off.some((entry) => entry.includes('delivery')), false);
+  assert.equal(off.some((entry) => entry.includes('delivery-loop.json')), false);
 
-  // Minimal is the bootstrap-only kernel and never carries the loop, even by default.
   const minimal = { ...base, governanceDepth: 'minimal' };
   assert.equal(buildArtifacts(minimal, scan).map((entry) => entry.path).some((entry) => entry.includes('delivery')), false);
 
@@ -83,43 +91,16 @@ test('the delivery loop ships by default in Standard and Complete and stays out 
   assert.deepEqual(ledger.phases, DELIVERY_PHASES);
   assert.equal(ledger.iterations.used, 0);
   assert.deepEqual(ledger.runs, []);
+  assert.deepEqual(ledger.classification, { business: null, by: null, reason: null });
+  assert.deepEqual(ledger.blockedOnOwner, []);
 });
 
-test('every delivery Skill satisfies the Skill quality contract in both languages', () => {
+test('the delivery loop artifact is exactly one ledger in both languages', () => {
   for (const artifactLanguage of ['zh-CN', 'en']) {
     const { artifacts } = buildDeliveryLoopArtifacts({ artifactLanguage });
-    const skills = artifacts.filter((artifact) => artifact.path.endsWith('SKILL.md'));
-    assert.equal(skills.length, DELIVERY_PHASES.length + 1);
-    for (const skill of skills) {
-      const id = skill.path.split('/').slice(-2)[0];
-      const report = auditSkillQuality(skill.content, { profile: 'workflow', id });
-      assert.deepEqual(report.issues, [], `${artifactLanguage} ${id}`);
-    }
+    assert.equal(artifacts.length, 1, artifactLanguage);
+    assert.equal(artifacts[0].path, DELIVERY_LOOP_LEDGER);
+    assert.equal(artifacts[0].ownership, 'seed');
+    assert.equal(artifacts[0].kind, 'delivery-loop-ledger');
   }
-});
-
-test('the ledger names a phase for every phase Skill and the dispatch table reaches each one', () => {
-  const { artifacts } = buildDeliveryLoopArtifacts({ artifactLanguage: 'en' });
-  const entry = artifacts.find((artifact) => artifact.kind === DELIVERY_LOOP_ENTRY_KIND);
-  const phases = artifacts.filter((artifact) => artifact.kind === DELIVERY_LOOP_PHASE_KIND).map((artifact) => path.basename(path.dirname(artifact.path)));
-  assert.deepEqual(phases, DELIVERY_PHASES.map((phase) => `delivery-${phase}`));
-  // A phase the entry does not dispatch to would be unreachable, which is the whole point of
-  // keeping the entry small instead of inlining every phase. The row names the Skill id first so
-  // an agent can resolve it without pattern-matching prose.
-  for (const phase of DELIVERY_PHASES) {
-    assert.match(entry.content, new RegExp(`\\| \`${phase}\` \\| \`delivery-${phase}\` — `));
-  }
-});
-
-test('delivery budgets separate the always-on entry from the on-demand phases', () => {
-  const { artifacts } = buildDeliveryLoopArtifacts({ artifactLanguage: 'en' });
-  const entry = artifacts.find((artifact) => artifact.kind === DELIVERY_LOOP_ENTRY_KIND);
-  const phaseBytes = artifacts
-    .filter((artifact) => artifact.kind === DELIVERY_LOOP_PHASE_KIND)
-    .reduce((sum, artifact) => sum + Buffer.byteLength(artifact.content), 0);
-  // The entry is read once per delivery; the phases are read one at a time. Folding both into
-  // one ceiling is what made the always-on Skill management budget the wrong place for it.
-  assert.ok(Math.ceil(Buffer.byteLength(entry.content) / 4) <= 1000, 'entry token ceiling');
-  assert.ok(phaseBytes <= 24 * 1024, 'on-demand phase byte ceiling');
-  assert.ok(Buffer.byteLength(entry.content) < phaseBytes, 'the entry must be the smaller surface');
 });

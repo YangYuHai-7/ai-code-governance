@@ -1,4 +1,7 @@
 import fs from 'node:fs';
+import { clientGovernanceMatchers } from '../../catalogs/index.mjs';
+
+const CLIENT_GOVERNANCE = clientGovernanceMatchers();
 
 export function doctor(scan) {
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
@@ -35,7 +38,7 @@ export function doctor(scan) {
     scanBudget: scan.scanBudget,
     checks,
     agents,
-    managedLinksDetected: scan.links.filter((relative) => /(^|\/)(\.cursor|\.claude|\.agents|docs\/ai)(\/|$)/.test(relative)),
+    managedLinksDetected: scan.links.filter((relative) => (CLIENT_GOVERNANCE.touches(relative) || /(^|\/)docs\/ai(\/|$)/.test(relative))),
     // `doctor` is the surviving read-only diagnostics entry point, but it reports
     // environment and repository state only. It does NOT fold in the retired advisory
     // commands: repository assessment, architecture assessment, the technical-standards

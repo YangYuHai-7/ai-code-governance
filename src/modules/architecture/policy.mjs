@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
+import { clientGovernanceHomeDirectories } from '../../catalogs/index.mjs';
 import { classifyProject, isImplementationSourcePath, projectSourcePaths } from '../repository/index.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -12,7 +13,8 @@ export const ARCHITECTURE_STATUSES = ['active', 'advisory', 'legacy-unconfigured
 const TOPOLOGY_BINDINGS = new Set(['single-repo', 'monorepo', 'repository-family']);
 const NON_SOURCE_LINK_ROOTS = new Set([
   'docs', 'public', 'assets', 'static', 'scripts', 'script', 'tools', 'tooling', 'migrations', 'migration',
-  'infra', 'infrastructure', 'terraform', '.github', '.ai-governance', '.cursor', '.claude', '.agents',
+  'infra', 'infrastructure', 'terraform', '.github', '.ai-governance',
+  ...clientGovernanceHomeDirectories(),
   '.runtime',
 ]);
 const NON_SOURCE_ROOT_LINK_DOCUMENT = /^(?:README|LICENSE|NOTICE|CHANGELOG|CONTRIBUTING)(?:\.[^/]+)?$/i;

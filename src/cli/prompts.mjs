@@ -80,6 +80,7 @@ function clientOptions(locale) {
     { label: 'Cursor', value: 'cursor' },
     { label: localized(locale, 'Generic AGENTS.md-compatible agent', '通用 AGENTS.md 兼容 Agent'), value: 'generic' },
     { label: 'GitHub Copilot', value: 'github-copilot' },
+    { label: 'DeepSeek Harness', value: 'deepseek' },
   ];
 }
 
@@ -292,6 +293,7 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
         // carries it instead of silently dropping it. An owner who already recorded `false`
         // keeps that decision; only an absent value falls back to the default.
         deliveryLoop: seed.features?.deliveryLoop ?? true,
+        brownfieldEnrichment: seed.features?.brownfieldEnrichment ?? 'ask',
         aiAssist: false,
       },
     };
@@ -405,7 +407,7 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
         : initialization.lifecycle === 'existing' ? 'inherit-existing' : 'en',
       supportedOs,
       initialization,
-      features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, deliveryLoop, aiAssist },
+      features: { knowledge, taskRuntime, hooks, externalWorkflows, ciIntegration, deliveryLoop, brownfieldEnrichment: seed.features?.brownfieldEnrichment ?? 'ask', aiAssist },
       domainConstraints: constraintAnswer ? constraintAnswer.split(';').map((item) => item.trim()).filter(Boolean) : [],
       confirmedRiskSignals,
     };

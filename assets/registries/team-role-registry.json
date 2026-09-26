@@ -4,6 +4,9 @@
   "supportedTeamScopes": [
     "human"
   ],
+  "roleExecution": "ai-role-play-as-human",
+  "humanSignoff": "regulated-domains-only",
+  "roleExecutionNote": "Every delivery role here is executed by an AI acting as the corresponding human role. Regulated professional conclusions keep human-only decision authority; role participation alone never triggers a gate.",
   "supportedBusinessSignals": [
     "authorization",
     "multi-tenancy",
@@ -36,7 +39,9 @@
       ],
       "canCombineWith": [
         "technical-delivery-owner",
-        "quality-and-release-reviewer"
+        "quality-and-release-reviewer",
+        "product-manager",
+        "business-analyst"
       ],
       "mustRemainIndependentFrom": []
     },
@@ -58,7 +63,10 @@
       "canCombineWith": [
         "product-domain-owner",
         "frontend-delivery-owner",
-        "backend-api-and-data-owner"
+        "backend-api-and-data-owner",
+        "solution-architect",
+        "full-stack-engineer",
+        "product-designer"
       ],
       "mustRemainIndependentFrom": [
         "quality-and-release-reviewer",
@@ -88,7 +96,9 @@
         "Client-side verification for critical user flows."
       ],
       "canCombineWith": [
-        "technical-delivery-owner"
+        "technical-delivery-owner",
+        "product-designer",
+        "full-stack-engineer"
       ],
       "mustRemainIndependentFrom": []
     },
@@ -119,7 +129,8 @@
       "canCombineWith": [
         "technical-delivery-owner",
         "realtime-media-owner",
-        "platform-and-operations-owner"
+        "platform-and-operations-owner",
+        "full-stack-engineer"
       ],
       "mustRemainIndependentFrom": [
         "security-and-integrity-reviewer"
@@ -145,7 +156,9 @@
         "security-and-integrity-reviewer"
       ],
       "mustRemainIndependentFrom": [
-        "technical-delivery-owner"
+        "technical-delivery-owner",
+        "solution-architect",
+        "product-manager"
       ]
     },
     {
@@ -202,7 +215,9 @@
       ],
       "mustRemainIndependentFrom": [
         "technical-delivery-owner",
-        "backend-api-and-data-owner"
+        "backend-api-and-data-owner",
+        "solution-architect",
+        "product-manager"
       ]
     },
     {
@@ -225,6 +240,130 @@
       ],
       "canCombineWith": [
         "backend-api-and-data-owner"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "product-manager",
+      "title": "Product manager (AI delivery role)",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Frame the delivery problem, sequence the requirement backlog, and keep each slice traceable to confirmed owner intent.",
+        "Coordinate the AI delivery roles without approving scope, risk, or release acceptance unilaterally."
+      ],
+      "deliverables": [
+        "A prioritized, bounded requirement slice with owner-confirmed acceptance outcomes.",
+        "A delivery coordination record that does not replace independent review."
+      ],
+      "canCombineWith": [
+        "product-domain-owner",
+        "business-analyst",
+        "product-designer"
+      ],
+      "mustRemainIndependentFrom": [
+        "quality-and-release-reviewer",
+        "security-and-integrity-reviewer"
+      ]
+    },
+    {
+      "id": "solution-architect",
+      "title": "Solution architect (AI delivery role)",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Draft the technical approach, module boundaries, and dependency order from repository evidence and confirmed constraints.",
+        "Expose architecture trade-offs for independent review instead of self-approving the plan."
+      ],
+      "deliverables": [
+        "A bounded implementation plan with explicit boundaries and rejection criteria.",
+        "An architecture decision record that separates proposal from independent review."
+      ],
+      "canCombineWith": [
+        "technical-delivery-owner",
+        "full-stack-engineer"
+      ],
+      "mustRemainIndependentFrom": [
+        "quality-and-release-reviewer",
+        "security-and-integrity-reviewer"
+      ]
+    },
+    {
+      "id": "full-stack-engineer",
+      "title": "Full-stack engineer (AI delivery role)",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Implement the confirmed vertical slice across client, service, and data boundaries as one work unit.",
+        "Produce verifiable change evidence without acting as the sole acceptance reviewer."
+      ],
+      "deliverables": [
+        "Working implementation scoped to the approved unit.",
+        "Executed verification evidence for the changed surfaces."
+      ],
+      "canCombineWith": [
+        "technical-delivery-owner",
+        "frontend-delivery-owner",
+        "backend-api-and-data-owner",
+        "solution-architect"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "business-analyst",
+      "title": "Business analyst (AI delivery role)",
+      "selection": {
+        "alwaysWithBusinessContext": true
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Elicit and structure requirements, acceptance criteria, and open questions from confirmed owner intent.",
+        "Separate business decisions that need owner confirmation from facts inferable from repository evidence."
+      ],
+      "deliverables": [
+        "A structured requirement statement with acceptance criteria and open questions.",
+        "A classification of business versus non-business items for owner confirmation."
+      ],
+      "canCombineWith": [
+        "product-domain-owner",
+        "product-manager",
+        "product-designer"
+      ],
+      "mustRemainIndependentFrom": []
+    },
+    {
+      "id": "product-designer",
+      "title": "Product designer (AI delivery role)",
+      "selection": {
+        "technologyPackagesAny": [
+          "react",
+          "react-dom",
+          "@mantine/core",
+          "vue",
+          "@angular/core",
+          "svelte"
+        ]
+      },
+      "defaultPriority": "needed-now",
+      "responsibilities": [
+        "Design user flows and interfaces against the project's existing design system, leaving loading, empty, error, and permission states explicit.",
+        "Treat HTML previews as non-production proposals that need owner selection before implementation."
+      ],
+      "deliverables": [
+        "A component and state specification for the confirmed flow.",
+        "Optional preview proposals kept outside the production build."
+      ],
+      "canCombineWith": [
+        "product-manager",
+        "business-analyst",
+        "frontend-delivery-owner",
+        "technical-delivery-owner"
       ],
       "mustRemainIndependentFrom": []
     }

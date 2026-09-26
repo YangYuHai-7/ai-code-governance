@@ -3,10 +3,11 @@ import { memoryIssues } from '../memory/index.mjs';
 import { readWorkUnit, workUnitPath, workUnitPlanDigest, workUnitPlanProjection, checkWorkUnit, parseWorkUnitResults, workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification, changedWorkUnitBehaviorPaths } from '../work-units/index.mjs';
 import os from 'node:os';
 import path from 'node:path';
-import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
+import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, readCanonicalPath, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
 import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
+import { clientGovernanceMatchers } from '../../catalogs/index.mjs';
 import { isProductionScopePath, scanProject, SURFACE_EVIDENCE_MARKER_PREFIX, verificationNpmCommands } from '../repository/index.mjs';
 import { writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -29,6 +30,20 @@ function resolveGitRepository(target) {
   const root = path.resolve(target);
   const gitRoot = git(root, ['rev-parse', '--show-toplevel']);
   return path.resolve(gitRoot);
+}
+
+// The project flow writes its human-readable plan digest into the flow ledger. Binding it
+// into the task approval makes a plan change invalidate a prior approval, exactly like a
+// change digest does. Absent or malformed flow state simply binds nothing.
+function readFlowPlanDigest(root) {
+  try {
+    const relative = readCanonicalPath(root, 'docs/ai/flow-state.json');
+    const state = readJson(path.join(root, relative));
+    const digest = state ? state.plan && state.plan.digest : null;
+    return typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest) ? digest : null;
+  } catch {
+    return null;
+  }
 }
 
 function hookPathFor(root) {
@@ -336,10 +351,16 @@ function runVerification(scan, selected) {
   };
 }
 
+const CLIENT_GOVERNANCE = clientGovernanceMatchers();
+
+function nonUnitEvidencePath(relative) {
+  return relative.startsWith('docs/') || relative.startsWith('.ai-governance/') || CLIENT_GOVERNANCE.isPath(relative);
+}
+
 function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null }) {
   let { config, taskRoute, behaviorPaths, trustedBehaviorChange } = completionTaskRoute(scan, paths, taskLevel, gitRoot);
   let unit = workUnitRelative ? readWorkUnit(scan.root, workUnitRelative) : null;
-  const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !/^(?:docs|\.ai-governance|\.agents|\.claude|\.cursor|\.github)\//.test(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
+  const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !nonUnitEvidencePath(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
   const selectedVerification = verificationCommand ? discoveredVerification(scan, verificationCommand) : null;
   const governance = checkProject(scan);
   let projectVerification = { status: 'not-requested', command: null };
@@ -395,6 +416,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     ...professionalContext,
     professionalBoundaries,
     workUnitDigest: unit ? workUnitPlanDigest(unit) : null,
+    planDigest: readFlowPlanDigest(scan.root),
     confirmedRiskSignals,
     reviewEvidence: { confirmedRisk: confirmedRiskSignals.length > 0, publicContract: confirmedRiskSignals.includes('public-api'), externalAction: confirmedRiskSignals.includes('external-side-effect') },
     trustedBehaviorChange,

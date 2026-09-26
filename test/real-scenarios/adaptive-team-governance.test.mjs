@@ -12,7 +12,8 @@ import { decideSkillCandidates } from '../../src/skill-discovery.mjs';
 import { proposeProjectAgentTeam } from '../../src/project-agent-team.mjs';
 
 const cli = path.resolve('bin/aicg.js');
-const managementPaths = ['docs/ai/skills/skill-discovery/SKILL.md', 'docs/ai/skills/team-orchestrator/SKILL.md', '.ai-governance/state/skill-index.json', '.ai-governance/state/agent-team.json'];
+const managementPaths = ['docs/ai/skills/skill-discovery/SKILL.md', '.ai-governance/state/skill-index.json', '.ai-governance/state/agent-team.json'];
+const fixedTeamPaths = ['.ai-governance/state/team-roster.json'];
 
 function fixture(context) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-adaptive-scenario-'));
@@ -104,6 +105,8 @@ for (const governanceDepth of ['minimal', 'standard']) test(`${governanceDepth} 
   assert.equal(stored.adaptiveDecisions?.roles[0].action, 'reject');
   for (const receipt of [...stored.adaptiveDecisions.skills, ...stored.adaptiveDecisions.roles]) assert.match(receipt.evidenceHash, /^[a-f0-9]{64}$/);
   assert.equal(managementPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
+  if (governanceDepth === 'minimal') assert.equal(fixedTeamPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
+  else assert.equal(fixedTeamPaths.every((relative) => fs.existsSync(path.join(f.root, relative))), true);
   delete config.adaptiveGovernance.decisions;
   const again = preview(f, config);
   assert.equal(again.adaptiveGovernance.skills.candidates.some((entry) => entry.id === skillId), false);
@@ -196,6 +199,7 @@ test('greenfield preview exposes bounded offline recommendations, open professio
   assert.ok(result.adaptiveGovernance.professionalReviewGaps.some((item) => item.qualification === 'licensed-lawyer'));
   assert.equal(result.adaptiveGovernance.decisions.roles[0].action, 'defer');
   assert.equal(result.files.some((item) => managementPaths.includes(item.path)), false);
+  assert.equal(fixedTeamPaths.every((relative) => result.files.some((item) => item.path === relative)), true);
   assert.equal(result.contextCost.ordinary.files, 3);
   assert.ok(result.contextCost.ordinary.estimatedTokens <= 900);
   assert.deepEqual(result.adaptiveGovernance.actionsPerformed, []);
@@ -246,7 +250,7 @@ for (const governanceDepth of ['complete']) {
     assert.equal(result.contextCost.management.total.files, result.files.length + 1, `${governanceDepth} management cost ${JSON.stringify(result.contextCost.management)} files ${result.files.length}`);
     assert.ok(result.contextCost.management.increment.files <= 30, 'the Skill management increment is the budgeted quantity');
     assert.ok(result.contextCost.management.increment.bytes <= (governanceDepth === 'standard' ? 96 : 128) * 1024);
-    assert.ok(result.contextCost.management.increment.managerTokens <= 800);
+    assert.ok(result.contextCost.management.increment.managementProfileTokens <= 2400);
     assert.deepEqual(result.files.filter((item) => managementPaths.includes(item.path)).map((item) => item.path).sort(), [...managementPaths].sort());
     const before = snapshot(f.root);
     const unapproved = output(command(['init', f.root, '--yes', '--config', f.answers]));
@@ -275,8 +279,8 @@ for (const governanceDepth of ['complete']) {
       for (const file of ['docs/ai/README.md', 'docs/ai/context-map.yaml']) assert.equal(fs.readFileSync(path.join(f.root, file), 'utf8').includes(relative), false);
     }
     const routes = fs.readFileSync(path.join(f.root, 'docs/ai/context-map.yaml'), 'utf8');
-    assert.match(routes, /business:\n\s+- docs\/ai\/skills\/team-orchestrator\/SKILL.md\n\s+- docs\/ai\/policies\/business-constraints.json/);
-    assert.match(fs.readFileSync(path.join(f.root, managementPaths[1]), 'utf8'), /risk-evidence.json/);
+    assert.match(routes, /business:\n\s+- docs\/ai\/policies\/business-constraints.json/);
+    assert.match(routes, /team_orchestrator:\n\s+- \.ai-governance\/state\/agent-team\.json/);
   });
 }
 
@@ -362,7 +366,7 @@ test('existing Minimal governance upgrades with selected roles only after exact 
   const before = snapshot(f.root);
   const result = output(command(['sync', f.root, '--config', f.answers]));
   assert.deepEqual(snapshot(f.root), before);
-  assert.equal(result.files.filter((entry) => managementPaths.includes(entry.path)).length, 4);
+  assert.equal(result.files.filter((entry) => managementPaths.includes(entry.path)).length, 3);
   const applied = command(['sync', f.root, '--config', f.answers, '--approve', result.planHash]);
   assert.equal(applied.status, 0, applied.stderr);
   assert.equal(checkProject(scanProject(f.root)).ok, true);

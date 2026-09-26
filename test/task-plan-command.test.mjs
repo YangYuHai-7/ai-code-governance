@@ -29,3 +29,22 @@ test('task planner scales a question and frontend source bug differently and ret
   assert.deepEqual(crossStack.route.requiredApprovals, ['requirements', 'design', 'plan']);
   assert.equal(crossStack.route.verificationClass, 'integrated');
 });
+test('the bugfix fast track routes L1.5 and escalates without reproduction or a bounded fix', (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-plan-bugfix-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const fast = planTask(root, { text: 'Fix the session crash', paths: ['src/session.mjs'], taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true, publicContract: false, behaviorBeyondDefect: false, dataMigration: false } });
+  assert.equal(fast.route.level, 'L1.5');
+  assert.deepEqual(fast.route.requiredApprovals, []);
+  assert.deepEqual(fast.route.requiredArtifacts, ['reproduction-case', 'fix', 'verification', 'report']);
+  assert.equal(fast.process.implementationConsent, 'required-before-business-code-change');
+  const notReproduced = planTask(root, { text: 'Fix the session crash', paths: ['src/session.mjs'], taskKind: 'bugfix', bugfix: { reproducible: false, boundedFix: true } });
+  assert.equal(notReproduced.route.level, 'L2');
+  assert.ok(notReproduced.route.reasonCodes.includes('bugfix-escalation:defect-not-reproduced'));
+  const unbounded = planTask(root, { text: 'Fix the session crash', paths: ['src/session.mjs'], taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true, behaviorBeyondDefect: true } });
+  assert.equal(unbounded.route.level, 'L2');
+  const crossModule = planTask(root, { text: 'Fix the crash', paths: ['src/modules/a/x.mjs', 'src/modules/b/y.mjs'], taskKind: 'bugfix', bugfix: { reproducible: true, boundedFix: true } });
+  assert.equal(crossModule.route.level, 'L2');
+});

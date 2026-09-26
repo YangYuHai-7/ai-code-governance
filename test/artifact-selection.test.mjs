@@ -9,7 +9,6 @@ import { checkProject } from '../src/checker.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { artifactDefinitions, selectedArtifactDefinitions } from '../src/modules/governance/compiler.mjs';
 import { resolveGovernanceCapabilities, selectArtifactDefinitions } from '../src/modules/governance/artifact-selection.mjs';
-import { DELIVERY_PHASES } from '../src/modules/governance/delivery-loop.mjs';
 import { deriveArchitectureDecision } from '../src/modules/architecture/index.mjs';
 import { surfaceVerificationProfiles } from '../src/modules/repository/index.mjs';
 import { remapContentPaths } from '../src/modules/governance/layout.mjs';
@@ -57,13 +56,12 @@ test('Codex-only minimal emits only the trusted kernel', (context) => {
 
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
   for (const [governanceDepth, expectedFiles, maxBytes] of [
-    // Standard and Complete carry the delivery loop by default: the entry Skill, one Skill per
-    // phase, the runtime ledger and one discovery adapter per phase. Minimal stays the
-    // bootstrap-only kernel and never carries it. Byte ceilings keep roughly the same headroom
-    // over the measured footprint that they had before the loop became a default.
+    // Standard and Complete carry the delivery process by default: one workflow document plus
+    // two runtime ledgers. Minimal stays the bootstrap-only kernel and never carries it. The
+    // phase-Skill family was removed, so the measured footprint dropped by roughly 23 files.
     ['minimal', 9, 24 * 1024],
-    ['standard', 41, 120 * 1024],
-    ['complete', 43, 128 * 1024],
+    ['standard', 36, 128 * 1024],
+    ['complete', 38, 128 * 1024],
   ]) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
@@ -94,21 +92,20 @@ test('standard and complete do not eagerly enable evidence or lifecycle features
     const policy = ['docs/ai/policies/anti-patterns.md', '.ai-governance/state/stack-profile.json', 'docs/ai/policies/20_stack.mdc', '.ai-governance/state/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standards/software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standards/standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standards/professional-testing/SKILL.md'];
     const routing = ['.gitignore', 'docs/ai/routing/bootstrap-prompt.md', '.ai-governance/state/decision-ledger.json', '.ai-governance/state/task-routing-policy.json', '.ai-governance/state/verification-profiles.yaml'];
     const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
-    // The delivery loop is a default part of both depths. It is a workflow surface, not an
-    // evidence or lifecycle family, so the point of this test — that neither depth eagerly
-    // pulls in release/surface/acceptance artifacts — still holds. Derived from the canonical
-    // phase list so adding a phase cannot silently drift this expectation.
-    const deliveryLoop = [
+    // The delivery process is one workflow document plus two runtime ledgers, not a family of
+    // phase Skills. It is a workflow surface, not an evidence or lifecycle family, so the point
+    // of this test — that neither depth eagerly pulls in release/surface/acceptance artifacts —
+    // still holds.
+    const workflow = [
+      'docs/WORKFLOW.md',
       '.ai-governance/state/delivery-loop.json',
-      'docs/ai/skills/delivery-loop/SKILL.md',
-      '.agents/skills/delivery-loop/SKILL.md',
-      ...DELIVERY_PHASES.flatMap((phase) => [
-        `docs/ai/skills/delivery-${phase}/SKILL.md`,
-        `.agents/skills/delivery-${phase}/SKILL.md`,
-      ]),
+      '.ai-governance/state/flow-state.json',
     ];
-    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills, ...deliveryLoop].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 41 : 43));
+    // Roles are agent definitions now, not a process Skill.
+    const fixedTeam = ['.ai-governance/state/team-roster.json'];
+    const agents = ['architect', 'ba', 'backend', 'designer', 'frontend', 'fullstack', 'pm', 'tester'].map((id) => 'docs/ai/agents/' + id + '.md');
+    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills, ...fixedTeam, ...workflow, ...agents].sort());
+    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 44 : 46));
   }
 });
 

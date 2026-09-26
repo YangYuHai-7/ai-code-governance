@@ -292,7 +292,13 @@ function readmeBlock(unit, config) {
 }
 
 function unitRule(unit) {
-  return `# ${unit.path} development rule
+  const label = unit.path === '.' ? unit.id : unit.path;
+  return `---
+alwaysApply: false
+profiles: [implementation]
+---
+
+# ${label} development rule
 
 Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as leads until the cited source and tests have been reviewed. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
 `;

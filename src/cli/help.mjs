@@ -19,7 +19,7 @@ Usage:
 For AI coding agents (drive these from the chat, not by hand):
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist]
-                  [--assist codex|claude-code|cursor] [--review] [--migrate-links] [--force] [--adopt-foreign-governance]
+                  [--assist codex|claude-code|cursor|deepseek] [--review] [--migrate-links] [--force] [--adopt-foreign-governance]
   aicg check [path] [--json] [--enforce]
   aicg sync [path] [--dry-run] [--force] [--migrate-links] [--prune] [--approve planHash]
   aicg doctor [path] [--locale zh-CN|en] [--json] [--enforce]

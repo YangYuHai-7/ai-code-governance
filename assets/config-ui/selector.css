@@ -1,12 +1,12 @@
 [hidden]{display:none!important}
 .selector{margin-top:22px}
-[hidden]{display:none!important}
-.configuration-fields{display:grid;gap:20px}
-.assessment-details{display:grid;gap:9px;margin:0 0 20px;font-size:13px;line-height:1.5;color:#4b626c}
+.assessment-details{display:grid;gap:9px;margin:14px 0 4px;font-size:13px;line-height:1.5;color:#4b626c}
 .assessment-details strong{color:#173043}
 .selector .section-head{margin-bottom:20px}
 .project #switch-project{min-height:28px;padding:4px 9px;margin-left:12px;background:#ffffffb3}
-.project-form{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:end}
+.project-form{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:10px;align-items:end}
+.selector.dropping{outline:2px dashed #30a383;outline-offset:6px;background:#f2fbf7}
+.drop-hint{margin:14px 0 0;font-size:12.5px;color:#73858a;text-align:center}
 .project-form label{min-width:0}
 .project-form button{height:42px}
 .selector h3{margin:23px 0 10px}
@@ -21,4 +21,94 @@
 .browse-entries{display:grid;gap:5px;max-height:240px;overflow:auto;margin-bottom:12px}
 .browse-entries button{min-height:34px;padding:7px 10px}
 .browse-empty{font-size:12px;color:#73858a}
-@media(max-width:700px){.project-form{grid-template-columns:1fr 1fr}.project-form label{grid-column:1/-1}.project #switch-project{display:block;margin:10px 0 0}}
+.steps{list-style:none;display:flex;gap:10px;flex-wrap:wrap;padding:0;margin:18px 0 0}
+.steps li{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:#215c55;background:#ffffffb3;border:1px solid #cfe4de;border-radius:999px;padding:6px 12px}
+.steps span{display:grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#167e6b;color:#fff;font-size:11px}
+.link{background:transparent;border:none;color:#2d6470;text-decoration:underline;padding:0;min-height:0;font-weight:600}
+.link:hover{color:#146a5b}
+.spaced{margin-top:22px}
+.advanced{margin:6px 0 4px;border-top:1px solid #e6efee;padding-top:8px}
+.advanced summary,.import-export summary{cursor:pointer;font-size:13px;font-weight:750;color:#146a5b;padding:12px 0;list-style:none}
+.advanced summary::-webkit-details-marker,.import-export summary::-webkit-details-marker,.basis summary::-webkit-details-marker{display:none}
+.advanced summary::before,.import-export summary::before,.basis summary::before{content:"▸";display:inline-block;margin-right:8px;transition:transform .15s}
+.advanced[open] summary::before,.import-export[open] summary::before,.basis[open] summary::before{transform:rotate(90deg)}
+.advanced-body{padding-top:6px}
+.advanced-body h3{margin:24px 0 6px}
+.advanced-body .sub{font-size:12px;color:#73858a;margin:0 0 10px}
+.import-export{margin-top:14px;padding-top:12px;border-top:1px solid #e6efee;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+.import-export .hint{width:100%;text-align:center;margin:4px 0 0!important}
+.preview .warn{color:#9f412e}
+.resultbar .preview{text-align:left}
+.toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:30;background:#102d38;color:#fff;padding:11px 18px;border-radius:12px;font-size:13px;line-height:1.55;box-shadow:0 14px 34px #102d3840;max-width:min(720px,92vw)}
+.toast[hidden]{display:none}
+.toast.error{background:#9f412e}
+.scanning{display:flex;gap:14px;align-items:center;margin-top:22px}
+.scanning[hidden]{display:none}
+.scanning b{font-size:15px}
+.scanning p{margin:4px 0 0;font-size:12px;color:#667b83}
+.scan-spinner{flex:none;width:18px;height:18px;border:2px solid #7abbb0;border-top-color:#146a5b;border-radius:50%;animation:aicg-spin .8s linear infinite}
+@media (prefers-reduced-motion: reduce){.scan-spinner{animation:none}}
+.preview.tree-view{max-height:360px}
+.preview .preview-counts{margin:8px 0}
+.preview .tree{list-style:none;margin:4px 0;padding-left:0}
+.preview .tree .tree{padding-left:16px;margin-left:7px;border-left:1px dashed #d7e6e3}
+.preview .dir-name{font-weight:750;color:#3f5b64}
+.preview .file{display:flex;align-items:center;gap:8px;padding:2px 6px;border-radius:6px;color:#526a74}
+.preview .file .path-name{word-break:break-all}
+.preview .badge-act{flex:none;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 5px;letter-spacing:.02em}
+.preview .badge-act.create{background:#d8f3e6;color:#0f6b50}
+.preview .badge-act.replace{background:#fde6de;color:#9f412e}
+.preview .badge-act.update{background:#e6eef2;color:#3f5b64}
+.preview .file.create{background:#eefaf4}
+.preview .file.create .path-name{color:#0f6b50;font-weight:700}
+
+/* Checklist: one plain-language question per row, answer shown as a chip. */
+.checklist{padding:0 34px}
+.greet{display:flex;gap:16px;align-items:center;padding:28px 0 22px;border-bottom:1px solid #e6efee}
+.ava{flex:none;width:46px;height:46px;border-radius:50%;background:#d9efea;color:#167e6b;font-weight:800;display:grid;place-items:center;font-size:15px}
+.greet b{font-size:17px}
+.greet p{margin:4px 0 0;font-size:13px;word-break:break-all}
+.qrow{border-bottom:1px solid #eef4f3}
+.qline{display:flex;align-items:center;gap:16px;padding:17px 0}
+.qno{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#e4f4ef;color:#167e6b;font-size:12.5px;font-weight:800}
+.qq{flex:1;min-width:0}
+.qq b{font-size:15px}
+.qq small{display:block;color:#73858a;font-size:12.5px;margin-top:3px}
+.optional{color:#8aa1a4;font-weight:500;font-size:12.5px;margin-left:6px}
+.ans{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:46%}
+.ans .chip{margin:0;padding:7px 12px;font-size:12.5px}
+/* style.css gives every non-file input width:100%, which stretches a checkbox across the
+   whole card and pushes its label to the right. Reset it inside the choice cards. */
+.choice input{width:auto;flex:none;margin:2px 0 0}
+.choice span{flex:1;min-width:0}
+.choice small{margin-top:3px}
+.choice.disabled{opacity:.55}
+.choice.disabled small{color:#b06a2c}
+/* A drifted managed baseline is a refusal, not a field error: explain it before the buttons. */
+.trust-warning{margin-top:14px;padding:14px 16px;border:1px solid #f0c9a8;border-radius:12px;background:#fff7ee;color:#7a4a17;font-size:13px;line-height:1.7}
+.trust-warning strong{display:block;font-size:13.5px;margin-bottom:4px;color:#9a5a12}
+.trust-warning p{margin:0 0 10px;word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.trust-warning button{width:auto;min-height:36px;padding:8px 14px}
+.edit{flex:none;background:transparent;border:none;color:#167e6b;font-weight:700;font-size:13px;padding:6px 2px;min-height:0;text-decoration:underline}
+.qedit{padding:2px 0 20px 40px}
+.qedit .fields{margin-top:0}
+.basis{padding:8px 0 14px}
+.basis summary{cursor:pointer;font-size:12.5px;color:#5b737c;padding:6px 0}
+.resultbar{margin-top:20px;padding:16px 22px;text-align:center;position:sticky;bottom:16px;z-index:8;background:#fff;box-shadow:0 12px 32px #183d4b1f}
+.resultbar .actions{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:8px}
+.big{min-height:52px;padding:15px 40px;font-size:16px;border-radius:13px}
+@media(max-width:700px){
+  .project-form{grid-template-columns:1fr 1fr}
+  .project-form label{grid-column:1/-1}
+  .project-form #choose-folder{grid-column:1/-1}
+  .project #switch-project{display:block;margin:10px 0 0}
+  .steps{gap:6px}.steps li{font-size:11px;padding:5px 9px}
+  .checklist{padding:0 18px}
+  .qline{flex-wrap:wrap;gap:10px}
+  .qq{flex:1 1 100%;order:2}
+  .qno{order:1}
+  .ans{order:3;max-width:100%;justify-content:flex-start;margin-left:40px}
+  .edit{order:4;margin-left:auto}
+  .qedit{padding-left:0}
+  .big{width:100%}
+}

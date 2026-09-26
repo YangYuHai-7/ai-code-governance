@@ -2,6 +2,9 @@ import { SUPPORTED_INTERACTION_LANGUAGES } from '../constants.mjs';
 import { governanceCommand } from '../generator.mjs';
 import { classifyProject, detectSurfaceSignals, projectSourcePaths, verificationNpmCommands } from '../modules/repository/index.mjs';
 import { usageError } from '../kernel/index.mjs';
+import { clientGovernanceMatchers } from '../catalogs/index.mjs';
+
+const CLIENT_GOVERNANCE = clientGovernanceMatchers();
 
 function resolveLocale(requestedLocale, config) {
   const locale = requestedLocale ?? config?.interactionLanguage ?? 'en';
@@ -194,7 +197,7 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
     });
   }
 
-  const managedLinksDetected = scan.links.filter((relative) => /(^|\/)(\.cursor|\.claude|\.agents|docs\/ai)(\/|$)/.test(relative));
+  const managedLinksDetected = scan.links.filter((relative) => (CLIENT_GOVERNANCE.touches(relative) || /(^|\/)docs\/ai(\/|$)/.test(relative)));
   if (managedLinksDetected.length > 0) {
     const recoveryAction = {
       id: 'migrate-managed-links',

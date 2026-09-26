@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "product_line": "ai-code-governance",
+  "policy": {
+    "runtime_network": false,
+    "runtime_install": false,
+    "catalog_is_candidate_only": true,
+    "verification_basis": "pinned-commit",
+    "refresh_days": 90,
+    "allowed_licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "ISC",
+      "0BSD"
+    ],
+    "operator_discovery": "Use the find-skills operator step (npx skills find/add) to locate candidates; never let AICG install or execute them at runtime.",
+    "note": "Snapshots populate adaptiveGovernance.curatedCatalog as offline metadata. Nothing is preselected, installed or activated; the owner approves by planHash."
+  },
+  "sources": [
+    {
+      "id": "obra-superpowers",
+      "repository": "https://github.com/obra/superpowers",
+      "owner": "obra",
+      "repo": "superpowers",
+      "ref": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+      "committedAt": "2026-09-19T00:31:35Z",
+      "license": "MIT",
+      "skills": [
+        {
+          "id": "test-driven-development",
+          "path": "skills/test-driven-development",
+          "capabilities": [
+            "test-driven-development",
+            "verification"
+          ],
+          "capabilityOwner": "test-driven-development",
+          "permissions": [
+            "read-project"
+          ],
+          "purpose": "Red-green-refactor discipline before implementation code; fills the L7 verification profile gap AICG does not generate."
+        },
+        {
+          "id": "verification-before-completion",
+          "path": "skills/verification-before-completion",
+          "capabilities": [
+            "completion-evidence",
+            "verification"
+          ],
+          "capabilityOwner": "completion-evidence",
+          "permissions": [
+            "read-project",
+            "run-declared-tests"
+          ],
+          "purpose": "Require executed evidence before claiming completion; pairs with the AICG_QA_RESULT evidence contract."
+        }
+      ]
+    },
+    {
+      "id": "anthropics-skills",
+      "repository": "https://github.com/anthropics/skills",
+      "owner": "anthropics",
+      "repo": "skills",
+      "ref": "34040c9c568585f6929bedeaad110ad08f079624",
+      "committedAt": "2026-09-10T19:44:08Z",
+      "license": "Apache-2.0",
+      "skills": [
+        {
+          "id": "skill-creator",
+          "path": "skills/skill-creator",
+          "capabilities": [
+            "skill-authoring",
+            "skill-evaluation"
+          ],
+          "capabilityOwner": "skill-authoring",
+          "permissions": [
+            "read-project"
+          ],
+          "purpose": "Author and evaluate project Skills as capability candidates for the L11 growth loop."
+        }
+      ]
+    }
+  ]
+}

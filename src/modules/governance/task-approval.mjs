@@ -38,7 +38,7 @@ function boundaries(values) {
   }).sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], approvalReceipt = null, confirmedRiskSignals = [], workUnitDigest = null }) {
+export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], approvalReceipt = null, confirmedRiskSignals = [], workUnitDigest = null, planDigest = null }) {
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (!taskLevel || !reviewMode) throw usageError('Approval plans require explicit taskLevel and reviewMode.');
@@ -59,8 +59,10 @@ export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, cha
     approvalReceiptDigest: approvalReceipt === null ? null : sha256(stableJson(approvalReceipt)),
     confirmedRiskSignals: [...new Set(confirmedRiskSignals)].sort(),
     ...(workUnitDigest === null ? {} : { workUnitDigest }),
+    ...(planDigest === null ? {} : { planDigest }),
   };
   if (workUnitDigest !== null && !HASH.test(workUnitDigest)) throw usageError('Invalid work-unit digest.');
+  if (planDigest !== null && !HASH.test(planDigest)) throw usageError('Invalid plan digest.');
   return { ...plan, planHash: sha256(stableJson(plan)) };
 }
 
@@ -98,7 +100,7 @@ function readEvidence(root, relative) {
   return evidence;
 }
 
-export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null, confirmedRiskSignals = [], workUnitDigest = null, trustedBehaviorChange = null }) {
+export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plannedPaths, changeDigest, requiredApprovals = [], professionalBoundaries = [], reviewEvidence = {}, approvalEvidence = null, approve = null, professionalGap = null, confirmedRiskSignals = [], workUnitDigest = null, planDigest = null, trustedBehaviorChange = null }) {
   validateReviewMode(reviewMode);
   const result = { ok: false, status: 'missing-evidence', evidenceLevel: 'operator-declared', identityVerified: false, review: null, plan: null, gaps: [] };
   const fail = (status, gap) => ({ ...result, status, gaps: [gap] });
@@ -132,7 +134,7 @@ export function evaluateTaskApproval(root, { taskLevel, reviewMode = null, plann
     professionalBoundaries: declaredBoundaries,
     approvals: evidence.approvals.map((record) => ({ ...record, reference: safePath(record.reference) })).sort((a, b) => a.id.localeCompare(b.id)),
   } : null;
-  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, changeDigest, requiredApprovals: extraApprovals, professionalBoundaries: professional, approvalReceipt, confirmedRiskSignals, workUnitDigest });
+  result.plan = buildTaskApprovalPlan({ taskLevel, reviewMode: effectiveMode, plannedPaths, changeDigest, requiredApprovals: extraApprovals, professionalBoundaries: professional, approvalReceipt, confirmedRiskSignals, workUnitDigest, planDigest });
   if (professionalGap) return fail('professional-review-gap', professionalGap);
   if (REVIEW_MODES.indexOf(effectiveMode) < REVIEW_MODES.indexOf(minimum.mode)) return fail('review-upgrade-required', `Review mode requires at least ${minimum.mode}.`);
   if (!evidence && result.plan.requiredApprovals.length === 0 && approve === null) return { ...result, ok: true, status: 'not-required' };

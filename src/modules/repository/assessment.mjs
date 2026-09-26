@@ -1,5 +1,6 @@
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
+import { clientGovernanceHomeDirectories } from '../../catalogs/index.mjs';
 import { detectSurfaceSignals } from './surface-signals.mjs';
 import { repositoryFamilyMembersSnapshot } from './repository-family.mjs';
 
@@ -7,11 +8,12 @@ const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
   'CLAUDE.md',
   '.gitignore',
-  '.cursor/',
-  '.claude/',
-  '.agents/',
+  ...clientGovernanceHomeDirectories().map((home) => `${home}/`),
   'docs/ai/',
   'docs/memory/',
+  // The single delivery workflow document is generated governance, not product source, so it
+  // must not inflate the classified product-file count on a rescan.
+  'docs/WORKFLOW.md',
   '.ai-governance/',
   ...LOCAL_OUTPUT_PREFIXES,
 ];

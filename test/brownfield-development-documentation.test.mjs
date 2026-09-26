@@ -6,6 +6,7 @@ import test from 'node:test';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
 import { prepareInit } from '../src/cli/commands/init.mjs';
+import { canonicalPathVariants } from '../src/modules/governance/layout.mjs';
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-development-docs-'));
@@ -38,7 +39,7 @@ test('existing monorepos receive one evidence baseline and README entrypoint per
     assert.equal(byPath.get(unit.readme).ownership, 'managed-block');
     assert.match(byPath.get(unit.documentation).content, /code-scan understanding baseline/);
     const localRoot = unit.path === '.' ? 'docs/ai' : `${unit.path}/docs/ai`;
-    assert.ok(byPath.has(`${localRoot}/rules/development.md`));
+    assert.ok(canonicalPathVariants(`${localRoot}/rules/development.md`).some((candidate) => byPath.has(candidate)), `${localRoot}/rules/development.md`);
     const localSkill = byPath.get(`${localRoot}/skills/development-${unit.id}/SKILL.md`);
     assert.ok(localSkill);
     assert.match(localSkill.content, new RegExp(unit.documentation.replaceAll('/', '\\/')));

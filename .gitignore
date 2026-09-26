@@ -19,6 +19,9 @@ docs/reports/
 reports/
 reviews/
 
+# Vendored third-party Skill sources used only to rebuild the packaged catalog
+vendor/
+
 # Generated test and tool reports
 coverage/
 test-results/

@@ -258,15 +258,17 @@ test('final audit: Memory reader rejects ancestor replacement and path identity 
   }
 });
 
-test('final audit: fresh Standard stays within 41 files while historical placeholders are retained', (t) => {
+test('final audit: fresh Standard stays within 52 files while historical placeholders are retained', (t) => {
   const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-final-standard-fresh-'));
   const existing = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-final-standard-existing-'));
   t.after(() => { fs.rmSync(fresh, { recursive: true, force: true }); fs.rmSync(existing, { recursive: true, force: true }); });
   const freshScan = scanProject(fresh);
   const artifacts = buildArtifacts({ ...defaultConfig(freshScan), clients: ['codex'], governanceDepth: 'standard' }, freshScan);
-  // 41 covers the delivery loop that Standard now carries by default: the entry Skill, one
-  // Skill per phase, the ledger and one discovery adapter per phase, plus the manifest.
-  assert.ok(artifacts.length + 1 <= 41, `fresh Standard including manifest: ${artifacts.length + 1}`);
+  // 52 covers the delivery loop, the project flow, the fixed team roster and the
+  // team-orchestrator Skill that Standard now carries by default (each loop carries an entry
+  // Skill, one Skill per phase, a runtime ledger and one discovery adapter per phase) plus the
+  // manifest.
+  assert.ok(artifacts.length + 1 <= 52, `fresh Standard including manifest: ${artifacts.length + 1}`);
   assert.equal(artifacts.some((entry) => /^(?:reviews|reports)\/\.gitkeep$/.test(entry.path)), false);
 
   write(existing, 'reviews/.gitkeep', '# historical review placeholder\n');

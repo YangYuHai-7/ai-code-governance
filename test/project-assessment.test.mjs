@@ -132,6 +132,18 @@ test('an empty project remains greenfield after governance generation', (context
   assert.ok(result.warnings.some((warning) => warning.includes('legacy-unconfirmed initialization decision')));
 });
 
+test('a generated DeepSeek home does not turn an empty project into an ambiguous skeleton', (context) => {
+  const root = fixture('deepseek-greenfield');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, '.dsh/skills/standards'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.dsh/skills/standards/SKILL.md'), '# standard\n');
+  fs.writeFileSync(path.join(root, '.dsh/settings.yaml'), '{}\n');
+  // The registry declares '.dsh/skills' as DeepSeek's Skill root, so the lifecycle classifier
+  // must treat the whole '.dsh/' client home as governance; otherwise its own generated
+  // adapters read back as product source.
+  assert.equal(classifyProject(scanProject(root)).codebase.lifecycle.value, 'greenfield');
+});
+
 test('assessment summary exposes incomplete repository scans', (context) => {
   const root = fixture('incomplete-summary');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

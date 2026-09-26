@@ -204,7 +204,11 @@ function mergeConditionalSeedRoutes(current, desired) {
         const overlapsGeneratedRoute = route.entries.some((entry) => originalPresent.includes(entry));
         const generatedSkillExpansion = missing.every((entry) => /^        - docs\/ai\/skills\/(?:standards|project-conventions)\/[A-Za-z0-9._/-]+\/SKILL\.md$/.test(entry)
           || /^        - docs\/ai\/skills\/[a-z0-9]+(?:-[a-z0-9]+)*\/SKILL\.md$/.test(entry));
-        if (overlapsGeneratedRoute && !generatedSkillExpansion) {
+        // The approved project roster is generated under the same team_orchestrator condition as
+        // the Skill. When the Skill already ships by default, adding the roster later must extend
+        // that condition instead of being rejected as an owner-authored conflict.
+        const generatedRosterExpansion = missing.every((entry) => /^        - (?:\.ai-governance\/state\/agent-team\.json|docs\/ai\/agent-team\.json)$/.test(entry));
+        if (overlapsGeneratedRoute && !generatedSkillExpansion && !generatedRosterExpansion) {
           throw new Error(`${CONTEXT_MAP_PATH}: ${condition} condition conflicts with the required AICG route`);
         }
         const headerIndex = existing.lines.indexOf(present.header);
@@ -664,6 +668,19 @@ export function planArtifacts(root, artifacts, options = {}) {
     }
     retained.push({ ...entry, path: relative, classification });
     if (reportCandidates) operations.push({ ...candidateOperation(entry, relative, classification, newPath, referencedPaths), absolute });
+  }
+  // An owner-confirmed baseline rebuild records the current on-disk content as the trusted
+  // baseline for every retained fully-managed artifact, so a drifted file the rebuild keeps
+  // (for example a dormant Skill index) stops being reported as drift. Ordinary init and sync
+  // never take this path.
+  if (options.rebaseline === true) {
+    for (const entry of retained) {
+      if (entry.ownership !== 'full') continue;
+      const absolute = path.join(root, entry.path);
+      const stat = lstatSafe(absolute);
+      if (!stat?.isFile() || stat.isSymbolicLink()) continue;
+      try { entry.sha256 = managedContentHash(readText(absolute, ''), entry.ownership); } catch { /* keep the recorded hash */ }
+    }
   }
   const linkPaths = [...links];
   if (options.allowStaleRemoval) {

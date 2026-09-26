@@ -11,6 +11,10 @@ const LEGACY_GOVERNANCE_ROOTS = Object.freeze([
   '.claude/skills',
   '.agents/skills',
   'docs/ai',
+  // The single delivery workflow document sits at the docs root, next to the canonical AI
+  // governance root. It is generated governance, so the scanner must never report it as
+  // unowned production source and init must be allowed to write it.
+  'docs/WORKFLOW.md',
   CONFIG_PATH,
 ]);
 
@@ -29,7 +33,7 @@ export function loadAgentRegistry() {
 /**
  * Built-in clients `--clients all` selects, in registry declaration order.
  *
- * `built_in` is deliberate: the registry also carries client entries (generic, workbuddy)
+ * `built_in` is deliberate: the registry also carries client entries (generic, deepseek)
  * that are selectable by id but are not part of the one-shot all-client scope, and a bare
  * `SUPPORTED_CLIENTS` list cannot distinguish them. New built-in clients are declared once
  * in the registry and every scope derivation follows.
@@ -115,6 +119,46 @@ export function declaredGovernanceDirectories(registry = loadAgentRegistry()) {
 /** Registry-declared Skill directories only. */
 export function declaredSkillDirectories(registry = loadAgentRegistry()) {
   return [...skillDirectoryOwners(registry).keys()];
+}
+
+/**
+ * Repository-home directory of every registered client's governance (`.claude`, `.dsh`, ...).
+ *
+ * Modules that classify a client's repository home as governance derive it here instead of
+ * repeating client names, so registering a client needs no module edit. `docs/ai` is the
+ * canonical root rather than a client home and is deliberately excluded.
+ */
+export function clientGovernanceHomeDirectories(registry = loadAgentRegistry()) {
+  const homes = new Set();
+  for (const agent of registry.agents) {
+    for (const directory of [...(agent.skill_directories ?? []), ...(agent.rule_directories ?? [])]) {
+      const home = String(directory).split('/')[0];
+      if (home && home !== 'docs') homes.add(home);
+    }
+  }
+  return [...homes].sort();
+}
+
+/**
+ * Boundary helpers over the registered client governance homes. Build once per module so the
+ * registry is read a single time instead of once per scanned file.
+ */
+export function clientGovernanceMatchers(registry = loadAgentRegistry()) {
+  const homes = clientGovernanceHomeDirectories(registry);
+  const set = new Set(homes);
+  return {
+    homes,
+    /** True when the path's first segment is a client governance home. */
+    isPath(relative) {
+      if (typeof relative !== 'string') return false;
+      return set.has(relative.replaceAll('\\', '/').split('/')[0]);
+    },
+    /** True when any segment of the path is a client governance home. */
+    touches(relative) {
+      if (typeof relative !== 'string') return false;
+      return relative.replaceAll('\\', '/').split('/').some((segment) => set.has(segment));
+    },
+  };
 }
 
 /**

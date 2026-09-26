@@ -2,7 +2,7 @@ import { runGit } from '../../adapters/process/index.mjs';
 import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { capabilitySourceChanged } from '../capabilities/index.mjs';
-import { MEMORY_INDEX, readMemoryFile, safeMemoryPath, validateMemoryShape } from './schema.mjs';
+import { LEGACY_MEMORY_PAGE_PATTERN, LEGACY_MEMORY_SECTIONS, MEMORY_INDEX, MEMORY_PAGE_PATTERN, MEMORY_SECTIONS, readMemoryFile, safeMemoryPath, validateMemoryShape } from './schema.mjs';
 import { isMemoryCodePath, scanProjectMemoryFacts } from './scanner.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
@@ -54,10 +54,14 @@ export function memoryIssues(root, scan, changedPaths) {
   }
   for (const module of memory.modules) {
     if (!module || !Array.isArray(module.owns) || !Array.isArray(module.codeGlobs) || !Array.isArray(module.verifiedFrom)) { issues.push('memory invalid module ownership'); continue; }
-    if (module.memoryPage !== `docs/memory/modules/${module.id}.md`) issues.push(`memory unsafe module page: ${module.memoryPage}`);
+    // A page from the earlier module-<hash>.md template stays valid: it is a seed in an existing
+    // repository that ordinary sync never rewrites, and it retains the five legacy sections.
+    const legacyPage = LEGACY_MEMORY_PAGE_PATTERN.test(module.memoryPage ?? '');
+    if (!MEMORY_PAGE_PATTERN.test(module.memoryPage ?? '') && !legacyPage) issues.push(`memory unsafe module page: ${module.memoryPage}`);
     else {
       const page = checkFile(module.memoryPage, 'page');
-      if (page !== null) for (const section of ['Purpose', 'Invariants', 'Structure', 'Evidence', 'Gaps']) if (!new RegExp(`^## ${section}\\s*$`, 'm').test(page)) issues.push(`memory page missing section ${section}: ${module.memoryPage}`);
+      const sections = legacyPage ? LEGACY_MEMORY_SECTIONS : MEMORY_SECTIONS;
+      if (page !== null) for (const section of sections) if (!new RegExp(`^## ${section}\\s*$`, 'm').test(page)) issues.push(`memory page missing section ${section}: ${module.memoryPage}`);
     }
     if (stableJson(module.codeGlobs) !== stableJson(module.owns)) issues.push(`memory ownership globs must be exact source paths: ${module.id}`);
     for (const relative of module.owns) {
@@ -107,11 +111,8 @@ export function memoryIssues(root, scan, changedPaths) {
   for (const relative of memory.tests) checkFile(relative);
   const sources = new Map();
   for (const source of memory.sources) {
-    if (!source || !HASH.test(source.sha256 ?? '') || source.record !== `docs/memory/sources/${source.id}.json` || !owners.has(source.path) || sources.has(source.path)) { issues.push('memory invalid source record'); continue; }
+    if (!source || !HASH.test(source.sha256 ?? '') || !owners.has(source.path) || sources.has(source.path)) { issues.push('memory invalid source evidence'); continue; }
     sources.set(source.path, source);
-    const record = checkFile(source.record);
-    try { if (record !== null && stableJson(JSON.parse(record)) !== stableJson(source)) issues.push(`memory source record does not match index: ${source.path}`); }
-    catch { issues.push(`memory invalid source JSON: ${source.record}`); }
     const bytes = checkRawFile(source.path, 'source');
     if (bytes !== null && sha256(bytes) !== source.sha256) {
       const before = runGit(scan.memoryGitRoot ?? root, ['show', `HEAD:${source.path}`], { encoding: null, timeout: 15000, maxBuffer: 2 * 1024 * 1024 });

@@ -29,6 +29,8 @@ const initialMachineState = [
   'skill-index.json',
   'agent-team.json',
   'delivery-loop.json',
+  'flow-state.json',
+  'team-roster.json',
   'module-graph.json',
   'stack-profile.json',
   'architecture-profile.json',
@@ -76,6 +78,10 @@ export const COMPACT_PATH_PAIRS = Object.freeze([]
   .concat(initialIntegrations.map((name) => ['docs/ai/' + name, INTEGRATION_DIR + '/' + name]))
   // The greenfield single-unit development page belongs to the development topic directory.
   .concat([['docs/ai/development.md', 'docs/ai/development/README.md']])
+  // The root development rule belongs with the other generated rules in the compact layout;
+  // leaving it under rules/ split the folder. Cursor's .cursor/rules adapter resolves the
+  // canonical path, so it follows the same mapping.
+  .concat([['docs/ai/rules/development.md', POLICY_DIR + '/development.md']])
   .map((pair) => Object.freeze(pair)));
 
 const COMPACT_PATH_MAP = new Map(COMPACT_PATH_PAIRS.map(([legacy, compact]) => [legacy, compact]));
@@ -91,6 +97,8 @@ export const COMPACT_PATHS = Object.freeze({
   skillIndex: '.ai-governance/state/skill-index.json',
   agentTeam: '.ai-governance/state/agent-team.json',
   deliveryLoop: '.ai-governance/state/delivery-loop.json',
+  flowState: '.ai-governance/state/flow-state.json',
+  teamRoster: '.ai-governance/state/team-roster.json',
   moduleGraph: '.ai-governance/state/module-graph.json',
   stackProfile: '.ai-governance/state/stack-profile.json',
   architectureProfile: '.ai-governance/state/architecture-profile.json',

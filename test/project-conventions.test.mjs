@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { scanProject } from '../src/scanner.mjs';
 import { scanProjectMemoryFacts } from '../src/modules/memory/index.mjs';
-import { buildProjectConventionArtifacts, discoverProjectConventionCandidates, projectConventionIssues } from '../src/modules/standards/project-conventions.mjs';
+import { buildProjectConventionArtifacts, discoverProjectConventionCandidates, projectConventionIssues, surfaceCorrectShape } from '../src/modules/standards/project-conventions.mjs';
 import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions } from '../src/modules/skills/index.mjs';
 import { memoryFixture, write } from './helpers/memory-fixture.mjs';
 import { prepareInit } from '../src/cli/commands/init.mjs';
@@ -126,7 +126,7 @@ test('repeated project layout becomes an evidence-backed project Skill candidate
     adaptiveDecisions: { schemaVersion: 1, skills: [{ id: candidate.id, action: 'add', evidenceHash: adaptiveDecisionEvidenceHash(candidate) }], roles: [] },
   };
   const skill = buildProjectConventionArtifacts(config, scan, memory).artifacts.find((entry) => entry.path === candidate.skill).content;
-  for (const heading of ['When to use', 'When not to use', 'Observed current patterns', 'Approved new-code decisions', 'Confirmed business invariants', 'Conflicts and unverified gaps', 'Verification matrix', 'Evidence catalog']) assert.match(skill, new RegExp(`## ${heading}`));
+  for (const heading of ['When to use', 'When not to use', 'Required invariants', 'Decision flow', 'Correct implementation shape', 'Incorrect implementation shape', 'Exceptions and escalation', 'Verification matrix', 'Project evidence boundary', 'Sources']) assert.match(skill, new RegExp(`## ${heading}`));
   assert.match(skill, /owner-approved for new code/);
   assert.match(skill, /mvn test.*declared/s);
   write(root, '.ai-governance/state/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
@@ -210,3 +210,20 @@ test('an exact add decision safely promotes a convention seed into a routed mana
   const checked = checkProject(scanProject(root));
   assert.equal(checked.ok, true, JSON.stringify(checked.errors));
 });
+
+test('a single-file component excerpt starts at its script block, not a long template', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-sfc-shape-'));
+  const templateRows = Array.from({ length: 40 }, (_, index) => '  <div>row' + index + '</div>');
+  fs.mkdirSync(path.join(root, 'src', 'views'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'views', 'Big.vue'), [
+    '<template>', ...templateRows, '</template>', '',
+    '<script setup lang="ts">', 'const value = ref(1)', '</script>', '',
+  ].join(String.fromCharCode(10)));
+  const shape = surfaceCorrectShape(root, 'src/views/Big.vue');
+  assert.equal(shape.language, 'vue');
+  assert.match(shape.body, /<script setup/);
+  assert.match(shape.body, /const value/);
+  assert.doesNotMatch(shape.body, /^<template>/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+

@@ -4,7 +4,7 @@ import { isSafeRelative, matchSimpleGlob, normalizeRelative } from '../../shared
 import { BUILD_CONFIGURATION_NAMES, IMPLEMENTATION_EXTENSIONS, NON_IMPLEMENTATION_PREFIXES } from '../repository/index.mjs';
 import { validateApprovedProjectAgentTeam } from '../agent-team/index.mjs';
 
-const ORDER = ['L0', 'L1', 'L2', 'L3'];
+const ORDER = ['L0', 'L1', 'L1.5', 'L2', 'L3'];
 const DIMENSIONS = {
   mutation: {
     none: 'L0',
@@ -31,15 +31,36 @@ const DIMENSIONS = {
   },
 };
 
-const PROFILE = { L0: 'ordinary', L1: 'ordinary', L2: 'behavior_change', L3: 'behavior_change' };
-const VERIFICATION_CLASS = { L0: 'read-only', L1: 'targeted', L2: 'behavior', L3: 'integrated' };
+// L1.5 is the bugfix fast track. It is never derived from a path rule on its own: it only
+// applies to a production change (`mutation: product-behavior`) when the caller passes the
+// explicit `taskKind: bugfix` signal with reproduction and bounded-fix evidence. Without that
+// signal the production floor stays L2, so an ordinary production diff can never be lowered
+// silently. L1.5 carries no requirements/design/plan base approvals; reproduction, fix,
+// verification and report are tracked as required artifacts instead of approvals.
+const PROFILE = { L0: 'ordinary', L1: 'ordinary', 'L1.5': 'bugfix', L2: 'behavior_change', L3: 'behavior_change' };
+const VERIFICATION_CLASS = { L0: 'read-only', L1: 'targeted', 'L1.5': 'targeted', L2: 'behavior', L3: 'integrated' };
 const BASE_APPROVALS = {
   L0: [],
   L1: [],
+  'L1.5': [],
   L2: ['requirements', 'plan'],
   L3: ['requirements', 'design', 'plan'],
 };
 const TOKEN_BOUNDARY = 'path-segment-or-dot-dash-underscore';
+
+// The explicit L1.5 signal. `taskKind: bugfix` selects the fast track; `bugfix` carries the
+// evidence. Any missing, false or escalating field fails closed to the normal L2 floor.
+export const TASK_KINDS = Object.freeze(['feature', 'bugfix']);
+export const BUGFIX_ESCALATIONS = Object.freeze([
+  'defect-not-reproduced',
+  'fix-not-bounded',
+  'public-contract-change',
+  'behaviour-beyond-defect',
+  'migration-or-data-change',
+  'multi-module',
+]);
+export const BUGFIX_REQUIRED_ARTIFACTS = Object.freeze(['reproduction-case', 'fix', 'verification', 'report']);
+const BUGFIX_FIELDS = Object.freeze(['reproducible', 'boundedFix', 'publicContract', 'behaviorBeyondDefect', 'dataMigration']);
 
 const DOCUMENTATION_OR_TEST_FILE_PATTERNS = [
   '*.md', '**/*.md', '*.mdx', '**/*.mdx', '*.txt', '**/*.txt',
@@ -229,6 +250,38 @@ function maxLevel(...levels) {
   return ORDER[Math.max(...levels.map((value) => ORDER.indexOf(value)))];
 }
 
+// Validate and interpret the explicit L1.5 signal shared by classifyTaskRoute and
+// minimumTaskLevelFromPaths. The shape is { taskKind: 'bugfix', bugfix: { reproducible,
+// boundedFix, publicContract, behaviorBeyondDefect, dataMigration } }. Presence of
+// `bugfix` evidence without `taskKind: bugfix` is rejected so a normal change can never
+// borrow the fast track by accident.
+function bugfixSignal(input) {
+  const taskKind = input?.taskKind ?? 'feature';
+  if (typeof taskKind !== 'string' || !TASK_KINDS.includes(taskKind)) {
+    throw usageError(`task route taskKind must be one of: ${TASK_KINDS.join(', ')}.`);
+  }
+  const evidence = input?.bugfix ?? undefined;
+  if (evidence !== undefined) {
+    if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)
+      || Object.keys(evidence).some((key) => !BUGFIX_FIELDS.includes(key))
+      || Object.values(evidence).some((value) => typeof value !== 'boolean')) {
+      throw usageError(`task route bugfix must be an object of booleans with only: ${BUGFIX_FIELDS.join(', ')}.`);
+    }
+  }
+  if (taskKind !== 'bugfix') {
+    if (evidence !== undefined) throw usageError('task route bugfix evidence requires taskKind: bugfix.');
+    return { requested: false, eligible: false, escalations: [], evidence: null };
+  }
+  const declared = evidence ?? {};
+  const escalations = [];
+  if (declared.reproducible !== true) escalations.push('defect-not-reproduced');
+  if (declared.boundedFix !== true) escalations.push('fix-not-bounded');
+  if (declared.publicContract === true) escalations.push('public-contract-change');
+  if (declared.behaviorBeyondDefect === true) escalations.push('behaviour-beyond-defect');
+  if (declared.dataMigration === true) escalations.push('migration-or-data-change');
+  return { requested: true, eligible: escalations.length === 0, escalations, evidence: declared };
+}
+
 function approvals(level, input) {
   const result = [];
   if (input.clarity === 'locally-ambiguous') result.push('clarification');
@@ -251,14 +304,36 @@ export function classifyTaskRoute(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw usageError('task route input must be an object.');
   const levels = ['mutation', 'scope', 'risk'].map((field) => routeLevel(input, field));
   routeLevel(input, 'clarity');
-  const level = maxLevel(...levels);
+  const baseLevel = maxLevel(...levels);
+  const bugfix = bugfixSignal(input);
+  const reasonCodes = ['mutation', 'scope', 'risk', 'clarity'].map((field) => `${field}:${input[field]}`);
+  let level = baseLevel;
+  let requiredArtifacts;
+  if (bugfix.requested) {
+    reasonCodes.push('taskKind:bugfix');
+    const dimensionEscalations = [];
+    if (input.mutation !== 'product-behavior') dimensionEscalations.push('requires-production-change');
+    if (ORDER.indexOf(DIMENSIONS.scope[input.scope]) > ORDER.indexOf('L1')) dimensionEscalations.push('multi-module');
+    if (ORDER.indexOf(DIMENSIONS.risk[input.risk]) > ORDER.indexOf('L0')) dimensionEscalations.push('risk-exceeds-low');
+    const escalations = [...bugfix.escalations, ...dimensionEscalations];
+    if (escalations.length === 0) {
+      level = 'L1.5';
+      reasonCodes.push('bugfix:reproducible', 'bugfix:bounded-fix');
+      requiredArtifacts = [...BUGFIX_REQUIRED_ARTIFACTS];
+    } else {
+      // Any failed condition keeps the conservative production floor from the dimensions
+      // (L2 for product-behavior) and records why the fast track did not apply.
+      reasonCodes.push(...escalations.map((code) => `bugfix-escalation:${code}`));
+    }
+  }
   return {
     level,
     profile: PROFILE[level],
     requiredApprovals: approvals(level, input),
     verificationClass: VERIFICATION_CLASS[level],
     overlays: overlays(input),
-    reasonCodes: ['mutation', 'scope', 'risk', 'clarity'].map((field) => `${field}:${input[field]}`),
+    reasonCodes,
+    ...(requiredArtifacts ? { requiredArtifacts } : {}),
   };
 }
 
@@ -312,8 +387,21 @@ function changedSurfaces(paths) {
   return surfaces;
 }
 
-export function minimumTaskLevelFromPaths(paths, config = {}, { trustedBehaviorChange = null } = {}) {
+const MODULE_PATTERN = /^(?:src\/modules|modules|apps|packages|services|crates)\/([^/]+)\//;
+
+function changedModules(paths) {
+  return new Set(paths.map((relative) => relative.match(MODULE_PATTERN)?.[0]).filter(Boolean));
+}
+
+// The L1.5 fast track is opt-in through the explicit `taskKind: bugfix` option. Without it
+// every production-source path keeps its L2 floor, so the conservative default is preserved.
+// With qualifying evidence the production-source rule alone drops to L1.5; every other
+// machine rule (contracts, migrations, security, dependencies, infrastructure) keeps its
+// own level, and a diff across modules is forced back to L2.
+export function minimumTaskLevelFromPaths(paths, config = {}, { trustedBehaviorChange = null, taskKind = 'feature', bugfix } = {}) {
   const normalized = normalizedChangedPaths(paths);
+  const signal = bugfixSignal({ taskKind, bugfix });
+  const bugfixCandidate = signal.requested && signal.eligible;
   const levels = [confirmedRiskLevel(config, normalized)];
   const surfaceCandidates = [];
   for (const relative of normalized) {
@@ -323,29 +411,30 @@ export function minimumTaskLevelFromPaths(paths, config = {}, { trustedBehaviorC
       levels.push('L1');
       continue;
     }
-    const effectiveRules = trustedBehaviorChange === false
+    const effectiveRules = (trustedBehaviorChange === false
       ? matchingRules.filter((rule) => rule.id !== 'production-source')
-      : matchingRules;
+      : matchingRules).map((rule) => (bugfixCandidate && rule.id === 'production-source' ? { ...rule, level: 'L1.5' } : rule));
     levels.push(maxLevel('L1', ...effectiveRules.map((rule) => rule.level)));
     surfaceCandidates.push(relative);
   }
   if (changedSurfaces(surfaceCandidates).size > 1) levels.push('L3');
+  if (bugfixCandidate && changedModules(surfaceCandidates).size > 1) levels.push('L2');
   return maxLevel(...levels);
 }
 
 export function validateTaskLevel(taskLevel) {
   if (taskLevel !== null && !ORDER.includes(taskLevel)) {
-    throw usageError('task-level must be one of L0, L1, L2, L3.');
+    throw usageError(`task-level must be one of ${ORDER.join(', ')}.`);
   }
   return taskLevel;
 }
 
-export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = null, { trustedBehaviorChange = null } = {}) {
+export function evaluateCompletionTaskRoute(paths, config = {}, declaredLevel = null, { trustedBehaviorChange = null, taskKind = 'feature', bugfix } = {}) {
   validateTaskLevel(declaredLevel);
-  const minimumLevel = minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange });
+  const minimumLevel = minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange, taskKind, bugfix });
   const status = declaredLevel === null ? 'unverified-declaration'
     : ORDER.indexOf(declaredLevel) < ORDER.indexOf(minimumLevel) ? 'upgrade-required' : 'verified';
-  const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange })}.`];
+  const reasons = [`Changed paths require at least ${minimumTaskLevelFromPaths(paths, config, { trustedBehaviorChange, taskKind, bugfix })}.`];
   if (trustedBehaviorChange === false) reasons.push('Trusted source comparison proves every ordinary production change is non-behavior; machine-sensitive and risk routes remain enforced.');
   const applicable = applicableRiskSignals(config, normalizedChangedPaths(paths));
   if (applicable.length) {
@@ -397,7 +486,7 @@ export function classifyReviewMode(input = {}) {
     }
   }
   if (changedSurfaces(scopePaths).size > 1) add('multiSurface', [...changedSurfaces(scopePaths)].sort(), 3, 'path');
-  const modules = new Set(scopePaths.map((relative) => relative.match(/^(?:src\/modules|modules|apps|packages|services|crates)\/([^/]+)\//)?.[0]).filter(Boolean));
+  const modules = changedModules(scopePaths);
   if (modules.size > 1) add('multiModule', [...modules].sort(), 2, 'path');
   return { mode: REVIEW_MODES[rank], triggers, requiredRoleCount: [1, 2, 3, 4][rank], independenceRequired: rank >= 1 };
 }
@@ -412,14 +501,19 @@ export function taskRoutingPolicy(config) {
   const descriptions = {
     L0: localized(config, 'Read-only explanation, review, discovery, or status work. No writes.', '只读解释、评审、发现或状态工作，不执行写入。'),
     L1: localized(config, 'A small, reversible, low-risk change that does not alter product behavior or public contracts.', '小型、可逆、低风险修改，不改变产品行为或公共契约。'),
+    'L1.5': localized(config, 'A production bug fix with a reproducible defect and a bounded fix. It skips requirements, design and plan (architect PK) approvals but still requires a reproduction case, a fix, verification and a report. It escalates to L2 when the defect cannot be reproduced, the fix changes a public contract or exceeds the defect, the change spans modules, or it touches migrations/data.', '生产缺陷修复，缺陷可复现且修复范围有界。跳过需求、设计、计划（架构师 PK）审批，但仍要求复现用例、修复、验证与报告。缺陷无法复现、修复改变对外契约或超出缺陷、跨模块、或触及迁移/数据时升级至 L2。'),
     L2: localized(config, 'A business or medium-impact behavior change requiring confirmed requirements and an approved plan.', '业务或中等影响的行为变更，需要确认需求并批准计划。'),
     L3: localized(config, 'A cross-surface, architectural, migration, external, or high-consequence change requiring design and plan approval.', '跨端、架构、迁移、外部操作或高后果变更，需要批准设计与计划。'),
   };
   return {
     schemaVersion: 1,
-    input: Object.fromEntries(Object.entries(DIMENSIONS).map(([field, values]) => [field, Object.keys(values)])),
-    output: ['level', 'profile', 'requiredApprovals', 'verificationClass', 'overlays', 'reasonCodes'],
-    workUnits: { L0: 'none', L1: 'lightweight', L2: 'one-vertical-feature', L3: 'one-vertical-feature', verification: 'one-consolidated-command', completionInput: '--work-unit <relative-json>', ordinaryReview: 'quick-review', evidence: 'canonical-memory-coverage-and-per-case-qa' },
+    input: {
+      ...Object.fromEntries(Object.entries(DIMENSIONS).map(([field, values]) => [field, Object.keys(values)])),
+      taskKind: [...TASK_KINDS],
+      bugfix: [...BUGFIX_FIELDS],
+    },
+    output: ['level', 'profile', 'requiredApprovals', 'verificationClass', 'overlays', 'reasonCodes', 'requiredArtifacts'],
+    workUnits: { L0: 'none', L1: 'lightweight', 'L1.5': 'lightweight-bugfix', L2: 'one-vertical-feature', L3: 'one-vertical-feature', verification: 'one-consolidated-command', completionInput: '--work-unit <relative-json>', ordinaryReview: 'quick-review', evidence: 'canonical-memory-coverage-and-per-case-qa' },
     levels: ORDER.map((id) => ({
       id,
       profile: PROFILE[id],
@@ -434,6 +528,14 @@ export function taskRoutingPolicy(config) {
       clarityEffect: 'adds-gates-only',
       externalAction: 'L3-with-separate-approval',
       deliveryRule: 'declared-level-must-not-be-lower-than-path-minimum',
+      bugfixFastTrack: {
+        signal: 'taskKind:bugfix',
+        evidence: 'bugfix{reproducible,boundedFix}',
+        productionFloorWithoutSignal: 'L2',
+        requiredArtifacts: [...BUGFIX_REQUIRED_ARTIFACTS],
+        escalations: [...BUGFIX_ESCALATIONS],
+        description: localized(config, 'L1.5 is explicit-signal only: taskKind=bugfix with reproducible and bounded-fix evidence. A generic production change still requires L2. Missing evidence, a public-contract or out-of-scope behavior change, a multi-module span, or migration/data work escalates to L2 or higher.', 'L1.5 仅可显式触发：taskKind=bugfix 且提供可复现、有界修复证据。普通生产改动仍至少需要 L2。缺乏证据、改动对外契约或超出缺陷、跨模块、或触及迁移/数据时升级至 L2 或更高。'),
+      },
       surfaceGroups: SURFACE_RULES.map(({ id, patterns, examples }) => ({ id, patterns: [...patterns], examples: [...examples] })),
       multiSurfaceExamples: [['apps/frontend-react/src/modules/orders/view.tsx', 'services/backend-node/src/modules/orders/interface/handler.ts']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),

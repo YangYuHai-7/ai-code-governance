@@ -173,6 +173,11 @@ export function walkFilesDetailed(root, options = {}) {
           break;
         }
         observedEntries += 1;
+        // A throttled progress hook lets a long scan report it is alive without flooding the
+        // receiver. Only the entry count is exposed here; callers own any coarser stage labels.
+        if (typeof options.onVisited === 'function' && observedEntries % 200 === 0) {
+          options.onVisited({ files: result.length, directories: observedDirectories, entries: observedEntries });
+        }
         const ignoredName = normalizeIgnored(entry.name);
         if (ignoredAtAnyDepth.has(ignoredName) || (depth === 0 && ignoredAtRoot.has(ignoredName))) continue;
         const absolute = path.join(current, entry.name);

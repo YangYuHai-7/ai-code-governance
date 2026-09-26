@@ -224,7 +224,7 @@ for (const version of [1, 2]) {
     assert.equal(fs.existsSync(path.join(root, relative)), false);
     const updated = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
     assert.equal(updated.schemaVersion, 1);
-    assert.equal(updated.templateVersion, 3);
+    assert.equal(updated.templateVersion, 4);
   });
 
   test(`v${version} ordinary sync retains historical provenance with warning`, (context) => {

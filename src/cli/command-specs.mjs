@@ -1,6 +1,6 @@
-export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'paths', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report']);
+export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'paths', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'task-kind', 'bugfix']);
 
-export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'family', 'no-family', 'no-assist', 'review', 'migrate-links', 'adopt-foreign-governance', 'prune', 'from-git-hook', 'replay', 'no-open', 'auto-exit', 'enforce', 'help', 'version']);
+export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'family', 'no-family', 'no-assist', 'review', 'migrate-links', 'adopt-foreign-governance', 'prune', 'from-git-hook', 'replay', 'no-open', 'auto-exit', 'enforce', 'regenerate', 'help', 'version']);
 
 // The retired commands stay in `COMMAND_FLAGS` for two reasons: (1) their existing flags
 // must still parse, so dropping the spec silently breaks every old CI invocation; (2) the
@@ -16,7 +16,7 @@ export const COMMAND_FLAGS = Object.freeze({
   doctor: new Set(['json', 'locale', 'enforce', 'help']),
   assess: new Set(['json', 'locale', 'help']),
   architecture: new Set(['json', 'locale', 'help']),
-  enrich: new Set(['config', 'json', 'locale', 'help']),
+  enrich: new Set(['config', 'assist', 'regenerate', 'json', 'locale', 'enforce', 'help']),
   evidence: new Set(['config', 'yes', 'json', 'help']),
   standards: new Set(['json', 'help']),
   team: new Set(['config', 'json', 'help']),
@@ -28,7 +28,7 @@ export const COMMAND_FLAGS = Object.freeze({
   hook: new Set(['yes', 'json', 'help']),
   'release-check': new Set(['type', 'evidence', 'replay', 'approve', 'json', 'enforce', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'clients', 'locale', 'enforce', 'help']),
-  route: new Set(['text', 'paths', 'json', 'help']),
+  route: new Set(['text', 'paths', 'task-kind', 'bugfix', 'json', 'help']),
   help: new Set(['locale', 'help']),
 });
 

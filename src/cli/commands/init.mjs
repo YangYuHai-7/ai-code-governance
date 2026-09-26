@@ -10,7 +10,7 @@ import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam, validateApprove
 import { canonicalPath } from '../../modules/governance/index.mjs';
 import { adaptiveDecisionEvidenceHash, decideSkillCandidates, discoverSkills, reconcileAdaptiveDecisions, serializeSkillDiscovery, validateAdaptiveDecisions } from '../../modules/skills/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
-import { allBuiltInClientIds, selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository } from '../../catalogs/index.mjs';
+import { allBuiltInClientIds, selectedSkillDirectories, governanceRoots, inferClientScopeFromRepository, loadCuratedSkillRecords } from '../../catalogs/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from '../../modules/governance/business-constraints.mjs';
 import { applyArtifactPlan, planArtifacts, restoreUserOwnedLink } from '../../managed-files.mjs';
 import { chooseAssistAgent, confirmPlan, promptAdaptiveDecisions, promptConfig, promptGuidedConfig } from '../prompts.mjs';
@@ -122,7 +122,8 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const rememberedTeam = rememberedConfig?.agentTeam;
   if (config.agentTeam?.enabled) validateApprovedProjectAgentTeam(config.agentTeam);
   if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
-    || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation'].includes(key))
+    || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation', 'publicSkillCatalog'].includes(key))
+    || (request.publicSkillCatalog !== undefined && typeof request.publicSkillCatalog !== 'boolean')
     || !Array.isArray(request.installedRoots)) throw usageError('adaptiveGovernance requires bounded metadata and explicit installedRoots.');
   // Recorded decisions name exact candidate ids. They must stay visible through the
   // bounded candidate list, or a valid stored approval becomes an unknown id and every
@@ -131,7 +132,11 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
     ...(request.decisions?.skills ?? []).map((entry) => entry?.id).filter((id) => typeof id === 'string'),
     ...(rememberedConfig?.adaptiveDecisions?.skills ?? []).map((entry) => entry?.id).filter((id) => typeof id === 'string'),
   ])];
-  const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog: request.curatedCatalog ?? [], requiredCapabilities: request.requiredCapabilities ?? [], keepIds };
+  // The packaged snapshot is opt-in: an owner who never sets publicSkillCatalog keeps the exact
+  // previous candidate set and recorded approval. When enabled, packaged records are candidates
+  // only and still require an add decision plus the exact planHash.
+  const curatedCatalog = request.publicSkillCatalog ? [...loadCuratedSkillRecords(), ...(request.curatedCatalog ?? [])] : (request.curatedCatalog ?? []);
+  const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog, requiredCapabilities: request.requiredCapabilities ?? [], keepIds };
   const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
   const sourceSnapshot = stableJson(discovery);
   const conventionDiscovery = config.features.knowledge && config.initialization.lifecycle === 'existing' && config.governanceDepth !== 'minimal'
@@ -227,7 +232,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       if (!error.budgetCost) throw error;
       config = baseConfig;
       summary.status = 'budget-blocked';
-      summary.budget = { proposedCost: error.budgetCost, ...(error.budgetLimits ?? { maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagerTokens: 800 }) };
+      summary.budget = { proposedCost: error.budgetCost, ...(error.budgetLimits ?? { maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagementProfileTokens: 2400, maximumAlwaysRuleTokens: 256 }) };
       summary.manualCleanup = {
         paths: scan.files.map((entry) => entry.relative).filter((relative) => [
           canonicalPath('docs/ai/bootstrap-prompt.md', config.governanceFootprint), 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH,
@@ -244,14 +249,31 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   } };
 }
 
-export async function prepareInit(target, options, { allowDefaults = false, suppliedConfig = null } = {}) {
+/**
+ * A baseline rebuild cannot invent a Skill or project-team approval the recorded configuration
+ * never carried. Disable an enabled-but-unapproved pair so the rebuilt config is valid; the
+ * generated Skill files stay on disk, and re-enabling runs the adaptive approval flow again.
+ */
+function withoutUnapprovedSkillManagement(config) {
+  if (!config) return config;
+  const decision = config.skillDiscovery?.decision;
+  const approved = decision?.status === 'approved' && Boolean(decision.approval)
+    && Array.isArray(decision.actionsPerformed) && decision.actionsPerformed.length === 0;
+  if (approved || (!config.skillDiscovery?.enabled && !config.agentTeam?.enabled)) return config;
+  return { ...config,
+    skillDiscovery: { ...(config.skillDiscovery ?? {}), enabled: false },
+    agentTeam: { ...(config.agentTeam ?? {}), enabled: false } };
+}
+
+export async function prepareInit(target, options, { allowDefaults = false, suppliedConfig = null, onProgress = null, providedScan = null } = {}) {
   if (options.assist && options['no-assist']) throw usageError('--assist and --no-assist cannot be used together.');
   if (options.guided && options.yes) throw usageError('--guided is interactive and cannot be combined with --yes.');
   if (options.guided && options.config) throw usageError('--guided cannot be combined with --config; answer the guided choices instead.');
-  const scan = scanProject(target, { probeEnvironment: false });
+  const scan = providedScan ?? scanProject(target, { probeEnvironment: false, ...(typeof onProgress === 'function' ? { onProgress } : {}) });
   const rawExisting = loadExistingConfig(scan.root);
-  const existing = rawExisting ? normalizeClientSupport(rawExisting, { source: 'legacy-config' }) : null;
-  assertManagedArchitectureConfigTrusted(scan.root, existing);
+  const loadedExisting = rawExisting ? normalizeClientSupport(rawExisting, { source: 'legacy-config' }) : null;
+  const existing = options.rebaseline === true ? withoutUnapprovedSkillManagement(loadedExisting) : loadedExisting;
+  assertManagedArchitectureConfigTrusted(scan.root, loadedExisting, { allowDrifted: options.rebaseline === true });
   let config = mergeConfig(defaultConfig(scan), existing ?? {});
   let codeDocumentationPolicyExplicit = existing?.codeDocumentationPolicy !== undefined;
   let decisionSource = existing?.initialization?.source ?? (existing?.initialization?.lifecycle ? 'existing-governance' : null);
@@ -270,6 +292,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
         ? normalizeClientSupport(safeSupplied, { source: 'config' })
         : safeSupplied;
     config = mergeConfig(config, normalizedSupplied);
+    if (options.rebaseline === true) config = withoutUnapprovedSkillManagement(config);
     if (safeSupplied.initialization?.lifecycle !== undefined && !sameInitialization(existing?.initialization, safeSupplied.initialization)) {
       decisionSource = 'config';
     }
@@ -413,7 +436,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     plan.manifest = { ...plan.manifest, content: readText(path.join(scan.root, '.ai-governance/manifest.json')), changed: false };
     plan.adaptiveGovernance = adaptive.summary;
     plan.requireAdaptiveApproval = true;
-    plan.contextCost = { status: 'not-recomputed-blocked', proposedIncrement: { files: 0, bytes: 0, managerTokens: 0 }, previouslyApprovedManagement: config.skillDiscovery?.artifactPlan?.cost ?? null };
+    plan.contextCost = { status: 'not-recomputed-blocked', proposedIncrement: { files: 0, bytes: 0, managementProfileTokens: 0, alwaysRuleTokens: 0 }, previouslyApprovedManagement: config.skillDiscovery?.artifactPlan?.cost ?? null };
     return { scan, config, plan, assertSourcesFresh: adaptive.assertSourcesFresh };
   }
   // An approved Skill-governance receipt binds the exact artifact set it was approved
@@ -446,7 +469,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     validateConfig(config);
   }
   const artifacts = buildArtifacts(config, scan);
-  const plan = planArtifacts(scan.root, artifacts, { force: options.force, replaceExisting: options.replaceExisting, migrateLinks: options['migrate-links'], adoptForeignGovernance });
+  const plan = planArtifacts(scan.root, artifacts, { force: options.force, replaceExisting: options.replaceExisting, rebaseline: options.rebaseline === true, migrateLinks: options['migrate-links'], adoptForeignGovernance });
   if (detectedForeignGovernance.length > 0 && !adoptForeignGovernance) {
     const zh = config.interactionLanguage === 'zh-CN';
     const listed = detectedForeignGovernance.slice(0, 8).join(', ');
@@ -467,7 +490,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     const ordinary = artifacts.filter((item) => ['AGENTS.md', 'docs/ai/rules/00_always.mdc'].includes(item.path)).map((item) => item.content);
     const contextMap = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
     const ordinaryMap = contextMap.slice(0, contextMap.indexOf('profiles:')) + 'profiles:\n' + (contextMap.match(/^  ordinary:[\s\S]*?(?=^  [a-z_]+:|$(?![\s\S]))/m)?.[0] ?? '');
-    plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managerTokens: 0 } } };
+    plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managementProfileTokens: 0, alwaysRuleTokens: 0 } } };
   }
   assertInitializationWriteBoundary(plan, config, scan);
   return { scan, config, plan, assertSourcesFresh: adaptive?.assertSourcesFresh };
@@ -501,8 +524,17 @@ async function prepareRepositoryFamilyMembers(parent, options) {
   const units = parent.scan.governanceUnits ?? [];
   const invalid = units.filter((unit) => !['scanned', 'uninitialized'].includes(unit.status));
   if (invalid.length) throw usageError(`Cannot prepare the family while member scans are incomplete: ${invalid.map((unit) => `${unit.path} (${unit.status})`).join(', ')}.`);
+  const scanned = units.filter((entry) => entry.status === 'scanned');
+  // The owner may govern only a subset of the scanned members. A deselected member is not
+  // prepared, planned or written, so it is left exactly as it is.
+  const wanted = options.members === undefined || options.members === null ? null : new Set(options.members);
+  if (wanted && wanted.size === 0) throw usageError('Select at least one repository-family member to govern.');
+  if (wanted) {
+    const unknown = [...wanted].filter((member) => !scanned.some((entry) => entry.path === member));
+    if (unknown.length) throw usageError(`Unknown repository-family member(s): ${unknown.join(', ')}.`);
+  }
   const members = [];
-  for (const unit of units.filter((entry) => entry.status === 'scanned')) {
+  for (const unit of scanned.filter((entry) => !wanted || wanted.has(entry.path))) {
     const memberRoot = path.join(parent.scan.root, unit.path);
     const memberOptions = {
       yes: true,
@@ -511,6 +543,8 @@ async function prepareRepositoryFamilyMembers(parent, options) {
       clients: parent.config.clients.join(','),
       ...(options.locale ? { locale: options.locale } : {}),
       ...(options.force ? { force: true } : {}),
+      ...(options.replaceExisting ? { replaceExisting: true } : {}),
+      ...(options.rebaseline ? { rebaseline: true } : {}),
       ...(options['migrate-links'] ? { 'migrate-links': true } : {}),
     };
     const prepared = await prepareInit(memberRoot, memberOptions, {
@@ -634,7 +668,9 @@ export function detectsRepositoryFamily(target) {
 export async function initCommand(target, options) {
   const family = options.family === true ? true : options['no-family'] === true ? false : detectsRepositoryFamily(target);
   const effective = options.family === undefined ? { ...options, family } : options;
-  const prepared = await prepareInit(target, effective);
+  // A programmatic caller (the visual editor) can pass the configuration in memory instead of
+  // writing an input file, so a failed rebuild never changes the editable draft on disk.
+  const prepared = await prepareInit(target, effective, { suppliedConfig: options.suppliedConfig ?? null });
   if (effective.family) return initRepositoryFamily(prepared, effective);
   const { scan, config, plan, assertSourcesFresh } = prepared;
   const needsApproval = Boolean(plan.requireTopologyApproval || plan.requireAdaptiveApproval || options.requireApproval || config.skillDiscovery?.enabled || config.agentTeam?.enabled);

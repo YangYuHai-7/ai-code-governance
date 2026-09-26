@@ -1,10 +1,10 @@
 import path from 'node:path';
-import { CONFIG_PATH, TOOL_NAME } from '../constants.mjs';
+import { CONFIG_PATH, MANIFEST_PATH, TOOL_NAME } from '../constants.mjs';
 import { defaultConfig, validateConfig } from '../generator.mjs';
 import { loadManifest } from '../managed-files.mjs';
 import { allBuiltInClientIds } from '../catalogs/index.mjs';
 import { scanSummary } from '../scanner.mjs';
-import { readJson, readText } from '../adapters/filesystem/index.mjs';
+import { lstatSafe, readJson, readText } from '../adapters/filesystem/index.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { sha256 } from '../shared/index.mjs';
 import { assertNoLinkAncestor } from '../preconditions.mjs';
@@ -64,20 +64,43 @@ export function configForStandards(scan) {
   return validateConfig(mergeConfig(defaultConfig(scan), existing ?? {}));
 }
 
-export function assertManagedArchitectureConfigTrusted(root, config) {
+export function assertManagedArchitectureConfigTrusted(root, config, { allowDrifted = false } = {}) {
   if (!config?.architecture && config?.adaptiveDecisions === undefined) return;
   if (config?.adaptiveDecisions !== undefined) {
     assertNoLinkAncestor(root, CONFIG_PATH);
-    assertNoLinkAncestor(root, '.ai-governance/manifest.json');
+    assertNoLinkAncestor(root, MANIFEST_PATH);
   }
   const manifest = loadManifest(root);
   const entries = manifest?.files?.filter((candidate) => candidate?.path === CONFIG_PATH && candidate.ownership === 'full');
   const entry = entries?.length === 1 ? entries[0] : null;
   if (config.adaptiveDecisions !== undefined && (manifest?.schemaVersion !== 1 || manifest.generatedBy !== TOOL_NAME || entry?.kind !== 'configuration' || entry.source !== 'confirmed-decisions')) throw usageError('Adaptive decision receipts require a trusted managed configuration manifest.');
+  // A baseline rebuild is an owner-confirmed, backed-up transaction: the visual editor shows
+  // the recorded and current hashes and regenerates config + manifest through exact approval.
+  // Ordinary init/sync and `--force` still refuse a drifted baseline.
+  if (allowDrifted) return;
   const content = readText(path.join(root, CONFIG_PATH), '');
   if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '') || sha256(content) !== entry.sha256) {
     throw usageError('The managed architecture configuration drifted, or adaptive decision receipts drifted, from the recorded manifest. Refuse to reuse or rewrite the baseline; restore the known-good config before running aicg write commands.');
   }
+}
+
+/**
+ * Read-only trust state of the managed configuration.
+ *
+ * The write gate (`assertManagedArchitectureConfigTrusted`) only refuses; a read-only surface
+ * such as the visual editor must also explain what happened. This reports the recorded
+ * manifest hash next to the current file hash without touching either file.
+ */
+export function inspectManagedConfigTrust(root) {
+  const file = path.join(root, CONFIG_PATH);
+  if (!lstatSafe(file)?.isFile()) return { state: 'none', path: CONFIG_PATH };
+  const manifest = loadManifest(root);
+  const entries = manifest?.files?.filter((candidate) => candidate?.path === CONFIG_PATH && candidate.ownership === 'full');
+  const entry = entries?.length === 1 ? entries[0] : null;
+  const actualSha = sha256(readText(file, ''));
+  if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) return { state: 'unrecorded', path: CONFIG_PATH, actualSha };
+  if (entry.sha256 === actualSha) return { state: 'trusted', path: CONFIG_PATH, sha256: actualSha };
+  return { state: 'drifted', path: CONFIG_PATH, expectedSha: entry.sha256, actualSha, manifestPath: MANIFEST_PATH };
 }
 
 export function loadConfiguredGovernance(scan) {

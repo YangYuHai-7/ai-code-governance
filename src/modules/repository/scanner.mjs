@@ -418,6 +418,7 @@ export function scanProject(target, options = {}) {
       }
       return aicgIgnore.shouldIgnore(entry);
     },
+    onVisited: typeof options.onProgress === 'function' ? options.onProgress : undefined,
     onIgnoredPath: (entry) => {
       const rule = aicgIgnore.match(entry);
       if (!rule?.ignored) return;

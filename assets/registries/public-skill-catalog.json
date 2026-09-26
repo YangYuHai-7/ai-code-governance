@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "product_line": "ai-code-governance",
+  "generated_by": "scripts/skill-catalog.mjs",
+  "policy": {
+    "runtime_network": false,
+    "runtime_install": false,
+    "catalog_is_candidate_only": true,
+    "verification_basis": "pinned-commit",
+    "refresh_days": 90,
+    "allowed_licenses": [
+      "MIT",
+      "Apache-2.0",
+      "BSD-2-Clause",
+      "BSD-3-Clause",
+      "ISC",
+      "0BSD"
+    ],
+    "operator_discovery": "Use the find-skills operator step (npx skills find/add) to locate candidates; never let AICG install or execute them at runtime.",
+    "note": "Snapshots populate adaptiveGovernance.curatedCatalog as offline metadata. Nothing is preselected, installed or activated; the owner approves by planHash."
+  },
+  "sources": [
+    {
+      "id": "obra-superpowers",
+      "repository": "https://github.com/obra/superpowers",
+      "ref": "5bf4e78011075bcfc0dc295f0724994cd123ee71",
+      "committedAt": "2026-09-19T00:31:35Z",
+      "license": "MIT"
+    },
+    {
+      "id": "anthropics-skills",
+      "repository": "https://github.com/anthropics/skills",
+      "ref": "34040c9c568585f6929bedeaad110ad08f079624",
+      "committedAt": "2026-09-10T19:44:08Z",
+      "license": "Apache-2.0"
+    }
+  ],
+  "catalog": [
+    {
+      "id": "skill-creator",
+      "source": "official:anthropics/skills/skill-creator",
+      "name": "skill-creator",
+      "version": "unverified",
+      "capabilities": [
+        "skill-authoring",
+        "skill-evaluation"
+      ],
+      "capabilityOwner": "skill-authoring",
+      "permissions": [
+        "read-project"
+      ],
+      "contentSha256": "dcd4803e61e913e6fc27294184cd3a71f09f5e924ff20c8a9a20173e7b3c2bcf",
+      "contentBytes": 33168,
+      "verifiedAt": "2026-09-10T19:44:08Z"
+    },
+    {
+      "id": "test-driven-development",
+      "source": "official:obra/superpowers/test-driven-development",
+      "name": "test-driven-development",
+      "version": "unverified",
+      "capabilities": [
+        "test-driven-development",
+        "verification"
+      ],
+      "capabilityOwner": "test-driven-development",
+      "permissions": [
+        "read-project"
+      ],
+      "contentSha256": "64b03fce4aee5a97a93160cea8111f3ba13a17b7c001db4bd5836d67fd10705d",
+      "contentBytes": 9578,
+      "verifiedAt": "2026-09-19T00:31:35Z"
+    },
+    {
+      "id": "verification-before-completion",
+      "source": "official:obra/superpowers/verification-before-completion",
+      "name": "verification-before-completion",
+      "version": "unverified",
+      "capabilities": [
+        "completion-evidence",
+        "verification"
+      ],
+      "capabilityOwner": "completion-evidence",
+      "permissions": [
+        "read-project",
+        "run-declared-tests"
+      ],
+      "contentSha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
+      "contentBytes": 3646,
+      "verifiedAt": "2026-09-19T00:31:35Z"
+    }
+  ]
+}

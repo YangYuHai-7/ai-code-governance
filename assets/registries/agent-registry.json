@@ -8,6 +8,14 @@
       "detect_commands": [
         "codex"
       ],
+      "detect_paths": [
+        "~/.codex"
+      ],
+      "detect_paths_by_platform": {
+        "darwin": [
+          "/Applications/Codex.app"
+        ]
+      },
       "instruction_entry": "AGENTS.md",
       "skill_directories": [
         ".agents/skills"
@@ -33,6 +41,18 @@
       "detect_commands": [
         "claude"
       ],
+      "detect_paths": [
+        "~/.claude",
+        "~/.claude.json"
+      ],
+      "detect_paths_by_platform": {
+        "darwin": [
+          "/Applications/Claude.app"
+        ],
+        "win32": [
+          "%APPDATA%/Claude"
+        ]
+      },
       "instruction_entry": "CLAUDE.md",
       "skill_directories": [
         ".claude/skills"
@@ -56,6 +76,21 @@
       "detect_commands": [
         "cursor-agent"
       ],
+      "detect_paths": [
+        "~/.cursor"
+      ],
+      "detect_paths_by_platform": {
+        "darwin": [
+          "/Applications/Cursor.app"
+        ],
+        "win32": [
+          "%LOCALAPPDATA%/Programs/cursor/Cursor.exe"
+        ],
+        "linux": [
+          "/usr/bin/cursor",
+          "~/.local/share/applications/cursor.desktop"
+        ]
+      },
       "instruction_entry": "AGENTS.md",
       "skill_directories": [
         ".agents/skills"
@@ -83,6 +118,10 @@
       "detect_commands": [
         "copilot"
       ],
+      "detect_paths": [
+        "~/.copilot",
+        "~/.config/github-copilot"
+      ],
       "instruction_entry": ".github/copilot-instructions.md",
       "skill_directories": [
         ".github/skills"
@@ -102,6 +141,7 @@
       "label": "Generic AGENTS.md-compatible agent",
       "built_in": false,
       "detect_commands": [],
+      "detect_paths": [],
       "instruction_entry": "AGENTS.md",
       "skill_directories": [
         ".agents/skills"
@@ -111,17 +151,37 @@
       "assist": null
     },
     {
-      "id": "workbuddy",
-      "label": "WorkBuddy",
+      "id": "deepseek",
+      "label": "DeepSeek Harness",
       "built_in": false,
-      "detect_commands": [],
+      "detect_commands": [
+        "dsh"
+      ],
+      "detect_paths": [
+        "~/.dsh"
+      ],
+      "detect_paths_by_platform": {
+        "darwin": [
+          "/Applications/DSH Desktop.app"
+        ]
+      },
       "instruction_entry": "AGENTS.md",
       "skill_directories": [
-        ".workbuddy/skills"
+        ".dsh/skills"
       ],
       "rule_directories": [],
-      "surfaces": [],
-      "assist": null
+      "surfaces": [
+        "repository-instructions",
+        "skills"
+      ],
+      "assist": {
+        "command": "dsh",
+        "args": [
+          "--profile",
+          "headless",
+          "{prompt}"
+        ]
+      }
     }
   ]
 }

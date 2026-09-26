@@ -2,9 +2,16 @@ import { readMemoryFile } from '../memory/index.mjs';
 import { readBoundedRepositoryFile } from '../../adapters/filesystem/index.mjs';
 import { sha256, stableJson } from '../../shared/index.mjs';
 import { workUnitPlanDigest, HASH, fields } from './schema.mjs';
+import { clientGovernanceMatchers } from '../../catalogs/index.mjs';
+
+const CLIENT_GOVERNANCE = clientGovernanceMatchers();
+
+function nonUnitEvidencePath(relative) {
+  return relative.startsWith('docs/') || relative.startsWith('.ai-governance/') || CLIENT_GOVERNANCE.isPath(relative);
+}
 
 export function workUnitVerificationBinding(root, scan, unit) {
-  const paths = [...new Set([...scan.files.filter((entry) => entry.type !== 'directory' && !/^(?:docs|\.ai-governance|\.agents|\.claude|\.cursor|\.github)\//.test(entry.relative)).map((entry) => entry.relative),
+  const paths = [...new Set([...scan.files.filter((entry) => entry.type !== 'directory' && !nonUnitEvidencePath(entry.relative)).map((entry) => entry.relative),
     ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)])]
     .filter((relative) => relative !== scan.workUnitPath && relative !== scan.approvalEvidence).sort();
   if (paths.length > 10000 || scan.scanBudget?.complete !== true) throw new Error('Work-unit verification input scan is incomplete.');

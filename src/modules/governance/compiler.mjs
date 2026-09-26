@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CLIENT_SUPPORT_MODES, CLIENT_SUPPORT_SOURCES, CONFIG_PATH, CONFIG_SCHEMA_VERSION, GENERATED_MARKER, INVOCATION_MODES, PACKAGE_ROOT, SUPPORTED_CODE_DOCUMENTATION_POLICIES, SUPPORTED_CONFIRMED_RISK_SIGNALS, SUPPORTED_DEPTHS, SUPPORTED_GOVERNANCE_FOOTPRINTS, SUPPORTED_INTERACTION_LANGUAGES, SUPPORTED_LANGUAGES, SUPPORTED_OSES, SUPPORTED_TEST_CASE_FORMATS, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
-import { allBuiltInClientIds, resolveAgents, resolvePacks, selectedSkillDirectories, skillDirectoryOwners } from '../../catalogs/index.mjs';
+import { allBuiltInClientIds, clientGovernanceHomeDirectories, resolveAgents, resolvePacks, selectedSkillDirectories, skillDirectoryOwners } from '../../catalogs/index.mjs';
 import { architectureProfileDocument, architectureRule, moduleGraphDeclaration, validateArchitectureDecision } from '../architecture/index.mjs';
 import { buildCapabilityArtifacts, validateCapabilityEvolution, validateProjectCapabilities } from '../capabilities/index.mjs';
 import { buildDecisionLedger, buildDevelopmentDocumentationArtifacts, buildGreenfieldLayoutArtifacts, classifyProject, EXISTING_CODE_STRATEGIES, hasDocumentableDevelopmentUnit, INITIALIZATION_LIFECYCLES, INITIALIZATION_SOURCES, surfaceVerificationProfiles } from '../repository/index.mjs';
-import { assertSkillQuality, buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
+import { assertRuleQuality, assertSkillQuality, buildTechnicalStandardArtifacts, buildProjectConventionArtifacts, loadTechnicalStandardRegistry, selectTechnicalStandards } from '../standards/index.mjs';
 import { buildMemoryArtifacts } from '../memory/index.mjs';
 import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
@@ -14,7 +14,12 @@ import { isSafeRelative, normalizeRelative, sha256, skillAdapterContent, stableJ
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
-import { buildDeliveryLoopArtifacts, DELIVERY_LOOP_ENTRY_KIND, DELIVERY_LOOP_PHASE_KIND } from './delivery-loop.mjs';
+import { buildDeliveryLoopArtifacts } from './delivery-loop.mjs';
+import { buildProjectFlowArtifacts } from './project-flow.mjs';
+import { buildWorkflowArtifacts, WORKFLOW_DOC, WORKFLOW_KIND } from './workflow.mjs';
+import { buildAgentArtifacts } from './agents.mjs';
+import { FIXED_TEAM_ROSTER_KIND, FIXED_TEAM_ROSTER_PATH, fixedTeamRoster } from './fixed-team-roster.mjs';
+import { buildBrownfieldEnrichmentArtifacts, BROWNFIELD_ENRICHMENT_KIND } from './brownfield-enrichment.mjs';
 import { planArtifacts } from './artifact-plan.mjs';
 import { canonicalPath, remapContentPaths, relativeReference } from './layout.mjs';
 import { clientProjectionDefinitions, PROJECTION_TEMPLATE_VERSION, resolveArtifactContent, SKILL_ADAPTER_FLAG } from './projections.mjs';
@@ -126,10 +131,12 @@ export function defaultConfig(scan) {
     clients: ['codex', 'claude-code', 'cursor'],
     governanceFootprint: recordedGovernanceFootprint(scan.root),
     stacks: scan.stacks.map((stack) => stack.id),
-    // `complete` is the default governance depth: every repository lands with the
-    // Skill-management set (skill-discovery + team-orchestrator + skill-index +
-    // project-agent-team) wired into the same exact-planHash approval. Operators who
-    // want a strictly smaller artifact set can still opt into `standard` or `minimal`
+    // `complete` is the default governance depth. Role routing (team-orchestrator +
+    // project-agent-team) is now a default workflow surface at Standard and Complete;
+    // skill discovery (skill-discovery + skill-index) stays Complete-only, and every
+    // management artifact is still capability-gated on an approved discovery decision
+    // plus project team and the same exact-planHash approval. Operators who want a
+    // strictly smaller artifact set can still opt into `standard` or `minimal`
     // explicitly; the default exists because the recommended entry point
     // (`aicg config open`) plus an AI-driven init means the operator usually does not
     // want to revisit the depth decision after first install.
@@ -156,10 +163,16 @@ export function defaultConfig(scan) {
       externalWorkflows: false,
       ciIntegration: false,
       deliveryLoop: true,
+      projectFlow: true,
+      brownfieldEnrichment: 'ask',
       aiAssist: false,
     },
     domainConstraints: [],
     confirmedRiskSignals: [],
+    // The standing enrichment preference lives in features.brownfieldEnrichment; this record is
+    // what the owner actually decided after being asked, kept separate so "already asked" is
+    // auditable (who, when, bound to what evidence) and never overloads the preference.
+    brownfieldEnrichmentDecision: null,
     scanExclusions: { schemaVersion: 1, policySha256: scan.scanIgnore?.sha256 ?? null, approvals: [] },
   };
 }
@@ -288,6 +301,19 @@ export function validateConfig(config) {
   validateArchitectureDecision(config.architecture, config.initialization ?? null);
   validateSkillGovernanceConfig(config);
   if (!config.features || typeof config.features !== 'object') throw usageError('config.features is required.');
+  if (config.features.brownfieldEnrichment !== undefined && !['ask', 'on', 'off'].includes(config.features.brownfieldEnrichment)) {
+    throw usageError('config.features.brownfieldEnrichment must be one of: ask, on, off.');
+  }
+  if (config.brownfieldEnrichmentDecision !== undefined && config.brownfieldEnrichmentDecision !== null) {
+    const decision = config.brownfieldEnrichmentDecision;
+    if (!decision || typeof decision !== 'object' || Array.isArray(decision)
+      || !['approved', 'declined'].includes(decision.status)
+      || typeof decision.decidedBy !== 'string' || !decision.decidedBy.trim() || decision.decidedBy.length > 200
+      || typeof decision.decidedAt !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(decision.decidedAt)
+      || !/^[a-f0-9]{64}$/.test(decision.evidenceHash ?? '')) {
+      throw usageError('config.brownfieldEnrichmentDecision must be { status: approved|declined, decidedBy, decidedAt, evidenceHash }.');
+    }
+  }
   if (!Array.isArray(config.domainConstraints)) throw usageError('config.domainConstraints must be an array.');
   if (config.domainConstraints.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1000 || /[\u0000-\u001f\u007f]/.test(value))) {
     throw usageError('config.domainConstraints must contain non-empty single-line strings of at most 1000 characters.');
@@ -344,10 +370,12 @@ function rootInstructions(config) {
 
 - 治理正典：\`${config.canonicalRoot}/\`
 - 从 \`${config.canonicalRoot}/context-map.yaml\` 的 \`ordinary\` 配置开始，仅在任务需要时加载更大的配置。
+- 交付流程见 \`docs/WORKFLOW.md\`：需求分析、页面设计、架构师 PK 与 plan、任务拆分与开发、测试、修复都在这一份文档里。
 - 保留无关的用户修改，并在请求范围内工作。
 - 如果配置的 AICG 命令不可用，停止并请求明确安装；日常工作不得临时下载包。${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` 固定版本引导需要全局安装 ai-code-governance@${config.toolVersion ?? TOOL_VERSION}，或本地安装后明确选择 project-local 配置。` : ''}
 - ${taskRoutingSummary(config)}
 - 任务开始时可运行 \`${governanceCommand(config, 'route . --text "<task>"')}\` 获取等级、已审批角色建议与专业复核缺口；角色建议本身不是已分派的 Agent。
+- 向负责人确认时用业务语言：说明改什么、影响什么、有什么风险，并给出 2-3 个选项；不要暴露 planHash、manifest、adaptiveDecisions 等内部字段名或证据哈希。
 - 治理文件必须先预览并经用户确认才应用；业务代码修改必须在实施前获得用户确认，修改后运行适用测试并保存测试结果报告。
 - 客户端适配器由工具生成。修改正典后运行 \`${syncCommand}\`，不要直接编辑适配器。
 - 交付前运行一次 \`${completeCommand}\`，并按运行时指引选择任务所需的仓库验证命令。
@@ -358,14 +386,36 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 
 - Canonical governance: \`${config.canonicalRoot}/\`
 - Start with the \`ordinary\` profile in \`${config.canonicalRoot}/context-map.yaml\`; use a larger profile only when the task requires it.
+- The delivery workflow lives in \`docs/WORKFLOW.md\`: requirement analysis, page design, architect PK and plan, decomposition and development, test and repair all stay in that one document.
 - Preserve unrelated user changes and remain within the requested scope.
 - If the configured AICG command is unavailable, stop and request an explicit install; never fetch a package during daily work.${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` Pinned bootstrap requires a global installation of ai-code-governance@${config.toolVersion ?? TOOL_VERSION}, or a local installation followed by an explicit project-local configuration choice.` : ''}
 - ${taskRoutingSummary(config)}
 - At task start, \`${governanceCommand(config, 'route . --text "<task>"')}\` recommends the task level and approved roles; a recommendation does not mean an Agent was launched or a qualified human was assigned.
+- Confirm with the owner in business language: state what changes, what it affects, and the risk, with 2-3 options; never expose internal field names or evidence digests such as planHash, manifest, or adaptiveDecisions.
 - Preview governance changes and obtain user confirmation before applying them. Obtain user confirmation before business-code implementation, then run applicable tests and save a test result report.
 - Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
 - Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
 `;
+}
+
+// One line in the shared entrypoint is what makes any client read the enrichment Skill without
+// a second routing surface. It is emitted only for existing-code repositories whose owner has
+// not turned the enrichment decision off.
+function enrichmentNotice(config) {
+  const state = config.features?.brownfieldEnrichment ?? 'ask';
+  const existing = config.initialization?.lifecycle === 'existing' || ['brownfield', 'monorepo', 'repository-family'].includes(config.projectMode);
+  if (state === 'off' || !existing) return '';
+  const skill = '`docs/ai/skills/brownfield-enrichment/SKILL.md`';
+  return config.artifactLanguage === 'zh-CN'
+    ? '- 既有代码仓库：读取 ' + skill + '；若 `brownfieldEnrichmentDecision` 为空，只询问一次是否把现有业务整理进 Memory、补全开发文档并生成开发 Skill，答复写入 `brownfieldEnrichmentDecision` 后不再询问。'
+    : '- Existing-code repository: read ' + skill + '; when `brownfieldEnrichmentDecision` is empty, ask once whether to record existing business behavior into Memory, complete the development docs and generate project Skills, then never ask again after the answer is written into `brownfieldEnrichmentDecision`.';
+}
+
+// A rule must carry at least one concrete repository reference; a boundary statement with no
+// project evidence is filler, so the contract fails it instead of shipping it.
+function checkedRule(content, id) {
+  assertRuleQuality(content, { id });
+  return content;
 }
 
 function alwaysRule(config) {
@@ -396,8 +446,12 @@ alwaysApply: true
 `;
 }
 
-function stackRule(config, packs) {
+function stackRule(config, packs, scan) {
   const rows = packs.map((pack) => `| \`${pack.id}\` | ${pack.evidence} | ${(pack.validation_sources ?? []).join('; ')} |`).join('\n');
+  const manifests = (scan?.files ?? [])
+    .filter((file) => file.type === 'file' && ['package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'pyproject.toml', 'go.mod', 'composer.json', 'Cargo.toml'].includes(file.relative.split('/').at(-1)))
+    .map((file) => `\`${file.relative}\``).slice(0, 6);
+  const manifestLine = manifests.length ? manifests.join(', ') : (config.artifactLanguage === 'zh-CN' ? '未发现构建清单' : 'no manifest found');
   if (config.artifactLanguage === 'zh-CN') return `---
 alwaysApply: false
 profiles: [implementation]
@@ -409,6 +463,8 @@ profiles: [implementation]
 | --- | --- | --- |
 ${rows}
 
+- 本仓库的技术栈证据清单：${manifestLine}。
+- 栈相关任务的分级入口：\`aicg route . --text "<task>"\`。
 - 应用特定版本的指引前，从仓库清单或锁文件确认已安装版本。
 - 生成或修改框架专属编码规范前，查阅当前官方文档。
 - 选中的 \`unverified\` 能力包仅提供路由，不代表认证证据。
@@ -425,6 +481,8 @@ profiles: [implementation]
 | --- | --- | --- |
 ${rows}
 
+- Stack evidence manifests in this repository: ${manifestLine}.
+- Route stack-related tasks with \`aicg route . --text "<task>"\`.
 - Confirm installed versions from repository manifests or lockfiles before applying version-specific guidance.
 - Research current official documentation before generating or changing framework-specific coding standards.
 - A selected \`unverified\` pack provides routing only; it is not certification evidence.
@@ -442,6 +500,10 @@ function contextMap(config, selected) {
   const conditional = [...conditionalArtifactRoutes(selected, 'behavior_change')]
     .flatMap(([condition, paths]) => [`      ${condition}:`, ...paths.map((relative) => `        - ${relative}`)]);
   return `version: 1
+context_budget:
+  startup_max_tokens: 3500
+  profile_max_tokens: 7000
+  max_required_files: 8
 base:
   required:
     - ${alwaysPath}
@@ -452,6 +514,7 @@ profiles:
   behavior_change:
     extends: ordinary
     conditional:${conditional.length ? `\n${conditional.join('\n')}` : ' {}'}
+    required:${selectedPaths.has(WORKFLOW_DOC) ? `\n      - ${WORKFLOW_DOC}` : ' []'}
     verify:
       - ${checkCommand}
   release:
@@ -505,7 +568,7 @@ function governanceReadme(config, scan, packs, selected) {
 
 本目录是人工维护的治理来源。客户端专属普通文件是生成的适配器，由 \`${checkCommand}\` 检查。
 
-${selectedPaths.has(architectureProfile) ? '生成的[架构配置](${architectureLink})是未来源码放置的唯一当前策略，不授权迁移业务代码。' : '尚未选择架构策略；依赖生成的放置指引前，需要确认架构决策。'}
+${selectedPaths.has(architectureProfile) ? `生成的[架构配置](${architectureLink})是未来源码放置的唯一当前策略，不授权迁移业务代码。` : '尚未选择架构策略；依赖生成的放置指引前，需要确认架构决策。'}
 
 ${selectedPaths.has(releasePolicy) ? `部署或发布前，结合[发布验收策略](${releaseLink})及 Git 跟踪的证据运行 \`${releaseCommand}\`，检查具体重放计划后，使用 \`--replay --approve <planHash>\` 执行。` : '发布、端验证和验收策略在首次使用时生成。生成治理产物不授予部署或发布权限。'} 工具不会编造独立评审者的批准。
 
@@ -537,7 +600,7 @@ ${config.domainConstraints.length > 0 ? config.domainConstraints.map((item) => `
 
 This directory is the human-maintained governance source. Client-specific regular files are generated adapters and are checked by \`${checkCommand}\`.
 
-${selectedPaths.has(architectureProfile) ? 'The generated [architecture profile](${architectureLink}) is the sole current policy for future source placement. It never authorizes business-code migration.' : 'Architecture policy is not selected. Confirm an architecture decision before relying on generated placement guidance.'}
+${selectedPaths.has(architectureProfile) ? `The generated [architecture profile](${architectureLink}) is the sole current policy for future source placement. It never authorizes business-code migration.` : 'Architecture policy is not selected. Confirm an architecture decision before relying on generated placement guidance.'}
 
 ${selectedPaths.has(releasePolicy) ? `Before deployment or publication, use the generated [release acceptance policy](${releaseLink}) and Git-tracked evidence with \`${releaseCommand}\`, inspect the exact replay plan, then execute it with \`--replay --approve <planHash>\`.` : 'Release, surface, and acceptance policies are materialized on first use. Generated governance does not grant deployment or publication authority.'} The tool never invents independent reviewer approval.
 
@@ -804,39 +867,69 @@ export function artifactDefinitions(config, scan) {
   };
 
   add(CONFIG_PATH, 'core', () => stableJson(config), { ...core, ownership: 'full', kind: 'configuration', source: 'confirmed-decisions' });
-  add('AGENTS.md', 'core', () => rootInstructions(config), { ...core, ownership: 'managed-block', kind: 'entrypoint', source: 'template:agents', gateAssertions: ['shared-entrypoint'] });
+  add('AGENTS.md', 'core', () => rootInstructions(config) + enrichmentNotice(config), { ...core, ownership: 'managed-block', kind: 'entrypoint', source: 'template:agents', gateAssertions: ['shared-entrypoint'] });
   add('docs/ai/README.md', 'core', (selected) => governanceReadme(config, scan, packs, selected), { ...core, source: 'template:canon-readme' });
   add('docs/ai/context-map.yaml', 'core', (selected) => contextMap(config, selected), { ...core, source: 'template:context-map', gateAssertions: ['context-map'] });
-  add('docs/ai/rules/00_always.mdc', 'core', () => alwaysRule(config), { ...core, source: 'template:always-rule' });
+  add('docs/ai/rules/00_always.mdc', 'core', () => checkedRule(alwaysRule(config), '00_always'), { ...core, source: 'template:always-rule' });
   add('docs/ai/verification-profiles.yaml', 'routing', () => verificationProfiles(config), { source: 'template:runtime-verification' });
   add('docs/ai/task-routing-policy.json', 'routing', () => stableJson(taskRoutingPolicy(config)), { ownership: 'full', kind: 'task-routing-policy', source: 'template:task-routing-policy' });
-  // Skill management and the project agent team are governed surfaces that only belong to a
-  // repository whose owner has opted into adaptive skill discovery and per-task role routing.
-  // The Complete depth turns them on; Standard and Minimal never generate these artifacts, so
-  // Standard produces a strictly smaller artifact set than Complete rather than sharing it.
-  for (const name of ['skill-discovery', 'team-orchestrator']) {
-    add(`docs/ai/skills/${name}/SKILL.md`, 'skill-management', () => managementSkill(config, name), {
-      requires: [(value) => value.governanceDepth === 'complete'],
-      ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: [`behavior_change:${name.replaceAll('-', '_')}`, ...(name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['behavior_change:business'] : [])],
-      gateAssertions: name === 'team-orchestrator' && hasCompactManagement(config) && config.domainConstraints.length ? ['business-skill-route'] : [],
-    });
-  }
+  // Role routing ships at Standard and Complete when the approved discovery decision and
+  // project team are both enabled (the `skill-management` capability gate). The roster and
+  // the skill-discovery surface stay tied to that same gate, and skill-discovery plus the
+  // skill index additionally stay Complete-only. A disabled `agent-team.json` is never
+  // generated, because an existing roster file is read as an approved team by completion and
+  // must not be a placeholder.
+  // Roles are agent definitions (docs/ai/agents/*.md) now, so skill-discovery is the only
+  // management Skill. The team-orchestrator process Skill no longer ships; an approved team is
+  // read from agent-team.json by completion instead of from a Skill.
+  add('docs/ai/skills/skill-discovery/SKILL.md', 'skill-management', () => managementSkill(config, 'skill-discovery'), {
+    requires: [(value) => value.governanceDepth === 'complete'],
+    ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
+  });
+  add(FIXED_TEAM_ROSTER_PATH, 'routing', () => fixedTeamRoster(), {
+    ownership: 'full', kind: FIXED_TEAM_ROSTER_KIND, source: 'team-role-registry',
+  });
   add('docs/ai/skill-index.json', 'skill-management', () => stableJson(config.skillDiscovery.decision), {
     requires: [(value) => value.governanceDepth === 'complete'],
     ownership: 'full', kind: 'skill-management-index', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
   });
   add('docs/ai/agent-team.json', 'skill-management', () => stableJson({ ...config.agentTeam, roles: config.agentTeam.roleProposals }), {
-    requires: [(value) => value.governanceDepth === 'complete'],
+    requires: [(value) => value.governanceDepth !== 'minimal'],
     ownership: 'full', kind: 'project-agent-team', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:team_orchestrator'],
   });
+  if (config.governanceDepth !== 'minimal') {
+    for (const artifact of buildBrownfieldEnrichmentArtifacts(config).artifacts) {
+      const index = definitions.length;
+      add(artifact.path, 'routing', () => artifact.content, {
+        ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
+        routeProfiles: ['behavior_change:brownfield_enrichment'],
+      });
+      definitions[index].build = () => artifact;
+      if (artifact.path.endsWith('SKILL.md')) addSkillAdapters(artifact.path, () => artifact.content, 'routing', []);
+    }
+  }
   add('docs/ai/decision-ledger.json', 'routing', () => stableJson(buildDecisionLedger(scan, config)), { ownership: 'full', source: 'project-classification-and-governance-config' });
-  // The delivery loop is the requirement-to-convergence workflow (decomposition, assignment,
-  // development, test-authoring, local-test, report, fix-loop): an entry Skill, one Skill per
-  // phase, a runtime ledger and one discovery adapter per client directory. It is a default
-  // part of Standard and Complete because a governed repository that cannot carry a change
-  // from requirement to tested result is not governed. `minimal` stays a bootstrap-only preset
-  // and never carries it. An owner who does not want it sets features.deliveryLoop to false,
-  // which keeps that repository's artifact set — and therefore its recorded approval — intact.
+  // The governed delivery process is one human-readable document, docs/WORKFLOW.md: requirement
+  // analysis, optional page design, architect PK and plan, decomposition and development,
+  // testing, and repair. It replaces the previous family of phase Skills, so the process is
+  // read once instead of loaded one Skill at a time. Runtime progress stays in the two machine
+  // ledgers under .ai-governance/state/, which remain seeds and are never overwritten.
+  add(WORKFLOW_DOC, 'core', () => buildWorkflowArtifacts(config).artifacts[0].content, {
+    requires: [(value) => value.governanceDepth !== 'minimal'],
+    ownership: 'full', kind: WORKFLOW_KIND, source: 'template:project-workflow',
+  });
+  // Roles are agent definitions, one file per role, so the delivery workflow can call a role
+  // without loading a process Skill. A specialised requirement adds a human specialist; it is
+  // never invented as a generated role.
+  if (config.governanceDepth !== 'minimal') {
+    for (const artifact of buildAgentArtifacts(config).artifacts) {
+      const index = definitions.length;
+      add(artifact.path, 'routing', () => artifact.content, { ownership: artifact.ownership, kind: artifact.kind, source: artifact.source });
+      definitions[index].build = () => artifact;
+    }
+  }
+  // An owner who does not want the runtime ledgers sets features.deliveryLoop or
+  // features.projectFlow to false, which keeps that repository's artifact set intact.
   if (config.governanceDepth !== 'minimal' && config.features?.deliveryLoop !== false) {
     for (const artifact of buildDeliveryLoopArtifacts(config).artifacts) {
       const index = definitions.length;
@@ -845,7 +938,16 @@ export function artifactDefinitions(config, scan) {
         requires: [(value) => value.features?.deliveryLoop !== false],
       });
       definitions[index].build = () => artifact;
-      if (artifact.path.endsWith('SKILL.md')) addSkillAdapters(artifact.path, () => artifact.content, 'routing', [(value) => value.features?.deliveryLoop !== false]);
+    }
+  }
+  if (config.governanceDepth !== 'minimal' && config.features?.projectFlow !== false) {
+    for (const artifact of buildProjectFlowArtifacts(config).artifacts) {
+      const index = definitions.length;
+      add(artifact.path, 'routing', () => artifact.content, {
+        ownership: artifact.ownership, kind: artifact.kind, source: artifact.source,
+        requires: [(value) => value.features?.projectFlow !== false],
+      });
+      definitions[index].build = () => artifact;
     }
   }
   add('docs/ai/repository-family.json', 'routing', () => stableJson({
@@ -881,7 +983,7 @@ export function artifactDefinitions(config, scan) {
       const isLocalGovernance = ['development-unit-rule', 'development-unit-skill', 'development-unit-entrypoint'].includes(artifact.kind);
       if (artifact.kind === 'brownfield-understanding-skill') assertSkillQuality(artifact.content, { profile: 'workflow', id: 'brownfield-understanding' });
       const isCanonicalRoute = artifact.path === 'docs/ai/development/index.json' || artifact.path === 'docs/ai/skills/brownfield-understanding/SKILL.md';
-      const capability = isSkill && (artifact.path.startsWith('.agents/') || artifact.path.startsWith('.claude/')) ? 'integration' : 'core';
+      const capability = isSkill && clientGovernanceHomeDirectories().some((home) => artifact.path.startsWith(`${home}/`)) ? 'integration' : 'core';
       add(artifact.path, capability, () => artifact.content, {
         requires: isSkill || isLocalGovernance ? [(value) => value.governanceDepth !== 'minimal'] : [],
         ownership: artifact.ownership,
@@ -910,9 +1012,9 @@ export function artifactDefinitions(config, scan) {
   const antiPatternsActive = (value, current) => !hasSkillManagement(value) || hasGovernanceUsage(current, 'anti-patterns') || hasArtifactEvidence(current, 'docs/ai/anti-patterns.md');
   add('docs/ai/anti-patterns.md', 'policy', () => antiPatterns(config), { requires: [antiPatternsActive], routeProfiles: ['behavior_change:anti_patterns'], source: 'template:anti-patterns' });
   add('docs/ai/stack-profile.json', 'policy', () => stableJson({ schemaVersion: 1, packs: packs.map((pack) => ({ id: pack.id, lifecycle: pack.lifecycle, evidence: pack.evidence, validationSources: pack.validation_sources })) }), { requires: [stack], ownership: 'full', source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
-  add('docs/ai/rules/20_stack.mdc', 'policy', () => stackRule(config, packs), { requires: [stack], source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
+  add('docs/ai/rules/20_stack.mdc', 'policy', () => checkedRule(stackRule(config, packs, scan), '20_stack'), { requires: [stack], source: 'capability-pack-registry', routeProfiles: ['behavior_change:stack'] });
   add('docs/ai/architecture-profile.json', 'policy', () => stableJson(architectureProfileDocument(config)), { requires: [architecture], ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['architecture-placement', 'architecture-route'], routeProfiles: ['behavior_change:architecture'] });
-  add('docs/ai/rules/15_architecture.mdc', 'policy', () => architectureRule(config), { requires: [architecture], ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision', routeProfiles: ['behavior_change:architecture'] });
+  add('docs/ai/rules/15_architecture.mdc', 'policy', () => checkedRule(architectureRule(config), '15_architecture'), { requires: [architecture], ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision', routeProfiles: ['behavior_change:architecture'] });
   add('docs/ai/module-graph.json', 'policy', () => stableJson(moduleGraphDeclaration(config)), { requires: [architecture, (value) => Boolean(moduleGraphDeclaration(value))], ownership: 'full', kind: 'architecture-module-graph', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['module-graph'] });
   add(BUSINESS_CONSTRAINTS_PATH, 'policy', () => businessConstraintRegistryContent(config), { requires: [business], ownership: 'full', kind: 'business-constraint-registry', source: 'owner-confirmed-config', gateAssertions: ['business-route'], routeProfiles: ['behavior_change:business'] });
   const separateBusinessSkill = (value) => !hasCompactManagement(value);
@@ -1043,10 +1145,8 @@ export function buildArtifactsWithDefinitions(config, scan) {
     // The governed receipt is the Skill-governance increment plus the artifacts this
     // transaction generates. Both must match the approved receipt exactly, so a scan or
     // generator change that adds or removes artifacts still requires fresh approval. We
-    // only enter this branch when the build actually emits the Skill-management tree
-    // (i.e. `complete` depth with the artifacts' `requires` satisfied), so a `standard`
-    // config that opts in but does not emit management artifacts carries no receipt
-    // obligation.
+    // only enter this branch when the build actually emits a management artifact (by
+    // kind), so a config that opts in but does not emit one carries no receipt obligation.
     if (recorded?.managed) {
       const governed = (value) => stableJson({ increment: value.increment, managed: value.managed });
       if (governed(cost) !== governed(recorded)) throw usageError(`Skill governance costs changed; exact planHash approval is required again. Computed ${governed(cost)} but the approval recorded ${governed(recorded)}.`);
@@ -1084,12 +1184,13 @@ export function refreshSkillGovernanceReceipt(config, scan) {
 }
 
 function hasSkillManagement(config) {
-  // Skill management is opt-in for `standard` and `minimal`; `complete` carries it on by
-  // default. The selection filter in `artifact-selection.mjs` matches this rule by
-  // guarding the artifacts' own `requires` on `=== 'complete'`, so a `standard` config
-  // that opts in never actually emits management artifacts — it carries the receipt
-  // without producing the tree, and `buildArtifactsWithDefinitions` therefore skips the
-  // cost gate entirely (see the `artifacts` check below).
+  // Skill management is opt-in at every depth. The selection filter in
+  // `artifact-selection.mjs` adds the `skill-management` capability only when both the
+  // discovery decision and the project team are enabled, so an opted-out repository
+  // carries the receipt without producing the management tree and
+  // `buildArtifactsWithDefinitions` skips the cost gate entirely. team-orchestrator is the
+  // exception: it is a `routing` artifact that a Standard or Complete repository emits
+  // even when skill discovery is not enabled.
   return config.governanceDepth !== 'minimal' && config.skillDiscovery?.enabled === true && config.agentTeam?.enabled === true;
 }
 
@@ -1101,6 +1202,67 @@ function hasCompactManagement(config) {
   return hasSkillManagement(config) && config.adaptiveDecisions !== undefined;
 }
 
+function managementSections(config, name, body) {
+  const discovery = name === 'skill-discovery';
+  const t = (zhText, enText) => languageTitle(config, zhText, enText);
+  const bullet = (items) => items.map((item) => '- ' + item).join('\n');
+  const numbered = (items) => items.map((item, index) => (index + 1) + '. ' + item).join('\n');
+  const use = discovery ? [
+    t('需要为当前任务查找或选择可用 Skill 时。', 'When a task must find or select an available Skill.'),
+    t('只允许离线读取项目与显式 installedRoots 的元数据时。', 'When only offline metadata from the project and explicit installedRoots may be read.'),
+  ] : [
+    t('需求需要项目 AI 角色协作时。', 'When a requirement needs project AI role coordination.'),
+    t('需要按固定基础角色与已审批动态角色编排任务时。', 'When tasks must follow fixed base roles and approved dynamic roles.'),
+  ];
+  const notUse = discovery ? [
+    t('不要联网、安装或执行候选脚本；推荐不等于审批。', 'Never fetch, install, or execute candidate scripts; a recommendation is not approval.'),
+    t('不要用 Skill 名称替代专业判断。', 'Never let a Skill name stand in for professional judgement.'),
+  ] : [
+    t('不要用角色名自动创建 Skill、提升权限或声称工作已完成。', 'Never create Skills, elevate permissions, or claim completed work from a role name.'),
+    t('不要用本 Skill 替代负责人的业务决策或专业边界。', 'Never use this Skill to substitute for the owner business decision or a professional boundary.'),
+  ];
+  const invariants = discovery ? [
+    t('每项能力只保留一个负责人，当前任务最多激活三个 Skill。', 'Keep one owner per capability and at most three active Skills per task.'),
+    t('来源、版本、内容摘要、权限或成本变化后必须重新确认 planHash。', 'Source, version, digest, permission, or cost changes require fresh planHash approval.'),
+    t('命中任务后才读取正文，无匹配时报告缺口。', 'Load bodies only after a task match; report gaps when nothing matches.'),
+  ] : [
+    t('固定角色来自 team-roster.json，可直接按能力调用。', 'Fixed roles come from team-roster.json and may be used directly by capability.'),
+    t('动态或专业角色只在已审批且命中任务证据时使用，并保留 professionalBoundaries 与 gaps。', 'Dynamic or specialist roles apply only when approved and matched to task evidence, preserving professionalBoundaries and gaps.'),
+    t('团队、审批范围或成本变化时重新确认 planHash。', 'Team, approval-scope, or cost changes require fresh planHash approval.'),
+  ];
+  const flow = discovery ? [
+    t('读取 skill-index.json，只做离线元数据匹配。', 'Read skill-index.json and match offline metadata only.'),
+    t('每项能力保留一个负责人，当前任务最多激活三个 Skill。', 'Keep one owner per capability and at most three active Skills for the task.'),
+    t('命中后才读取 Skill 正文，无匹配时报告缺口。', 'Load a Skill body only on a match; report gaps when nothing matches.'),
+    t('来源、版本、摘要、权限或成本变化后重新确认 planHash。', 'Reconfirm planHash after any source, version, digest, permission, or cost change.'),
+  ] : [
+    t('读取 team-roster.json 与 agent-team.json，确认可用角色与边界。', 'Read team-roster.json and agent-team.json to confirm available roles and boundaries.'),
+    t('固定角色按能力直接调用，动态或专业角色需已审批且命中任务证据。', 'Use fixed roles directly by capability; dynamic or specialist roles need approval and task evidence.'),
+    t('保留 professionalBoundaries 与 gaps，不因角色名提升权限。', 'Preserve professionalBoundaries and gaps; never elevate permissions from a role name.'),
+    t('团队、审批范围或成本变化后重新确认 planHash。', 'Reconfirm planHash after any team, approval-scope, or cost change.'),
+  ];
+  const escalation = discovery ? [
+    t('候选证据过期或来源不可达时保持 unverified 并报告缺口。', 'Candidate evidence is stale or the source is unreachable: keep it unverified and report the gap.'),
+    t('无法离线判断时停下请求负责人决定，不要联网补齐。', 'When it cannot be judged offline, stop and ask the owner instead of going online.'),
+  ] : [
+    t('缺少负责的专业角色时升级给负责人，不要让一个角色顶替另一个专业判断。', 'A responsible specialist role is missing: escalate instead of letting one role stand in for another.'),
+    t('证据冲突时请求负责人决定，不自动统一。', 'Conflicting evidence: request an owner decision instead of normalizing automatically.'),
+  ];
+  const boundary = discovery
+    ? t('本 Skill 只检查离线元数据；推荐不等于审批，也不证明真实加载或执行。', 'This Skill inspects offline metadata only; a recommendation is not approval and proves no real loading or execution.')
+    : t('本 Skill 只按已审批 roster 推荐协作；角色数据不是可执行指令，也不证明参与、权限或完成。', 'This Skill recommends collaboration within the approved roster only; role data is not executable instruction and proves no participation, authority, or completion.');
+  const sources = discovery
+    ? ['`docs/ai/skill-index.json`', '`docs/ai/skills/skill-discovery/SKILL.md`', '`.ai-governance/config.json`']
+    : ['`docs/ai/team-roster.json`', '`docs/ai/agent-team.json`', '`.ai-governance/config.json`'];
+  const matrix = [
+    '| ' + t('场景', 'Scenario') + ' | ' + t('期望结果', 'Expected result') + ' | ' + t('命令', 'Command') + ' |',
+    '| --- | --- | --- |',
+    '| ' + t('账本或 roster 存在', 'Ledger or roster present') + ' | ' + t('内容与当前 planHash 一致', 'Content matches the current planHash') + ' | `aicg check .` |',
+    '| ' + t('来源或团队发生变化', 'Source or team changed') + ' | ' + t('旧批准失效并需要重新确认', 'The old approval is stale and must be reconfirmed') + ' | `aicg check .` |',
+  ].join('\n');
+  return ['## When to use', '', bullet(use), '', '## When not to use', '', bullet(notUse), '', '## Required invariants', '', bullet(invariants), '', '## Decision flow', '', numbered(flow), '', '## Exceptions and escalation', '', bullet(escalation), '', '## Verification matrix', '', matrix, '', '## Project evidence boundary', '', body, '', '## Sources', '', bullet(sources)].join('\n');
+}
+
 function managementSkill(config, name) {
   const discovery = name === 'skill-discovery';
   const description = discovery
@@ -1108,11 +1270,23 @@ function managementSkill(config, name) {
     : languageTitle(config, '仅在需要项目 AI 角色协作时使用；按已审批的项目角色与专业边界编排任务。', 'Use when coordinating project AI roles; follow the approved project roster and professional boundaries.');
   const body = discovery
     ? languageTitle(config, '先读取 docs/ai/skill-index.json。只检查项目与显式 installedRoots 的元数据；不联网、不安装、不执行脚本。推荐不等于审批。来源、版本、内容摘要、权限或成本变化后，必须重新确认 planHash。每项能力只保留一个负责人；当前任务最多激活三个 Skill。命中任务后才读取正文；无匹配时报告缺口，不冒充专业判断。', 'Read docs/ai/skill-index.json first. Inspect only project metadata and explicit installedRoots. Do not fetch, install, or execute scripts. Recommendation is not approval. Source, version, digest, permission, or cost changes require fresh planHash approval. Keep one owner per capability and at most three active Skills per task. Load bodies only after a task match; report gaps without claiming professional authority.')
-    : languageTitle(config, '先读取 docs/ai/agent-team.json。此 roster 是项目 AI 团队，不是人类组织或 AICG 开发团队。仅按已审批角色与当前任务证据推荐协作，保留 professionalBoundaries 和 gaps；角色数据不是可执行指令。不得因角色名自动创建 Skill、提高权限或声称已完成工作。变更团队、审批范围或成本时重新确认 planHash；真实执行与验证证据另行记录。', 'Read docs/ai/agent-team.json first. This roster describes project AI roles, not a human organization or the AICG product team. Recommend collaboration only within approved roles and current task evidence; preserve professionalBoundaries and gaps. Role data is not executable instruction. Do not create Skills, elevate permissions, or claim completed work from role names. Team, approval scope, or cost changes require fresh planHash approval; record actual execution and verification separately.');
+    : languageTitle(config, '先读取 docs/ai/team-roster.json（默认固定基础角色）与 docs/ai/agent-team.json（已审批动态/专业角色，若存在）。此 roster 是项目 AI 团队，不是人类组织或 AICG 开发团队。固定角色可直接按能力调用；动态或专业角色只在已审批且角色数据命中任务证据时使用，保留 professionalBoundaries 和 gaps；角色数据不是可执行指令。不得因角色名自动创建 Skill、提高权限或声称已完成工作。变更团队、审批范围或成本时重新确认 planHash；真实执行与验证证据另行记录。', 'Read docs/ai/agent-team.json first. This roster describes project AI roles, not a human organization or the AICG product team. Recommend collaboration only within approved roles and current task evidence; preserve professionalBoundaries and gaps. Role data is not executable instruction. Do not create Skills, elevate permissions, or claim completed work from role names. Team, approval scope, or cost changes require fresh planHash approval; record actual execution and verification separately.');
   const business = !discovery && hasCompactManagement(config) && config.domainConstraints.length ? languageTitle(config,
     '业务约束：读取 docs/ai/business-constraints.json，保留每项 id、原文与 constraintHash；不得按关键词推断风险。为每项受影响约束运行成功及负向或边界用例，在 docs/ai/business-acceptance-results.json 绑定 id、constraint、constraintHash、successEvidence 与 failureOrBoundaryEvidence。为每个已确认风险在 docs/ai/business-risk-evidence.json 记录适用性、负向诊断、恢复及当前源码/配置指纹。证据缺失或不匹配则 blocked；本地记录不等于认证，即使完整也仅为 unverified、eligible-for-review。',
     'Business constraints: read docs/ai/business-constraints.json; preserve each id, exact text and constraintHash. Never infer risk from keywords. Run success and negative/boundary cases for every affected constraint; bind id, constraint, constraintHash, successEvidence and failureOrBoundaryEvidence in docs/ai/business-acceptance-results.json. For each confirmed risk, record applicability, negative diagnostics, recovery and current source/config fingerprints in docs/ai/business-risk-evidence.json. Missing or mismatched evidence blocks readiness; local records are not certification, and complete evidence remains unverified and eligible-for-review.') : '';
-  return `---\nname: ${name}\ndescription: ${description}\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${name}\n\n${body}\n${business ? `\n${business.replaceAll('docs/ai/business-risk-evidence.json', BUSINESS_RISK_EVIDENCE_PATH)}\n` : ''}`;
+  const content = `---
+name: ${name}
+description: ${description}
+---
+
+<!-- ${GENERATED_MARKER} -->
+
+# ${name}
+
+${managementSections(config, name, body)}
+${business ? `\n## Business constraints\n\n${business.replaceAll('docs/ai/business-risk-evidence.json', BUSINESS_RISK_EVIDENCE_PATH)}\n` : ''}`;
+  assertSkillQuality(content, { profile: 'workflow', id: name });
+  return content;
 }
 
 /** Render selected definitions through the layout mapping. Exposed for footprint-aware checkers. */
@@ -1154,16 +1328,15 @@ function skillGovernanceCost(root, artifacts) {
   const transaction = planArtifacts(root, artifacts);
   if (transaction.conflicts.length) throw usageError(`Skill governance planning conflict: ${transaction.conflicts.join('; ')}`);
   // Budget by load class rather than by total size. The always-on set is read for every
-  // Skill-management decision, the delivery entry is read once per delivery, and the phase
-  // Skills are read only while their phase is active. Folding all three into one ceiling
-  // would either starve the entry or leave the on-demand phases unbudgeted.
+  // Skill-management decision and the workflow document is read once per governed delivery;
+  // folding both into one ceiling would either starve the workflow or inflate the always-on set.
   const managers = artifacts.filter((item) => item.kind === 'skill-management-skill');
-  const managerTokens = Math.ceil(managers.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
-  const deliveryEntry = artifacts.filter((item) => item.kind === DELIVERY_LOOP_ENTRY_KIND);
-  const deliveryEntryTokens = Math.ceil(deliveryEntry.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
-  const deliveryPhaseBytes = artifacts
-    .filter((item) => item.kind === DELIVERY_LOOP_PHASE_KIND)
-    .reduce((sum, item) => sum + Buffer.byteLength(item.content), 0);
+  // The management surface is loaded for behavior-change work, not literally every session, so it
+  // is named for its load class instead of the misleading "manager" wording.
+  const managementProfileTokens = Math.ceil(managers.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
+  // The always rule is the one artifact reached on every session; it gets its own tight ceiling.
+  const alwaysRuleTokens = Math.ceil(artifacts.filter((item) => item.path.endsWith('00_always.mdc')).reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
+  const workflowTokens = Math.ceil(artifacts.filter((item) => item.kind === WORKFLOW_KIND).reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4);
   // The increment is the Skill-management increment and nothing else. The delivery loop is
   // a separate feature with its own two ceilings above; folding its artifacts in here both
   // duplicated those ceilings and made the approved Skill-governance receipt move when an
@@ -1206,7 +1379,7 @@ function skillGovernanceCost(root, artifacts) {
     bytes: transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content),
   };
   const cost = {
-    increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managerTokens, deliveryEntryTokens, deliveryPhaseBytes },
+    increment: { files: extra.length, bytes: extra.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0), managementProfileTokens, alwaysRuleTokens, workflowTokens },
     // The governed footprint is what this transaction generates. `retained` is reported
     // separately because the transaction rewrites the manifest that produces it, so it
     // cannot be part of the receipt the same transaction has to satisfy.
@@ -1222,20 +1395,23 @@ function skillGovernanceCost(root, artifacts) {
   // which permanently blocked the brownfield "no evidence-backed project Skill" gap.
   const maximumFiles = 30;
   const maximumBytes = (config.governanceDepth === 'standard' ? 96 : 128) * 1024;
-  const maximumManagerTokens = 800;
-  // The delivery entry is read once per delivery rather than for every Skill decision, so it
-  // gets its own ceiling instead of competing with the always-on management budget. The cap
-  // exists to stop unbounded growth, not to squeeze the entry: a phase dispatch table and the
-  // eight contract sections already cost most of it in the two-byte-per-character zh-CN form.
-  const maximumDeliveryEntryTokens = 1000;
-  const maximumDeliveryPhaseBytes = 24 * 1024;
+  // The always-on manager set now carries the full eight-section Skill contract
+  // (skill-discovery + team-orchestrator), so the original 800-token stub ceiling no longer
+  // fits. 1600 still keeps the always-on surface small relative to the on-demand phases.
+  const maximumManagementProfileTokens = 2400;
+  // The always rule carries only what must hold in every session. Keep it small.
+  const maximumAlwaysRuleTokens = 256;
+  // The workflow document is read once per governed delivery rather than for every Skill
+  // decision, so it gets its own ceiling instead of competing with the always-on management
+  // budget. The cap exists to stop unbounded growth, not to squeeze the document.
+  const maximumWorkflowTokens = 2000;
   if (cost.increment.files > maximumFiles || cost.increment.bytes > maximumBytes
-    || managerTokens > maximumManagerTokens
-    || deliveryEntryTokens > maximumDeliveryEntryTokens
-    || deliveryPhaseBytes > maximumDeliveryPhaseBytes) {
-    const error = usageError('Approved Skill governance exceeds the Skill management increment, byte, manager token, delivery entry token or on-demand phase byte budget.');
+    || managementProfileTokens > maximumManagementProfileTokens
+    || alwaysRuleTokens > maximumAlwaysRuleTokens
+    || workflowTokens > maximumWorkflowTokens) {
+    const error = usageError('Approved Skill governance exceeds the Skill management increment, byte, manager token or workflow token budget.');
     error.budgetCost = cost;
-    error.budgetLimits = { maximumFiles, maximumBytes, maximumManagerTokens, maximumDeliveryEntryTokens, maximumDeliveryPhaseBytes };
+    error.budgetLimits = { maximumFiles, maximumBytes, maximumManagementProfileTokens, maximumAlwaysRuleTokens, maximumWorkflowTokens };
     throw error;
   }
   return cost;
@@ -1250,7 +1426,7 @@ export function prepareSkillGovernancePlan(config, scan) {
   validateApprovedAgentTeam(config.agentTeam);
   config.skillDiscovery = { enabled: true, decision: config.skillDiscovery.decision, artifactPlan: {
     contextHash: governanceContextHash(config), planHash: '0'.repeat(64),
-    cost: { increment: { files: 0, bytes: 0, managerTokens: 0 }, total: { files: 0, bytes: 0 } },
+    cost: { increment: { files: 0, bytes: 0, managementProfileTokens: 0, alwaysRuleTokens: 0 }, total: { files: 0, bytes: 0 } },
   }, approvalPlanHash: '0'.repeat(64) };
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const selected = selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));

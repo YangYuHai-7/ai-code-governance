@@ -51,7 +51,6 @@ export const RETIRED_COMMANDS = Object.freeze({
   hook: { replacement: 'aicg delivery hook' },
   'release-check': { replacement: 'aicg delivery release-check' },
   request: { capability: 'one-line chat governance routing; use your coding agent with the AICG Skill' },
-  enrich: { replacement: 'aicg config open <path>' },
   evidence: { replacement: 'aicg complete <path> --approval-evidence <file>' },
   assess: { capability: 'the repository assessment summary' },
   architecture: { capability: 'the architecture assessment' },

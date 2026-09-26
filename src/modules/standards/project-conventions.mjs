@@ -21,6 +21,58 @@ function slug(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'repository';
 }
 
+const FENCE_LANGUAGES = { ts: 'typescript', tsx: 'tsx', mts: 'typescript', cts: 'typescript', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', vue: 'vue', svelte: 'svelte', java: 'java', kt: 'kotlin', kts: 'kotlin', py: 'python', go: 'go', rs: 'rust', cs: 'csharp', php: 'php', rb: 'ruby', swift: 'swift', dart: 'dart', scala: 'scala', sh: 'bash', sql: 'sql' };
+const COMMENT_STYLE = { python: '#', ruby: '#', bash: '#', sql: '--', java: '//', kotlin: '//', csharp: '//', go: '//', rust: '//', swift: '//', dart: '//', scala: '//', php: '//' };
+
+function fenceLanguage(relative) {
+  return FENCE_LANGUAGES[path.posix.extname(relative).slice(1).toLowerCase()] ?? 'text';
+}
+
+function declarationStart(lines) {
+  // A single-file component's script block carries the implementation shape; a template window
+  // can run longer than the excerpt and contain only markup. Prefer script, then template, then
+  // the first inner declaration.
+  const script = lines.findIndex((line) => /^\s*<script\b/.test(line));
+  if (script >= 0) return script;
+  const componentRoot = lines.findIndex((line) => /^\s*<template\b/.test(line));
+  if (componentRoot >= 0) return componentRoot;
+  const declaration = /^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?(?:function|class|const|let|var|interface|type|enum|def|func|fn|public|private|protected|module\.exports|@\w+)/;
+  return lines.findIndex((line) => declaration.test(line));
+}
+
+/** A real excerpt of the nearest same-role implementation, so the Skill teaches the shape itself. */
+export function surfaceCorrectShape(root, relative, maxLines = 28) {
+  const language = fenceLanguage(relative);
+  try {
+    const lines = readMemoryFile(root, relative, 128 * 1024).split('\n');
+    const start = declarationStart(lines);
+    const from = start > 0 ? start : 0;
+    let body = lines.slice(from, from + maxLines).join('\n').replace(/\s+$/, '');
+    const comment = COMMENT_STYLE[language] ?? '//';
+    // Keep at least two content lines so a one-line source still renders a non-trivial shape.
+    if (body.split('\n').length < 2) body += '\n' + comment + ' full file: ' + relative;
+    return { language, body };
+  } catch {
+    return { language, body: (COMMENT_STYLE[language] ?? '//') + ' see ' + relative };
+  }
+}
+
+/** A clearly-marked counter-example in the same language, never a bare path list. */
+export function surfaceIncorrectShape(relative, label) {
+  const language = fenceLanguage(relative);
+  const comment = COMMENT_STYLE[language] ?? '//';
+  const directory = path.posix.dirname(relative);
+  const extension = path.posix.extname(relative);
+  return {
+    language,
+    body: [
+      comment + ' WRONG: adding transport, persistence, or policy logic to ' + label,
+      comment + ' WRONG path: ' + directory + '/../<other-directory-role>/<NewName>' + extension,
+      comment + ' Keep the neighboring role, naming suffix, and dependency direction instead.',
+    ].join('\n'),
+  };
+}
+
 function verificationCommandEvidence(scan, command) {
   const source = command.verification.source;
   let sourceSha256 = source.sha256 ?? null;
@@ -58,6 +110,7 @@ function projectLayoutCandidate(scan) {
       status: 'candidate',
       kind: 'project-layout',
       skill: `docs/ai/skills/project-conventions/${repository}-layout/SKILL.md`,
+      label: 'project layout',
       trigger: `Use when adding or moving production code in ${scan.projectName}.`,
       scope: ['.'],
       purpose: 'Preserve the project-local source layout after owner review.',
@@ -180,13 +233,15 @@ export function buildProjectConventionArtifacts(config, scan, memory) {
     const zh = config.artifactLanguage === 'zh-CN';
     const receipt = config.adaptiveDecisions?.skills?.find((entry) => entry.id === candidate.id && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
     const adopted = receipt?.action === 'add';
-    if (candidate.kind === 'project-surface') {
+    if (candidate.kind === 'project-surface' || candidate.kind === 'project-layout') {
       const commandRows = candidate.verificationCommands.length
         ? candidate.verificationCommands.map((entry) => `| \`${entry.command}\` | ${zh ? '受影响行为和失败路径通过' : 'Affected behavior and failure paths pass'} | ${entry.trust.level === 'structurally-trusted' ? `\`${entry.cwd}\`` : (zh ? `尚未验证；${entry.trust.level}` : `not yet verified; ${entry.trust.level}`)} |`).join('\n')
         : `| ${zh ? '相邻行为测试' : 'Neighboring behavior test'} | ${zh ? '主要与失败路径通过' : 'Primary and failure paths pass'} | ${zh ? '尚未验证；未发现命令' : 'not yet verified; no command discovered'} |`;
       const primaryEvidence = candidate.evidencePaths[0] ?? '<neighbor>';
       const primaryEvidenceDir = path.posix.dirname(primaryEvidence);
       const primaryExtension = path.posix.extname(primaryEvidence);
+      const correctShape = surfaceCorrectShape(scan.root, primaryEvidence);
+      const incorrectShape = surfaceIncorrectShape(primaryEvidence, candidate.label);
       const content = `---
 name: ${candidate.id}
 description: ${zh ? `修改 ${scan.projectName} 的${candidate.label}时，评审并应用这个证据绑定的项目表面约定。` : candidate.trigger}
@@ -227,18 +282,18 @@ Status: ${adopted ? 'owner-approved for new code' : 'evidence-backed candidate, 
 
 ## Correct implementation shape
 
-\`\`\`text
-read first:   ${primaryEvidence}
-then add:     ${primaryEvidenceDir}/<NewName>${primaryExtension}
-keep aligned: same directory role, naming suffix, and dependency direction
+${zh ? '来自以下真实实现的节选：' : 'Excerpt from the nearest real implementation:'} \`${primaryEvidence}\`
+
+\`\`\`${correctShape.language}
+${correctShape.body}
 \`\`\`
 
 ## Incorrect implementation shape
 
-\`\`\`text
-do not add:   ${primaryEvidenceDir}/../<other-directory-role>/<NewName>${primaryExtension}
-do not mix:   persistence, policy, or transport logic inside this surface
-do not reuse: this convention for a module without current evidence
+${zh ? '不要把其它角色的职责塞进本表面：' : 'Do not fold another role\'s concern into this surface:'}
+
+\`\`\`${incorrectShape.language}
+${incorrectShape.body}
 \`\`\`
 
 ${zh ? '目录相邻不等于职责可以合并；越界会让 `aicg check` 报告边界缺口。' : 'Adjacent directories do not license merged responsibilities; crossing this boundary surfaces as a boundary gap in `aicg check`.'}
@@ -272,7 +327,9 @@ ${candidate.evidencePaths.map((relative) => `- \`${relative}\``).join('\n')}
       assertSkillQuality(content, { profile: 'implementation', id: candidate.id });
       return { path: candidate.skill, ownership: adopted ? 'full' : 'seed', kind: adopted ? 'project-convention-skill' : 'project-convention-candidate', source: 'project-convention-evidence', adopted, content };
     }
-    if (candidate.kind === 'project-layout') {
+    // Project-layout renders through the shared surface template above so both convention kinds
+    // carry the same implementation quality contract. Kept only as a historical reference.
+    if (false && candidate.kind === 'project-layout') {
       const verificationRows = candidate.verificationCommands.length
         ? candidate.verificationCommands.map((entry) => `| \`${entry.command}\` | \`${entry.cwd}\` | ${entry.trust.level} | ${entry.trust.reasons.map((reason) => reason.code).join(', ') || '-'} |`).join('\n')
         : `| - | - | unverified | ${zh ? '未发现验证入口' : 'no verification entrypoint discovered'} |`;

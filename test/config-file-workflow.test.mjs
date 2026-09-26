@@ -92,3 +92,22 @@ test('configuration file does not change an empty project lifecycle on replay', 
   assert.equal(validated.status, 0, validated.stderr);
   assert.equal(JSON.parse(validated.stdout).lifecycle, 'greenfield');
 });
+
+test('a baseline rebuild drops an unapproved Skill-management pair instead of failing', async (t) => {
+  const root = fixture(t);
+  const { scanProject } = await import('../src/scanner.mjs');
+  const { defaultConfig } = await import('../src/generator.mjs');
+  const { prepareInit } = await import('../src/cli/commands/init.mjs');
+  const scan = scanProject(root, { probeEnvironment: false });
+  const base = defaultConfig(scan);
+  const config = { ...base, governanceDepth: 'complete',
+    initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing' },
+    skillDiscovery: { enabled: true, decision: { schemaVersion: 1, candidates: [], sourceStatus: [], selectedIds: [], status: 'unverified', actionsPerformed: [] } },
+    agentTeam: { ...base.agentTeam, enabled: true } };
+  // A rebuild cannot invent an approval the config never carried; it drops the pair so the
+  // resulting baseline is valid, while ordinary init still rejects the unapproved decision.
+  const prepared = await prepareInit(root, { yes: true, 'dry-run': true, 'no-assist': true, rebaseline: true }, { suppliedConfig: config });
+  assert.equal(prepared.config.skillDiscovery.enabled, false);
+  assert.equal(prepared.config.agentTeam.enabled, false);
+});
+

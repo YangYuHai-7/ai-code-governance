@@ -24,9 +24,11 @@ const NODE_BUILTINS = new Set(builtinModules.flatMap((name) => [name, `node:${na
 const BUILTIN_ALLOWLIST = {
   root: new Set(),
   catalogs: new Set(['node:path']),
-  cli: new Set(['node:path', 'node:process', 'node:readline/promises']),
+  cli: new Set(['node:path', 'node:process', 'node:readline/promises', 'node:worker_threads']),
   kernel: new Set(['node:fs', 'node:path', 'node:url']),
-  modules: new Set(['node:crypto', 'node:fs', 'node:os', 'node:path']),
+  // A long repository scan runs in a worker so the loopback configuration server keeps
+  // answering /api/progress while the walk is in progress.
+  modules: new Set(['node:crypto', 'node:fs', 'node:os', 'node:path', 'node:worker_threads']),
   shared: new Set(['node:crypto']),
 };
 const ADAPTER_BUILTIN_ALLOWLIST = {

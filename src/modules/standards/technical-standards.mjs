@@ -122,14 +122,14 @@ export function createDevicePort(platform: Platform): DevicePort {
 
 const GENERIC_IMPLEMENTATION_EXAMPLE = {
   language: 'text',
-  correct: `transport -> validate contract
-validated input -> authorize and execute one use case
-use case -> call a narrow persistence or integration port
-result -> map to the public response contract`,
-  incorrect: `transport -> accept an untyped payload
-handler -> mix policy, persistence, and external effects
-result -> expose internal records directly
-verification -> assume success without exercising failure paths`,
+  correct: `function handle(request) {
+  input = validate(request)        // transport -> validated contract
+  return useCase(input)            // one use case owns the decision
+}`,
+  incorrect: `function handle(request) {
+  row = persist(request)           // policy, persistence, and effects mixed
+  return row                       // internal record exposed directly
+}`,
 };
 
 export function validateTechnicalStandardRegistry(registry) {

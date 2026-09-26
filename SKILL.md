@@ -10,7 +10,7 @@ Deliver one canonical rule source, the smallest relevant context route, and mach
 
 ## Trigger and scope
 
-For offline Skill discovery and project-AI team onboarding, collect `adaptiveGovernance` through the existing `--config` contract in [initializer.md](docs/internal/reference/initializer.md#adaptive-governance-input). Inspect full `sourceStatus`, bounded candidates, add/defer/reject decisions, explicit professional activation and human-review gaps, file actions, permissions, and costs. Nothing is preselected, installed, or activated by a recommendation. A single exact `--approve <planHash>` authorizes the reviewed transaction; `--yes` alone does not. Use `sync . --config decisions.json` for an existing project's preview. Minimal emits no management artifacts; approved Standard/Complete remains inside the existing 26-file, 64/96 KiB and 800-manager-token limits. A `budget-blocked` preview requires separately authorized cleanup; never delete historical seeds automatically. Default English and explicit `zh-CN` retain the same machine contracts. Real-client execution and qualified-human identity remain unverified.
+For offline Skill discovery and project-AI team onboarding, collect `adaptiveGovernance` through the existing `--config` contract in [initializer.md](docs/internal/reference/initializer.md#adaptive-governance-input). Inspect full `sourceStatus`, bounded candidates, add/defer/reject decisions, explicit professional activation and human-review gaps, file actions, permissions, and costs. Nothing is preselected, installed, or activated by a recommendation. A single exact `--approve <planHash>` authorizes the reviewed transaction; `--yes` alone does not. Use `sync . --config decisions.json` for an existing project's preview. Minimal emits no management artifacts; approved Standard/Complete remains inside the existing 26-file, 64/96 KiB and 800-manager-token limits. A `budget-blocked` preview requires separately authorized cleanup; never delete historical seeds automatically. Default English and explicit `zh-CN` retain the same machine contracts. Real-client execution and qualified-human identity remain unverified. Community capabilities are discovered at the operator layer with `find-skills` and pinned into the packaged catalog before AICG reads them; AICG never installs or executes a public Skill (see *Public capability discovery*).
 
 Treat explicit governance phrases such as `AI 编码治理框架`, `代码治理框架`, `Agent 治理框架`, and `aicg init` as task intent. The bare phrase `治理框架` requires repository/coding-agent context. Product AI safety and regulatory questions are outside this Skill.
 
@@ -19,7 +19,7 @@ A vague request does not choose Complete. Scan first, then recommend Minimal or 
 ## Installation: Agent-first, artifact-language-second
 
 1. Scan repository files before questions: lifecycle/topology, manifest/lockfiles, exact stacks, scripts, existing adapters, canonical rules, and selected workflow evidence. Filesystem discovery does not execute Git, Agents, or project scripts; `aicg doctor .` reports executable availability separately.
-2. First visible decision: supported Agents. Offer Codex, Claude Code, Cursor, WorkBuddy, generic, or a combination. Each Agent's Skill directory comes from the Agent registry, so a client is added as a registry entry instead of a new generator branch. Current client and existing files do not decide support. Use `--clients all` only for an owner-selected built-in scope; `--yes` cannot supply it.
+2. First visible decision: supported Agents. Offer Codex, Claude Code, Cursor, GitHub Copilot, DeepSeek Harness, generic, or a combination. Each Agent's Skill directory comes from the Agent registry, so a client is added as a registry entry instead of a new generator branch. Current client and existing files do not decide support. Use `--clients all` only for an owner-selected built-in scope; `--yes` cannot supply it.
 3. Second visible decision: `artifactLanguage: en` by default, or `zh-CN`. Interaction follows `--locale`/`interactionLanguage` independently. Explicit Chinese governance selection generates Chinese prose; English IDs, paths, commands, and keys remain stable. Legacy `bilingual` stays readable. This repository's own documentation/comments default to English under its instructions.
 4. Third visible decision: choose `testing.caseFormat` (`aicg-json-v2` recommended or `markdown-plus-json`) and a safe repository-relative `testing.caseRoot`. Store report location/language separately.
 5. Confirm lifecycle. Existing projects confirm or correct detected stacks; greenfield selects target stacks. Treat manifest-only or unknown product files as potentially ambiguous. Record greenfield architecture as `not-established`, with an evidence gap; do not invent a proven module pattern.
@@ -42,6 +42,32 @@ Page-first handoff: the owner may have already saved `aicg.config.json` from `ai
 Configuration carries decisions. `config init` creates an editable, scan-backed `aicg.config.json` without overwriting different content; an identical retry is unchanged. `config validate` exercises the same effective plan preparation as `init` and writes a local report. `config open` starts a loopback-only visual editor for the same file, with explained choices, JSON upload/download, validation, save, exact-plan preview, and explicit apply. Without a path it opens a project picker with recent projects, an absolute-path field, and folder browsing; an explicit path opens that project directly. Interactive npm installation (project-local or global) attempts to open the picker. Noninteractive writes require `--yes`; request-based writes require the exact current `--approve <planHash>`. Reuse existing authorized decisions rather than asking them again. Optional AI assistance supports high-confidence greenfield and existing projects with a selected available Agent; failure leaves that phase unverified without rolling back valid deterministic initialization.
 
 For an existing project, initialization generates `docs/ai/development/index.json`, one scan-backed development document and README entrypoint per detected development unit, plus the `brownfield-understanding` Skill at Standard/Complete depth. Run `aicg init ... --assist <selected-agent>` to have the selected Agent process each unit, record existing business behavior in `docs/memory/INDEX.json` and owning pages, complete code-backed development docs, and propose project Skills through approval. Inspect `aicg check --json` and its `brownfield.gaps`; a successful scan is only a baseline. Never convert filenames or an unexecuted command into behavioral fact.
+
+## Public capability discovery: `find-skills` at the operator layer
+
+Community Skills extend what AICG generates. Discovery happens in the operator/agent session, not inside AICG, which stays offline: no network discovery, installation, execution or home traversal at governance time. Use `find-skills` ([vercel-labs/skills](https://github.com/vercel-labs/skills), MIT) with the open ecosystem CLI and registry:
+
+```bash
+npx skills find "test driven development" --owner obra
+npx skills add obra/superpowers@test-driven-development
+npx skills update
+```
+
+Browse and rank candidates at [skills.sh](https://skills.sh/) before installing; the leaderboard surfaces install volume, not suitability. Discovery output is unverified input, never a governance decision.
+
+To make a candidate available to AICG, pin it instead of installing it into the governed tree:
+
+1. Add the source to [public-skill-sources.json](assets/registries/public-skill-sources.json) with the repository, a full 40-hex commit `ref`, `committedAt`, license, and one entry per Skill carrying `capabilities`, `capabilityOwner`, `permissions` and a bounded `purpose`.
+2. `npm run catalog:vendor` fetches each pinned ref into the gitignored `vendor/` cache. `npm run catalog:build` regenerates [public-skill-catalog.json](assets/registries/public-skill-catalog.json); `npm run catalog:check` validates it offline and re-hashes vendored bytes when they exist.
+3. Set `adaptiveGovernance.publicSkillCatalog: true` (or pass explicit `curatedCatalog` records). The packaged snapshot is opt-in; without it the candidate set and recorded approval are unchanged.
+
+Every packaged record is candidate-only: default `defer`, then an explicit `add` decision and the exact `--approve <planHash>`. AICG never installs, executes, upgrades or adopts a third-party Skill. `verifiedAt` is the pinned commit date, so a snapshot older than 90 days becomes `refresh-due` and approval fails until the pin is refreshed.
+
+Boundaries when curating:
+
+- Accept only permissive licenses (`MIT`, `Apache-2.0`, `BSD-*`, `ISC`, `0BSD`); the document-format Skills in `anthropics/skills` are source-available, not open source, and stay out of the catalog.
+- One capability keeps one owner. Do not let a public Skill claim the capabilities AICG already generates (`skill-discovery`, `team-orchestrator`, `brownfield-understanding`, `professional-testing`, stack standards); use public Skills to fill gaps such as TDD, completion evidence and skill authoring.
+- Public Skills never populate `projectTeam` roles, `activation` or professional conclusions. Those require owner-confirmed evidence and qualified-human review regardless of what a public Skill claims.
 
 ## Runtime routing: L0, L1, L2, L3
 

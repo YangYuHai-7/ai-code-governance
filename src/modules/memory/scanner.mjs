@@ -87,6 +87,12 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
   const files = scan.files.filter((file) => file.type === 'file' && isMemoryCodePath(file.relative)).sort((a, b) => a.relative.localeCompare(b.relative));
   const paths = new Set(files.map((file) => file.relative));
   const modules = new Map();
+  const usedPages = new Set();
+  // Business-readable page directories replace the opaque module-<hash>.md file names, so a
+  // human can open docs/memory and know what each page is about.
+  const moduleSlug = (directory) => directory === '.'
+    ? 'root'
+    : directory.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64) || 'module';
   const imports = new Map();
   memory.tests = scan.files.filter((file) => file.type === 'file' && TEST.test(file.relative) && CODE.test(file.relative)).map((file) => file.relative).sort().slice(0, 160);
   const gap = (relative, reason) => {
@@ -100,11 +106,17 @@ export function scanProjectMemoryFacts(scan, { maxFiles = 160 } = {}) {
     try { bytes = readBoundedRepositoryFile(scan.root, relative, 128 * 1024).bytes; } catch (error) { gap(relative, error.message); continue; }
     const directory = path.posix.dirname(relative);
     const moduleId = id('module', directory);
-    if (!modules.has(directory)) modules.set(directory, { id: moduleId, path: directory, memoryPage: `docs/memory/modules/${moduleId}.md`, owns: [], codeGlobs: [], status: 'stated', summary: { status: 'unverified', text: '', verifiedFrom: [] }, pageIds: [], apiIds: [], methodIds: [], dataSourceIds: [], callSiteIds: [], verifiedFrom: [] });
+    if (!modules.has(directory)) {
+      const base = `docs/memory/${moduleSlug(directory)}/README.md`;
+      const slugged = `docs/memory/${moduleSlug(directory)}-${moduleId.slice('module-'.length, 'module-'.length + 8)}/README.md`;
+      const page = usedPages.has(base) ? slugged : base;
+      usedPages.add(page);
+      modules.set(directory, { id: moduleId, path: directory, memoryPage: page, owns: [], codeGlobs: [], status: 'stated', summary: { status: 'unverified', text: '', verifiedFrom: [] }, pageIds: [], apiIds: [], methodIds: [], dataSourceIds: [], callSiteIds: [], verifiedFrom: [] });
+    }
     const module = modules.get(directory);
     module.owns.push(relative); module.codeGlobs.push(relative); module.verifiedFrom.push(relative);
     const sourceId = id('source', relative);
-    memory.sources.push({ id: sourceId, path: relative, record: `docs/memory/sources/${sourceId}.json`, sha256: sha256(bytes), status: 'stated' });
+    memory.sources.push({ id: sourceId, path: relative, sha256: sha256(bytes), status: 'stated' });
     const fact = (kind, key, details) => ({ id: id(kind, `${relative}:${key}`), moduleId, ...details, verifiedFrom: [relative], status: 'stated' });
     if (!CODE.test(relative) && !DATA.test(relative)) { gap(relative, 'unsupported syntax; raw file ownership and digest only'); continue; }
     let text;

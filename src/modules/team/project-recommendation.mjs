@@ -20,6 +20,13 @@ const REQUIRED_ROLE_IDS = new Set([
   'realtime-media-owner',
   'security-and-integrity-reviewer',
   'platform-and-operations-owner',
+  // Fixed AI delivery roles. Every role is an AI acting as the corresponding human role,
+  // so the roster is fixed and independent review stays separated from delivery ownership.
+  'product-manager',
+  'solution-architect',
+  'full-stack-engineer',
+  'business-analyst',
+  'product-designer',
 ]);
 
 function sortedStrings(values) {
