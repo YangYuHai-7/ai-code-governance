@@ -35,5 +35,17 @@ jobs:
       # 本包零依赖；若以后加了依赖，这里用 npm install（仓库无 lockfile，npm ci 会失败）
       # - run: npm install --no-audit --no-fund
 
+      # Same gate as prepublishOnly, minus the local performance sampler: its absolute caps are
+      # calibrated for a dedicated runner and its 290s spawn times out on a shared GitHub runner.
+      - name: Quality gate
+        run: |
+          node --test --test-skip-pattern="repeated CLI check"
+          npm run validate
+          npm run smoke
+          npm run smoke:package
+          node scripts/prepublish-check.mjs
+
+      # --ignore-scripts keeps prepublishOnly from re-running the whole gate during publish.
+      # 走审核流就改成：npm stage publish --ignore-scripts
       - name: Publish via OIDC
-        run: npm publish              # 走审核流就改成：npm stage publish
+        run: npm publish --ignore-scripts
