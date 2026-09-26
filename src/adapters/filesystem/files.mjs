@@ -157,16 +157,21 @@ export function walkFilesDetailed(root, options = {}) {
       return;
     }
     observedDirectories += 1;
-    let directory;
+    let entries;
     try {
-      directory = fs.opendirSync(current);
+      entries = fs.readdirSync(current, { withFileTypes: true });
     } catch (error) {
       readErrors.push({ path: currentRelative, operation: 'readdir', code: error.code ?? 'UNKNOWN' });
       return;
     }
+    // Sort by name with a locale-independent comparator so the traversal order, and every
+    // order-derived artifact, is identical on every filesystem and platform.
+    entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    let entryIndex = 0;
     try {
       while (!stopped()) {
-        const entry = directory.readSync();
+        const entry = entries[entryIndex];
+        entryIndex += 1;
         if (!entry) break;
         if (observedEntries >= maxEntries) {
           entryLimitReached = true;
@@ -224,12 +229,6 @@ export function walkFilesDetailed(root, options = {}) {
       }
     } catch (error) {
       readErrors.push({ path: currentRelative, operation: 'readdir', code: error.code ?? 'UNKNOWN' });
-    } finally {
-      try {
-        directory.closeSync();
-      } catch (error) {
-        if (error.code !== 'ERR_DIR_CLOSED') readErrors.push({ path: currentRelative, operation: 'closedir', code: error.code ?? 'UNKNOWN' });
-      }
     }
   }
 
