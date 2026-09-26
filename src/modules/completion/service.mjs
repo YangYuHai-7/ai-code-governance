@@ -280,7 +280,9 @@ function verificationInputSnapshot(scan, knownPaths = [], evidencePaths = []) {
 function withIndexSnapshot(root, action) {
   const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-index-snapshot-'));
   try {
-    const prefix = `${snapshot}${path.sep}`;
+    // Git parses backslashes in pathspecs as escapes, so the prefix must use forward slashes on
+    // every platform; a Windows path here left the snapshot empty.
+    const prefix = `${snapshot.replace(/\\/g, '/')}/`;
     const result = runGit(root, ['checkout-index', '--all', `--prefix=${prefix}`], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 });
     if (result.error || result.status !== 0) throw usageError('Cannot materialize the Git index for the pre-commit completion gate.');
     return action(snapshot);
