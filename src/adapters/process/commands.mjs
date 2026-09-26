@@ -1,6 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process';
 
 export function runCommand(command, args = [], options = {}) {
+  // Node refuses to spawn .cmd/.bat directly on Windows since the CVE-2024-27980 fix, so route
+  // them through the command interpreter. Real executables keep the direct spawn path.
+  if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
+    const interpreter = process.env.ComSpec || 'cmd.exe';
+    return spawnSync(interpreter, ['/d', '/s', '/c', command, ...args], options);
+  }
   return spawnSync(command, args, options);
 }
 
