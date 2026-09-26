@@ -104,7 +104,12 @@ export function runEngineeringPublicationGate(target) {
   const repositoryRoot = gitResult(root, ['rev-parse', '--show-toplevel'], 'repository root', errors);
   if (repositoryRoot) {
     try {
-      if (fs.realpathSync(repositoryRoot) !== fs.realpathSync(root)) {
+      // Windows realpath may add a \\?\\ prefix and differ in case, so compare canonically.
+      const normalize = (value) => {
+        const stripped = value.startsWith(String.fromCharCode(92, 92, 63, 92)) ? value.slice(4) : value;
+        return process.platform === 'win32' ? stripped.toLowerCase() : stripped;
+      };
+      if (normalize(fs.realpathSync(repositoryRoot)) !== normalize(fs.realpathSync(root))) {
         errors.push('Engineering publication must run from the package repository root.');
       }
     } catch {

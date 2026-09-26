@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { parseNpmPackOutput } from '../../src/modules/release/publication.mjs';
+import { runCommand } from '../../src/adapters/process/index.mjs';
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -15,7 +16,7 @@ const governanceFiles = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'docs/W
 const governancePrefixes = ['.ai-governance/', '.agents/', '.claude/', '.cursor/', '.github/', 'docs/ai/', 'docs/memory/', 'harness/', 'tools/hooks/'];
 
 function run(command, args, options = {}) {
-  return spawnSync(command, args, {
+  return runCommand(command, args, {
     cwd: options.cwd,
     env: options.env ?? process.env,
     encoding: 'utf8',

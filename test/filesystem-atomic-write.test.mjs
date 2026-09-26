@@ -72,7 +72,7 @@ test('a rename-resistant destination still receives the requested mode', (contex
   }
 
   assert.equal(fs.readFileSync(target, 'utf8'), '#!/bin/sh\necho ok\n');
-  assert.equal(fs.statSync(target).mode & 0o777, 0o755);
+  if (process.platform !== 'win32') assert.equal(fs.statSync(target).mode & 0o777, 0o755);
 });
 
 // A directory in the destination slot is not an "environment refuses to replace" case. Falling

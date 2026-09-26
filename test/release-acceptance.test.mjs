@@ -15,6 +15,7 @@ import {
 import { loadProjectReleaseAcceptancePolicy } from '../src/modules/release/policy.mjs';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { runNpm, runNpmScript } from '../src/adapters/process/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 
@@ -70,7 +71,7 @@ fs.mkdirSync(process.env.npm_config_cache, { recursive: true });
 fs.mkdirSync(process.env.npm_config_logs_dir, { recursive: true });
 
 function npmPack(root) {
-  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' });
+  const result = runNpm(['pack', '--dry-run', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   // npm < 11 emits an array; npm >= 11 emits an object keyed by package name.
   const parsed = JSON.parse(result.stdout);
@@ -78,7 +79,7 @@ function npmPack(root) {
 }
 
 function npmRun(root, script) {
-  const result = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', script], { cwd: root, encoding: 'utf8' });
+  const result = runNpmScript(root, script, { encoding: 'utf8' });
   return {
     exitCode: result.status,
     stdoutSha256: createHash('sha256').update(result.stdout ?? '').digest('hex'),

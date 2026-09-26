@@ -42,7 +42,8 @@ export function linuxDesktopEntry(script) {
 function exactFile(target, content, executable = false) {
   const stat = lstatSafe(target);
   if (!stat) return false;
-  if (!stat.isFile() || stat.isSymbolicLink() || readText(target) !== content || (executable && (stat.mode & 0o111) === 0)) {
+  // Windows does not represent Unix execute bits in stat mode, so only enforce them on POSIX.
+  if (!stat.isFile() || stat.isSymbolicLink() || readText(target) !== content || (executable && process.platform !== 'win32' && (stat.mode & 0o111) === 0)) {
     throw new Error(`Refusing to replace an existing or modified launcher: ${target}`);
   }
   return true;

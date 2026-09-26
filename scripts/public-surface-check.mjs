@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runCommand } from '../src/adapters/process/index.mjs';
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const DEFAULT_ROOT = path.resolve(path.dirname(SCRIPT_PATH), '..');
@@ -121,12 +122,12 @@ function gitFiles(root) {
 }
 
 function packedFiles(root) {
-  const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const result = runCommand(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['pack', '--dry-run', '--ignore-scripts', '--json'], {
+    cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 120000, maxBuffer: 32 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) return null;
   try {
-    const output = execFileSync(npm, ['pack', '--dry-run', '--ignore-scripts', '--json'], {
-      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 120000, maxBuffer: 32 * 1024 * 1024,
-    });
-    const parsed = JSON.parse(output);
+    const parsed = JSON.parse(result.stdout);
     const entry = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
     return (entry?.files ?? []).map((file) => file.path);
   } catch {
