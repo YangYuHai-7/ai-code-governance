@@ -310,6 +310,8 @@ node scripts/prepublish-check.mjs
 npm pack --dry-run
 ```
 
+`full` 矩阵在 macOS 和 Linux 上阻断；Windows 任务在剩余平台缺口关闭前仅作信息信号，因此矩阵变绿还不等于 Windows 已验证。当前平台验证状态以跨平台参考文档为准。
+
 `test:full` 包含性能采样器。普通 npm 发布会运行完整本地测试，确认 Git 候选干净并检查实际打包产物；只有同时提供全部组织发布变量时，才进入独立评审证据门禁，部分证据输入会按失败处理。两条路径都不会把本地结果冒充为 Windows/Linux 或真实客户端认证。
 
 <!-- sync:architecture -->

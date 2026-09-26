@@ -147,6 +147,6 @@ npm pack --dry-run
 
 Report command exits/timings, exact artifact files/bytes, ordinary context closure, launched CLI process count and p95 samples. `test:full` includes `test:perf`; retain absolute caps even when comparing a relative baseline. Prepublish checking needs actual release evidence and approval; its refusal without them is not a reason to weaken it.
 
-Separate `stated`, `reachable`, `enforced`, and `verified`. Structural tests prove file/routing contracts; negative probes prove only their named machine checks. Real-client loading and Linux/Windows execution remain `not yet verified` without current runs. Do not convert a macOS result or synthetic project into production readiness.
+Separate `stated`, `reachable`, `enforced`, and `verified`. Structural tests prove file/routing contracts; negative probes prove only their named machine checks. Real-client loading and Windows execution remain `not yet verified` without current runs; Linux is covered by the manual full CI matrix. Do not convert a macOS result or synthetic project into production readiness.
 
 The [reference map](docs/internal/reference/README.md) links the principles, historical layers, optional memory/task runtime, cross-platform and specialist protocols. Load only what the chosen capability needs; historical capability descriptions do not override this adaptive runtime contract.

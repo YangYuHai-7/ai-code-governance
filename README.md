@@ -310,6 +310,8 @@ node scripts/prepublish-check.mjs
 npm pack --dry-run
 ```
 
+The `full` matrix is blocking on macOS and Linux. Windows jobs run as an informational signal until its remaining platform gaps close, so a green matrix does not yet verify Windows. The current verified-platform status is recorded in the cross-platform reference.
+
 `test:full` includes the performance sampler. Routine npm publication runs the full local suite, validates a clean Git candidate, and checks the actual packed artifact. Providing all organizational release variables opts into the separate independent-review evidence gate; partial evidence input fails closed. Neither path turns a local run into Windows/Linux or real-client certification.
 
 <!-- sync:architecture -->

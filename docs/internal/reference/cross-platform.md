@@ -18,7 +18,17 @@ platform:
   hook_mode: git-shim
 ```
 
-`verified_os` 只能写本次或已有证据实际跑过的系统。当前在 macOS 上完成检查，只能证明 macOS；Windows 与 Linux 必须标记 `not-yet-verified`，直到对应环境的检查通过。
+`verified_os` 只能写本次或已有证据实际跑过的系统。当前在 macOS 上完成检查，只能证明 macOS；未跑过的系统必须标记 `not-yet-verified`，直到对应环境的检查通过。
+
+### 本仓库当前的平台验证状态
+
+| 平台 | 状态 | 证据 |
+| --- | --- | --- |
+| macOS | verified | 本地全量套件 + CI `full` 矩阵（macos-latest, Node 22/24） |
+| Linux | verified | CI `full` 矩阵（ubuntu-latest, Node 22/24） |
+| Windows | not-yet-verified | CI `full` 矩阵仍失败；在 `ci.yml` 中以 `continue-on-error` 仅作信息信号 |
+
+Windows 在剩余可移植性缺口修复、并在该平台通过完整 `test:full` 之前不得标记为 verified，也不得据此宣称 `cross-platform-certified`。
 
 ## 可移植实现原则
 
