@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
-import { CONFIG_PATH, PACKAGE_ROOT } from '../../constants.mjs';
+import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
 import { homeDirectory, listDirectories, listDirectoryEntries, lstatSafe, readText, recentProjects, rememberProject, resolveProjectDirectory, writeAtomicFile } from '../../adapters/filesystem/index.mjs';
 import { listenOnLoopback } from '../../adapters/http/index.mjs';
 import { commandExists, openBrowserUrl, runCommand } from '../../adapters/process/commands.mjs';
@@ -270,7 +270,7 @@ export async function openConfigurationPage(root, options = {}) {
   // does not offer so a default selection never mentions a hidden tool.
   const detectedClients = detected.map((entry) => entry.id).filter((id) => CONFIG_UI_CLIENTS.includes(id));
   const bootstrap = () => {
-    const common = { root: scan?.root ?? null, recent: recentProjects(), home: homeDirectory(), nativePicker: Boolean(nativePicker) };
+    const common = { root: scan?.root ?? null, recent: recentProjects(), home: homeDirectory(), nativePicker: Boolean(nativePicker), toolVersion: TOOL_VERSION };
     if (!scan) return common;
     const current = savedState(file);
     const managed = loadExistingConfig(scan.root);

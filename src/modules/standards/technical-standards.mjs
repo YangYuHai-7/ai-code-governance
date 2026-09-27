@@ -3,7 +3,7 @@ import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
-import { skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
+import { adapterSkillSuffix, skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
 import { assertSkillQuality } from './skill-quality.mjs';
 import { canonicalPath } from '../governance/index.mjs';
 
@@ -318,7 +318,7 @@ ${examples.incorrect}
 ` : '';
   const content = `---
 name: ${standard.id}
-description: ${zh ? `当技术证据与变更表面匹配时，使用可执行的${standard.title}决策与验证流程。` : `Use the executable ${standard.title} decisions when technology evidence and the changed surface match.`}
+description: ${zh ? `当技术证据与变更表面匹配时，使用可执行的${standard.title}（\`${standard.id}\`）决策与验证流程。` : `Use the executable ${standard.title} (\`${standard.id}\`) decisions when technology evidence and the changed surface match.`}
 ---
 
 # ${standard.title}
@@ -369,7 +369,7 @@ ${markdownList(standard.boundaries)}
 
 ${zh ? standard.sources.map((source) => `- ${source.url ? `[${source.title}](${source.url})` : source.title} — ${source.kind}；获取日期：${source.retrievedAt}。`).join('\n') : sourcesMarkdown(standard.sources)}
 `;
-  return { content, profile, quality: assertSkillQuality(content, { profile, id: standard.id }) };
+  return { content, profile, quality: assertSkillQuality(content, { profile, id: standard.id, requireScope: true }) };
 }
 
 function technicalStandardsManifest(selection, config = {}) {
@@ -435,7 +435,7 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
       kind: 'technical-standard-skill',
       source: 'technical-standard-registry',
     });
-    const adapters = selectedSkillDirectories(config?.clients ?? []).map((directory) => `${directory}/standards/${standard.id}/SKILL.md`);
+    const adapters = selectedSkillDirectories(config?.clients ?? []).map((directory) => `${directory}/${adapterSkillSuffix(canonicalPath)}`);
     for (const adapterPath of unique(adapters)) {
       artifacts.push({
         path: adapterPath,

@@ -493,6 +493,7 @@ test('pathless launch selects projects visually, remembers recent roots, and inv
     const empty = await request('bootstrap');
     assert.equal(empty.status, 200);
     assert.equal(empty.value.root, null);
+    assert.match(empty.value.toolVersion, /^\d+\.\d+\.\d+/, 'the page needs the tool version for the copy-paste handoff');
     assert.deepEqual(empty.value.recent, []);
     assert.equal((await request('save', { config: {}, expectedSha: null })).status, 409);
     const listing = await request(`directories?path=${encodeURIComponent(fixture)}`);
@@ -712,5 +713,33 @@ test('progress stays readable while a long mutating operation holds the write lo
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(stateHome, { recursive: true, force: true });
   }
+});
+
+test('the handoff prompt carries the command contract, the enrichment mandate and the completion gate', () => {
+  const source = fs.readFileSync(path.join(packageRoot, 'assets/config-ui/app.js'), 'utf8');
+  for (const required of [
+    'aicg init . --config aicg.config.json --dry-run',
+    'aicg check . --enforce',
+    'AGENTS.md',
+    'domainConstraints',
+    '不要修改业务代码',
+    '不要贴哈希给我',
+    'ai-code-governance@',
+  ]) assert.ok(source.includes(required), 'the handoff prompt must include: ' + required);
+  // A blocked preview must not offer a prompt that tells an agent to generate.
+  assert.ok(source.includes('if (blocked) hideHandoff(); else showHandoff();'), 'the handoff must be hidden when the preview is blocked');
+  // After apply the page leaves the preview loop and hands off the evidence-backed completion.
+  assert.ok(source.includes('markApplied'), 'apply must transition to the post-apply state');
+  assert.ok(source.includes('showHandoff(true)'), 'apply must show the applied handoff prompt');
+  assert.ok(source.includes('不要重新 init'), 'the applied prompt must not send the agent back through init');
+});
+
+test('a typed project path is opened by the primary control instead of re-opening the picker', () => {
+  const source = fs.readFileSync(path.join(packageRoot, 'assets/config-ui/app.js'), 'utf8');
+  // A path the owner typed must reach the next step on one click, not re-open the system dialog.
+  assert.ok(source.includes('if (typed && !forcePicker) return selectProject(typed)'), 'the typed path must be used before opening the picker');
+  assert.ok(source.includes('syncProjectPathControls'), 'the path control state must be synchronized with the field');
+  assert.ok(source.includes("'打开此项目'"), 'the primary label must change once a path is typed');
+  assert.ok(source.includes('forcePicker: true'), 'an unlocatable drop must still be able to open the picker');
 });
 

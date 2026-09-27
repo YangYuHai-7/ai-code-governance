@@ -61,7 +61,8 @@ test('DeepSeek Harness adapters land in .dsh/skills and leave other client direc
   const scan = scanProject(root);
   const config = { ...defaultConfig(scan), clients: ['deepseek'], governanceDepth: 'standard' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
-  assert.ok(fs.existsSync(path.join(root, '.dsh', 'skills', 'standards')));
+  // Client discovery is one level deep, so the standard family projects as `standard-<id>`.
+  assert.ok(fs.readdirSync(path.join(root, '.dsh', 'skills')).some((name) => name.startsWith('standard-')));
   assert.equal(fs.existsSync(path.join(root, '.agents')), false);
   assert.equal(fs.existsSync(path.join(root, '.claude')), false);
   assert.equal(checkProject(scanProject(root)).ok, true);

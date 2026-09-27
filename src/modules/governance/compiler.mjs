@@ -10,7 +10,7 @@ import { buildMemoryArtifacts } from '../memory/index.mjs';
 import { validateAdaptiveDecisions, validateApprovedAgentTeam, validateSkillDecision } from '../skills/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { isSafeRelative, normalizeRelative, sha256, skillAdapterContent, stableJson } from '../../shared/index.mjs';
+import { adapterSkillSuffix, isSafeRelative, normalizeRelative, sha256, skillAdapterContent, stableJson } from '../../shared/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH, BUSINESS_CONSTRAINTS_PATH, BUSINESS_RISK_EVIDENCE_PATH, businessConstraintRegistryContent, businessConstraintSkill } from './business-constraints.mjs';
 import { conditionalArtifactRoutes, hasArtifactEvidence, hasGovernanceUsage, selectArtifactDefinitions } from './artifact-selection.mjs';
 import { taskRoutingPolicy, taskRoutingSummary } from './task-routing.mjs';
@@ -371,14 +371,12 @@ function rootInstructions(config) {
 - 治理正典：\`${config.canonicalRoot}/\`
 - 从 \`${config.canonicalRoot}/context-map.yaml\` 的 \`ordinary\` 配置开始，仅在任务需要时加载更大的配置。
 - 交付流程见 \`docs/WORKFLOW.md\`：需求分析、页面设计、架构师 PK 与 plan、任务拆分与开发、测试、修复都在这一份文档里。
-- 保留无关的用户修改，并在请求范围内工作。
 - 如果配置的 AICG 命令不可用，停止并请求明确安装；日常工作不得临时下载包。${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` 固定版本引导需要全局安装 ai-code-governance@${config.toolVersion ?? TOOL_VERSION}，或本地安装后明确选择 project-local 配置。` : ''}
 - ${taskRoutingSummary(config)}
-- 任务开始时可运行 \`${governanceCommand(config, 'route . --text "<task>"')}\` 获取等级、已审批角色建议与专业复核缺口；角色建议本身不是已分派的 Agent。
+- 任务开始时可运行 \`${governanceCommand(config, 'route . --text "<task>"')}\` 获取已审批角色建议与专业复核缺口；角色建议本身不是已分派的 Agent。
 - 向负责人确认时用业务语言：说明改什么、影响什么、有什么风险，并给出 2-3 个选项；不要暴露 planHash、manifest、adaptiveDecisions 等内部字段名或证据哈希。
-- 治理文件必须先预览并经用户确认才应用；业务代码修改必须在实施前获得用户确认，修改后运行适用测试并保存测试结果报告。
+- 治理文件必须先预览并经用户确认才应用；改动后运行适用测试并保存测试结果报告。
 - 客户端适配器由工具生成。修改正典后运行 \`${syncCommand}\`，不要直接编辑适配器。
-- 交付前运行一次 \`${completeCommand}\`，并按运行时指引选择任务所需的仓库验证命令。
 `;
   return `## ${languageTitle(config, 'AI 编码治理', 'AI coding governance')}
 
@@ -387,14 +385,12 @@ This block is managed by \`aicg\`. Project-specific content outside this block i
 - Canonical governance: \`${config.canonicalRoot}/\`
 - Start with the \`ordinary\` profile in \`${config.canonicalRoot}/context-map.yaml\`; use a larger profile only when the task requires it.
 - The delivery workflow lives in \`docs/WORKFLOW.md\`: requirement analysis, page design, architect PK and plan, decomposition and development, test and repair all stay in that one document.
-- Preserve unrelated user changes and remain within the requested scope.
 - If the configured AICG command is unavailable, stop and request an explicit install; never fetch a package during daily work.${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? ` Pinned bootstrap requires a global installation of ai-code-governance@${config.toolVersion ?? TOOL_VERSION}, or a local installation followed by an explicit project-local configuration choice.` : ''}
 - ${taskRoutingSummary(config)}
-- At task start, \`${governanceCommand(config, 'route . --text "<task>"')}\` recommends the task level and approved roles; a recommendation does not mean an Agent was launched or a qualified human was assigned.
+- At task start, \`${governanceCommand(config, 'route . --text "<task>"')}\` lists approved role recommendations and professional review gaps; a recommendation does not mean an Agent was launched or a qualified human was assigned.
 - Confirm with the owner in business language: state what changes, what it affects, and the risk, with 2-3 options; never expose internal field names or evidence digests such as planHash, manifest, or adaptiveDecisions.
-- Preview governance changes and obtain user confirmation before applying them. Obtain user confirmation before business-code implementation, then run applicable tests and save a test result report.
+- Preview governance changes and obtain user confirmation before applying them; run applicable tests after a change and save a test result report.
 - Client adapters are generated. Change the canonical source and run \`${syncCommand}\`; do not edit adapters directly.
-- Before delivery, run \`${completeCommand}\` once with any required repository verification command selected by its runtime guidance.
 `;
 }
 
@@ -419,6 +415,7 @@ function checkedRule(content, id) {
 }
 
 function alwaysRule(config) {
+  const routeCommand = governanceCommand(config, 'route . --text "<task>"');
   const completeCommand = governanceCommand(config, 'complete .');
   if (config.artifactLanguage === 'zh-CN') return `---
 alwaysApply: true
@@ -427,10 +424,12 @@ alwaysApply: true
 # 常驻治理规则
 
 1. 保留无关的用户修改，将工作限制在请求范围内。
-2. 将代码和测试视为当前行为的证据，保持受影响的治理声明准确。
-3. 如实报告证据，包括未实际运行的命令、客户端、平台和集成。
-4. 仅使用仓库中存在的命令，不得编造命令或添加未经批准的参数。
-5. 交付前运行一次 \`${completeCommand}\`，并执行任务需要且已发现的验证命令。
+2. 修改前先用 \`${routeCommand}\` 判定任务等级，并遵守其级别与角色建议。
+3. L2/L3 任务：先产出需求文档与开发 plan，逐项获得负责人确认并写入流程账本，之后才写业务代码。
+4. 将代码和测试视为当前行为的证据，保持受影响的治理声明准确。
+5. 如实报告证据，包括未实际运行的命令、客户端、平台和集成。
+6. 仅使用仓库中存在的命令，不得编造命令或添加未经批准的参数。
+7. 交付前运行一次 \`${completeCommand}\`，执行已发现的验证命令，并保存流程账本引用的测试报告。
 `;
   return `---
 alwaysApply: true
@@ -439,10 +438,38 @@ alwaysApply: true
 # ${languageTitle(config, '常驻治理规则', 'Always-on governance')}
 
 1. Preserve unrelated user changes and keep work inside the requested scope.
-2. Treat code and tests as current behavior evidence; keep affected governance claims accurate.
-3. Report evidence honestly, including commands, clients, platforms, and integrations that were not actually run.
-4. Use only repository commands that exist; do not invent commands or append unapproved arguments.
-5. Before delivery, run \`${completeCommand}\` once with any required discovered verification command.
+2. Classify the task before editing with \`${routeCommand}\`; honor its level and role recommendations.
+3. For L2/L3 work, produce a requirement document and a development plan first, ask the owner to confirm every open question, bind both in the flow ledger, and only then write business code.
+4. Treat code and tests as current behavior evidence; keep affected governance claims accurate.
+5. Report evidence honestly, including commands, clients, platforms, and integrations that were not actually run.
+6. Use only repository commands that exist; do not invent commands or append unapproved arguments.
+7. Before delivery run \`${completeCommand}\` once with the discovered verification command and save the test report the flow ledger references.
+`;
+}
+
+function businessRule(config) {
+  const zh = config.artifactLanguage === 'zh-CN';
+  const constraints = config.domainConstraints.map((constraint) => `- ${constraint}`).join('\n');
+  return `---
+alwaysApply: false
+profiles: [implementation]
+---
+
+# ${languageTitle(config, '业务不变式规则', 'Business invariants')}
+
+${zh ? '以下不变式由负责人确认，是本仓库的业务规则正典；生成器不会推断业务规则。' : 'The invariants below are owner-confirmed and are the authoritative business rules for this repository; the generator never infers business rules.'}
+
+${constraints}
+
+## Evidence
+
+- ${zh ? '约束注册表' : 'Constraint registry'}: \`${BUSINESS_CONSTRAINTS_PATH}\`
+- ${zh ? '验收证据' : 'Acceptance evidence'}: \`docs/ai/business-acceptance-results.json\`
+- ${zh ? '风险证据' : 'Risk evidence'}: \`${BUSINESS_RISK_EVIDENCE_PATH}\`
+
+## Rule
+
+${zh ? '改动命中任一不变式时，必须运行成功用例与负向或边界用例，并把证据绑定到当前 id、原文与哈希；证据缺失或不匹配即为 blocked。不得按关键词推断风险。' : 'When a change touches any invariant above, run success cases and negative or boundary cases, and bind their evidence to the current id, exact text and hash; missing or mismatched evidence is blocked. Never infer risk from keywords.'}
 `;
 }
 
@@ -493,6 +520,10 @@ ${rows}
 function contextMap(config, selected) {
   const selectedPaths = new Set(selected.map((definition) => definition.path));
   const checkCommand = governanceCommand(config, 'check .');
+  // The generated verification entrypoint must be able to fail a gate. `aicg check` is
+  // report-only by default and exits 0 on findings, so routing the workflow to it without
+  // `--enforce` made the declared `verify` step decorative.
+  const enforceCheckCommand = governanceCommand(config, 'check . --enforce');
   const releaseCommand = governanceCommand(config, 'release-check . --type <bugfix|feature|major> --evidence <repository-relative-json> [--replay --approve <planHash>]');
   const footprint = config.governanceFootprint ?? 'compact';
   const alwaysPath = canonicalPath('docs/ai/rules/00_always.mdc', footprint);
@@ -516,7 +547,7 @@ profiles:
     conditional:${conditional.length ? `\n${conditional.join('\n')}` : ' {}'}
     required:${selectedPaths.has(WORKFLOW_DOC) ? `\n      - ${WORKFLOW_DOC}` : ' []'}
     verify:
-      - ${checkCommand}
+      - ${enforceCheckCommand}
   release:
     extends: ordinary
     description: ${languageTitle(config, '部署或发布前，验证对应风险等级的证据。', 'Validate risk-tiered evidence before deployment or publication.')}
@@ -526,10 +557,12 @@ profiles:
 }
 
 function verificationProfiles(config) {
-  const assessCommand = governanceCommand(config, `assess . --locale ${config.interactionLanguage ?? 'en'} --json`);
+  // `assess` is retired with no surviving equivalent; `doctor` is the supported read-only
+  // diagnostics entry point and exposes the same actionGuide.allowedVerificationCommands.
+  const guideCommand = governanceCommand(config, `doctor . --locale ${config.interactionLanguage ?? 'en'} --json`);
   const runtimeInstruction = config.artifactLanguage === 'zh-CN'
-    ? `# 运行时发现验证命令：检查 ${assessCommand} 返回的 actionGuide.allowedVerificationCommands`
-    : `# runtime discovery required: inspect actionGuide.allowedVerificationCommands from ${assessCommand}`;
+    ? `# 运行时发现验证命令：检查 ${guideCommand} 返回的 actionGuide.allowedVerificationCommands`
+    : `# runtime discovery required: inspect actionGuide.allowedVerificationCommands from ${guideCommand}`;
   return `version: 1
 profiles:
   governance:
@@ -574,21 +607,19 @@ ${selectedPaths.has(releasePolicy) ? `部署或发布前，结合[发布验收�
 
 ## 配置
 
-当前机器可读状态由[确认配置](../../.ai-governance/config.json)统一维护。不要在本文复制拓扑、深度、客户端、技术栈或平台值。
+初始化决策（拓扑、深度、客户端、技术栈、平台）由 \`${governanceCommand(config, 'init')}\` 和 \`${syncCommand}\` 记录，不在本文复制。
 ${familyBoundaryZh}
 
 ## 初始化边界
 
-唯一当前初始化决策保存在 \`.ai-governance/config.json\`${selectedPaths.has(decisionLedger) ? '，并派生到 `docs/ai/decision-ledger.json`' : ''}。修改架构或既有行为前，先读取已记录的决策。本种子文档不授权迁移。
+修改架构或既有行为前，先读取已记录的初始化决策。本种子文档不授权迁移。
 
 ## 所有权
 
 | 路径 | 维护责任 |
 | --- | --- |
 | \`docs/ai/\` | 人工维护的治理正典 |
-${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | 由 \`${syncCommand}\` 更新的受管基线，仅可通过独立覆盖策略收紧 |\n` : ''}| \`.ai-governance/config.json\` | 已确认的初始化决策 |
-| \`.ai-governance/manifest.json\` | 生成的所有权和内容哈希 |
-| 客户端专属适配器 | 运行 \`${syncCommand}\` 生成，不直接编辑 |
+${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | 由 \`${syncCommand}\` 更新的受管基线，仅可通过独立覆盖策略收紧 |\n` : ''}| 客户端专属适配器 | 运行 \`${syncCommand}\` 生成，不直接编辑 |
 
 ## 待补证据
 
@@ -606,21 +637,19 @@ ${selectedPaths.has(releasePolicy) ? `Before deployment or publication, use the 
 
 ## Configuration
 
-The current machine-readable state is maintained in the [confirmed configuration](../../.ai-governance/config.json). Do not duplicate topology, depth, clients, stacks, or platform values in this document.
+Initialization decisions (topology, depth, clients, stacks, platform) are recorded by \`${governanceCommand(config, 'init')}\` and \`${syncCommand}\`; this document does not duplicate them.
 ${familyBoundaryEn}
 
 ## Initialization boundary
 
-The single current initialization decision is stored in \`.ai-governance/config.json\`${selectedPaths.has(decisionLedger) ? ' and derived into `docs/ai/decision-ledger.json`' : ''}. Read the recorded decisions before changing architecture or existing behavior. This seed document never grants migration authorization.
+Read the recorded initialization decisions before changing architecture or existing behavior. This seed document never grants migration authorization.
 
 ## Ownership
 
 | Path | Owner |
 | --- | --- |
 | \`docs/ai/\` | Human-maintained governance canon |
-${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | Managed baseline updated by \`${syncCommand}\`; tighten only through a separate override |\n` : ''}| \`.ai-governance/config.json\` | Confirmed initialization decisions |
-| \`.ai-governance/manifest.json\` | Generated ownership and content hashes |
-| Client-specific adapters | \`${syncCommand}\`; do not edit directly |
+${selectedPaths.has(releasePolicy) ? `| \`docs/ai/release-acceptance-policy.json\` | Managed baseline updated by \`${syncCommand}\`; tighten only through a separate override |\n` : ''}| Client-specific adapters | \`${syncCommand}\`; do not edit directly |
 
 ## Gaps
 
@@ -739,7 +768,7 @@ function bootstrapPrompt(config) {
 ${config.projectName} 的确定性 \`${governanceCommand(config, 'init')}\` 阶段已完成。
 
 ${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? `仅用于引导：\`${governanceBootstrapCommand(config)}\` 临时解析固定版本的软件包，不安装日常 CLI。执行日常命令前，明确运行 \`npm install --global ai-code-governance@${config.toolVersion ?? TOOL_VERSION}\`，或本地安装并明确选择 project-local 模式。如果无法安装，停止并报告缺失的 CLI。\n` : ''}
-检查仓库并完善 \`${config.canonicalRoot}/\` 下人工维护的文件。保留生成的适配器及用户既有内容。提出代码变更前，读取 \`.ai-governance/config.json\` 和 \`docs/ai/decision-ledger.json\`；初始化决策以此为准，本种子提示不授权迁移或业务代码修改。仅依据需求、代码、测试、ADR、事故或用户明确决策推导业务规则。研究所选技术栈版本的当前官方文档。修改正典技能或规则后运行 \`${syncCommand}\`，随后执行 \`${checkCommand}\` 和真实项目验证命令。未经明确授权，不启用钩子、CI、外部提供方、发布或破坏性迁移。
+检查仓库并完善 \`${config.canonicalRoot}/\` 下人工维护的文件。保留生成的适配器及用户既有内容。提出代码变更前，读取已记录的初始化决策；初始化决策以此为准，本种子提示不授权迁移或业务代码修改。仅依据需求、代码、测试、ADR、事故或用户明确决策推导业务规则。研究所选技术栈版本的当前官方文档。修改正典技能或规则后运行 \`${syncCommand}\`，随后执行 \`${checkCommand}\` 和真实项目验证命令。未经明确授权，不启用钩子、CI、外部提供方、发布或破坏性迁移。
 `;
   return `# AI-assisted governance completion
 
@@ -747,7 +776,7 @@ The deterministic \`${governanceCommand(config, 'init')}\` phase is complete for
 
 ${config.invocationMode === 'npm-exec-pinned' || !config.invocationMode ? `Bootstrap only: \`${governanceBootstrapCommand(config)}\` temporarily resolves the pinned package and does not install a daily CLI. Before daily commands, explicitly install with \`npm install --global ai-code-governance@${config.toolVersion ?? TOOL_VERSION}\`, or install locally and explicitly select project-local mode. If installation is unavailable, stop and report the missing CLI.\n` : ''}
 
-Inspect the repository and refine the human-maintained files under \`${config.canonicalRoot}/\`. Preserve generated adapters and existing user content. Before proposing any code change, read \`.ai-governance/config.json\` and \`docs/ai/decision-ledger.json\`; initialization decisions are authoritative there, and this seed prompt never authorizes migration or business-code changes. Derive business rules only from requirements, code, tests, ADRs, incidents, or explicit user decisions. Research current official documentation for the selected stack versions. Run \`${syncCommand}\` after canonical Skill or rule changes, then run \`${checkCommand}\` and real project verification commands. Do not enable hooks, CI, external providers, publishing, or destructive migration without explicit authorization.
+Inspect the repository and refine the human-maintained files under \`${config.canonicalRoot}/\`. Preserve generated adapters and existing user content. Before proposing any code change, read the recorded initialization decisions; initialization decisions are authoritative, and this seed prompt never authorizes migration or business-code changes. Derive business rules only from requirements, code, tests, ADRs, incidents, or explicit user decisions. Research current official documentation for the selected stack versions. Run \`${syncCommand}\` after canonical Skill or rule changes, then run \`${checkCommand}\` and real project verification commands. Do not enable hooks, CI, external providers, publishing, or destructive migration without explicit authorization.
 `;
 }
 
@@ -794,6 +823,9 @@ function stableFamilyMembers(family, governanceUnits = []) {
  * receipt shape here instead of re-writing every generator site. canonicalContent is read
  * back from the canonical artifact so a tampered source becomes a source mismatch.
  */
+// The canonical Skill an adapter projects, kept out of the public definition shape.
+const SKILL_CANONICAL_SOURCE = Symbol('skillCanonicalSource');
+
 function tagClientSkillProjections(definitions, config, scan) {
   const selected = new Set(config.clients ?? []);
   const owners = skillDirectoryOwners();
@@ -807,7 +839,16 @@ function tagClientSkillProjections(definitions, config, scan) {
     const clientIds = directoryOwners.filter((id) => selected.has(id));
     if (clientIds.length === 0) continue;
     const suffix = definition.path.slice(directory.length + 1);
-    const canonicalPath = 'docs/ai/skills/' + suffix;
+    // The adapter's `source` is the canonical Skill it projects. Reconstructing the canonical
+    // path from the adapter path only works while the two trees mirror each other; a flat
+    // projection (standard-<id>, convention-<name>, capability-<name>) would name a
+    // non-existent canonical path and every projection receipt would look like a source mismatch.
+    const declaredSource = definition[SKILL_CANONICAL_SOURCE];
+    const canonicalPath = typeof declaredSource === 'string'
+      && declaredSource.startsWith('docs/ai/skills/')
+      && declaredSource.endsWith('/SKILL.md')
+      ? declaredSource
+      : 'docs/ai/skills/' + suffix;
     const canonicalDefinition = canonicalByPath.get(canonicalPath);
     const originalBuild = definition.build;
     definition.build = (selectedDefinitions) => {
@@ -841,6 +882,9 @@ export function artifactDefinitions(config, scan) {
     const mappedSource = typeof source === 'string' ? locate(source) : source;
     definitions.push({
       id: relative, path: relative, capability, activation, requires, ownership, routeProfiles,
+      // The projection tagger needs the canonical Skill an adapter projects. Keep it on a symbol
+      // so the public definition shape stays exactly the documented key set.
+      [SKILL_CANONICAL_SOURCE]: mappedSource,
       gateAssertions: [...gateAssertions, ...(routeProfiles.some((route) => route.startsWith('behavior_change:')) ? ['conditional-route'] : [])],
       build: (selected) => ({ path: relative, content: content(selected), ownership, kind, source: mappedSource }),
     });
@@ -858,7 +902,7 @@ export function artifactDefinitions(config, scan) {
     const skillPath = locate(legacyCanonicalPath);
     // Mark the canonical Skill so projections can derive the same discovery adapters.
     if (definitions.at(-1)?.path === skillPath) definitions.at(-1)[SKILL_ADAPTER_FLAG] = true;
-    const suffix = skillPath.slice('docs/ai/skills/'.length);
+    const suffix = adapterSkillSuffix(skillPath);
     for (const directory of adapterDirs) {
       add(`${directory}/${suffix}`, capability, () => skillAdapterContent(skillPath, readText(path.join(scan.root, skillPath), content())), {
         requires, ownership: 'full', kind: 'adapter-skill', source: skillPath,
@@ -886,6 +930,9 @@ export function artifactDefinitions(config, scan) {
     requires: [(value) => value.governanceDepth === 'complete'],
     ownership: 'full', kind: 'skill-management-skill', source: 'approved-skill-governance-plan', routeProfiles: ['behavior_change:skill_discovery'],
   });
+  // The discovery Skill is the first hop of the adaptive chain, so it needs the same first-level
+  // projection as every other canonical Skill; without it the chain never starts.
+  addSkillAdapters('docs/ai/skills/skill-discovery/SKILL.md', () => managementSkill(config, 'skill-discovery'), 'skill-management', [(value) => value.governanceDepth === 'complete']);
   add(FIXED_TEAM_ROSTER_PATH, 'routing', () => fixedTeamRoster(), {
     ownership: 'full', kind: FIXED_TEAM_ROSTER_KIND, source: 'team-role-registry',
   });
@@ -922,7 +969,7 @@ export function artifactDefinitions(config, scan) {
   // without loading a process Skill. A specialised requirement adds a human specialist; it is
   // never invented as a generated role.
   if (config.governanceDepth !== 'minimal') {
-    for (const artifact of buildAgentArtifacts(config).artifacts) {
+    for (const artifact of buildAgentArtifacts(config, scan).artifacts) {
       const index = definitions.length;
       add(artifact.path, 'routing', () => artifact.content, { ownership: artifact.ownership, kind: artifact.kind, source: artifact.source });
       definitions[index].build = () => artifact;
@@ -967,6 +1014,10 @@ export function artifactDefinitions(config, scan) {
       memberFactsAreRuntimeEvidence: true,
     },
   }), { requires: [(value) => value.projectMode === 'repository-family'], ownership: 'full', kind: 'repository-family-index', source: 'repository-family-scan', routeProfiles: ['behavior_change:repository_family'] });
+  // The bootstrap prompt is a hand-off seed for AI-assisted completion. It is deliberately not
+  // gated on features.aiAssist: `--no-assist` means "invoke no agent now", not "never provide a
+  // completion prompt". The canonical README references it so it is discoverable instead of an
+  // orphaned seed.
   add('docs/ai/bootstrap-prompt.md', 'routing', () => bootstrapPrompt(config), { requires: [(value) => !hasCompactManagement(value)], source: 'template:bootstrap-prompt' });
   add('.gitignore', 'routing', () => '!/reviews/\n/reviews/*\n!/reports/\n/reports/*', { ownership: 'gitignore-block', kind: 'local-output-ignore', source: 'template:local-output-layout' });
 
@@ -989,7 +1040,11 @@ export function artifactDefinitions(config, scan) {
         ownership: artifact.ownership,
         kind: artifact.kind,
         source: artifact.source,
-        routeProfiles: isCanonicalRoute ? ['behavior_change:brownfield_understanding'] : [],
+        routeProfiles: isCanonicalRoute
+          ? ['behavior_change:brownfield_understanding']
+          // The unit rule and Skill were generated but never routed, so the development unit's
+          // guidance reached no agent. Route the canonical copies; client adapters stay unrouted.
+          : isLocalGovernance && artifact.path.startsWith('docs/ai/') ? ['behavior_change:development'] : [],
       });
       definitions.at(-1).build = () => artifact;
     }
@@ -1016,6 +1071,7 @@ export function artifactDefinitions(config, scan) {
   add('docs/ai/architecture-profile.json', 'policy', () => stableJson(architectureProfileDocument(config)), { requires: [architecture], ownership: 'full', kind: 'architecture-profile', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['architecture-placement', 'architecture-route'], routeProfiles: ['behavior_change:architecture'] });
   add('docs/ai/rules/15_architecture.mdc', 'policy', () => checkedRule(architectureRule(config), '15_architecture'), { requires: [architecture], ownership: 'full', kind: 'architecture-rule', source: 'architecture-profile-registry-and-initialization-decision', routeProfiles: ['behavior_change:architecture'] });
   add('docs/ai/module-graph.json', 'policy', () => stableJson(moduleGraphDeclaration(config)), { requires: [architecture, (value) => Boolean(moduleGraphDeclaration(value))], ownership: 'full', kind: 'architecture-module-graph', source: 'architecture-profile-registry-and-initialization-decision', gateAssertions: ['module-graph'] });
+  add('docs/ai/rules/30_business.mdc', 'policy', () => checkedRule(businessRule(config), '30_business'), { requires: [business], ownership: 'full', kind: 'business-rule', source: 'owner-confirmed-config', routeProfiles: ['behavior_change:business'] });
   add(BUSINESS_CONSTRAINTS_PATH, 'policy', () => businessConstraintRegistryContent(config), { requires: [business], ownership: 'full', kind: 'business-constraint-registry', source: 'owner-confirmed-config', gateAssertions: ['business-route'], routeProfiles: ['behavior_change:business'] });
   const separateBusinessSkill = (value) => !hasCompactManagement(value);
   add(BUSINESS_CONSTRAINT_SKILL_PATH, 'policy', () => businessConstraintSkill(config), { requires: [business, separateBusinessSkill], kind: 'canonical-skill', source: 'owner-confirmed-config', gateAssertions: ['business-skill-route'], routeProfiles: ['behavior_change:business'] });
@@ -1033,12 +1089,36 @@ export function artifactDefinitions(config, scan) {
     technicalSelection = selection;
     const standardManifestPath = locate('docs/ai/technical-standards.json');
     const standardPaths = [standardManifestPath];
+    // Each technical standard gets its own route condition instead of sharing `stack`. Sharing
+    // it loaded every selected standard for any stack change, so a backend-only task pulled in a
+    // React-specific rule. The manifest stays on `stack` as the index of what was selected.
+    const standardConditions = new Map();
+    const standardSources = new Map();
     for (const { standard } of selection.selected) {
-      standardPaths.push(`docs/ai/skills/standards/${standard.id}/SKILL.md`);
-      for (const directory of adapterDirs) standardPaths.push(`${directory}/standards/${standard.id}/SKILL.md`);
+      const canonicalSkill = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
+      standardConditions.set(canonicalSkill, `behavior_change:standard_${standard.id.replaceAll('-', '_')}`);
+      standardSources.set(canonicalSkill, null);
+      standardPaths.push(canonicalSkill);
+      for (const directory of adapterDirs) {
+        const adapter = `${directory}/${adapterSkillSuffix(canonicalSkill)}`;
+        standardPaths.push(adapter);
+        standardSources.set(adapter, canonicalSkill);
+      }
     }
     for (const relative of standardPaths) {
-      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, { requires: [stack], ownership: 'full', kind: relative === standardManifestPath ? 'technical-standard-manifest' : 'technical-standard-skill', source: 'technical-standard-registry', routeProfiles: relative.startsWith('docs/ai/') || relative.startsWith('.ai-governance/') ? ['behavior_change:stack'] : [] });
+      const canonicalSource = standardSources.get(relative) ?? null;
+      const isAdapter = typeof canonicalSource === 'string';
+      const routeProfiles = relative === standardManifestPath
+        ? ['behavior_change:stack']
+        : standardConditions.has(relative) ? [standardConditions.get(relative)] : [];
+      add(relative, 'policy', () => standardArtifacts().find((artifact) => artifact.path === relative).content, {
+        requires: [stack], ownership: 'full',
+        kind: relative === standardManifestPath ? 'technical-standard-manifest' : isAdapter ? 'technical-standard-adapter-skill' : 'technical-standard-skill',
+        // An adapter's source is the canonical Skill it projects; projection receipts depend on
+        // this to name the real canonical path instead of a non-existent flat one.
+        source: isAdapter ? canonicalSource : 'technical-standard-registry',
+        routeProfiles,
+      });
       definitions.at(-1).build = () => standardArtifacts().find((artifact) => artifact.path === relative);
     }
   }
@@ -1061,13 +1141,25 @@ export function artifactDefinitions(config, scan) {
   let capabilities;
   const capabilityArtifacts = () => (capabilities ??= buildCapabilityArtifacts(config).artifacts);
   const capabilityPaths = ['docs/ai/capability-evolution.json'];
+  const capabilitySources = new Map();
   for (const capability of (config.projectCapabilities ?? []).filter((entry) => ['candidate', 'adopted'].includes(entry.status))) {
     capabilityPaths.push(capability.skill);
-    const suffix = path.basename(path.dirname(capability.skill));
-    for (const directory of adapterDirs) capabilityPaths.push(`${directory}/project/${suffix}/SKILL.md`);
+    capabilitySources.set(capability.skill, null);
+    for (const directory of adapterDirs) {
+      const adapter = `${directory}/${adapterSkillSuffix(capability.skill)}`;
+      capabilityPaths.push(adapter);
+      capabilitySources.set(adapter, capability.skill);
+    }
   }
   for (const relative of capabilityPaths) {
-    add(relative, 'lifecycle', () => capabilityArtifacts().find((artifact) => artifact.path === relative).content, { ownership: 'full', kind: relative === 'docs/ai/capability-evolution.json' ? 'capability-evolution-catalog' : 'project-capability-skill', source: 'project-capability-harvest', gateAssertions: ['capability-evidence'] });
+    const canonicalSource = capabilitySources.get(relative) ?? null;
+    const isAdapter = typeof canonicalSource === 'string';
+    add(relative, 'lifecycle', () => capabilityArtifacts().find((artifact) => artifact.path === relative).content, {
+      ownership: 'full',
+      kind: relative === 'docs/ai/capability-evolution.json' ? 'capability-evolution-catalog' : isAdapter ? 'project-capability-adapter-skill' : 'project-capability-skill',
+      source: isAdapter ? canonicalSource : 'project-capability-harvest',
+      gateAssertions: ['capability-evidence'],
+    });
     definitions.at(-1).build = () => capabilityArtifacts().find((artifact) => artifact.path === relative);
   }
   add('docs/ai/lifecycle.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 治理生命周期\n\n一个功能使用一个工作单元，包含页面、API、服务、数据和测试，不按端点拆分。L0 无工作单元；L1 保持轻量。L2/L3 生产交付使用 `aicg work-unit plan . --work-unit <relative-json>` 和 `status` 预览校验，然后 `aicg complete . --work-unit <relative-json>` 绑定精确批准与一次显式验证。\n\n需求、计划、初始测试、QA 补充案例、Memory 实体覆盖和 no-memory-impact 决策均绑定计划。验证输出逐项 `AICG_QA_RESULT`；缺失、重复、失败或 blocked 必需案例阻断完成。验证后把返回的 recordedEvidence 与 recordedResults 写回同一文档，hook 只检查当前输入绑定，不重复执行；重放为 operator-declared 结构证据。行为变更必须同步 Memory。\n\n将重复出现且有证据支持的指引提升为候选规则或技能；保留唯一维护者，不自动提升或执行。\n' : '# Governance lifecycle\n\nOne feature uses one work unit across pages, APIs, services, data and tests, never one task per endpoint. L0 has no unit; L1 stays lightweight. L2/L3 production delivery uses `aicg work-unit plan . --work-unit <relative-json>` and `status` for preview, then `aicg complete . --work-unit <relative-json>` with exact approval and one explicit verification run.\n\nRequirements, plan, initial tests, QA additions, canonical Memory coverage and no-memory-impact decisions bind the plan. Verification emits per-case `AICG_QA_RESULT` markers; missing, duplicate, failed or blocked required cases prevent completion. Copy returned recordedEvidence and recordedResults into the same document after verification. Hooks check current input bindings without rerunning; replay is operator-declared structural evidence. Behavior changes synchronize Memory.\n\nPromote repeated evidence-backed guidance as candidates with one owner; never auto-promote or execute.\n', { source: 'template:lifecycle' });
@@ -1083,6 +1175,9 @@ export function artifactDefinitions(config, scan) {
         routeProfiles: artifact.path === 'docs/ai/project-conventions.json' || artifact.adopted === true ? ['behavior_change:project_conventions'] : [],
       });
       definitions.at(-1).build = () => artifact;
+      // An adopted project convention is a loadable project Skill, so it needs the same
+      // first-level client projection every other canonical Skill gets.
+      if (artifact.kind === 'project-convention-skill') addSkillAdapters(artifact.path, () => artifact.content, 'core', [(value) => value.governanceDepth !== 'minimal']);
     }
   }
   add('docs/ai/long-running/README.md', 'lifecycle', () => config.artifactLanguage === 'zh-CN' ? '# 长期任务状态\n\n每项已批准的长期工作建立一个任务目录。运行时状态引用正典计划与外部变更，不复制这些内容。\n' : '# Long-running task state\n\nCreate one task directory per approved long-running effort. Runtime state references canonical plans and external changes instead of copying them.\n', { requires: [(value) => value.features.taskRuntime], source: 'template:task-runtime' });
@@ -1140,7 +1235,7 @@ export function buildArtifactsWithDefinitions(config, scan) {
   const artifacts = renderDefinitions(selected, config.governanceFootprint ?? 'compact');
   let governanceCostDrift = null;
   if (hasSkillManagement(config) && rendersSkillManagementArtifacts(artifacts)) {
-    const cost = skillGovernanceCost(scan.root, artifacts);
+    const { cost } = skillGovernanceCost(scan.root, artifacts);
     const recorded = config.skillDiscovery.artifactPlan.cost;
     // The governed receipt is the Skill-governance increment plus the artifacts this
     // transaction generates. Both must match the approved receipt exactly, so a scan or
@@ -1252,8 +1347,8 @@ function managementSections(config, name, body) {
     ? t('本 Skill 只检查离线元数据；推荐不等于审批，也不证明真实加载或执行。', 'This Skill inspects offline metadata only; a recommendation is not approval and proves no real loading or execution.')
     : t('本 Skill 只按已审批 roster 推荐协作；角色数据不是可执行指令，也不证明参与、权限或完成。', 'This Skill recommends collaboration within the approved roster only; role data is not executable instruction and proves no participation, authority, or completion.');
   const sources = discovery
-    ? ['`docs/ai/skill-index.json`', '`docs/ai/skills/skill-discovery/SKILL.md`', '`.ai-governance/config.json`']
-    : ['`docs/ai/team-roster.json`', '`docs/ai/agent-team.json`', '`.ai-governance/config.json`'];
+    ? ['`docs/ai/skill-index.json`', '`docs/ai/skills/skill-discovery/SKILL.md`']
+    : ['`docs/ai/team-roster.json`', '`docs/ai/agent-team.json`'];
   const matrix = [
     '| ' + t('场景', 'Scenario') + ' | ' + t('期望结果', 'Expected result') + ' | ' + t('命令', 'Command') + ' |',
     '| --- | --- | --- |',
@@ -1387,34 +1482,44 @@ function skillGovernanceCost(root, artifacts) {
     total: { files: managed.files + retainedFiles, bytes: managed.bytes + retainedBytes },
     retained: { files: retainedFiles, bytes: retainedBytes },
   };
-  // Skill governance budgets the increment it introduces, not the tree it lives in.
-  // `cost.total` counts every canonical artifact, retained historical seed and the
-  // manifest; all of those are produced by the approved governance depth rather than by
-  // Skill adoption. Comparing that tree against a fixed allowance made adoption
-  // unreachable for every existing repository whose approved depth already exceeded it,
-  // which permanently blocked the brownfield "no evidence-backed project Skill" gap.
-  const maximumFiles = 30;
-  const maximumBytes = (config.governanceDepth === 'standard' ? 96 : 128) * 1024;
-  // The always-on manager set now carries the full eight-section Skill contract
-  // (skill-discovery + team-orchestrator), so the original 800-token stub ceiling no longer
-  // fits. 1600 still keeps the always-on surface small relative to the on-demand phases.
-  const maximumManagementProfileTokens = 2400;
-  // The always rule carries only what must hold in every session. Keep it small.
-  const maximumAlwaysRuleTokens = 256;
-  // The workflow document is read once per governed delivery rather than for every Skill
-  // decision, so it gets its own ceiling instead of competing with the always-on management
-  // budget. The cap exists to stop unbounded growth, not to squeeze the document.
-  const maximumWorkflowTokens = 2000;
-  if (cost.increment.files > maximumFiles || cost.increment.bytes > maximumBytes
-    || managementProfileTokens > maximumManagementProfileTokens
-    || alwaysRuleTokens > maximumAlwaysRuleTokens
-    || workflowTokens > maximumWorkflowTokens) {
-    const error = usageError('Approved Skill governance exceeds the Skill management increment, byte, manager token or workflow token budget.');
-    error.budgetCost = cost;
-    error.budgetLimits = { maximumFiles, maximumBytes, maximumManagementProfileTokens, maximumAlwaysRuleTokens, maximumWorkflowTokens };
-    throw error;
-  }
-  return cost;
+  // Skill governance budgets the increment it introduces, not the tree it lives in. Every
+  // ceiling below is an advisory: a hard size cap on stored content truncates the evidence,
+  // edge cases and negative examples that make a Skill complete, and it swaps the constraint
+  // that actually matters (a precise trigger plus a bounded routed closure) for a byte target.
+  //
+  // The one hard load gate is the owner-declared startup budget in docs/ai/context-map.yaml,
+  // enforced by the checker against the real closure. A per-artifact cap here would be a
+  // second, hidden limit inside that budget, so nothing in this path blocks. The always rule is
+  // where a project's unconditional floor lives; if a project needs a bigger floor it raises
+  // the declared budget, and if a task needs more depth that belongs in a routed profile.
+  const limits = {
+    maximumFiles: 30,
+    maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024,
+    maximumManagementProfileTokens: 2400,
+    maximumAlwaysRuleTokens: 256,
+    maximumWorkflowTokens: 2000,
+  };
+  return { cost, limits, advisories: evaluateGovernanceCost(cost, limits).advisories };
+}
+
+/**
+ * Pure policy: every cost ceiling is an advisory. The single hard load gate is the declared
+ * startup budget in docs/ai/context-map.yaml, enforced by the checker against the real closure.
+ * The always-rule ceiling is reported here like any other footprint signal; making it a second
+ * hard gate would hide a stricter limit inside the owner-visible budget.
+ */
+export function evaluateGovernanceCost(cost, limits) {
+  const increment = cost?.increment ?? {};
+  const advisories = [];
+  const advise = (id, actual, limit, action) => {
+    if (Number.isFinite(actual) && Number.isFinite(limit) && actual > limit) advisories.push({ id, actual, limit, action });
+  };
+  advise('management-increment-files', increment.files, limits.maximumFiles, 'Split the Skill-management increment by trigger, or review which candidates are adopted; the file and byte ceilings are curation signals, not gates.');
+  advise('management-increment-bytes', increment.bytes, limits.maximumBytes, 'Prefer splitting a large Skill by trigger over trimming its evidence; stored size does not enter the startup closure.');
+  advise('management-profile-tokens', increment.managementProfileTokens, limits.maximumManagementProfileTokens, 'Keep the routed management profile inside context_budget.profile_max_tokens instead of shrinking the Skill body.');
+  advise('workflow-tokens', increment.workflowTokens, limits.maximumWorkflowTokens, 'Split the workflow document by phase or route it precisely; do not drop process steps to meet a size target.');
+  advise('always-rule-tokens', increment.alwaysRuleTokens, limits.maximumAlwaysRuleTokens, 'The unconditional floor is already bounded by context_budget.startup_max_tokens; either shrink the always rule or raise the declared startup budget.');
+  return { advisories };
 }
 
 /** Preview only: the caller must explicitly approve the returned hash before normal generation. */
@@ -1430,12 +1535,12 @@ export function prepareSkillGovernancePlan(config, scan) {
   }, approvalPlanHash: '0'.repeat(64) };
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const selected = selectArtifactDefinitions(config, scan, artifactDefinitions(config, scan));
-    const cost = skillGovernanceCost(scan.root, renderDefinitions(selected, config.governanceFootprint ?? 'compact'));
+    const { cost, advisories } = skillGovernanceCost(scan.root, renderDefinitions(selected, config.governanceFootprint ?? 'compact'));
     if (stableJson(cost) === stableJson(config.skillDiscovery.artifactPlan.cost)) {
       const planHash = skillGovernanceHash(config, config.skillDiscovery.artifactPlan);
       config.skillDiscovery.artifactPlan.planHash = planHash;
       // A placeholder cannot authorize buildArtifacts; only the user's exact hash may do so.
-      return { planHash, cost, skillDiscovery: config.skillDiscovery, agentTeam: config.agentTeam, actionsPerformed: [] };
+      return { planHash, cost, advisories, skillDiscovery: config.skillDiscovery, agentTeam: config.agentTeam, actionsPerformed: [] };
     }
     config.skillDiscovery.artifactPlan.cost = cost;
   }

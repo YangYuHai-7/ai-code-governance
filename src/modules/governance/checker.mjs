@@ -18,8 +18,8 @@ import {
 import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import { isFirstPartyGeneratedSkill } from './retired.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
-import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
-import { declaredSkillDirectories } from '../../catalogs/index.mjs';
+import { adapterSkillSuffix, isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { declaredSkillDirectories, selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { brownfieldProgress, isRepositoryFamilyBoundary, repositoryTopologyMigrationRequired } from '../repository/index.mjs';
 
 const ACCEPTANCE_CONTRACT_PATH = 'docs/ai/acceptance-contract.json';
@@ -183,6 +183,30 @@ function normalizeContextMapping(content) {
   return { lines, issues };
 }
 
+function contextBudgetValues(lines) {
+  const values = {};
+  const issues = [];
+  let seenHeader = 0;
+  let inBudget = false;
+  for (const line of lines) {
+    if (line === 'context_budget:') { seenHeader += 1; inBudget = true; continue; }
+    if (!inBudget) continue;
+    if (startsTopLevelYamlNode(line)) { inBudget = false; continue; }
+    const match = line.match(/^ {2}(startup_max_tokens|profile_max_tokens|max_required_files): (\d+)$/);
+    if (!match) {
+      if (/^ {2}\S/.test(line)) issues.push(`unsupported context_budget syntax: ${line.trim()}`);
+      continue;
+    }
+    if (Object.hasOwn(values, match[1])) { issues.push(`duplicate context_budget key ${match[1]}`); continue; }
+    values[match[1]] = Number(match[2]);
+  }
+  if (seenHeader !== 1) issues.push(`context-map must declare exactly one top-level context_budget container; found ${seenHeader}`);
+  for (const key of ['startup_max_tokens', 'profile_max_tokens', 'max_required_files']) {
+    if (!Object.hasOwn(values, key)) issues.push(`context_budget must declare ${key}`);
+    else if (!Number.isSafeInteger(values[key]) || values[key] < 1) issues.push(`context_budget.${key} must be a positive integer`);
+  }
+  return { values, issues };
+}
 function contextMapStructure(content) {
   const { lines, issues } = normalizeContextMapping(content);
   const profilesHeaders = lines.flatMap((line, index) => line === 'profiles:' ? [index] : []);
@@ -231,7 +255,7 @@ function contextMapStructure(content) {
     }
   }
 
-  return { base, profiles, issues };
+  return { base, profiles, budget: contextBudgetValues(lines), issues };
 }
 
 function blockRequiredPaths(block, requiredIndent, itemIndent) {
@@ -293,6 +317,74 @@ function profileExtendsValues(profile) {
 function profileExtends(profile) {
   const values = profileExtendsValues(profile);
   return values.length === 1 ? values[0] : null;
+}
+
+// The set of files a profile loads, following the `extends` chain up to `base`.
+function profileRequiredClosure(structure, name) {
+  const paths = new Set();
+  const seen = new Set();
+  let current = name;
+  while (current && !seen.has(current)) {
+    seen.add(current);
+    if (current === 'base') {
+      for (const item of blockRequiredPaths(structure.base, 2, 4)) paths.add(item);
+      break;
+    }
+    const profile = structure.profiles.get(current);
+    if (!profile) break;
+    for (const item of blockRequiredPaths(profile, 4, 6)) paths.add(item);
+    current = profileExtends(profile);
+  }
+  return paths;
+}
+
+// A rough, deterministic token estimate at four characters per token. It is deliberately
+// conservative for prose and stable across platforms; a real tokenizer would add a
+// dependency the offline generator does not carry.
+function estimateTokens(text) {
+  return Math.ceil((text ?? '').length / 4);
+}
+
+// Measure the actual closure cost so the declared budget is both a gate and an observable
+// sensor. The dynamic-equilibrium loop needs this number per run; nothing is written here,
+// because a check must stay read-only.
+function contextBudgetUsage(root, structure, contextMapContent) {
+  const values = structure.budget?.values ?? {};
+  const read = (relative) => { try { return readText(path.join(root, relative)) ?? ''; } catch { return ''; } };
+  const overhead = estimateTokens(contextMapContent) + estimateTokens(read('AGENTS.md'));
+  const tokens = (name) => {
+    let total = overhead;
+    for (const relative of profileRequiredClosure(structure, name)) total += estimateTokens(read(relative));
+    return total;
+  };
+  const profiles = Object.fromEntries([...structure.profiles.keys()].map((name) => [name, tokens(name)]));
+  return {
+    startup: tokens('base'),
+    profiles,
+    declared: {
+      startup: values.startup_max_tokens ?? null,
+      profile: values.profile_max_tokens ?? null,
+      maxRequiredFiles: values.max_required_files ?? null,
+    },
+  };
+}
+
+// `context_budget` used to be a decorative declaration: only max_required_files was read.
+// Enforce the token ceilings against the same closure so the declared budget is a real gate.
+function contextBudgetTokenIssues(root, structure, contextMapContent) {
+  const values = structure.budget?.values ?? {};
+  if (!Number.isSafeInteger(values.startup_max_tokens) && !Number.isSafeInteger(values.profile_max_tokens)) return [];
+  const usage = contextBudgetUsage(root, structure, contextMapContent);
+  const issues = [];
+  if (Number.isSafeInteger(values.startup_max_tokens) && usage.startup > values.startup_max_tokens) {
+    issues.push(`base profile starts with about ${usage.startup} tokens, above context_budget.startup_max_tokens ${values.startup_max_tokens}`);
+  }
+  if (Number.isSafeInteger(values.profile_max_tokens)) {
+    for (const [name, actual] of Object.entries(usage.profiles)) {
+      if (actual > values.profile_max_tokens) issues.push(`profile ${name} loads about ${actual} tokens, above context_budget.profile_max_tokens ${values.profile_max_tokens}`);
+    }
+  }
+  return issues;
 }
 
 function contextMapStructureIssues(structure, gateAssertions, footprint = 'compact') {
@@ -364,8 +456,52 @@ function contextMapStructureIssues(structure, gateAssertions, footprint = 'compa
     visiting.delete(name);
     visited.add(name);
   };
+  const contextBudget = structure.budget;
+  if (contextBudget) {
+    issues.push(...contextBudget.issues);
+    const maxRequiredFiles = contextBudget.values.max_required_files;
+    if (Number.isSafeInteger(maxRequiredFiles)) {
+      for (const name of ['base', ...structure.profiles.keys()]) {
+        const count = profileRequiredClosure(structure, name).size;
+        if (count > maxRequiredFiles) issues.push(`profile ${name} requires ${count} files, above context_budget.max_required_files ${maxRequiredFiles}`);
+      }
+    }
+  }
   for (const name of structure.profiles.keys()) visit(name);
   return [...new Set(issues)];
+}
+
+// --- Evidence-plane isolation ------------------------------------------------
+// The context plane is what an agent loads: AGENTS.md, the context-map closure and
+// the routed rules. Ownership hashes, the confirmed configuration, decision ledgers,
+// scores and audit reports live outside it on purpose. Loading them spends context and
+// pulls attention onto the tool's own bookkeeping instead of the work, so the two
+// planes are kept apart by machine checks. `.ai-governance/state/**` stays allowed:
+// routed machine-readable policy snapshots are legitimate context inputs, not provenance.
+const EVIDENCE_PLANE_FILES = Object.freeze(['.ai-governance/config.json', '.ai-governance/manifest.json']);
+const EVIDENCE_PLANE_PREFIXES = Object.freeze(['.ai-governance/evidence/', '.ai-governance/decisions/', 'reports/aicg/', 'reviews/']);
+
+function isEvidencePlanePath(relative) {
+  return EVIDENCE_PLANE_FILES.includes(relative) || EVIDENCE_PLANE_PREFIXES.some((prefix) => relative.startsWith(prefix));
+}
+
+function evidencePlaneReference(content) {
+  return [...EVIDENCE_PLANE_FILES, ...EVIDENCE_PLANE_PREFIXES].find((pattern) => content.includes(pattern)) ?? null;
+}
+
+// Every path a context map can route to, including conditional routes, so the
+// isolation check cannot be bypassed by moving a pointer into a condition block.
+function contextMapReferencedPaths(structure) {
+  const paths = new Set(['AGENTS.md', 'docs/ai/context-map.yaml']);
+  const collect = (lines) => {
+    for (const line of lines ?? []) {
+      const match = line.match(/^\s*-\s+["']?([A-Za-z0-9._/-]+)["']?\s*$/);
+      if (match) paths.add(match[1]);
+    }
+  };
+  collect(structure.base?.lines);
+  for (const profile of structure.profiles.values()) collect(profile.lines);
+  return paths;
 }
 
 function acceptanceEvidence(root, footprint = 'compact') {
@@ -633,6 +769,7 @@ export function checkProject(scan, options = {}) {
   const warnings = [];
   let moduleGraph = { status: 'stated-only', issues: [], inspectedFiles: [], unsupportedFiles: [] };
   let clientCoverage = [];
+  let contextUsage = null;
   if (scan.scanBudget?.complete === false) {
     const truncation = scan.scanBudget.truncation ?? {};
     const details = [
@@ -863,8 +1000,83 @@ export function checkProject(scan, options = {}) {
     const managedAgentsContent = extractManagedBlock(agentsContent) ?? '';
     const contextMap = readText(path.join(scan.root, 'docs/ai/context-map.yaml'), '');
     const contextMapRouting = contextMapStructure(contextMap);
+    contextUsage = contextBudgetUsage(scan.root, contextMapRouting, contextMap);
     for (const issue of contextMapStructureIssues(contextMapRouting, gateAssertions, config.governanceFootprint ?? 'compact')) {
       structureErrors.push(`docs/ai/context-map.yaml: ${issue}`);
+    }
+    // The declared token ceilings are enforced against the real closure, not just the file count.
+    for (const issue of contextBudgetTokenIssues(scan.root, contextMapRouting, contextMap)) {
+      structureErrors.push(`docs/ai/context-map.yaml: ${issue}`);
+    }
+    // The evidence plane never enters the loaded context. A routed path that points at
+    // provenance, ownership, or an audit report is a configuration error; so is a
+    // context-plane artifact that tells an agent to read one.
+    for (const relative of contextMapReferencedPaths(contextMapRouting)) {
+      if (isEvidencePlanePath(relative)) {
+        structureErrors.push(`evidence-plane isolation: context-map routes ${relative}; keep provenance and audit state outside the loaded closure`);
+      }
+    }
+    const leakedContextFiles = new Set();
+    const lintContextPlane = (relative, content) => {
+      if (typeof content !== 'string' || !content) return;
+      if (relative.startsWith('.ai-governance/')) return;
+      // VCS ignore controls name the runtime output directories on purpose; they are not
+      // agent-facing instructions and never load into an agent context.
+      if (relative === '.gitignore' || relative === '.gitattributes') return;
+      const pattern = evidencePlaneReference(content);
+      if (!pattern || leakedContextFiles.has(relative)) return;
+      leakedContextFiles.add(relative);
+      structureErrors.push(`context-to-evidence leak: ${relative} references ${pattern}; context-plane files must not direct an agent into the evidence plane`);
+    };
+    lintContextPlane('AGENTS.md', managedAgentsContent);
+    for (const artifact of expected) lintContextPlane(artifact.path, artifact.content);
+    // Reachability, not just ownership: a generated Skill or rule that no route loads, no
+    // client projects, and no routed document references is dead weight an agent never sees.
+    // This is a warning so ordinary reference docs stay free, but every unwired rule/skill is
+    // named with its remediation instead of shipping silently.
+    const referenced = contextMapReferencedPaths(contextMapRouting);
+    referenced.add('AGENTS.md');
+    const corpus = [managedAgentsContent, contextMap];
+    for (const relative of referenced) {
+      if (relative === 'AGENTS.md' || relative === 'docs/ai/context-map.yaml') continue;
+      try { corpus.push(readText(path.join(scan.root, relative))); } catch { /* a missing routed file is reported by the reachability gate below */ }
+    }
+    const corpusText = corpus.join('\n');
+    const unreachable = [];
+    for (const artifact of expected) {
+      if (!artifact.path.startsWith('docs/ai/')) continue;
+      const isSkill = artifact.path.endsWith('/SKILL.md');
+      // Rules are every `.mdc` file and every policy document, including `.md` policies such as
+      // development.md. Reference docs (README, memory SCHEMA) stay outside the gate.
+      const isRule = artifact.path.endsWith('.mdc') || artifact.path.startsWith('docs/ai/policies/');
+      if (!isSkill && !isRule) continue;
+      if (referenced.has(artifact.path)) continue;
+      const base = artifact.path.split('/').pop();
+      if (corpusText.includes(artifact.path) || corpusText.includes(base)) continue;
+      if (isSkill) {
+        const suffix = artifact.path.slice('docs/ai/skills/'.length);
+        if (expected.some((other) => !other.path.startsWith('docs/ai/') && other.path.endsWith('/' + suffix))) continue;
+      }
+      unreachable.push(artifact.path);
+    }
+    if (unreachable.length > 0) {
+      warnings.push(`unreachable governance: ${unreachable.length} generated Skill/rule file(s) are loaded by no route, projected to no client, and referenced by no routed document (${unreachable.slice(0, 6).join(', ')}); route them, reference them from a routed document, or remove them`);
+    }
+    // Client Skill discovery is one directory deep, so every selected canonical Skill must have a
+    // first-level adapter for each declared client. A grouped projection such as
+    // `skills/standards/<id>/SKILL.md` is invisible to a client that does not recurse, and this
+    // used to pass structural checking with zero findings.
+    const everyExpectedPath = new Set(expected.map((artifact) => artifact.path));
+    const clientSkillDirs = selectedSkillDirectories(config.clients ?? []);
+    for (const artifact of expected) {
+      if (!artifact.path.startsWith('docs/ai/skills/') || !artifact.path.endsWith('/SKILL.md')) continue;
+      const adapterSuffix = adapterSkillSuffix(artifact.path);
+      for (const directory of clientSkillDirs) {
+        const adapter = `${directory}/${adapterSuffix}`;
+        if (!everyExpectedPath.has(adapter)) {
+          structureErrors.push(`skill discovery: ${artifact.path} has no first-level adapter for ${directory} (expected ${adapter}); a grouped client projection is invisible to one-level clients`);
+        }
+      }
     }
     if (!managedAgentsContent) {
       reachabilityErrors.push('AGENTS.md: shared managed entrypoint is not reachable');
@@ -929,6 +1141,15 @@ export function checkProject(scan, options = {}) {
   // actionable cleanup signal without making the managed set pass or fail on them.
   const orphans = manifest ? collectGovernanceOrphans(scan, manifest, config) : { status: 'no-manifest', count: 0, files: [], truncated: false };
   if (orphans.count > 0) warnings.push(`governance orphans: ${orphans.count} unmanaged file(s) under docs/ai or client skill directories; see orphans in the JSON report`);
+  // Read-only sensor surface for the dynamic-equilibrium loop. It records what this run
+  // observed (finding classes, orphans, measured context cost); it writes nothing, because a
+  // check must never mutate state, and the promote/demote actuator is a separate decision.
+  const telemetry = {
+    findings: { structure: structureErrors.length, reachability: reachabilityErrors.length, evidence: evidenceErrors.length },
+    warnings: warnings.length,
+    orphans: orphans.count,
+    context: contextUsage,
+  };
   return {
     ok: pass,
     errors,
@@ -948,6 +1169,7 @@ export function checkProject(scan, options = {}) {
     },
     orphans,
     clientCoverage,
+    telemetry,
     boundaries: [
       'aicg check proves structure, ownership, hashes, and configured entrypoint reachability.',
       'Client coverage distinguishes declared, projected, checked and runtime-verified; a structural checked pass never proves a real client loaded the projection.',

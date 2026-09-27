@@ -5,6 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { scanProject } from '../src/scanner.mjs';
+import { checkProject } from '../src/checker.mjs';
+import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 
 // These are documentation contracts requested for the adaptive-flow migration;
 // they prove discoverable guidance, never actual client execution.
@@ -147,7 +149,9 @@ test('ordinary behavior and release profiles form an incremental context map', (
   assert.doesNotMatch(behavior, /architecture-profile/, 'unconfirmed architecture does not enter a route');
   assert.match(behavior, /stack:\n        - .ai-governance\/state\/stack-profile\.json\n        - docs\/ai\/policies\/20_stack\.mdc\n        - .ai-governance\/state\/technical-standards\.json/);
   assert.match(behavior, /docs\/ai\/skills\/standards\/react-component-purity\/SKILL\.md/);
-  assert.match(behavior, /business:\n        - docs\/ai\/policies\/business-constraints\.json\n        - docs\/ai\/skills\/business-constraints\/SKILL\.md/);
+  assert.match(behavior, /business:\n\s+- docs\/ai\/rules\/30_business\.mdc/);
+  assert.match(behavior, /- docs\/ai\/policies\/business-constraints\.json/);
+  assert.match(behavior, /- docs\/ai\/skills\/business-constraints\/SKILL\.md/);
   assert.doesNotMatch(behavior, /release-acceptance-policy/);
   assert.match(release, /required:\n      - docs\/ai\/evidence\/release-acceptance-policy\.json/);
   assert.doesNotMatch(release, /technical-standards|business-constraints|architecture-profile/);
@@ -187,4 +191,57 @@ test('explicitly selected capabilities remain available outside ordinary context
   assert.equal(paths.has('.ai-governance/state/capability-evolution.json'), false);
   assert.equal(paths.has('docs/ai/policies/lifecycle.md'), false);
   assert.doesNotMatch(contextClosure(artifacts, 'ordinary').join('\n'), /docs\/memory\/|project-conventions/);
+});
+
+test('owner-confirmed invariants generate a project business rule', (context) => {
+  const root = fixture('business-rule');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard', domainConstraints: ['Only approved actors may edit contracts.'] };
+  const artifacts = buildArtifacts(config, scan);
+  const rule = artifacts.find((artifact) => artifact.path === 'docs/ai/rules/30_business.mdc');
+  assert.ok(rule, 'owner-confirmed invariants must generate a business rule');
+  assert.match(rule.content, /Only approved actors may edit contracts\./);
+  assert.match(rule.content, /docs\/ai\/policies\/business-constraints\.json/);
+  const contextMap = artifacts.find((artifact) => artifact.path === 'docs/ai/context-map.yaml').content;
+  assert.match(contextMap, /business:\n\s+- docs\/ai\/rules\/30_business\.mdc/);
+});
+test('generated context-map budget is enforced by the checker', (context) => {
+  const root = fixture('budget-enforced');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const contextPath = path.join(root, 'docs/ai/context-map.yaml');
+  const fresh = checkProject(scanProject(root));
+  assert.equal(fresh.ok, true, 'a fresh generation satisfies its own declared budget');
+  // The declared budget is now a measured sensor, not only a gate: the report carries the
+  // actual closure cost so the equilibrium loop has a number to act on.
+  assert.ok(fresh.telemetry.context.startup > 0);
+  assert.equal(fresh.telemetry.context.declared.startup, 3500);
+  assert.ok(Object.keys(fresh.telemetry.context.profiles).length >= 3);
+  assert.equal(fresh.telemetry.findings.structure, 0);
+
+  const generated = fs.readFileSync(contextPath, 'utf8');
+  assert.match(generated, /context_budget:\n  startup_max_tokens: \d+\n  profile_max_tokens: \d+\n  max_required_files: \d+/);
+
+  fs.writeFileSync(contextPath, generated.replace(/max_required_files: \d+/, 'max_required_files: 1'));
+  const overBudget = checkProject(scanProject(root));
+  assert.equal(overBudget.ok, false);
+  assert.ok(overBudget.errors.some((error) => error.includes('above context_budget.max_required_files')), overBudget.errors.join('\n'));
+
+  fs.writeFileSync(contextPath, generated.replace(/startup_max_tokens: \d+/, 'startup_max_tokens: 1'));
+  const overStartup = checkProject(scanProject(root));
+  assert.equal(overStartup.ok, false);
+  assert.ok(overStartup.errors.some((error) => error.includes('above context_budget.startup_max_tokens')), overStartup.errors.join('\n'));
+
+  fs.writeFileSync(contextPath, generated.replace(/profile_max_tokens: \d+/, 'profile_max_tokens: 1'));
+  const overProfile = checkProject(scanProject(root));
+  assert.equal(overProfile.ok, false);
+  assert.ok(overProfile.errors.some((error) => error.includes('above context_budget.profile_max_tokens')), overProfile.errors.join('\n'));
+
+  fs.writeFileSync(contextPath, generated.replace(/context_budget:\n(?:  .*\n)+/, ''));
+  const missingBudget = checkProject(scanProject(root));
+  assert.equal(missingBudget.ok, false);
+  assert.ok(missingBudget.errors.some((error) => error.includes('context_budget container')), missingBudget.errors.join('\n'));
 });

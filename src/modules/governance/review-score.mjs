@@ -91,12 +91,12 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
   const graph = check?.architecture?.moduleGraph;
   const graphStatus = graph?.status === 'active' && !(graph?.issues?.length) && !(graph?.unsupportedFiles?.length) ? 'pass'
     : graph?.issues?.length ? 'fail' : 'unverified';
-  // Six criteria used to be unreachable: their static evidence sources did not exist on
-  // disk, and they were never wired into `derived` or `proofs`, so they scored 0 forever.
-  // Derive them from the same `check` payload that everything else already consumes: this
-  // is real machine evidence (managed files, reachable entrypoint, brownfield ownership and
-  // evidence counts), not a hand-waved pass, so `ready-for-owner-acceptance` becomes a
-  // property a correctly completed governance framework can actually satisfy.
+  // Criteria whose pass is a machine-derived fact about the generated tree. They may pass
+  // with no evidence file because `check` itself proves them. Every other criterion is
+  // evidence-only: a proxy pass inherited from reachability or an enabled configuration flag
+  // let a semantically empty framework score as accepted, so those now require an
+  // owner-supplied, hash-bound proof or stay unverified.
+  const MACHINE_BASIS = new Set(['managed-files', 'rules-reachability', 'module-boundaries', 'memory-ownership', 'memory-evidence']);
   const brownfield = check?.brownfield ?? {};
   const unownedSourceFiles = brownfield.unownedSourceFiles ?? null;
   const evidenceSources = brownfield.evidenceSources ?? 0;
@@ -105,12 +105,8 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
     'rules-reachability': { status: reachable, evidence: [] },
     'module-boundaries': { status: graphStatus, evidence: [] },
     'independent-review': independentReviewProof(root, lifecycle, review),
-    'design-review': reachable === 'pass' && managed === 'pass' ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
-    'source-traceability': managed === 'pass' ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
-    'stack-skill-coverage': reachable === 'pass' && config?.skillDiscovery?.enabled === true ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
     'memory-ownership': unownedSourceFiles === 0 ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
     'memory-evidence': evidenceSources > 0 ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
-    'role-routing': reachable === 'pass' && config?.agentTeam?.enabled === true ? { status: 'pass', evidence: [] } : { status: 'unverified', evidence: [] },
   };
   const items = CRITERIA.map((criterion) => {
     // Operator-supplied proofs win when they pass; when they fail validation (drifted
@@ -124,7 +120,7 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
     const proof = supplied?.status === 'pass'
       ? supplied
       : (derived[criterion.id] ?? supplied ?? { status: 'unverified', evidence: [] });
-    return { ...criterion, ...proof, points: proof.status === 'pass' ? criterion.weight : 0 };
+    return { ...criterion, ...proof, basis: MACHINE_BASIS.has(criterion.id) ? 'machine' : 'evidence', points: proof.status === 'pass' ? criterion.weight : 0 };
   });
   // Brownfield gaps are advisory in the rest of the framework (status
   // `needs-enrichment`, warning-level, never an error), so they must not rewrite a
@@ -155,11 +151,23 @@ export function scoreGovernanceFramework({ root, lifecycle, check, proofs = {}, 
     criterion: item.id, status: item.status, action: item.action, reason: item.reason ?? null,
   }));
   const ready = score >= 85 && check?.ok === true && remediation.length === 0;
+  const column = (basis) => {
+    const entries = items.filter((item) => item.basis === basis);
+    return {
+      score: entries.reduce((sum, item) => sum + item.points, 0),
+      maximum: entries.reduce((sum, item) => sum + item.weight, 0),
+      criteria: entries.map((item) => item.id),
+    };
+  };
   return {
     schemaVersion: 1,
     score,
     maximum: 100,
     dimensions,
+    // Two columns, two kinds of proof. `structure` is what the tool can prove about its own
+    // output (managed files, reachability, module graph). `fidelity` is what only unchanged,
+    // hash-bound evidence can support; a configuration flag never fills it.
+    columns: { structure: column('machine'), fidelity: column('evidence') },
     criteria: items,
     status: ready ? 'ready-for-owner-acceptance' : 'needs-remediation',
     remediation,

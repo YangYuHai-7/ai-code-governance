@@ -30,6 +30,40 @@ function assertOperationWritePath(root, relative) {
   assertNoLinkAncestor(root, relative);
 }
 
+/**
+ * A retired Skill file that an older template wrote and a later prune removed can leave an
+ * empty directory behind. The transaction only owns files, so empty skill directories
+ * accumulate and look like Skills an agent should load. Remove only empty directories that
+ * sit under a `skills` root this plan actually writes to; never touch a non-empty directory.
+ */
+function removeEmptySkillDirectories(root, plan) {
+  const roots = new Set();
+  for (const operation of plan.operations) {
+    const marker = '/skills/';
+    const index = operation.path.indexOf(marker);
+    if (index >= 0) roots.add(operation.path.slice(0, index + marker.length - 1));
+  }
+  for (const relative of roots) {
+    const absolute = path.join(root, relative);
+    const directories = [];
+    const collect = (directory, depth) => {
+      let entries;
+      try { entries = fs.readdirSync(directory, { withFileTypes: true }); } catch { return; }
+      for (const entry of entries) if (entry.isDirectory()) collect(path.join(directory, entry.name), depth + 1);
+      directories.push({ directory, depth });
+    };
+    collect(absolute, 0);
+    for (const { directory, depth } of directories.sort((left, right) => right.depth - left.depth)) {
+      if (depth === 0) continue;
+      try {
+        if (fs.readdirSync(directory).length === 0) fs.rmdirSync(directory);
+      } catch {
+        // A raced or newly non-empty directory is left for the next apply.
+      }
+    }
+  }
+}
+
 export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLink }) {
   if (plan.conflicts.length > 0) {
     const error = new Error(`Cannot safely generate governance:\n- ${plan.conflicts.join('\n- ')}`);
@@ -75,6 +109,7 @@ export function applyArtifactPlanCore(root, plan, options, { restoreUserOwnedLin
         changed.push(operation.path);
       }
     }
+    removeEmptySkillDirectories(root, plan);
     if (!plan.manifest?.value || typeof plan.manifest.content !== 'string') {
       throw new Error('Artifact plan is missing its deterministic manifest content. Generate a new plan.');
     }

@@ -39,6 +39,7 @@ const stackLabels = {
 let base = null;
 let sha = null;
 let previewHash = null;
+let toolVersion = null;
 let generation = 0;
 let controller = null;
 let downloadUrl = null;
@@ -92,6 +93,7 @@ function invalidate() {
   const preview = $('save-preview');
   if (preview) preview.hidden = false;
   $('preview-result').replaceChildren();
+  hideHandoff();
 }
 
 async function api(route, body) {
@@ -412,6 +414,14 @@ function renderMatches(paths, label) {
   target.hidden = false;
 }
 
+// The primary control follows the field: with a typed path it opens that project, otherwise it
+// opens the system folder dialog. Keeping the label honest is what the report asked for.
+function syncProjectPathControls() {
+  const typed = Boolean($('project-path').value.trim());
+  $('open-project').disabled = !typed;
+  if ($('choose-folder')) $('choose-folder').textContent = typed ? '打开此项目' : '选择文件夹…';
+}
+
 function showSelector() {
   invalidate();
   renderMatches([], '');
@@ -426,7 +436,7 @@ function showSelector() {
   $('choose-folder').hidden = !nativePickerAvailable;
   $('browse-toggle').hidden = nativePickerAvailable;
   if (nativePickerAvailable) $('browser-box').hidden = true;
-  $('open-project').disabled = !$('project-path').value.trim();
+  syncProjectPathControls();
 }
 
 function showProject(data) {
@@ -596,6 +606,7 @@ async function bootstrap() {
   try {
     const data = await api('bootstrap');
     home = data.home;
+    toolVersion = data.toolVersion ?? null;
     nativePickerAvailable = data.nativePicker === true;
     renderRecent(data.recent ?? []);
     if (data.root) showProject(data);
@@ -603,11 +614,17 @@ async function bootstrap() {
   } finally { setScanning(false); }
 }
 
-async function chooseFolder() {
+async function chooseFolder({ forcePicker = false } = {}) {
+  // A path the owner already typed is a choice: open that project instead of re-opening the
+  // system dialog. Only an empty field starts the picker, so "type a path, click once" reaches
+  // the next step; clearing the field, or a drop that cannot be located, still offers the picker.
+  const typed = $('project-path').value.trim();
+  if (typed && !forcePicker) return selectProject(typed);
   message('请在弹出的系统窗口里选择项目文件夹…');
   const result = await api('choose-folder', {});
   if (!result.path) { message('已取消选择。'); return; }
   $('project-path').value = result.path;
+  syncProjectPathControls();
   await selectProject(result.path);
 }
 
@@ -668,7 +685,7 @@ async function handleDrop(event) {
   }
   if (nativePickerAvailable) {
     message('本机没找到这个文件夹，已为你打开系统选择框。');
-    return chooseFolder();
+    return chooseFolder({ forcePicker: true });
   }
   message('浏览器拿不到拖入文件夹的完整路径，请手动输入路径或用「浏览文件夹」。', true);
   return undefined;
@@ -689,7 +706,7 @@ document.querySelectorAll('[data-toggle]').forEach((button) => {
 });
 
 $('project-form').addEventListener('submit', (event) => { event.preventDefault(); action(() => selectProject($('project-path').value.trim())); });
-$('project-path').addEventListener('input', () => { $('open-project').disabled = !$('project-path').value.trim(); });
+$('project-path').addEventListener('input', syncProjectPathControls);
 $('switch-project').addEventListener('click', () => {
   if (dirty && !window.confirm('当前页面有未保存的修改。确定切换项目并放弃这些修改吗？')) return;
   showSelector(); message('请选择另一个项目；在确认选择前，当前项目不会改变。');
@@ -710,7 +727,7 @@ async function previewConfiguration() {
     // The page changed while the preview ran, so this result no longer describes what the
     // owner sees. Say so instead of silently re-enabling the button with an empty preview.
     renderPreviewError('页面状态在预览期间发生变化，这次预览已作废，请重新点击预览。');
-    return;
+    return true;
   }
   previewHash = result.planHash;
   const blocked = result.conflicts.length > 0 || result.linksToMigrate.length > 0;
@@ -723,6 +740,7 @@ async function previewConfiguration() {
   if (previewButton) previewButton.hidden = !blocked;
   renderPreview(result);
   message(blocked ? '预览完成，但有需要先处理的问题，暂时不能应用。' : '预览完成。确认文件列表后即可应用到项目。', blocked);
+  return blocked;
 }
 // One action saves and previews, replacing the old separate 校验/保存/预览 buttons.
 async function saveAndPreview() {
@@ -735,8 +753,9 @@ async function saveAndPreview() {
   if (sourceLine) sourceLine.textContent = '配置来源：项目里的配置文件';
   invalidate();
   setPreviewing(true);
+  let blocked = true;
   try {
-    await previewConfiguration();
+    blocked = await previewConfiguration();
   } catch (error) {
     // An aborted preview used to vanish silently: the button re-enabled with no result and no
     // explanation. Always tell the owner what happened and keep the state on screen.
@@ -746,7 +765,9 @@ async function saveAndPreview() {
     renderPreviewError(text);
     message(text, true);
   } finally { setPreviewing(false); }
-  showHandoff();
+  // A blocked preview must not hand off a prompt that tells an agent to generate: the owner has
+  // to resolve the reported conflict first.
+  if (blocked) hideHandoff(); else showHandoff();
 }
 
 // Preview re-scans the whole repository and plans every artifact, which on a large or
@@ -793,19 +814,54 @@ function renderPreviewPending() {
   target.append(box);
 }
 // The page owns the owner decisions; the coding agent owns the semantic completion.
-function handoffPrompt() {
+function handoffPrompt(applied = false) {
   const target = currentRoot || '<项目路径>';
+  const pinned = toolVersion ? 'ai-code-governance@' + toolVersion : 'ai-code-governance';
+  // Before apply the agent previews and applies the saved plan. After apply that step is done, so
+  // the prompt must not send it back through init or the owner loops on the preview button.
+  const next = applied
+    ? ['治理框架已应用。先运行 aicg check . --enforce 确认现状；需要增量更新治理文件时运行 aicg sync .（不要重新 init）。']
+    : [
+        '按项目里的 aicg.config.json 预览再应用：',
+        '  aicg init . --config aicg.config.json --dry-run',
+        '  确认后用同一个精确 planHash 应用（内部用哈希审批即可，不要贴哈希给我）',
+        '若 aicg 不在 PATH，先用固定版本引导：npm exec --yes --package=' + pinned + ' -- aicg ...',
+      ];
   return [
-    '用 aicg 为当前项目生成治理框架（项目：' + target + '）。',
-    '按项目里的 aicg.config.json 执行；需要我确认或选择时再问我。不要修改业务代码。',
-    '问我时用业务语言：说清楚「要改什么、对我有什么影响、有什么风险」，给 2-3 个选项；不要出现 planHash、manifest、adaptiveDecisions 这类内部名词或哈希。',
+    '用 aicg 在这个项目完成 AI 治理框架（工作目录：' + target + '）。',
+    '先读 AGENTS.md 和 docs/WORKFLOW.md，按项目自己的规则执行。',
+    '只动治理层：AGENTS.md、docs/ai/**、.ai-governance/**；客户端适配器只能由 aicg sync 生成。不要修改业务代码，不要删除历史种子或用户文件。',
+    ...next,
+    '生成器只给骨架，请用代码与测试证据补成真实内容：',
+    '  - 必须问我确认业务不变式（domainConstraints）；不要从代码结构推断业务规则',
+    '  - 补全每个开发单元的开发文档与 Memory，逐条引用源码或测试路径；无法证明的标 unverified 或记为 gap',
+    '  - 项目 Skill 只作为候选提出，只有我明确 add 才采纳',
+    '只在这四件事上问我：业务不变式、技术栈取舍、候选 Skill 的 add/defer/reject、是否清理历史文件。',
+    '完成前运行 aicg check . --enforce 并如实报告；没有真正执行或验证的项不要写成通过。',
+    '问我时用业务语言：说清「要改什么、对我有什么影响、有什么风险」，给 2-3 个选项。',
   ].join('\n');
 }
-function showHandoff() {
+function showHandoff(applied = false) {
   const box = $('handoff'); const text = $('handoff-text');
   if (!box || !text) return;
-  text.value = handoffPrompt();
+  const note = box.querySelector('p');
+  if (note) note.textContent = applied
+    ? '治理框架已应用。把下面这句发给你的 AI 编程助手，让它按代码与测试证据补全业务不变式、开发文档和项目 Skill：'
+    : '配置已保存。把下面这句发给你的 AI 编程助手，让它预览、应用并完善治理框架：';
+  text.value = handoffPrompt(applied);
   box.hidden = false;
+}
+function hideHandoff() { const box = $('handoff'); if (box) box.hidden = true; }
+
+// The plan is applied, so the preview/apply loop is over. Hide those controls and offer the next
+// step: hand the applied framework to an AI to complete with code-backed evidence.
+function markApplied() {
+  previewHash = null;
+  $('apply').hidden = true;
+  $('apply').disabled = true;
+  const previewButton = $('save-preview');
+  if (previewButton) previewButton.hidden = true;
+  showHandoff(true);
 }
 
 $('family-scope')?.addEventListener('change', invalidate);
@@ -814,13 +870,16 @@ $('apply').addEventListener('click', () => action(async () => {
   if (!previewHash || !window.confirm('确认将计划 ' + previewHash + ' 应用到当前项目？')) return;
   const hash = previewHash; invalidate();
   setApplying(true);
+  let applied = false;
   try {
     const result = await api('apply', { planHash: hash, members: familyMembers() ?? undefined });
     const review = result.governanceReview;
     message(review
       ? '治理文件已应用并通过结构校验。独立复核：' + review.status + '；证据评分：' + review.score + '/100。报告：' + review.reportPath + '。'
       : '治理文件已应用，项目校验通过。');
+    applied = true;
   } finally { setApplying(false); }
+  if (applied) markApplied();
 }));
 $('download').addEventListener('click', () => action(async () => {
   const config = collect();

@@ -32,18 +32,82 @@ function resolveGitRepository(target) {
   return path.resolve(gitRoot);
 }
 
-// The project flow writes its human-readable plan digest into the flow ledger. Binding it
-// into the task approval makes a plan change invalidate a prior approval, exactly like a
-// change digest does. Absent or malformed flow state simply binds nothing.
-function readFlowPlanDigest(root) {
+const FLOW_HASH = /^[a-f0-9]{64}$/;
+
+/** The generator writes only an empty baseline; the executing side owns this seed ledger. */
+function readFlowState(root) {
   try {
     const relative = readCanonicalPath(root, 'docs/ai/flow-state.json');
-    const state = readJson(path.join(root, relative));
-    const digest = state ? state.plan && state.plan.digest : null;
-    return typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest) ? digest : null;
+    return readJson(path.join(root, relative));
   } catch {
     return null;
   }
+}
+
+function flowDocument(root, label, entry) {
+  if (!entry || typeof entry !== 'object') return { gap: `flow ${label} record is missing.` };
+  const relative = entry.path;
+  if (typeof relative !== 'string' || !isSafeRelative(relative) || normalizeRelative(relative) !== relative) return { gap: `flow ${label}.path must be a safe repository-relative path.` };
+  let bytes;
+  try {
+    assertNoLinkAncestor(root, relative);
+    bytes = fs.readFileSync(path.join(root, relative));
+  } catch {
+    return { gap: `flow ${label} document ${relative} does not exist or is unreadable.` };
+  }
+  if (!FLOW_HASH.test(entry.digest ?? '')) return { gap: `flow ${label}.digest must be the SHA-256 of ${relative}.` };
+  if (sha256(bytes) !== entry.digest) return { gap: `flow ${label}.digest does not match the current ${relative} content.` };
+  return { record: { path: relative, digest: entry.digest } };
+}
+
+/**
+ * L2/L3 delivery must bind the requirement and the development plan the workflow produced.
+ * The plan digest used to be optional; it is now required, and both referenced documents
+ * must exist with a digest that matches their current bytes. The digest is the SHA-256 of
+ * the file content; the executing side owns the ledger, so a stale digest is a real gap.
+ */
+/**
+ * L3 approves a design step, so the flow ledger must record that decision instead of letting the
+ * approval id stand alone. L2 keeps the design slot optional, and a repository with no frontend
+ * page records the explicit `not-needed` decision rather than being forced into a design.
+ */
+function flowDesign(required, state) {
+  if (!required) return { decision: null, gaps: [] };
+  const design = state?.design;
+  if (!design || typeof design !== 'object') {
+    return { decision: null, gaps: ['L3 delivery requires a recorded design decision in the flow ledger (design.status).'] };
+  }
+  const allowed = ['not-needed', 'default', 'chosen'];
+  if (!allowed.includes(design.status)) {
+    return { decision: null, gaps: [`flow design.status must be one of ${allowed.join(', ')}; record the design decision before completion.`] };
+  }
+  if (design.status === 'chosen' && (!Array.isArray(design.proposals) || design.proposals.length === 0)) {
+    return { decision: null, gaps: ['flow design.status is "chosen" but design.proposals is empty; record the three drafts and the chosen one.'] };
+  }
+  return { decision: { status: design.status, proposals: design.proposals ?? [] }, gaps: [] };
+}
+
+function evaluateFlowEvidence(root, { required, taskLevel = null }) {
+  const evidence = { required, status: required ? 'blocked' : 'not-required', gaps: [], requirement: null, plan: null, report: null, design: null };
+  if (!required) return evidence;
+  const state = readFlowState(root);
+  if (!state || typeof state !== 'object') {
+    evidence.gaps.push('L2/L3 delivery requires docs/ai/flow-state.json binding an approved requirement and development plan.');
+    return evidence;
+  }
+  const gaps = [];
+  const requirement = flowDocument(root, 'requirement', state.requirement);
+  const plan = flowDocument(root, 'plan', state.plan);
+  const report = flowDocument(root, 'report', state.report);
+  if (requirement.gap) gaps.push(requirement.gap); else evidence.requirement = requirement.record;
+  if (plan.gap) gaps.push(plan.gap); else evidence.plan = plan.record;
+  if (report.gap) gaps.push(report.gap); else evidence.report = report.record;
+  if (!plan.gap && !FLOW_HASH.test(state.plan.planHash ?? '')) gaps.push('flow plan.planHash must be the approved SHA-256.');
+  const design = flowDesign(taskLevel === 'L3', state);
+  if (design.gaps.length) gaps.push(...design.gaps); else evidence.design = design.decision;
+  evidence.gaps = gaps;
+  evidence.status = gaps.length === 0 ? 'satisfied' : 'blocked';
+  return evidence;
 }
 
 function hookPathFor(root) {
@@ -412,13 +476,15 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     if (existing && stableJson(existing) !== stableJson(boundary)) professionalContext.professionalGap = 'Work-unit cannot redefine the approved project professional boundary.';
     if (!existing) professionalBoundaries.push(boundary);
   }
+  const effectiveLevel = taskRoute.declaredLevel ?? taskRoute.minimumLevel;
+  const flow = evaluateFlowEvidence(scan.root, { required: config?.features?.projectFlow !== false && ['L2', 'L3'].includes(effectiveLevel), taskLevel: effectiveLevel });
   const taskApproval = evaluateTaskApproval(scan.root, {
     taskLevel: taskLevel ?? taskRoute.minimumLevel, reviewMode, plannedPaths: paths, approvalEvidence, approve,
     changeDigest: completionChangeDigest(gitRoot, scan.root, paths, mode, approvalEvidence, workUnitRelative),
     ...professionalContext,
     professionalBoundaries,
     workUnitDigest: unit ? workUnitPlanDigest(unit) : null,
-    planDigest: readFlowPlanDigest(scan.root),
+    planDigest: flow.plan?.digest ?? null,
     confirmedRiskSignals,
     reviewEvidence: { confirmedRisk: confirmedRiskSignals.length > 0, publicContract: confirmedRiskSignals.includes('public-api'), externalAction: confirmedRiskSignals.includes('external-side-effect') },
     trustedBehaviorChange,
@@ -438,7 +504,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     workUnit.recordedEvidence = recordWorkUnitVerification(scan.root, memoryScan, unit, projectVerification);
     workUnit.recordedResults = projectVerification.qaResults;
   }
-  const ok = routeAccepted && taskApproval.ok && workUnit.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked';
+  const ok = routeAccepted && taskApproval.ok && workUnit.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked' && flow.status !== 'blocked';
   const productionReadiness = evaluateProductionReadiness(scan);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
   const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
@@ -459,6 +525,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     ok,
     taskRoute,
     taskApproval,
+    flow,
     memory,
     workUnit,
     productionReadiness,

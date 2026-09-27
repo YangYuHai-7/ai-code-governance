@@ -7,7 +7,10 @@ import { assertNoLinkAncestor } from '../../adapters/filesystem/repository-state
 import { writeAtomicFile } from '../../adapters/filesystem/files.mjs';
 
 const REPORT_PATH = 'reports/aicg/latest-independent-review.json';
-const SKIP_DIRECTORIES = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage']);
+// Build, dependency and IDE output never carries governance, and a large monorepo can hold tens
+// of thousands of those files. Excluding them keeps the review inventory meaningful; `bin` is
+// deliberately NOT skipped because it can hold source (this tool's own CLI lives there).
+const SKIP_DIRECTORIES = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', 'target', 'out', 'obj', '.gradle', '.idea', '.vscode', '.venv', 'venv', '__pycache__', '.pytest_cache', '.dart_tool', 'Pods', '.terraform', '.turbo', '.cache']);
 const DIMENSIONS = ['completeness', 'stackAlignment', 'architecture', 'agentRouting', 'evidence'];
 const MAX_FILES = 20_000;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -40,21 +43,24 @@ export function governedArtifactSnapshot(root) {
 }
 
 // Snapshot all repository-local files outside generated reports, including existing dirty files.
-function workspaceSnapshot(root) {
+// A very large tree must bound the sample instead of aborting the review: the reviewer runs under
+// a read-only sandbox, which is the enforcement, and this snapshot is corroborating evidence.
+export function workspaceSnapshot(root, limit = MAX_FILES) {
   const entries = [];
+  let complete = true;
   function walk(dir, relative = '') {
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
       const name = relative ? `${relative}/${item.name}` : item.name;
       if (name === 'reports/aicg' || (item.isDirectory() && SKIP_DIRECTORIES.has(item.name))) continue;
       if (item.isSymbolicLink()) { entries.push({ path: name, type: 'link', target: fs.readlinkSync(path.join(dir, item.name)) }); continue; }
-      if (item.isDirectory()) { walk(path.join(dir, item.name), name); continue; }
+      if (item.isDirectory()) { walk(path.join(dir, item.name), name); if (!complete) return; continue; }
       if (!item.isFile()) continue;
       entries.push({ path: name, type: 'file', sha256: digestFile(path.join(dir, item.name)) });
-      if (entries.length > MAX_FILES) throw new Error('Review workspace exceeds file inventory limit.');
+      if (entries.length >= limit) { complete = false; return; }
     }
   }
   walk(root);
-  return new Map(entries.map((entry) => [entry.path, JSON.stringify(entry)]));
+  return { complete, limit, entries: new Map(entries.map((entry) => [entry.path, JSON.stringify(entry)])) };
 }
 
 function changedPaths(before, after) {
@@ -102,7 +108,7 @@ function writeReport(root, report) {
 export function runIndependentReview(target, options = {}) {
   const root = fs.realpathSync(target);
   const snapshot = governedArtifactSnapshot(root);
-  const before = workspaceSnapshot(root);
+  const before = workspaceSnapshot(root, options.maxFiles ?? MAX_FILES);
   const roles = reviewRoles(options.lifecycle ?? 'greenfield', options.roles);
   const selected = options.selectedAgents ?? ['codex'];
   const isAvailable = options.commandExists ?? commandExists;
@@ -131,8 +137,12 @@ export function runIndependentReview(target, options = {}) {
     try { result = runner('codex', args, { cwd: root, encoding: 'utf8', timeout: options.timeoutMs ?? 300_000, maxBuffer: 4 * 1024 * 1024 }); }
     catch (error) { result = { status: null, error }; }
     report.process = { status: result.error || result.status !== 0 ? 'failed' : 'completed', exitCode: result.status ?? null, error: result.error?.message ?? null };
-    const after = workspaceSnapshot(root);
-    report.unexpectedChanges = changedPaths(before, after);
+    const after = workspaceSnapshot(root, options.maxFiles ?? MAX_FILES);
+    report.workspaceSnapshot = { complete: before.complete && after.complete, limit: before.limit, observed: Math.max(before.entries.size, after.entries.size) };
+    report.unexpectedChanges = changedPaths(before.entries, after.entries);
+    if (!report.workspaceSnapshot.complete) {
+      report.boundaries.push('Workspace inventory is bounded at ' + before.limit + ' files; the change check covers the observed subset while the read-only sandbox remains the enforcement.');
+    }
     if (report.unexpectedChanges.length) {
       report.status = 'unsafe-changes';
       report.reason = 'The reviewer changed repository files; review acceptance is rejected. Changes were preserved for inspection.';

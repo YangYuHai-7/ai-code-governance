@@ -24,6 +24,7 @@ export function projectFlowLedger(config) {
     requirement: { path: null, digest: null },
     design: { status: 'not-needed', proposals: [] },
     plan: { path: null, digest: null, planHash: null },
+    report: { path: null, digest: null },
     review: { mode: null, participants: [] },
     delivery: { ledger: 'docs/ai/delivery-loop.json' },
     classification: { business: null, by: null, reason: null },

@@ -91,6 +91,20 @@ function yamlTopLevelBlock(content, key) {
 }
 
 
+function ensureContextBudget(content, desired) {
+  const desiredBudget = yamlTopLevelBlock(desired, 'context_budget');
+  if (!desiredBudget) return content;
+  const currentBudget = yamlTopLevelBlock(content, 'context_budget');
+  if (currentBudget === desiredBudget) return content;
+  const newline = content.includes('\r\n') ? '\r\n' : '\n';
+  if (currentBudget) return content.replace(currentBudget.replaceAll('\n', newline), desiredBudget.replaceAll('\n', newline));
+  const lines = content.split(/\r?\n/);
+  const baseIndex = lines.findIndex((line) => line === 'base:');
+  if (baseIndex === -1) return content;
+  lines.splice(baseIndex, 0, ...desiredBudget.split('\n'));
+  return lines.join(newline);
+}
+
 function recognizedLegacyBusinessProfile(profile) {
   const lines = profile?.split(/\r?\n/) ?? [];
   const standardPrefix = [
@@ -284,7 +298,7 @@ function mergeLegacyContextMapSeed(current, desired, options = {}) {
     const legacyImplementation = yamlProfileBlock(current, 'implementation');
     const legacyReview = yamlProfileBlock(current, 'review');
     if (!legacyImplementation || !legacyReview || !currentRelease) {
-      if (options.adoptForeign) return appendRequiredIncrementalLayout(current, desired);
+      if (options.adoptForeign) return ensureContextBudget(appendRequiredIncrementalLayout(current, desired), desired);
       throw new Error(`${CONTEXT_MAP_PATH}: unrecognized legacy profile layout is not safe to merge`);
     }
     if (!canonicalPathVariants('docs/ai/release-acceptance-policy.json').some((route) => currentRelease.includes(`      - ${route}`))) {
@@ -312,7 +326,8 @@ function mergeLegacyContextMapSeed(current, desired, options = {}) {
     lines.splice(profilesStart + 1, 0, ...requiredOrdinary.split('\n'), ...requiredBehavior.split('\n'));
     lines.splice(profilesStart, 0, ...requiredBase.split('\n'));
     const rebuilt = `${lines.join(newline).replace(new RegExp(`${newline}+$`), '')}${newline}`;
-    return options.migration === true ? migrateGeneratedRoutes(rebuilt, desired) : rebuilt;
+    const rebuiltWithBudget = ensureContextBudget(rebuilt, desired);
+    return options.migration === true ? migrateGeneratedRoutes(rebuiltWithBudget, desired) : rebuiltWithBudget;
   }
 
   const desiredRelease = yamlProfileBlock(desired, 'release');
@@ -325,7 +340,8 @@ function mergeLegacyContextMapSeed(current, desired, options = {}) {
   const merged = mergeConditionalSeedRoutes(current, desired);
   // Only an explicit footprint migration rewrites generated routes to their compact form.
   // Ordinary sync preserves the recorded layout, including a legacy base route.
-  return options.migration === true ? migrateGeneratedRoutes(merged, desired) : merged;
+  const mergedWithBudget = ensureContextBudget(merged, desired);
+  return options.migration === true ? migrateGeneratedRoutes(mergedWithBudget, desired) : mergedWithBudget;
 }
 
 function trustedLegacyManifest(root, manifest) {

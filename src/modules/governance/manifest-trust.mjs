@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { CONFIG_PATH, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION, TEMPLATE_VERSION, TOOL_NAME, TOOL_VERSION } from '../../constants.mjs';
-import { isSafeRelative, sha256 } from '../../shared/index.mjs';
+import { adapterSkillSuffix, isSafeRelative, sha256 } from '../../shared/index.mjs';
 import { assertNoLinkAncestor } from '../../preconditions.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { declaredSkillDirectories, loadCapabilityRegistry } from '../../catalogs/index.mjs';
@@ -191,12 +191,21 @@ function supportedSkillDefinitions(root, manifest) {
   // which silently disables prune authority for the whole repository.
   const adapterDirs = declaredSkillDirectories();
   const adapters = (source, kind) => {
-    const suffix = source.slice('docs/ai/skills/'.length);
-    for (const directory of adapterDirs) add({ path: `${directory}/${suffix}`, kind, source });
+    const suffix = adapterSkillSuffix(source);
+    // Recognize the current one-level projection and the legacy grouped projection an earlier
+    // template wrote, so ordinary zero-delete sync keeps prune authority over both.
+    const legacy = source.slice('docs/ai/skills/'.length);
+    for (const directory of adapterDirs) {
+      add({ path: `${directory}/${suffix}`, kind, source });
+      if (legacy !== suffix) add({ path: `${directory}/${legacy}`, kind, source });
+    }
   };
   for (const pack of loadCapabilityRegistry().packs) adapters(`docs/ai/skills/${pack.id}/SKILL.md`, 'adapter-skill');
   adapters(BUSINESS_CONSTRAINT_SKILL_PATH, 'adapter-skill');
   adapters(BROWNFIELD_ENRICHMENT_SKILL, 'adapter-skill');
+  // The discovery Skill is the first hop of the adaptive chain. Its adapter must be trusted, or
+  // fail-closed prune authority is lost for the whole repository.
+  adapters('docs/ai/skills/skill-discovery/SKILL.md', 'adapter-skill');
   for (const standard of loadTechnicalStandardRegistry().standards) {
     const canonical = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
     add({ path: canonical, kind: 'technical-standard-skill', source: 'technical-standard-registry' });
@@ -233,6 +242,7 @@ function supportedSkillDefinitions(root, manifest) {
       const memory = scanProjectMemoryFacts(scan);
       for (const artifact of buildProjectConventionArtifacts(config, scan, memory).artifacts.filter((item) => item.kind === 'project-convention-skill')) {
         add(artifact, sha256(remapContentPaths(artifact.content, footprint)));
+        adapters(artifact.path, 'adapter-skill');
       }
     } catch { /* Invalid or stale convention evidence cannot manufacture a supported definition. */ }
   }
@@ -297,7 +307,11 @@ function hasKnownManagedPath(entry, definitions) {
   // listing each `(client, pack)` pair explicitly.
   if (entry.kind === 'adapter-skill' && typeof entry.source === 'string'
     && entry.source.startsWith('docs/ai/skills/') && entry.source.endsWith('/SKILL.md')) {
-    return declaredSkillDirectories().some((directory) => entry.path === `${directory}/${entry.source.slice('docs/ai/skills/'.length)}`);
+    // Accept the current flat projection and the legacy grouped projection an earlier template
+    // wrote, so ordinary zero-delete sync keeps prune authority over both.
+    const suffix = adapterSkillSuffix(entry.source);
+    const legacy = entry.source.slice('docs/ai/skills/'.length);
+    return declaredSkillDirectories().some((directory) => entry.path === `${directory}/${suffix}` || entry.path === `${directory}/${legacy}`);
   }
   return hasSupportedSkillDefinition(entry, definitions);
 }

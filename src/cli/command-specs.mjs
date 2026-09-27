@@ -29,6 +29,8 @@ export const COMMAND_FLAGS = Object.freeze({
   'release-check': new Set(['type', 'evidence', 'replay', 'approve', 'json', 'enforce', 'help']),
   request: new Set(['text', 'config', 'approve', 'dry-run', 'json', 'clients', 'locale', 'enforce', 'help']),
   route: new Set(['text', 'paths', 'task-kind', 'bugfix', 'json', 'help']),
+  flow: new Set(['text', 'paths', 'task-kind', 'json', 'help']),
+  telemetry: new Set(['task-level', 'json', 'help']),
   help: new Set(['locale', 'help']),
 });
 

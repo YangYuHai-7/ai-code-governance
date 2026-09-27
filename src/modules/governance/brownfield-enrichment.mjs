@@ -23,7 +23,7 @@ function enrichmentBody(config, zh) {
     t('不推断业务规则；不确定项记为 gap，不得编造。', 'Never infer business rules; record unknowns as gaps instead of inventing them.'),
   ];
   const flow = [
-    t('读取 .ai-governance/config.json 的 features.brownfieldEnrichment（ask/on/off）。', 'Read features.brownfieldEnrichment (ask/on/off) from .ai-governance/config.json.'),
+    t('本项目当前的丰富化策略：' + state + '（ask/on/off）。', 'The enrichment policy recorded for this project is ' + state + ' (ask/on/off).'),
     t('若为 ask 且 brownfieldEnrichmentDecision 为空：只问一次「是否现在把现有业务行为整理进 Memory、补全开发文档并生成开发 Skill？」。', 'When ask and brownfieldEnrichmentDecision is empty: ask once whether to record existing business behavior into Memory, complete the development docs and generate project Skills.'),
     t('把答复写入 brownfieldEnrichmentDecision（status/decidedBy/decidedAt/evidenceHash），此后不再询问。', 'Write the answer into brownfieldEnrichmentDecision (status/decidedBy/decidedAt/evidenceHash) and never ask again.'),
     t('若为 on：运行 aicg enrich <path>，按开发单元补全业务 Memory 与开发文档。', 'When on: run aicg enrich <path> to complete business Memory and development documentation per unit.'),
@@ -34,7 +34,7 @@ function enrichmentBody(config, zh) {
     t('需要专业判断时标记 gap 并升级给负责人。', 'When professional judgement is required, mark a gap and escalate to the owner.'),
   ];
   const boundary = t('生成的业务内容在人工复核前保持 unverified；工具只保证结构、证据绑定与可追溯，不保证业务语义正确。', 'Generated business content stays unverified until human review; the tool guarantees structure, evidence binding and traceability, never business-semantic correctness.');
-  const sources = ['`.ai-governance/config.json`', '`docs/ai/development/index.json`', '`docs/memory/INDEX.json`'];
+  const sources = ['`docs/ai/development/index.json`', '`docs/memory/INDEX.json`'];
   const matrix = [
     '| ' + t('场景', 'Scenario') + ' | ' + t('期望结果', 'Expected result') + ' | ' + t('命令', 'Command') + ' |',
     '| --- | --- | --- |',

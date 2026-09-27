@@ -90,6 +90,13 @@ function verificationCommandEvidence(scan, command) {
   };
 }
 
+/** Concrete trigger scope: the neighboring directories that actually hold the evidence. */
+function concreteScope(paths, limit = 3) {
+  const dirs = [...new Set(paths.map((relative) => `${path.posix.dirname(relative)}/`))].sort();
+  const shown = dirs.slice(0, limit).join(', ');
+  return dirs.length > limit ? `${shown}, …` : shown;
+}
+
 function projectLayoutCandidate(scan) {
   const sourceFiles = scan.files
     .filter((file) => file.type === 'file' && file.contentScannable !== false)
@@ -111,7 +118,7 @@ function projectLayoutCandidate(scan) {
       kind: 'project-layout',
       skill: `docs/ai/skills/project-conventions/${repository}-layout/SKILL.md`,
       label: 'project layout',
-      trigger: `Use when adding or moving production code in ${scan.projectName}.`,
+      trigger: `Use when adding or moving production code under ${concreteScope(evidencePaths)} in ${scan.projectName}.`,
       scope: ['.'],
       purpose: 'Preserve the project-local source layout after owner review.',
       why: `${observations.length} recurring source roles are visible in the current repository tree; these are observations, not inferred business rules.`,
@@ -147,7 +154,7 @@ function projectSurfaceCandidates(scan, layout) {
         surface: observation.id,
         label: observation.label,
         skill: `docs/ai/skills/project-conventions/${repository}-${observation.id}/SKILL.md`,
-        trigger: `Use when changing ${observation.label} in ${scan.projectName}.`,
+        trigger: `Use when changing ${observation.label} under ${concreteScope(evidencePaths)} in ${scan.projectName}.`,
         scope: evidencePaths,
         purpose: `Preserve the observed ${observation.label} placement and neighboring implementation shape after owner review.`,
         why: `${observation.count} files match this source role; only the listed examples are evidence, and no business semantics are inferred.`,
@@ -229,7 +236,15 @@ export function buildProjectConventionArtifacts(config, scan, memory) {
     && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
   const kept = discovery.candidates.filter((candidate) => !isRejected(candidate));
   const discoveryKept = { ...discovery, candidates: kept };
-  const artifacts = kept.map((candidate) => {
+  // Once an evidence-bound adaptive decision exists, only an `add` receipt materializes a
+  // Skill. Deferred and unreceipted candidates stay in docs/ai/project-conventions.json so
+  // the owner can still adopt them later, but they no longer appear as Skills an agent loads.
+  const adaptive = config.adaptiveDecisions !== undefined;
+  const isAdded = (candidate) => receipts.some((entry) => entry.id === candidate.id
+    && entry.action === 'add'
+    && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
+  const emitted = adaptive ? kept.filter(isAdded) : kept;
+  const artifacts = emitted.map((candidate) => {
     const zh = config.artifactLanguage === 'zh-CN';
     const receipt = config.adaptiveDecisions?.skills?.find((entry) => entry.id === candidate.id && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate));
     const adopted = receipt?.action === 'add';
@@ -244,7 +259,7 @@ export function buildProjectConventionArtifacts(config, scan, memory) {
       const incorrectShape = surfaceIncorrectShape(primaryEvidence, candidate.label);
       const content = `---
 name: ${candidate.id}
-description: ${zh ? `修改 ${scan.projectName} 的${candidate.label}时，评审并应用这个证据绑定的项目表面约定。` : candidate.trigger}
+description: ${zh ? `修改 ${scan.projectName} 的${candidate.label}时使用；证据路径：${concreteScope(candidate.evidencePaths)}（\`${candidate.id}\`）。` : candidate.trigger}
 ---
 
 # ${scan.projectName}: ${candidate.label}
@@ -318,13 +333,13 @@ ${candidate.evidencePaths.map((relative) => `- \`${relative}\``).join('\n')}
 ## Sources
 
 - \`docs/ai/project-conventions.json\` — ${zh ? '候选目录与证据摘要' : 'candidate catalog and evidence digests'}.
-- \`.ai-governance/config.json\` — ${zh ? '证据绑定的负责人决定' : 'evidence-bound owner decision'}.
+- ${zh ? '证据绑定的 add/defer/reject 负责人回执（按当前证据哈希匹配）' : 'The evidence-bound add/defer/reject owner receipt, matched by the current evidence hash'}.
 
 <!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->
 `;
       // Conventions describe how code should be written in a surface, so they follow the
       // implementation profile: concrete correct and incorrect shapes are required, not optional.
-      assertSkillQuality(content, { profile: 'implementation', id: candidate.id });
+      assertSkillQuality(content, { profile: 'implementation', id: candidate.id, requireScope: true });
       return { path: candidate.skill, ownership: adopted ? 'full' : 'seed', kind: adopted ? 'project-convention-skill' : 'project-convention-candidate', source: 'project-convention-evidence', adopted, content };
     }
     // Project-layout renders through the shared surface template above so both convention kinds
@@ -340,7 +355,7 @@ description: ${zh ? `修改 ${scan.projectName} 的源码布局、分层或模�
 
 # ${zh ? `${scan.projectName} 项目约定` : `${scan.projectName} project conventions`}
 
-${zh ? `状态：${adopted ? '所有者已批准为新代码标准' : '基于证据的候选，尚未采纳'}。权威决定保存在 .ai-governance/config.json 的 adaptiveDecisions.skills 中。本 Skill 不推断业务规则。` : `Status: ${adopted ? 'owner-approved for new code' : 'evidence-backed candidate, not adopted'}. The authoritative decision is stored in adaptiveDecisions.skills in .ai-governance/config.json. This Skill does not infer business rules.`}
+${zh ? `状态：${adopted ? '所有者已批准为新代码标准' : '基于证据的候选，尚未采纳'}。权威决定来自 adaptiveDecisions.skills 中证据绑定的 add/defer/reject 负责人回执（按当前证据哈希匹配）。本 Skill 不推断业务规则。` : `Status: ${adopted ? 'owner-approved for new code' : 'evidence-backed candidate, not adopted'}. The authoritative decision is the evidence-bound add/defer/reject receipt in adaptiveDecisions.skills, matched by the current evidence hash. This Skill does not infer business rules.`}
 
 ## ${zh ? '何时使用' : 'When to use'}
 
@@ -394,29 +409,26 @@ ${zh ? '证据或命令来源变化后，当前决定立即失效，必须重新
       staleOnChange: '任一来源摘要变化都会使 add/defer/reject 回执失效；必须根据新证据重新决策。',
     } : candidate;
     return { path: candidate.skill, ownership: adopted ? 'full' : 'seed', kind: adopted ? 'project-convention-skill' : 'project-convention-candidate', source: 'project-convention-evidence', adopted,
-      content: `---\nname: ${candidate.id}\ndescription: ${zh ? '仅在修改证据路径中的 HTTP 客户端调用且审批有效时，评审此项目约定候选。' : candidate.trigger}\n---\n\n# ${zh ? '项目约定候选' : 'Project convention candidate'}\n\n${zh
+      content: `---\nname: ${candidate.id}\ndescription: ${zh ? '修改 ' + candidate.label + ' 时使用；证据路径：' + concreteScope(candidate.evidencePaths) + '。' : candidate.trigger}\n---\n\n# ${zh ? '项目约定候选' : 'Project convention candidate'}\n\n${zh
         ? `状态：${adopted ? '所有者已批准为新代码标准' : '候选，尚未采纳'}。add/defer/reject 决策必须绑定证据；不得自动执行或提升。`
-        : `Status: ${adopted ? 'owner-approved for new code' : 'candidate, not adopted'}. Bind add/defer/reject decisions to evidence; never execute or promote automatically.`}\n\n${zh ? '决策来源：以 .ai-governance/config.json 中证据绑定的 adaptiveDecisions.skills 回执为准；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound adaptiveDecisions.skills receipt in .ai-governance/config.json is authoritative; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Approved new-code decisions\n\n${adopted ? (zh ? '- 新代码应优先沿用上述相邻调用风格；不得据此迁移既有代码或推断业务语义。' : '- New code should prefer the neighboring observed call style; this does not authorize existing-code migration or imply business semantics.') : (zh ? '- 无；当前证据尚未获得 add 回执。' : '- None; the current evidence has no add receipt.')}\n\n## Evidence\n\n- ${zh ? '修改下列文件中的调用前，先确认相邻调用仍使用同一风格。' : 'Before changing a call in the files below, confirm the neighboring calls still use the same style.'}\n${candidate.evidencePaths.map((relative) => `- ${relative}`).join('\n')}\n- ${zh ? '内容摘要保存在 docs/ai/project-conventions.json；aicg check 报告证据漂移。' : 'Content digests live in docs/ai/project-conventions.json; aicg check reports evidence drift.'}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
+        : `Status: ${adopted ? 'owner-approved for new code' : 'candidate, not adopted'}. Bind add/defer/reject decisions to evidence; never execute or promote automatically.`}\n\n${zh ? '决策来源：以 adaptiveDecisions.skills 中证据绑定的 add/defer/reject 回执为准（按当前证据哈希匹配）；此 seed 不缓存可变动作。' : 'Decision source: the evidence-bound add/defer/reject receipt in adaptiveDecisions.skills is authoritative, matched by the current evidence hash; this seed does not cache a mutable action.'}\n\n## Trigger / Scope\n\n${prose.trigger}\n\n## Purpose\n\n${prose.purpose}\n\n## Why\n\n${prose.why}\n\n## Project-local example\n\n\`\`\`javascript\n${candidate.example}\n\`\`\`\n\n## Approved new-code decisions\n\n${adopted ? (zh ? '- 新代码应优先沿用上述相邻调用风格；不得据此迁移既有代码或推断业务语义。' : '- New code should prefer the neighboring observed call style; this does not authorize existing-code migration or imply business semantics.') : (zh ? '- 无；当前证据尚未获得 add 回执。' : '- None; the current evidence has no add receipt.')}\n\n## Evidence\n\n- ${zh ? '修改下列文件中的调用前，先确认相邻调用仍使用同一风格。' : 'Before changing a call in the files below, confirm the neighboring calls still use the same style.'}\n${candidate.evidencePaths.map((relative) => `- ${relative}`).join('\n')}\n- ${zh ? '内容摘要保存在 docs/ai/project-conventions.json；aicg check 报告证据漂移。' : 'Content digests live in docs/ai/project-conventions.json; aicg check reports evidence drift.'}\n\n## Verification\n\n${prose.verificationBoundary}\n\n## Freshness\n\n${prose.staleOnChange}\n\n<!-- evidenceHash: ${adaptiveDecisionEvidenceHash(candidate)} -->\n` };
   });
   if (kept.length || discovery.gaps.length) artifacts.unshift({ path: 'docs/ai/project-conventions.json', content: stableJson(discoveryKept), ownership: 'seed', kind: 'project-convention-index', source: 'project-convention-evidence', adopted: false });
   if (artifacts.some((artifact) => artifact.adopted === true)) {
-    const adoptedIds = new Set(kept
-      .filter((candidate) => config.adaptiveDecisions?.skills?.some((entry) => entry.id === candidate.id && entry.action === 'add' && entry.evidenceHash === adaptiveDecisionEvidenceHash(candidate)))
-      .map((candidate) => candidate.id));
-    const seedConfig = {
-      ...config,
-      adaptiveDecisions: {
-        ...(config.adaptiveDecisions ?? { schemaVersion: 1, roles: [] }),
-        skills: (config.adaptiveDecisions?.skills ?? []).filter((entry) => !adoptedIds.has(entry.id)),
-      },
-    };
+    // The promotion preimage is the candidate as an un-adopted seed. Remove adaptive decisions
+    // entirely for this recursive build so it emits every kept candidate as a seed, independent
+    // of which decisions the current pass materializes.
+    const seedConfig = { ...config, adaptiveDecisions: undefined };
     const seedByPath = new Map(buildProjectConventionArtifacts(seedConfig, scan, memory).artifacts.map((artifact) => [artifact.path, artifact]));
     // The compiler remaps generated content onto the recorded footprint before writing it, so
     // the promotion preimage must be hashed after the same remap; otherwise an untouched seed
     // never matches and promotion is refused as an unowned file.
     const footprint = config.governanceFootprint ?? 'compact';
     for (const artifact of artifacts.filter((entry) => entry.adopted === true)) {
-      artifact.promotionSourceSha256 = sha256(remapContentPaths(seedByPath.get(artifact.path)?.content ?? '', footprint));
+      const precursor = seedByPath.get(artifact.path)?.content;
+      // A candidate that was never emitted as a seed has no promotion preimage; binding one
+      // would hash empty content and reject a legitimate first-time adoption.
+      if (precursor !== undefined) artifact.promotionSourceSha256 = sha256(remapContentPaths(precursor, footprint));
     }
   }
   return { ...discoveryKept, artifacts };

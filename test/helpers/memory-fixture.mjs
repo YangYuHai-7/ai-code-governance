@@ -8,7 +8,9 @@ export function write(root, relative, content) {
 }
 export function memoryFixture(context) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-memory-'));
-  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // A parallel test run can still be writing while the hook fires; retry instead of failing the
+  // run with a transient ENOTEMPTY from the cleanup itself.
+  context.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
   write(root, 'package.json', JSON.stringify({ type: 'module', dependencies: { express: '5.1.0', react: '19.0.0' } }));
   write(root, 'src/pages/Widgets.mjs', "import { listWidgets } from '../api/widgets.mjs';\nexport function Widgets() { return listWidgets(); }\n");
   write(root, 'src/api/widgets.mjs', "export function listWidgets() { return fetch('/api/widgets'); }\nexport function getWidget() { return fetch('/api/widgets/one'); }\n");

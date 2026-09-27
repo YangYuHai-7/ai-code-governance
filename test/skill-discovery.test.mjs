@@ -139,7 +139,8 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.equal(standardArtifacts.some((item) => item.path === '.ai-governance/state/agent-team.json'), true);
   assert.throws(() => buildArtifacts({ ...config, skillDiscovery: { ...config.skillDiscovery, approvalPlanHash: null } }, scan), /approval/i);
   const artifacts = buildArtifacts(config, scan);
-  assert.equal(artifacts.filter(management).length, 3);
+  // skill-discovery canonical + its client adapter + skill-index + agent-team.
+  assert.equal(artifacts.filter(management).length, 4);
   const roster = JSON.parse(artifacts.find((item) => item.path === '.ai-governance/state/agent-team.json').content);
   assert.deepEqual(roster.professionalBoundaries, config.agentTeam.professionalBoundaries);
   assert.equal(roster.teamType, 'project-ai-agent-team');
@@ -150,7 +151,7 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.ok(plan.cost.increment.bytes <= 96 * 1024);
   assert.ok(plan.cost.increment.managementProfileTokens <= 2400);
   assert.ok(plan.cost.total.files >= plan.cost.increment.files);
-  const bodies = artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path));
+  const bodies = artifacts.filter((item) => item.path.startsWith('docs/ai/skills/') && /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path));
   assert.ok(Math.ceil(bodies.reduce((sum, item) => sum + Buffer.byteLength(item.content), 0) / 4) <= 2400);
   const map = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
   assert.doesNotMatch(map.slice(map.indexOf('  ordinary:'), map.indexOf('  behavior_change:')), /skill-discovery|team-orchestrator|agent-team|skill-index/);
@@ -419,9 +420,9 @@ test('ordinary sync retains deselected managers and exact trusted prune removes 
   assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/agent-team.json')), true);
   const prune = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.equal(prune.conflicts.length, 0);
-  // The fixed team roster and team-orchestrator Skill stay by default; only the three
-  // discovery-and-dynamic-roster managers are pruned when the team is disabled.
-  assert.equal(prune.operations.filter((item) => item.remove).length, 3);
+  // The fixed team roster stays by default; the discovery Skill, its client adapter, the skill
+  // index and the dynamic roster are pruned when the team is disabled.
+  assert.equal(prune.operations.filter((item) => item.remove).length, 4);
   fs.appendFileSync(path.join(root, '.ai-governance/state/agent-team.json'), '\nuser edit\n');
   const drifted = planArtifacts(root, inactive, { allowStaleRemoval: true });
   assert.ok(drifted.conflicts.some((item) => /agent-team.*changed/.test(item)));
@@ -448,7 +449,7 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       // artifacts. The remaining Complete artifacts stay lazy until the usage profile requests
       // them. Tighten this deliberately, not by accident.
       assert.ok(transaction.operations.length <= 56, `${governanceDepth} ${artifactLanguage} operations ${transaction.operations.length}`);
-      for (const artifact of artifacts.filter((item) => /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
+      for (const artifact of artifacts.filter((item) => item.path.startsWith('docs/ai/skills/') && /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
         if (artifactLanguage !== 'en') assert.match(artifact.content, /审批/);
         assert.match(artifact.content, /planHash/);
       }

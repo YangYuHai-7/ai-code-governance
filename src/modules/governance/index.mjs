@@ -11,3 +11,4 @@ export * from './task-routing.mjs';
 export * from './task-approval.mjs';
 export * from './project-flow.mjs';
 export * from './brownfield-enrichment.mjs';
+export * from './telemetry.mjs';

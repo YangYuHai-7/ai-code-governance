@@ -211,6 +211,28 @@ test('an exact add decision safely promotes a convention seed into a routed mana
   assert.equal(checked.ok, true, JSON.stringify(checked.errors));
 });
 
+test('deferred and unreceipted candidates never materialize a Skill; add does', (t) => {
+  const root = memoryFixture(t);
+  const scan = scanProject(root);
+  const memory = scanProjectMemoryFacts(scan);
+  const candidates = discoverProjectConventionCandidates(scan, memory).candidates;
+  const candidate = candidates.find((entry) => entry.id === 'project-api-client');
+  assert.ok(candidate);
+  const base = defaultConfig(scan);
+  // Without adaptive decisions the candidate remains a visible seed (legacy repositories).
+  const legacy = buildProjectConventionArtifacts(base, scan, memory).artifacts;
+  assert.ok(legacy.some((artifact) => artifact.path === candidate.skill));
+  // A defer receipt keeps the candidate in the catalog but stops emitting the Skill file.
+  const deferred = { ...base, adaptiveDecisions: { schemaVersion: 1, skills: reconcileAdaptiveDecisions(candidates, [{ id: candidate.id, action: 'defer' }]), roles: [] } };
+  const deferredArtifacts = buildProjectConventionArtifacts(deferred, scan, memory).artifacts;
+  assert.ok(!deferredArtifacts.some((artifact) => artifact.path === candidate.skill));
+  assert.ok(deferredArtifacts.some((artifact) => artifact.path === 'docs/ai/project-conventions.json' && artifact.content.includes(candidate.id)));
+  // An add receipt emits the Skill and marks it adopted.
+  const added = { ...base, adaptiveDecisions: { schemaVersion: 1, skills: reconcileAdaptiveDecisions(candidates, [{ id: candidate.id, action: 'add' }]), roles: [] } };
+  const addedArtifact = buildProjectConventionArtifacts(added, scan, memory).artifacts.find((artifact) => artifact.path === candidate.skill);
+  assert.ok(addedArtifact);
+  assert.equal(addedArtifact.adopted, true);
+});
 test('a single-file component excerpt starts at its script block, not a long template', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-sfc-shape-'));
   const templateRows = Array.from({ length: 40 }, (_, index) => '  <div>row' + index + '</div>');
@@ -225,5 +247,27 @@ test('a single-file component excerpt starts at its script block, not a long tem
   assert.match(shape.body, /const value/);
   assert.doesNotMatch(shape.body, /^<template>/);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('a Chinese convention candidate names its evidence scope so adoption passes the quality gate', (t) => {
+  const root = memoryFixture(t);
+  const scan = scanProject(root);
+  const memory = scanProjectMemoryFacts(scan);
+  const { candidates } = discoverProjectConventionCandidates(scan, memory);
+  const candidate = candidates.find((entry) => entry.id === 'project-api-client');
+  assert.ok(candidate, 'the fixture must yield an API-client candidate');
+  const config = {
+    ...defaultConfig(scan),
+    artifactLanguage: 'zh-CN',
+    adaptiveDecisions: { schemaVersion: 1, roles: [], skills: candidates.map((entry) => ({ id: entry.id, action: 'add', evidenceHash: adaptiveDecisionEvidenceHash(entry) })) },
+  };
+  // The regression: the Chinese front-matter description carried no path or identifier, so the
+  // requireScope quality gate refused every adoption while the English one passed. This call
+  // asserts skill quality internally and must not throw.
+  const { artifacts } = buildProjectConventionArtifacts(config, scan, memory);
+  const skill = artifacts.find((entry) => entry.path === candidate.skill);
+  assert.ok(skill, 'the add receipt must materialize the adopted Skill');
+  assert.match(skill.content, /description: [^\n]*证据路径/);
+  assert.match(skill.content, /description: [^\n]*\//, 'the description must contain a concrete path');
 });
 

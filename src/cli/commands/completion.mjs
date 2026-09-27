@@ -18,6 +18,8 @@ function printCompletion(result, json) {
   for (const gap of result.taskApproval.gaps) console.log(`APPROVAL_GAP: ${gap}`);
   console.log(`work_unit=${result.workUnit.status}`);
   for (const issue of result.workUnit.issues) console.log(`WORK_UNIT_GAP: ${issue}`);
+  console.log(`flow_evidence=${result.flow?.status ?? 'missing'} requirement=${result.flow?.requirement?.path ?? 'none'} plan=${result.flow?.plan?.path ?? 'none'}`);
+  for (const gap of result.flow?.gaps ?? []) console.log(`FLOW_GAP: ${gap}`);
   if (result.stagedFiles.length > 0) console.log(`staged_files=${result.stagedFiles.join(',')}`);
   console.log(`governance=${result.governance.ok ? 'pass' : 'fail'} project_verification=${result.projectVerification.status}`);
   for (const warning of result.governance.warnings) console.warn(`WARN: ${warning}`);

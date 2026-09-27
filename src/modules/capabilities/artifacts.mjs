@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { GENERATED_MARKER } from '../../constants.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
-import { normalizeRelative, skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
+import { adapterSkillSuffix, normalizeRelative, skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
 
 function candidateSkill(capability, config) {
   if (config.artifactLanguage === 'zh-CN') return `---
@@ -141,7 +141,7 @@ export function renderCapabilityArtifacts(config, capabilities, lastHarvest) {
       kind: 'project-capability-skill',
       source: 'project-capability-harvest',
     });
-    const adapters = selectedSkillDirectories(config.clients ?? []).map((directory) => `${directory}/project/${path.basename(path.dirname(capability.skill))}/SKILL.md`);
+    const adapters = selectedSkillDirectories(config.clients ?? []).map((directory) => `${directory}/${adapterSkillSuffix(capability.skill)}`);
     for (const adapterPath of unique(adapters)) artifacts.push({
       path: adapterPath,
       content: skillAdapterContent(capability.skill, content),

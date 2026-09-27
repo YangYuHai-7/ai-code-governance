@@ -29,7 +29,7 @@
     "catalog:build": "node scripts/skill-catalog.mjs build",
     "catalog:check": "node scripts/skill-catalog.mjs check",
     "test": "node --test",
-    "test:fast": "node --test test/readme-sync.test.mjs test/args.test.mjs test/config-file-workflow.test.mjs test/configuration-web.test.mjs test/configuration-launcher.test.mjs test/onboarding-product-flow.test.mjs test/sync-prune.test.mjs test/context-budget.test.mjs test/artifact-selection.test.mjs test/task-routing.test.mjs test/execution-plan.test.mjs test/generation.test.mjs test/technical-standards.test.mjs test/architecture-boundaries.test.mjs test/public-surface-guard.test.mjs",
+    "test:fast": "node --test test/readme-sync.test.mjs test/args.test.mjs test/config-file-workflow.test.mjs test/configuration-web.test.mjs test/configuration-launcher.test.mjs test/onboarding-product-flow.test.mjs test/sync-prune.test.mjs test/context-budget.test.mjs test/artifact-selection.test.mjs test/task-routing.test.mjs test/execution-plan.test.mjs test/retired-command-output.test.mjs test/flow-evidence.test.mjs test/flow-command.test.mjs test/telemetry.test.mjs test/governance-budget.test.mjs test/governance-reachability.test.mjs test/generation-quality.test.mjs test/agent-roles.test.mjs test/independent-review.test.mjs test/empty-skill-directory.test.mjs test/generation.test.mjs test/technical-standards.test.mjs test/architecture-boundaries.test.mjs test/public-surface-guard.test.mjs",
     "test:full": "node --test --test-skip-pattern=\"repeated CLI check\" && node --test test/performance-budget.test.mjs",
     "test:perf": "node --test test/performance-budget.test.mjs",
     "test:architecture": "node --test test/architecture-boundaries.test.mjs",

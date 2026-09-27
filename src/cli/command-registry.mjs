@@ -18,6 +18,8 @@ function handler(module, exportName, argumentKeys = ['target', 'options']) {
 export const COMMAND_HANDLERS = Object.freeze({
   request: handler('./commands/request.mjs', 'requestCommand'),
   route: handler('./commands/task-plan.mjs', 'taskPlanCommand'),
+  flow: handler('./commands/flow.mjs', 'flowCommand', ['target', 'action', 'options']),
+  telemetry: handler('./commands/telemetry.mjs', 'telemetryCommand', ['target', 'action', 'options']),
   init: handler('./commands/init.mjs', 'initCommand'),
   config: handler('./commands/configuration.mjs', 'configurationCommand', ['target', 'action', 'options']),
   delivery: handler('./commands/delivery.mjs', 'deliveryCommand', ['target', 'action', 'options', 'subAction']),

@@ -279,7 +279,8 @@ for (const governanceDepth of ['complete']) {
       for (const file of ['docs/ai/README.md', 'docs/ai/context-map.yaml']) assert.equal(fs.readFileSync(path.join(f.root, file), 'utf8').includes(relative), false);
     }
     const routes = fs.readFileSync(path.join(f.root, 'docs/ai/context-map.yaml'), 'utf8');
-    assert.match(routes, /business:\n\s+- docs\/ai\/policies\/business-constraints.json/);
+    assert.match(routes, /business:\n\s+- docs\/ai\/rules\/30_business\.mdc/);
+    assert.match(routes, /- docs\/ai\/policies\/business-constraints\.json/);
     assert.match(routes, /team_orchestrator:\n\s+- \.ai-governance\/state\/agent-team\.json/);
   });
 }

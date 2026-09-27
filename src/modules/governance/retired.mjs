@@ -1,4 +1,5 @@
 import { declaredSkillDirectories, loadCapabilityRegistry } from '../../catalogs/index.mjs';
+import { loadTechnicalStandardRegistry } from '../standards/index.mjs';
 
 /**
  * First-party generated Skill families.
@@ -29,22 +30,38 @@ export const RETIRED_PROCESS_SKILL_IDS = [
 // first-party family must be added here so a leftover is recognized rather than reported as
 // user-authored executable governance.
 const FIRST_PARTY_SUFFIX_PREFIXES = [
-  'project-conventions/',
-  'standards/',
-  'project/',
+  // Current one-level client projections whose names are config-driven, so they cannot be
+  // enumerated here. `standard-` is deliberately absent: it is enumerated exactly from the
+  // packaged registry below, because a bare prefix would wrongly claim a user Skill named
+  // `standard-...` as AICG output.
+  'capability-',
+  'convention-',
   'business-constraints/',
   'brownfield-understanding/',
   'brownfield-enrichment/',
   'skill-discovery/',
+  // Legacy grouped projections an earlier template wrote; ordinary sync is zero-delete, so
+  // prune must still recognize them as AICG's own output.
+  'project-conventions/',
+  'standards/',
+  'project/',
 ];
 
-const FIRST_PARTY_SUFFIXES = new Set();
-for (const pack of loadCapabilityRegistry().packs) FIRST_PARTY_SUFFIXES.add(pack.id + '/SKILL.md');
-for (const id of RETIRED_PROCESS_SKILL_IDS) FIRST_PARTY_SUFFIXES.add(id + '/SKILL.md');
+// Computed on first use, not at module load: loading the technical-standard registry while the
+// module graph is still initializing trips its own top-level constants.
+let firstPartySuffixes = null;
+function firstPartySuffixSet() {
+  if (firstPartySuffixes) return firstPartySuffixes;
+  firstPartySuffixes = new Set();
+  for (const pack of loadCapabilityRegistry().packs) firstPartySuffixes.add(pack.id + '/SKILL.md');
+  for (const id of RETIRED_PROCESS_SKILL_IDS) firstPartySuffixes.add(id + '/SKILL.md');
+  for (const standard of loadTechnicalStandardRegistry().standards) firstPartySuffixes.add('standard-' + standard.id + '/SKILL.md');
+  return firstPartySuffixes;
+}
 
 function isFirstPartySuffix(suffix) {
   if (!suffix.endsWith('/SKILL.md')) return false;
-  if (FIRST_PARTY_SUFFIXES.has(suffix)) return true;
+  if (firstPartySuffixSet().has(suffix)) return true;
   if (suffix.startsWith('development-')) return true;
   return FIRST_PARTY_SUFFIX_PREFIXES.some((prefix) => suffix.startsWith(prefix));
 }

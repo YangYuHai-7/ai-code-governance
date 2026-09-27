@@ -52,6 +52,12 @@ export function parseArgs(argv, {
   } else if (command === 'hook') {
     action = args.shift() ?? null;
     if (!['install', 'status'].includes(action)) throw usageError('hook requires an action: install or status.');
+  } else if (command === 'flow') {
+    action = args.shift() ?? null;
+    if (!['start', 'status'].includes(action)) throw usageError('flow requires an action: start or status.');
+  } else if (command === 'telemetry') {
+    action = args.shift() ?? null;
+    if (!['record', 'status'].includes(action)) throw usageError('telemetry requires an action: record or status.');
   } else if (command === 'evidence') {
     action = args.shift() ?? null;
     if (!['record', 'status', 'export'].includes(action)) throw usageError('evidence requires an action: record, status, or export.');

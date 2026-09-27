@@ -305,12 +305,15 @@ Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as
 }
 
 function unitSkill(unit) {
+  // The root unit's path is ".", which would render a trigger no agent can match
+  // ("the . development unit"). Use the unit id as a human-readable label instead.
+  const label = unit.path === '.' ? unit.id : unit.path;
   return `---
 name: development-${unit.id}
-description: Use when changing the ${unit.path} development unit or its public contract.
+description: Use when changing the ${label} development unit or its public contract.
 ---
 
-# ${unit.path} development
+# ${label} development
 
 ## When to use
 

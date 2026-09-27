@@ -118,7 +118,6 @@ function adaptiveChoices(items, choices = []) {
 }
 
 function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
-  const baseConfig = config;
   const rememberedTeam = rememberedConfig?.agentTeam;
   if (config.agentTeam?.enabled) validateApprovedProjectAgentTeam(config.agentTeam);
   if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
@@ -225,23 +224,12 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       skillDiscovery: { enabled: true, decision: decideSkillCandidates(discovery, { selectedIds: selectedSkills, approvalPlanHash: recommended.planHash }) },
       agentTeam: buildApprovedProjectAgentTeam(team, { selectedIds: selectedRoles, approvalEvidenceId: evidenceId, activation }),
     };
-    try {
-      const approval = prepareSkillGovernancePlan(config, scan);
-      config = { ...config, skillDiscovery: { ...approval.skillDiscovery, approvalPlanHash: approval.planHash }, agentTeam: approval.agentTeam };
-    } catch (error) {
-      if (!error.budgetCost) throw error;
-      config = baseConfig;
-      summary.status = 'budget-blocked';
-      summary.budget = { proposedCost: error.budgetCost, ...(error.budgetLimits ?? { maximumFiles: 30, maximumBytes: (config.governanceDepth === 'standard' ? 96 : 128) * 1024, maximumManagementProfileTokens: 2400, maximumAlwaysRuleTokens: 256 }) };
-      summary.manualCleanup = {
-        paths: scan.files.map((entry) => entry.relative).filter((relative) => [
-          canonicalPath('docs/ai/bootstrap-prompt.md', config.governanceFootprint), 'reviews/.gitkeep', 'reports/.gitkeep', BUSINESS_CONSTRAINT_SKILL_PATH,
-          ...selectedSkillDirectories(config.clients).map((directory) => `${directory}/business-constraints/SKILL.md`),
-        ].includes(relative)),
-        authorization: 'separate-explicit-approval-required', automaticDeletion: false,
-        reason: config.artifactLanguage === 'zh-CN' ? '历史种子或漂移文件仍计入预算；先人工审查并另行批准清理，再重新预览。' : 'Retained seeds and drifted files still count toward the budget; review and separately authorize cleanup, then preview again.',
-      };
-    }
+    // Footprint overruns are advisories, not gates: they tell the owner when to split by
+    // trigger or curate, without truncating the content that makes a Skill complete. The hard
+    // floor gate is the checker's closure check against context_budget.startup_max_tokens.
+    const approval = prepareSkillGovernancePlan(config, scan);
+    if (approval.advisories.length > 0) summary.budgetAdvisories = approval.advisories;
+    config = { ...config, skillDiscovery: { ...approval.skillDiscovery, approvalPlanHash: approval.planHash }, agentTeam: approval.agentTeam };
   }
   return { config, summary, assertSourcesFresh: () => {
     if (sourceSnapshot !== stableJson(serializeSkillDiscovery(discoverSkills(discoveryInput)))) throw usageError('Adaptive Skill sources changed; preview and approve a new exact plan.');
@@ -490,7 +478,7 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     const ordinary = artifacts.filter((item) => ['AGENTS.md', 'docs/ai/rules/00_always.mdc'].includes(item.path)).map((item) => item.content);
     const contextMap = artifacts.find((item) => item.path === 'docs/ai/context-map.yaml').content;
     const ordinaryMap = contextMap.slice(0, contextMap.indexOf('profiles:')) + 'profiles:\n' + (contextMap.match(/^  ordinary:[\s\S]*?(?=^  [a-z_]+:|$(?![\s\S]))/m)?.[0] ?? '');
-    plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managementProfileTokens: 0, alwaysRuleTokens: 0 } } };
+    plan.contextCost = { ordinary: { files: 3, estimatedTokens: Math.ceil([...ordinary, ordinaryMap].join('\n').length / 4) }, management: config.skillDiscovery?.artifactPlan?.cost ?? { increment: { files: 0, bytes: 0, managementProfileTokens: 0, alwaysRuleTokens: 0 } }, advisories: adaptive.summary.budgetAdvisories ?? [] };
   }
   assertInitializationWriteBoundary(plan, config, scan);
   return { scan, config, plan, assertSourcesFresh: adaptive?.assertSourcesFresh };
@@ -711,7 +699,6 @@ export async function initCommand(target, options) {
   }
 
   if (options.approve) {
-    if (plan.adaptiveGovernance?.status === 'budget-blocked') throw usageError('Adaptive governance is budget-blocked; cleanup needs separate explicit authorization before a new preview.');
     if (options.approve !== executionPlan.planHash) throw usageError(`Approval does not match the current plan hash ${executionPlan.planHash}. Re-run init --dry-run and approve the displayed hash.`);
     // Freshness is checked once in the transaction's beforeApply callback, before any mutation.
   }

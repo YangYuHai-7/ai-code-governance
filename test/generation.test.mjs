@@ -41,7 +41,7 @@ test('Chinese artifacts localize generated body instructions across selected dep
     const artifacts = buildArtifacts(config, scan);
     const body = (relative) => artifacts.find((artifact) => artifact.path === relative)?.content;
     for (const [relative, expected] of [
-      ['AGENTS.md', /保留.*用户.*修改/],
+      ['AGENTS.md', /治理正典/],
       ['docs/ai/README.md', /本目录.*治理/],
       ['docs/ai/policies/00_always.mdc', /如实.*证据/],
       ['docs/ai/context-map.yaml', /description:.*部署.*发布/],
@@ -108,7 +108,7 @@ test('configuration defaults artifact and code documentation languages independe
   );
 });
 
-test('mutable governance state remains in managed config instead of being duplicated into the human README', (context) => {
+test('mutable governance state stays in managed config and the human README carries no evidence-plane pointer', (context) => {
   const root = fixture('managed-governance-state');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
@@ -116,7 +116,9 @@ test('mutable governance state remains in managed config instead of being duplic
   const initial = buildArtifacts(standard, scan);
   const readme = initial.find((artifact) => artifact.path === 'docs/ai/README.md');
   assert.equal(readme.ownership, 'seed');
-  assert.match(readme.content, /\.ai-governance\/config\.json/);
+  // The README is agent-visible context: it must not duplicate mutable state and must not
+  // point into the evidence plane (the config/manifest paths stay out of the loaded context).
+  assert.doesNotMatch(readme.content, /\.ai-governance\/config\.json/);
   assert.doesNotMatch(readme.content, /Repository topology at initialization|Depth: `standard`/);
   assert.equal(JSON.parse(initial.find((artifact) => artifact.path === '.ai-governance/config.json').content).governanceDepth, 'standard');
 
@@ -124,7 +126,7 @@ test('mutable governance state remains in managed config instead of being duplic
   const complete = { ...standard, governanceDepth: 'complete' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(complete, scanProject(root))));
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).governanceDepth, 'complete');
-  assert.match(fs.readFileSync(path.join(root, 'docs/ai/README.md'), 'utf8'), /\.ai-governance\/config\.json/);
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'docs/ai/README.md'), 'utf8'), /\.ai-governance\/config\.json/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 

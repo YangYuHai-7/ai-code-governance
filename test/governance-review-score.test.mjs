@@ -27,13 +27,15 @@ test('score reports missing evidence and concrete remediation without a complete
   const { root } = fixture(context);
   const result = scoreGovernanceFramework({ root, lifecycle: 'greenfield', check });
   assert.equal(result.status, 'needs-remediation');
-  // Two of the previously dead-zone criteria (`design-review`, `source-traceability`) now
-  // derive from `check.evidence.{present,reachable}`; the other four stay unverified until
-  // the owner wires up skill discovery, agent team, and brownfield memory. Baseline score
-  // therefore rises from the historical 26 to 38, not to a free pass.
-  assert.equal(result.score, 38);
+  // Only machine-derived criteria pass without evidence: managed-files (10), module-boundaries
+  // (8) and rules-reachability (8). `design-review`, `source-traceability`, `stack-skill-coverage`
+  // and `role-routing` no longer ride on a configuration flag or reachability, so an empty
+  // framework scores 26 and can never reach owner acceptance.
+  assert.equal(result.score, 26);
+  assert.equal(result.columns.structure.score, 26);
+  assert.equal(result.columns.fidelity.score, 0);
   assert.ok(result.remediation.some((item) => item.criterion === 'independent-review'));
-  assert.equal(result.dimensions.architecture.score, 15);
+  assert.equal(result.dimensions.architecture.score, 8);
 });
 
 test('passing claims require unchanged local evidence and independent review identity', (context) => {
@@ -47,13 +49,15 @@ test('passing claims require unchanged local evidence and independent review ide
   const accepted = scoreGovernanceFramework({ root, lifecycle: 'greenfield', check, proofs, review });
   assert.equal(accepted.score, 100);
   assert.equal(accepted.status, 'ready-for-owner-acceptance');
+  assert.equal(accepted.columns.fidelity.score, accepted.columns.fidelity.maximum);
   assert.equal(scoreGovernanceFramework({ root, lifecycle: 'greenfield', check, proofs, review: { ...review, reviewerAgentId: 'generator-1' } }).score, 90);
   fs.writeFileSync(path.join(root, evidence.path), 'changed');
   const drifted = scoreGovernanceFramework({ root, lifecycle: 'greenfield', check, proofs, review });
   assert.equal(drifted.status, 'needs-remediation');
-  // Drift invalidates every proof, but the two derived criteria still hold because the
-  // managed-files and reachable entrypoint signals in `check` are unchanged.
-  assert.equal(drifted.score, 38);
+  // Drift invalidates every evidence-backed proof. Only the machine-derived criteria still
+  // hold, because the managed-files, module graph and reachable entrypoint signals are unchanged.
+  assert.equal(drifted.score, 26);
+  assert.equal(drifted.columns.fidelity.score, 0);
 });
 
 test('brownfield gaps override optimistic documentation, memory, and Skill claims', (context) => {
@@ -75,8 +79,7 @@ test('evidence through a linked parent directory cannot raise a score', (context
   const linked = { path: 'linked/proof.json', sha256: sha256(fs.readFileSync(path.join(external, 'proof.json'))) };
   const result = scoreGovernanceFramework({ root, lifecycle: 'greenfield', check, proofs: { 'project-layout': { status: 'pass', evidence: [linked] } } });
   assert.equal(result.criteria.find((item) => item.id === 'project-layout').status, 'unverified');
-  // Linked-parent evidence is rejected, but the two derivable criteria (`design-review`,
-  // `source-traceability`) still ride on the unchanged `check` payload, so the baseline is
-  // 38, not the historical 26.
-  assert.equal(result.score, 38);
+  // Linked-parent evidence is rejected. Only the machine-derived criteria remain, so the
+  // baseline is 26 and the rejected proof contributes nothing.
+  assert.equal(result.score, 26);
 });

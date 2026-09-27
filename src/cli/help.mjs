@@ -24,6 +24,8 @@ For AI coding agents (drive these from the chat, not by hand):
   aicg sync [path] [--dry-run] [--force] [--migrate-links] [--prune] [--approve planHash]
   aicg doctor [path] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [path] --text <task> [--paths <relative-path,...>] [--json]
+  aicg flow <start|status> [path] [--text <task>] [--paths <relative-path,...>] [--json]
+  aicg telemetry <record|status> [path] [--task-level L0|L1|L2|L3] [--json]
   aicg delivery <name> ...   Governed delivery loop; names: work-unit, test-case, complete, hook, release-check.
   aicg --version
 
@@ -34,6 +36,8 @@ For AI coding agents (drive these from the chat, not by hand):
   sync    Regenerate managed adapters from canonical governance sources; --prune removes obsolete managed files when paired with --approve.
   doctor  Inspect the local environment and report; also covers the read-only classifications that used to live in assess / architecture / standards / team.
   route   Plan task depth and recommend approved project Agent roles without launching an Agent or editing code.
+  flow    Start or inspect the project flow ledger: record the routed task level and the requirement/plan/report evidence an L2/L3 delivery must bind.
+  telemetry  Record one gate observation in the evidence plane and report hysteresis-gated promote / tighten / widen recommendations; it never changes a rule by itself.
 
 Advanced delivery (agent runtime, optional; each name keeps its full reference below):
   aicg delivery work-unit <plan|status> [path] --work-unit <relative-json> [--json] [--enforce]
@@ -94,6 +98,8 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg sync [路径] [--dry-run] [--prune] [--approve planHash]
   aicg doctor [路径] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [路径] --text <任务> [--paths <相对路径,...>] [--json]
+  aicg flow <start|status> [路径] [--text <任务>] [--paths <相对路径,...>] [--json]
+  aicg telemetry <record|status> [路径] [--task-level L0|L1|L2|L3] [--json]
   aicg delivery <任务> ...   受治理交付闭环；任务：work-unit、test-case、complete、hook、release-check。
   aicg --version
 
@@ -102,6 +108,8 @@ export const HELP_ZH = `AI 代码治理 CLI
   sync          从治理正典重新生成客户端适配器；--prune 与 --approve 配合可清掉过期受管文件。
   doctor        检查本地环境并输出报告；同时覆盖原 assess / architecture / standards / team 的只读分类。
   route         按任务证据规划流程并建议已审批的项目 Agent 角色，不启动 Agent 或修改代码。
+  flow          启动或查看项目流程账本：记录任务分级，以及 L2/L3 交付必须绑定的需求 / plan / 测试报告证据。
+  telemetry     在证据面记录一次 gate 观测，输出带迟滞的 promote / tighten / widen 建议；它不会自行改动规则。
 
 高级交付（Agent 运行时，可选；每个任务保留下方完整说明）：
   aicg delivery work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json] [--enforce]

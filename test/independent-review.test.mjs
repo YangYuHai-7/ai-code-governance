@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { governedArtifactSnapshot, runIndependentReview } from '../src/modules/governance/independent-review.mjs';
+import { governedArtifactSnapshot, runIndependentReview, workspaceSnapshot } from '../src/modules/governance/independent-review.mjs';
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-review-test-'));
@@ -95,4 +95,42 @@ test('changed governed artifact invalidates the review digest', (t) => {
   assert.equal(result.status, 'unsafe-changes');
   assert.ok(result.unexpectedChanges.includes('docs/ai/architecture.md'));
   assert.match(result.reason, /stale/);
+});
+
+test('a workspace larger than the inventory budget is sampled instead of rejected', (t) => {
+  const root = fixture(t);
+  for (let index = 0; index < 8; index += 1) fs.writeFileSync(path.join(root, 'file-' + index + '.txt'), String(index));
+
+  // The regression: this used to throw "Review workspace exceeds file inventory limit." and abort
+  // the whole review on a large repository. It must bound the observation instead.
+  const bounded = workspaceSnapshot(root, 4);
+  assert.equal(bounded.complete, false);
+  assert.equal(bounded.limit, 4);
+  assert.ok(bounded.entries.size <= 4);
+
+  const full = workspaceSnapshot(root, 100);
+  assert.equal(full.complete, true);
+  assert.equal(full.entries.size, 12, 'the fixture has product.js, docs and config plus the eight files');
+});
+
+test('a bounded workspace still reviews and records the boundary instead of blocking', (t) => {
+  const root = fixture(t);
+  for (let index = 0; index < 8; index += 1) fs.writeFileSync(path.join(root, 'file-' + index + '.txt'), String(index));
+  const result = runIndependentReview(root, { selectedAgents: ['codex'], commandExists: () => true, runCommand: fakeCodex(response()), maxFiles: 2 });
+  assert.equal(result.workspaceSnapshot.complete, false);
+  assert.ok(result.boundaries.some((line) => line.includes('bounded at 2 files')));
+  assert.equal(result.status, 'agent-accepted');
+});
+
+test('build and dependency directories stay out of the workspace inventory', (t) => {
+  const root = fixture(t);
+  fs.mkdirSync(path.join(root, 'target', 'classes'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'target', 'classes', 'A.class'), 'compiled');
+  fs.mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules', 'pkg', 'index.js'), 'dependency');
+  const snapshot = workspaceSnapshot(root, 100);
+  assert.equal(snapshot.complete, true);
+  assert.equal(snapshot.entries.has('service.ts'), false);
+  assert.equal(snapshot.entries.has('product.js'), true);
+  assert.ok(![...snapshot.entries.keys()].some((key) => key.startsWith('target/') || key.startsWith('node_modules/')));
 });

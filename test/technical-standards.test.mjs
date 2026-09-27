@@ -88,7 +88,7 @@ test('detects a React + Mantine + NestJS technology set and generates traceable 
     'bullmq-idempotent-jobs',
   ]) {
     assert.ok(paths.has(`docs/ai/skills/standards/${id}/SKILL.md`), `missing standard Skill ${id}`);
-    assert.ok(paths.has(`.agents/skills/standards/${id}/SKILL.md`), `missing Codex adapter Skill ${id}`);
+    assert.ok(paths.has(`.agents/skills/standard-${id}/SKILL.md`), `missing one-level Codex adapter Skill ${id}`);
   }
   const integritySkill = artifacts.find((artifact) => artifact.path.endsWith('critical-api-integrity-and-replay/SKILL.md'));
   assert.match(integritySkill.content, /RFC 9421/);

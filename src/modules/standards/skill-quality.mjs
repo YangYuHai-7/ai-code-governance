@@ -75,11 +75,12 @@ function frontMatter(markdown) {
  * Audit semantic Skill structure instead of rewarding word count. The workflow
  * profile intentionally does not require code samples; implementation Skills do.
  */
-export function auditSkillQuality(markdown, { profile = 'implementation', id = '<unknown>' } = {}) {
+export function auditSkillQuality(markdown, { profile = 'implementation', id = '<unknown>', requireScope = false } = {}) {
   const issues = [];
   const metadata = frontMatter(markdown);
   if (!metadata?.name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(metadata.name)) issues.push('front matter needs a safe kebab-case name');
   if (!metadata?.description || metadata.description.length < 24) issues.push('front matter description must state a concrete trigger');
+  if (requireScope === true && !/[/`]/.test(metadata?.description ?? '')) issues.push('front matter description must name a concrete scope (a path or backticked identifier)');
 
   const required = [...REQUIRED_SECTIONS, ...(profile === 'implementation' ? IMPLEMENTATION_SECTIONS : [])];
   for (const heading of required) {

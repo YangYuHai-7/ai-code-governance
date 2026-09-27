@@ -23,15 +23,31 @@ One canonical rule source · Small context by default · Evidence before claims 
 <!-- sync:quick-start -->
 ## Quick start
 
-Pick one of two paths. Both run `aicg` directly; they differ only in who supplies the answers.
+Every path reaches the same end state — one canonical governance source plus thin Agent adapters — and differs only in who answers and who applies. Pick the one that fits how you work.
 
-**Path A — chat (no configuration file at all):** open your AI coding assistant in the project folder and tell it:
+**Path A — guided setup on a local page, then hand the finish to your AI (recommended first run):**
+
+```bash
+npm install --global ai-code-governance
+aicg config open
+```
+
+The page opens on `127.0.0.1`, runs only on your machine, and starts with a project picker. Type an absolute path, pick from **Recent**, or browse to the folder; selecting a project only scans it and writes nothing. A guided first run is four steps:
+
+1. **Confirm a few choices** — which AI tools you use, whether the project is new or already has code, how large the governance set should be, and any project convention you can state yourself. Everything else is preselected from the scan, and the page shows the detected basis.
+2. **Preview** — press **看起来没问题，去预览** ('Looks good, preview'). The page saves `aicg.config.json` and prints the exact plan: every file it would write, before anything touches disk.
+3. **Apply** — press **应用到项目** ('Apply to project') and confirm. AICG writes the governance scaffold and validates it.
+4. **Copy the prompt to your AI assistant** — once applied, the page replaces the preview with a ready-to-copy prompt under **交给 AI 助手继续** ('Hand off to your AI assistant'). Paste it into your AI coding assistant. It tells the assistant to read `AGENTS.md` and `docs/WORKFLOW.md`, change only the governance layer, replace the generated skeleton with content backed by real code and tests, ask you only the decisions you must own, and report honestly after `aicg check . --enforce`.
+
+Applying from the page is optional. Before you apply, the page also offers a prompt that asks your AI assistant to preview and apply the saved plan for you. Both orders are valid, bind the same plan, and nothing is written without an explicit confirmation.
+
+**Path B — chat (no configuration file at all):** open your AI coding assistant in the project folder and tell it:
 
 > Use the installed `aicg` CLI to set up AI code governance for this project. Run `aicg` so it scans first and asks me only the questions that require an owner decision. Preview changes before writing anything.
 
 `aicg` reads the terminal language, detects the project type and stack, then asks the few questions that need your sign-off — supported Agents, governance language, project stage, and what to do with existing code. Everything else uses scan-backed defaults. The exact plan is previewed before any file is written.
 
-**Path B — one CLI command in the terminal:**
+**Path C — one CLI command in the terminal:**
 
 ```bash
 npm install --global ai-code-governance
@@ -39,9 +55,9 @@ cd /path/to/project
 aicg
 ```
 
-Same default as Path A — guided prompts in the detected terminal language, scan-first, preview-before-write.
+Same default as Path B — guided prompts in the detected terminal language, scan-first, preview-before-write.
 
-**Path C — scripted or non-interactive (for automation):**
+**Path D — scripted or non-interactive (for automation):**
 
 ```bash
 aicg init . --yes
@@ -197,7 +213,7 @@ Every selected client reads the same canon: `docs/ai/`, `.ai-governance/config.j
 
 After the quick start, the storage backend is one `aicg.config.json` at the project root plus the generated tree under `docs/ai/` and `.ai-governance/`. Installation is **Agent-first** and **artifact-language-second** — the supported Agents are picked before the artifact language, and the stored `artifactLanguage` defaults to `en`; selecting `zh-CN` changes governance prose without changing machine identifiers. Common follow-up choices:
 
-1. **Open the local visual editor** — the page reads and writes the same `aicg.config.json`, explains each choice inline, and lets you import or export JSON for sharing.
+1. **Open the local visual editor** — the page reads and writes the same `aicg.config.json`, explains each choice inline, and lets you import or export JSON for sharing. Apply the previewed plan there, then copy the prompt it shows into your AI assistant (see [Quick start](#quick-start), Path A).
 
 ```bash
 aicg config open

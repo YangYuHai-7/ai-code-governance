@@ -14,6 +14,7 @@ import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/p
 import { memoryFixture } from './helpers/memory-fixture.mjs';
 import { scanProjectMemoryFacts, buildMemoryArtifacts } from '../src/modules/memory/index.mjs';
 import { prepareCompletionUnit } from './helpers/work-unit-fixture.mjs';
+import { satisfyFlow } from './helpers/flow-fixture.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 // Verification fixtures intentionally start nested `node --test` processes.
@@ -75,6 +76,7 @@ function initialize(root, artifactLanguage) {
 }
 
 function baseline(root) {
+  satisfyFlow(root);
   for (const args of [
     ['init'], ['config', 'user.email', 'aicg@example.test'], ['config', 'user.name', 'AICG Test'],
     ['add', '--all'], ['-c', 'core.hooksPath=/dev/null', 'commit', '--allow-empty', '-m', 'completion baseline'],
