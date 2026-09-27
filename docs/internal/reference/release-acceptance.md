@@ -176,6 +176,18 @@ aicg release-check . --type feature --evidence docs/ai/release-evidence/1.3.0.js
 
 只有明确要求组织级发布认证时，才同时提供 `AICG_RELEASE_TYPE`、`AICG_RELEASE_EVIDENCE` 和预先审阅的 `AICG_RELEASE_APPROVAL`。此时 `prepublishOnly` 执行完整的 `release-check`，并把实际 npm 包指纹与根证据的 `packageArtifact` 比对。三个变量必须同时提供；部分输入会失败，不能从不完整认证静默降级为普通工程发布。证据目录不进入 npm `files` 清单，因此可在 candidate 之后记录 digest 而不形成循环。
 
+## 发布记录
+
+下表记录 AICG 自身已经实际发生的 npm 工程发布，作为下一次发布的对照基线。它只陈述工程发布事实，不等于组织认证、跨平台认证或真实客户端执行。
+
+| 版本 | 发布时间（UTC） | Registry / tag | Git tag → commit | 发布执行方 | 产物 |
+| --- | --- | --- | --- | --- | --- |
+| `0.6.0` | 2026-09-27T07:46:01Z | `registry.npmjs.org` / `latest` | `v0.6.0` → `e81e5e61e0836cf0f714e04536c7ce1ed699ef10` | `.github/workflows/publish.yml`（push tag 触发，运行成功） | 235 files；与本地 `npm pack` 逐文件一致 |
+
+- **唯一发布目标是 npmjs。** 阿里云私服（`packages.aliyun.com`）不在发布范围内，保持 `0.5.0`，不做同步。
+- **发布入口是 tag 触发的 CI，不是人工 `npm publish`。** 推送 `v*` 标签后由 `.github/workflows/publish.yml` 构建并发布；同一版本在本地重复 `npm publish` 会因 staged/published 冲突返回 `E409`。
+- **`0.6.0` 的 provenance。** SLSA predicate `https://slsa.dev/provenance/v1`，`resolvedDependencies` 为 `git+https://github.com/YangYuHai-7/ai-code-governance@refs/tags/v0.6.0`，`gitCommit` 为 `e81e5e61e0836cf0f714e04536c7ce1ed699ef10`。
+
 ## 结果解释
 
 `release-check` 证明 Git candidate、policy hash、结构化 evidence contract、评审席分离声明、最低评分、版本分类、双人风险并集、必选 receipt、阻断缺陷与已批准的本地命令重放符合策略。它不能认证真人身份，也不读取自然语言报告来判断架构结论是否正确；若实现者与独立架构师同时漏报语义风险，机器仍无法补全。npm script 仍是操作者批准的项目代码，AICG 不提供操作系统或网络沙箱；有外部副作用风险的命令必须在一次性、最小权限、网络受限的 CI runner 中执行。所有结论继续区分 `present`、`reachable`、`enforced` 和 `real-client-verified`。
