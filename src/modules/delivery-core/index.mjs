@@ -5,3 +5,4 @@ export * from './agent-contract.mjs';
 export * from './authority.mjs';
 export * from './failures.mjs';
 export * from './runtime.mjs';
+export * from './verification.mjs';

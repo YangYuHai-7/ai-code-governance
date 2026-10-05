@@ -215,3 +215,18 @@ test('Maven commands without a verification lifecycle goal are untrusted', () =>
   assert.equal(result.trust.level, 'untrusted');
   assert.ok(result.trust.reasons.some((entry) => entry.code === 'maven-verification-goal-missing'));
 });
+
+test('trusts Gradle wrapper, pytest, and Go only with complete tool-specific evidence', () => {
+  const base = { schemaVersion: 1, unitId: 'root', cwd: '.', purpose: ['test'], scopeGlobs: [], sideEffects: [] };
+  const gradle = { ...base, id: 'gradle:test', argv: ['./gradlew', 'test'], source: { kind: 'gradle-wrapper', path: 'gradlew', sha256: 'a'.repeat(64) } };
+  assert.equal(evaluateVerificationCommandTrust(gradle, { wrapperSha256: 'a'.repeat(64), wrapperExecutable: true, configurationComplete: true }).trust.level, 'structurally-trusted');
+  assert.equal(evaluateVerificationCommandTrust(gradle, { wrapperSha256: 'a'.repeat(64) }).trust.level, 'declared');
+
+  const python = { ...base, id: 'python:test', argv: ['python', '-m', 'pytest'], source: { kind: 'python-config', path: 'pyproject.toml', sha256: 'b'.repeat(64) } };
+  assert.equal(evaluateVerificationCommandTrust(python, { pythonConfigComplete: true, pythonConfigSha256: 'b'.repeat(64) }).trust.level, 'structurally-trusted');
+  assert.equal(evaluateVerificationCommandTrust(python, {}).trust.level, 'declared');
+
+  const go = { ...base, id: 'go:test', argv: ['go', 'test', './...'], source: { kind: 'go-module', path: 'go.mod', sha256: 'c'.repeat(64) } };
+  assert.equal(evaluateVerificationCommandTrust(go, { goModuleComplete: true, goModuleSha256: 'c'.repeat(64) }).trust.level, 'structurally-trusted');
+  assert.equal(evaluateVerificationCommandTrust({ ...go, argv: ['go', 'run', '.'] }, { goModuleComplete: true, goModuleSha256: 'c'.repeat(64) }).trust.level, 'untrusted');
+});

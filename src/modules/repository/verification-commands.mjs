@@ -9,7 +9,7 @@ export const VERIFICATION_COMMAND_TRUST_LEVELS = Object.freeze([
   'execution-verified',
 ]);
 
-const SOURCE_KINDS = new Set(['npm-script', 'maven-pom', 'declared']);
+const SOURCE_KINDS = new Set(['npm-script', 'maven-pom', 'gradle-wrapper', 'python-config', 'go-module', 'declared']);
 const TRUST_LEVELS = new Set(VERIFICATION_COMMAND_TRUST_LEVELS);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SCRIPT_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,127}$/;
@@ -463,6 +463,30 @@ function mavenTrust(command, evidence, reasons) {
   return true;
 }
 
+function gradleTrust(command, evidence, reasons) {
+  const binary = executable(command.argv);
+  if (!['gradlew', 'gradle'].includes(binary)) addReason(reasons, 'gradle-wrapper-required', 'blocking', 'Gradle verification must use the reviewed wrapper or an explicitly reviewed Gradle executable.');
+  if (!command.argv.slice(1).some((argument) => /^(?:test|check|[A-Za-z0-9_-]+:(?:test|check))$/.test(argument))) addReason(reasons, 'gradle-verification-task-missing', 'blocking', 'Gradle command does not select a test or check task.');
+  if (evidence.wrapperSha256 !== command.source.sha256 || evidence.wrapperExecutable !== true || evidence.configurationComplete !== true) addReason(reasons, 'gradle-evidence-incomplete', 'warning', 'Gradle wrapper bytes, executable state, and configuration closure are not fully bound.');
+  return true;
+}
+
+function pythonTrust(command, evidence, reasons) {
+  const binary = executable(command.argv);
+  const args = command.argv.slice(1);
+  const pytest = binary === 'pytest' || (['python', 'python3'].includes(binary) && args[0] === '-m' && args[1] === 'pytest');
+  if (!pytest) addReason(reasons, 'python-pytest-runner-required', 'blocking', 'Python verification must invoke pytest directly or through python -m pytest.');
+  if (evidence.pythonConfigComplete !== true || evidence.pythonConfigSha256 !== command.source.sha256) addReason(reasons, 'python-evidence-incomplete', 'warning', 'Python test configuration is not fully bound to the command source.');
+  return true;
+}
+
+function goTrust(command, evidence, reasons) {
+  const binary = executable(command.argv);
+  if (binary !== 'go' || command.argv[1] !== 'test') addReason(reasons, 'go-test-runner-required', 'blocking', 'Go verification must invoke go test.');
+  if (evidence.goModuleComplete !== true || evidence.goModuleSha256 !== command.source.sha256) addReason(reasons, 'go-evidence-incomplete', 'warning', 'The Go module/workspace closure is not fully bound to the command source.');
+  return true;
+}
+
 /**
  * Evaluate only structural trust. It never executes a command and therefore never
  * returns execution-verified.
@@ -475,6 +499,9 @@ export function evaluateVerificationCommandTrust(input, evidence = {}) {
   let recognized = false;
   if (command.source.kind === 'npm-script' || ['npm', 'pnpm', 'yarn', 'bun'].includes(binary)) recognized = npmTrust(command, evidence, reasons, sideEffects);
   if (command.source.kind === 'maven-pom' || ['mvn', 'mvnw'].includes(binary)) recognized = mavenTrust(command, evidence, reasons);
+  if (command.source.kind === 'gradle-wrapper') recognized = gradleTrust(command, evidence, reasons);
+  if (command.source.kind === 'python-config') recognized = pythonTrust(command, evidence, reasons);
+  if (command.source.kind === 'go-module') recognized = goTrust(command, evidence, reasons);
   if (!recognized) addReason(reasons, 'verification-runner-unsupported', 'warning', 'No structural trust evaluator exists for this command runner.');
 
   const level = reasons.some((entry) => entry.severity === 'blocking')
