@@ -26,7 +26,7 @@ For AI coding agents (drive these from the chat, not by hand):
   aicg route [path] --text <task> [--paths <relative-path,...>] [--json]
   aicg flow <start|status> [path] [--text <task>] [--paths <relative-path,...>] [--json]
   aicg telemetry <record|status> [path] [--task-level L0|L1|L2|L3] [--json]
-  aicg delivery <name> ...   Governed delivery loop; names: work-unit, test-case, complete, hook, release-check.
+  aicg delivery <name> ...   Governed delivery loop; names: session, work-unit, test-case, complete, hook, release-check.
   aicg --version
 
   init    Inspect a repository and initialize tailored AI governance.
@@ -40,12 +40,14 @@ For AI coding agents (drive these from the chat, not by hand):
   telemetry  Record one gate observation in the evidence plane and report hysteresis-gated promote / tighten / widen recommendations; it never changes a rule by itself.
 
 Advanced delivery (agent runtime, optional; each name keeps its full reference below):
+  aicg delivery session <start|status|step|resume|cancel> [path] --session <id> [--agent <id>] [--profile advisory|production] [--requirement <relative-json> | --text <request>] [--json]
   aicg delivery work-unit <plan|status> [path] --work-unit <relative-json> [--json] [--enforce]
   aicg delivery test-case <init|validate|select|record> [path] [--manifest <relative-json>] [--scope <id>] [--output <relative-path>]
   aicg delivery complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json] [--enforce]
   aicg delivery hook <install|status> [path] [--yes] [--json]
   aicg delivery release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
 
+  session    Persist and inspect one recoverable delivery state machine. Current built-in Agent entries remain unverified and are never activated as executable adapters implicitly.
   work-unit  Preview or validate one bounded vertical feature document. Writes a local report and never launches Agents.
   test-case  Create and validate schema-v2 cases, emit minimal AI packets, and record evidence-bound results.
   complete  Report completion findings; a selected project verification command is explicit and never inferred.
@@ -100,7 +102,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg route [路径] --text <任务> [--paths <相对路径,...>] [--json]
   aicg flow <start|status> [路径] [--text <任务>] [--paths <相对路径,...>] [--json]
   aicg telemetry <record|status> [路径] [--task-level L0|L1|L2|L3] [--json]
-  aicg delivery <任务> ...   受治理交付闭环；任务：work-unit、test-case、complete、hook、release-check。
+  aicg delivery <任务> ...   受治理交付闭环；任务：session、work-unit、test-case、complete、hook、release-check。
   aicg --version
 
   init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
@@ -112,12 +114,14 @@ export const HELP_ZH = `AI 代码治理 CLI
   telemetry     在证据面记录一次 gate 观测，输出带迟滞的 promote / tighten / widen 建议；它不会自行改动规则。
 
 高级交付（Agent 运行时，可选；每个任务保留下方完整说明）：
+  aicg delivery session <start|status|step|resume|cancel> [路径] --session <标识> [--agent <标识>] [--profile advisory|production] [--requirement <相对路径.json> | --text <需求>] [--json]
   aicg delivery work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json] [--enforce]
   aicg delivery test-case <init|validate|select|record> [路径] [--manifest <相对路径.json>] [--scope <标识>] [--output <相对路径>]
   aicg delivery complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json] [--enforce]
   aicg delivery hook <install|status> [路径] [--yes] [--json]
   aicg delivery release-check [路径] --type <bugfix|feature|major> [--evidence <相对路径.json>] [--json] [--enforce]
 
+  session       持久化并检查可恢复的交付状态机。内置 Agent 条目仍为未验证状态，不会被隐式启用为可执行适配器。
   work-unit     预览或校验一个垂直功能工作单元，只写本地报告，不启动 Agent。
   test-case     创建和校验 schema v2 测试用例、生成最小 AI 执行包，并记录证据绑定结果。
   complete      报告交付收尾；所选项目验证命令必须显式给出，工具不会自动推断。

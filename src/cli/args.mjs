@@ -37,8 +37,8 @@ export function parseArgs(argv, {
     if (!['init', 'validate', 'open', 'launcher'].includes(action)) throw usageError('config requires an action: init, validate, open, or launcher.');
   } else if (command === 'delivery') {
     action = args.shift() ?? null;
-    if (!['work-unit', 'test-case', 'complete', 'hook', 'release-check'].includes(action)) throw usageError('delivery requires an action: work-unit, test-case, complete, hook, or release-check.');
-    const SUB_ACTIONS = { 'work-unit': ['plan', 'status'], 'test-case': ['init', 'validate', 'select', 'record'], hook: ['install', 'status'] };
+    if (!['session', 'work-unit', 'test-case', 'complete', 'hook', 'release-check'].includes(action)) throw usageError('delivery requires an action: session, work-unit, test-case, complete, hook, or release-check.');
+    const SUB_ACTIONS = { session: ['start', 'status', 'step', 'resume', 'cancel'], 'work-unit': ['plan', 'status'], 'test-case': ['init', 'validate', 'select', 'record'], hook: ['install', 'status'] };
     if (SUB_ACTIONS[action]) {
       subAction = args.shift() ?? null;
       if (!SUB_ACTIONS[action].includes(subAction)) throw usageError(`delivery ${action} requires an action: ${SUB_ACTIONS[action].join(', ')}.`);

@@ -248,6 +248,40 @@ function validateCliPackage(pkg) {
   }
 }
 
+function validateDeliveryCoreSurface() {
+  const schemas = [
+    'requirement-ir-v2-schema.json',
+    'architecture-ir-v1-schema.json',
+    'evidence-ir-v1-schema.json',
+    'delivery-session-v1-schema.json',
+    'completion-contract-v1-schema.json',
+  ];
+  for (const name of schemas) {
+    const relative = `assets/contracts/${name}`;
+    try {
+      const schema = JSON.parse(read(relative));
+      check(schema.$schema === 'https://json-schema.org/draft/2020-12/schema', `${relative} must use JSON Schema 2020-12.`);
+      check(schema.type === 'object' && schema.additionalProperties === false, `${relative} must be a closed object contract.`);
+      check(Array.isArray(schema.required) && schema.required.length > 0, `${relative} must declare required fields.`);
+    } catch (error) {
+      fail(`Delivery Core schema is invalid: ${relative}: ${error.message}`);
+    }
+  }
+  for (const name of ['contracts', 'requirement-compiler', 'session', 'agent-contract', 'authority', 'failures', 'runtime', 'verification', 'traceability', 'completion', 'index']) {
+    check(fs.existsSync(path.join(root, 'src/modules/delivery-core', `${name}.mjs`)), `Delivery Core module is missing: ${name}.mjs`);
+  }
+  for (const relative of [
+    'src/adapters/agents/structured-output.mjs',
+    'src/adapters/agents/runtime.mjs',
+    'src/adapters/filesystem/delivery-session-store.mjs',
+    'src/adapters/filesystem/workspace-transaction.mjs',
+    'src/adapters/process/verification-runner.mjs',
+    'src/cli/commands/delivery-session.mjs',
+  ]) check(fs.existsSync(path.join(root, relative)), `Delivery Core adapter is missing: ${relative}`);
+  const help = read('src/cli/help.mjs');
+  check(help.includes('delivery session <start|status|step|resume|cancel>'), 'CLI help must expose the delivery session lifecycle.');
+}
+
 function validateAgentRegistry(registry) {
   check(registry.schema_version === 1, 'Agent registry schema_version must be 1.');
   const ids = new Set();
@@ -973,6 +1007,7 @@ try {
 }
 
 validateArchitectureProfiles();
+validateDeliveryCoreSurface();
 validateExternalValidationTemplates({ negativeProbe: process.argv.includes('--negative-probe') });
 
 if (process.argv.includes('--negative-probe') && registry && agentRegistry && workflowRegistry && acceptanceContract && technicalRegistry && teamRegistry && releasePolicy && surfaceVerificationContract) {
