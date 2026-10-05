@@ -32,3 +32,15 @@ export function repositoryFixture(overrides = {}) {
 export function budgetsFixture(overrides = {}) {
   return { maxAgentTurns: 4, maxCommands: 8, maxChangedFiles: 2, maxChangedBytes: 4096, maxElapsedMs: 60000, ...overrides };
 }
+
+export function architectureFixture(requirementDigest, overrides = {}) {
+  return {
+    schemaVersion: 1, id: 'architecture.fixture', requirementDigest,
+    modules: [{ id: 'module.fixture', name: 'Fixture', owns: ['src/fixture.mjs'] }],
+    publicContracts: [{ id: 'contract.fixture', moduleId: 'module.fixture', kind: 'function', name: 'completeFixture' }],
+    dependencies: [], compositionRoots: [{ id: 'composition.fixture', path: 'src/app.mjs', modules: ['module.fixture'] }],
+    decisions: [{ id: 'decision.fixture', statement: 'Keep the domain behind one public function', status: 'approved' }],
+    constraints: [{ id: 'constraint.fixture', statement: 'Dependencies point inward', level: 'enforced' }],
+    risks: [], evidenceGaps: [], ...overrides,
+  };
+}

@@ -292,7 +292,7 @@ export function validateCompletionContract(value) {
 }
 
 export function validateDeliverySession(value) {
-  const allowed = ['schemaVersion', 'id', 'state', 'sequence', 'requestDigest', 'requirementDigest', 'architectureDigest', 'authorityDigest', 'repositoryDigest', 'previousDigest', 'idempotencyKey', 'checkpoints', 'budgets', 'requestText', 'requirement', 'architecture', 'authority', 'repositorySnapshot', 'usage', 'lastFailure', 'activeAgentId', 'createdAt', 'updatedAt'];
+  const allowed = ['schemaVersion', 'id', 'state', 'sequence', 'requestDigest', 'requirementDigest', 'architectureDigest', 'authorityDigest', 'repositoryDigest', 'previousDigest', 'idempotencyKey', 'checkpoints', 'budgets', 'requestText', 'requirement', 'architecture', 'authority', 'repositorySnapshot', 'usage', 'runtime', 'lastFailure', 'activeAgentId', 'createdAt', 'updatedAt'];
   const required = ['schemaVersion', 'id', 'state', 'sequence', 'requestDigest', 'requirementDigest', 'architectureDigest', 'authorityDigest', 'repositoryDigest', 'previousDigest', 'idempotencyKey', 'checkpoints', 'budgets'];
   fields(value, allowed, required, 'session');
   if (value.schemaVersion !== DELIVERY_SESSION_VERSION) fail('session.schemaVersion', `unsupported version ${value.schemaVersion}`);
@@ -307,7 +307,7 @@ export function validateDeliverySession(value) {
   if (value.requestText !== undefined) string(value.requestText, 'session.requestText', { max: 262144 });
   if (value.requirement !== undefined && value.requirement !== null) validateRequirementIr(value.requirement);
   if (value.architecture !== undefined && value.architecture !== null) validateArchitectureIr(value.architecture);
-  for (const key of ['authority', 'repositorySnapshot', 'usage']) if (value[key] !== undefined) object(value[key], `session.${key}`);
+  for (const key of ['authority', 'repositorySnapshot', 'usage', 'runtime']) if (value[key] !== undefined) object(value[key], `session.${key}`);
   if (value.lastFailure !== undefined && value.lastFailure !== null) object(value.lastFailure, 'session.lastFailure');
   if (value.activeAgentId !== undefined && value.activeAgentId !== null) id(value.activeAgentId, 'session.activeAgentId');
   timestamp(value.createdAt, 'session.createdAt'); timestamp(value.updatedAt, 'session.updatedAt');

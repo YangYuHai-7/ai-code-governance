@@ -44,6 +44,7 @@
     "authority": { "type": "object" },
     "repositorySnapshot": { "type": "object" },
     "usage": { "type": "object" },
+    "runtime": { "type": "object" },
     "lastFailure": { "type": ["object", "null"] },
     "activeAgentId": { "type": ["string", "null"] },
     "createdAt": { "type": "string", "format": "date-time" },

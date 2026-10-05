@@ -1,0 +1,169 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createAgentRuntimeAdapter } from '../src/adapters/agents/index.mjs';
+import {
+  canonicalContractDigest,
+  classifyDeliveryFailure,
+  createDeliveryRuntime,
+} from '../src/modules/delivery-core/index.mjs';
+import { architectureFixture, authorityFixture, budgetsFixture, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
+
+function memoryStore({ failAfterWrite = false } = {}) {
+  const sessions = new Map(), events = new Map(); let failed = false;
+  return {
+    create(session) { sessions.set(session.id, structuredClone(session)); return session; },
+    read(id) { const value = sessions.get(id); if (!value) throw new Error('missing'); return structuredClone(value); },
+    compareAndSwap(id, expected, next) {
+      const current = sessions.get(id);
+      if (canonicalContractDigest('session', current) !== expected) throw new Error('compare-and-swap conflict');
+      sessions.set(id, structuredClone(next));
+      if (failAfterWrite && !failed) { failed = true; throw Object.assign(new Error('interrupted after checkpoint'), { code: 'EIO' }); }
+      return next;
+    },
+    appendEvent(id, event) { const list = events.get(id) ?? []; if (list.some((entry) => entry.id === event.id)) return event; list.push(structuredClone(event)); events.set(id, list); return event; },
+    eventList(id) { return structuredClone(events.get(id) ?? []); },
+  };
+}
+
+function runtimeAgent(id, handler, capabilities = { boundedPatch: true, structuredRequirement: true, architectureProposal: true, resume: true }) {
+  return createAgentRuntimeAdapter({
+    id, capabilities,
+    prepareTurn(request) { return { prompt: request.prompt, requestDigest: request.semanticDigest }; },
+    async invoke(turn) { const proposal = await handler(turn); return { exitCode: 0, stdout: JSON.stringify({ proposal, findings: [] }), stderr: '', usage: { inputTokens: 10, outputTokens: 10, cost: 0.01 } }; },
+    cancel: async (turnId) => ({ turnId, cancelled: true }),
+  });
+}
+
+function approvedInput(overrides = {}) {
+  const requirement = requirementFixture(), requirementDigest = canonicalContractDigest('requirement', requirement);
+  return { id: 'session.runtime', requestText: 'Implement fixture', requirement, architecture: architectureFixture(requirementDigest), authority: authorityFixture(), budgets: budgetsFixture(), repositorySnapshot: repositoryFixture(), agentId: 'agent-one', maxRetries: 2, ...overrides };
+}
+
+async function advance(runtime, id, count) { let value; for (let index = 0; index < count; index += 1) value = await runtime.step(id); return value; }
+
+test('runtime reaches review-ready through idempotent patch and verification effects', async () => {
+  const store = memoryStore(), applied = [], verified = [];
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [{ path: 'src/fixture.mjs', content: 'ok' }] }))],
+    workspace: { async apply(session, key, proposal) { applied.push(key); return { status: 'committed', changedFiles: proposal.files.length, changedBytes: 2 }; } },
+    verifier: { async run(session, key) { verified.push(key); return { status: 'passed', commands: 1, evidence: [] }; } },
+    clock: () => '2026-10-05T00:00:00.000Z',
+  });
+  const started = runtime.start(approvedInput());
+  assert.equal(started.state, 'architecture-ready');
+  const ready = await advance(runtime, started.id, 3);
+  assert.equal(ready.state, 'review-ready');
+  assert.equal(applied.length, 1);
+  assert.equal(verified.length, 1);
+  assert.ok(store.eventList(started.id).some((event) => event.phase === 'after' && event.effect === 'patch'));
+});
+
+test('business questions block while a technical verification failure enters bounded repair', async () => {
+  const business = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ questions: [{ id: 'owner.scope', question: 'Which scope?' }] }))],
+    workspace: { apply() { throw new Error('not reached'); } }, verifier: { run() { throw new Error('not reached'); } },
+  });
+  const pending = business.start({ ...approvedInput({ requirement: null, architecture: null }), id: 'session.business' });
+  assert.equal((await business.step(pending.id)).state, 'blocked');
+
+  let verification = 0;
+  const repair = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { verification += 1; return { status: verification === 1 ? 'failed' : 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = repair.start({ ...approvedInput(), id: 'session.repair' });
+  assert.equal((await advance(repair, started.id, 3)).state, 'repairing');
+  assert.equal((await advance(repair, started.id, 2)).state, 'review-ready');
+});
+
+test('resume rejects stale inputs and can switch to a capability-compatible adapter', async () => {
+  const store = memoryStore();
+  const agents = [runtimeAgent('agent-one', async () => ({ files: [] })), runtimeAgent('agent-two', async () => ({ files: [] }))];
+  const runtime = createDeliveryRuntime({ store, agents, workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } }, verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } } });
+  const started = runtime.start(approvedInput());
+  const bindings = { requirementDigest: started.requirementDigest, architectureDigest: started.architectureDigest, authorityDigest: started.authorityDigest, repositoryDigest: started.repositoryDigest };
+  assert.throws(() => runtime.resume(started.id, { ...bindings, repositoryDigest: 'b'.repeat(64) }), /stale/i);
+  assert.equal(runtime.resume(started.id, { ...bindings, agentId: 'agent-two' }).activeAgentId, 'agent-two');
+  assert.equal(runtime.cancel(started.id).state, 'cancelled');
+});
+
+test('runtime stops when changed-file or changed-byte budgets are exceeded', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 3, changedBytes: 5000 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 99, evidence: [] }; } },
+    clock: () => '2026-10-05T00:00:00.000Z',
+  });
+  const started = runtime.start({ ...approvedInput({ budgets: budgetsFixture({ maxChangedFiles: 1, maxChangedBytes: 4 }) }), id: 'session.budget' });
+  await runtime.step(started.id);
+  assert.equal((await runtime.step(started.id)).state, 'failed');
+  assert.equal(runtime.status(started.id).lastFailure.category, 'budget');
+});
+
+test('runtime enforces Agent usage, turn, command, retry, and elapsed budgets', async () => {
+  const common = { workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } } };
+  const usageRuntime = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], ...common,
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const usageStarted = usageRuntime.start({ ...approvedInput({ budgets: budgetsFixture({ maxInputTokens: 5, maxOutputTokens: 5, maxCost: 0.001 }) }), id: 'session.usage-budget' });
+  await usageRuntime.step(usageStarted.id);
+  assert.equal((await usageRuntime.step(usageStarted.id)).lastFailure.category, 'budget');
+
+  const commandRuntime = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], ...common,
+    verifier: { async run() { return { status: 'passed', commands: 9, evidence: [] }; } },
+  });
+  const commandStarted = commandRuntime.start({ ...approvedInput(), id: 'session.command-budget' });
+  assert.equal((await advance(commandRuntime, commandStarted.id, 3)).lastFailure.category, 'budget');
+
+  const turnRuntime = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], ...common,
+    verifier: { async run() { return { status: 'failed', commands: 1, evidence: [] }; } },
+  });
+  const turnStarted = turnRuntime.start({ ...approvedInput({ budgets: budgetsFixture({ maxAgentTurns: 1 }) }), id: 'session.turn-budget' });
+  await advance(turnRuntime, turnStarted.id, 3);
+  assert.equal((await turnRuntime.step(turnStarted.id)).lastFailure.category, 'budget');
+
+  const elapsedTimes = ['2026-10-05T00:00:00.000Z', '2026-10-05T00:00:00.000Z', '2026-10-05T00:02:00.000Z'];
+  const elapsedRuntime = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], ...common,
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; },
+    }, clock: () => elapsedTimes.shift() ?? '2026-10-05T00:02:00.000Z',
+  });
+  const elapsedStarted = elapsedRuntime.start({ ...approvedInput(), id: 'session.elapsed-budget' });
+  assert.equal((await elapsedRuntime.step(elapsedStarted.id)).lastFailure.category, 'budget');
+
+  let checks = 0;
+  const retryRuntime = createDeliveryRuntime({
+    store: memoryStore(), agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], ...common,
+    verifier: { async run() { checks += 1; return { status: 'failed', commands: 1, evidence: [] }; } },
+  });
+  const retryStarted = retryRuntime.start({ ...approvedInput({ maxRetries: 1 }), id: 'session.retry-budget' });
+  await advance(retryRuntime, retryStarted.id, 3);
+  await retryRuntime.step(retryStarted.id);
+  const stopped = await retryRuntime.step(retryStarted.id);
+  assert.equal(stopped.state, 'failed');
+  assert.equal(stopped.lastFailure.category, 'verification');
+  assert.equal(checks, 2);
+});
+
+test('a checkpointed transition survives interruption and a repeated step does not repeat it', async () => {
+  const store = memoryStore({ failAfterWrite: true });
+  const runtime = createDeliveryRuntime({ store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))], workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } }, verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } } });
+  const started = runtime.start({ ...approvedInput(), id: 'session.interrupted' });
+  assert.equal((await runtime.step(started.id)).state, 'plan-approved');
+  assert.equal(runtime.status(started.id).state, 'plan-approved');
+  assert.equal((await runtime.step(started.id)).state, 'executing');
+});
+
+test('failure classification is explicit and unknown errors stop as internal', () => {
+  for (const category of ['business-decision', 'agent-unavailable', 'policy', 'patch-conflict', 'verification', 'infrastructure', 'budget', 'stale-input', 'internal']) {
+    const error = category === 'internal' ? new Error('unknown') : Object.assign(new Error(category), { category });
+    assert.equal(classifyDeliveryFailure(error, {}).category, category);
+  }
+  assert.equal(classifyDeliveryFailure(Object.assign(new Error('stale'), { code: 'AICG_STALE_INPUT' }), {}).category, 'stale-input');
+});
