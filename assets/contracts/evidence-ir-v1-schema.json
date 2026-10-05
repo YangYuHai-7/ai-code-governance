@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/evidence-ir-v1-schema.json",
+  "title": "AICG Evidence IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "sessionId", "source", "verificationLevel", "semanticDigest", "repositoryDigest", "commandDigest", "resultDigest", "artifactDigests", "status"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "sessionId": { "$ref": "#/$defs/id" },
+    "source": { "enum": ["operator-request", "repository", "agent-process", "automated-test", "independent-review", "human-acceptance", "deployment"] },
+    "verificationLevel": { "enum": ["stated", "reachable", "enforced", "verified"] },
+    "semanticDigest": { "$ref": "#/$defs/digest" },
+    "repositoryDigest": { "$ref": "#/$defs/digest" },
+    "commandDigest": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+    "resultDigest": { "$ref": "#/$defs/digest" },
+    "artifactDigests": {
+      "type": "array", "maxItems": 512,
+      "items": { "type": "object", "additionalProperties": false, "required": ["path", "digest"], "properties": {
+        "path": { "$ref": "#/$defs/path" }, "digest": { "$ref": "#/$defs/digest" }
+      } }
+    },
+    "status": { "enum": ["passed", "failed", "blocked", "unrun", "unsupported"] },
+    "recordedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" }
+  }
+}

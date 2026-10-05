@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/delivery-session-v1-schema.json",
+  "title": "AICG Delivery Session v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "state", "sequence", "requestDigest", "requirementDigest", "architectureDigest", "authorityDigest", "repositoryDigest", "previousDigest", "idempotencyKey", "checkpoints", "budgets"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "state": { "enum": ["draft", "requirements-pending", "requirements-approved", "architecture-ready", "plan-approved", "executing", "verifying", "repairing", "review-ready", "blocked", "failed", "completed", "cancelled"] },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "requestDigest": { "$ref": "#/$defs/digest" },
+    "requirementDigest": { "$ref": "#/$defs/nullableDigest" },
+    "architectureDigest": { "$ref": "#/$defs/nullableDigest" },
+    "authorityDigest": { "$ref": "#/$defs/digest" },
+    "repositoryDigest": { "$ref": "#/$defs/digest" },
+    "previousDigest": { "$ref": "#/$defs/nullableDigest" },
+    "idempotencyKey": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "checkpoints": {
+      "type": "array", "maxItems": 64,
+      "items": { "type": "object", "additionalProperties": false, "required": ["sequence", "state", "reason", "previousDigest", "sessionDigest"], "properties": {
+        "sequence": { "type": "integer", "minimum": 0 },
+        "state": { "type": "string" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "previousDigest": { "$ref": "#/$defs/nullableDigest" },
+        "sessionDigest": { "$ref": "#/$defs/digest" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      } }
+    },
+    "budgets": { "type": "object", "additionalProperties": false, "required": ["maxAgentTurns", "maxCommands", "maxChangedFiles", "maxChangedBytes", "maxElapsedMs"], "properties": {
+      "maxAgentTurns": { "type": "integer", "minimum": 1, "maximum": 1000 },
+      "maxCommands": { "type": "integer", "minimum": 1, "maximum": 10000 },
+      "maxChangedFiles": { "type": "integer", "minimum": 1, "maximum": 100000 },
+      "maxChangedBytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 },
+      "maxElapsedMs": { "type": "integer", "minimum": 1, "maximum": 604800000 },
+      "maxInputTokens": { "type": "integer", "minimum": 1 },
+      "maxOutputTokens": { "type": "integer", "minimum": 1 },
+      "maxCost": { "type": "number", "minimum": 0 }
+    } },
+    "requestText": { "type": "string", "minLength": 1, "maxLength": 262144 },
+    "requirement": { "type": ["object", "null"] },
+    "architecture": { "type": ["object", "null"] },
+    "authority": { "type": "object" },
+    "repositorySnapshot": { "type": "object" },
+    "usage": { "type": "object" },
+    "lastFailure": { "type": ["object", "null"] },
+    "activeAgentId": { "type": ["string", "null"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "nullableDigest": { "anyOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/architecture-ir-v1-schema.json",
+  "title": "AICG Architecture IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "requirementDigest", "modules", "publicContracts", "dependencies", "compositionRoots", "decisions", "constraints", "risks", "evidenceGaps"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "requirementDigest": { "$ref": "#/$defs/digest" },
+    "modules": {
+      "type": "array", "maxItems": 256,
+      "items": { "type": "object", "additionalProperties": false, "required": ["id", "name", "owns"], "properties": {
+        "id": { "$ref": "#/$defs/id" }, "name": { "$ref": "#/$defs/text" }, "owns": { "$ref": "#/$defs/pathArray" }
+      } }
+    },
+    "publicContracts": {
+      "type": "array", "maxItems": 512,
+      "items": { "type": "object", "additionalProperties": false, "required": ["id", "moduleId", "kind", "name"], "properties": {
+        "id": { "$ref": "#/$defs/id" }, "moduleId": { "$ref": "#/$defs/id" }, "kind": { "enum": ["function", "class", "http", "rpc", "event", "schema", "cli"] }, "name": { "$ref": "#/$defs/text" }
+      } }
+    },
+    "dependencies": {
+      "type": "array", "maxItems": 512,
+      "items": { "type": "object", "additionalProperties": false, "required": ["from", "to", "direction"], "properties": {
+        "from": { "$ref": "#/$defs/id" }, "to": { "$ref": "#/$defs/id" }, "direction": { "enum": ["inbound", "outbound"] }
+      } }
+    },
+    "compositionRoots": {
+      "type": "array", "maxItems": 128,
+      "items": { "type": "object", "additionalProperties": false, "required": ["id", "path", "modules"], "properties": {
+        "id": { "$ref": "#/$defs/id" }, "path": { "$ref": "#/$defs/path" }, "modules": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/id" } }
+      } }
+    },
+    "decisions": { "$ref": "#/$defs/statements" },
+    "constraints": { "$ref": "#/$defs/constraints" },
+    "risks": { "$ref": "#/$defs/risks" },
+    "evidenceGaps": { "$ref": "#/$defs/statements" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 8192 },
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "path": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+    "pathArray": { "type": "array", "maxItems": 512, "items": { "$ref": "#/$defs/path" } },
+    "statements": { "type": "array", "maxItems": 256, "items": { "type": "object", "additionalProperties": false, "required": ["id", "statement", "status"], "properties": {
+      "id": { "$ref": "#/$defs/id" }, "statement": { "$ref": "#/$defs/text" }, "status": { "enum": ["proposed", "approved", "rejected", "open"] }
+    } } },
+    "constraints": { "type": "array", "maxItems": 256, "items": { "type": "object", "additionalProperties": false, "required": ["id", "statement", "level"], "properties": {
+      "id": { "$ref": "#/$defs/id" }, "statement": { "$ref": "#/$defs/text" }, "level": { "enum": ["stated", "reachable", "enforced", "verified"] }
+    } } },
+    "risks": { "type": "array", "maxItems": 256, "items": { "type": "object", "additionalProperties": false, "required": ["id", "statement", "mitigation"], "properties": {
+      "id": { "$ref": "#/$defs/id" }, "statement": { "$ref": "#/$defs/text" }, "mitigation": { "$ref": "#/$defs/text" }
+    } } }
+  }
+}

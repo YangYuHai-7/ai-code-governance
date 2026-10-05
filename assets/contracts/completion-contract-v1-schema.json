@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/completion-contract-v1-schema.json",
+  "title": "AICG Completion Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "profile", "requiredStages", "gates", "residualGaps", "implementation", "verification", "acceptance", "deployability", "deployment", "overall"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sessionId": { "$ref": "#/$defs/id" },
+    "profile": { "enum": ["advisory", "production"] },
+    "requiredStages": { "type": "array", "maxItems": 9, "items": { "$ref": "#/$defs/stage" } },
+    "gates": {
+      "type": "array", "maxItems": 9,
+      "items": { "type": "object", "additionalProperties": false, "required": ["id", "applicability", "status", "evidenceIds", "reason"], "properties": {
+        "id": { "$ref": "#/$defs/stage" },
+        "applicability": { "enum": ["applicable", "not-applicable"] },
+        "status": { "enum": ["passed", "failed", "blocked", "unrun", "unsupported", "stale", "not-applicable"] },
+        "evidenceIds": { "type": "array", "maxItems": 256, "items": { "$ref": "#/$defs/id" } },
+        "reason": { "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 4096 }, { "type": "null" }] }
+      } }
+    },
+    "residualGaps": { "type": "array", "maxItems": 256, "items": { "type": "string", "minLength": 1, "maxLength": 4096 } },
+    "implementation": { "enum": ["missing", "partial", "complete"] },
+    "verification": { "enum": ["unverified", "failed", "verified"] },
+    "acceptance": { "enum": ["unreviewed", "rejected", "accepted", "not-applicable"] },
+    "deployability": { "enum": ["unknown", "blocked", "ready"] },
+    "deployment": { "enum": ["not-deployed", "failed", "deployed", "not-applicable"] },
+    "overall": { "enum": ["incomplete", "blocked", "complete"] },
+    "evaluatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+    "stage": { "enum": ["governance", "requirements", "architecture", "implementation", "automated-verification", "independent-review", "human-acceptance", "deployability", "deployment"] }
+  }
+}
