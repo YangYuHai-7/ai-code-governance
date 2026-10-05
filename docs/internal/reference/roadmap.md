@@ -24,6 +24,8 @@ The following work remains open before Milestone 1 can be closed:
 
 Milestone 2 is therefore the next active capability phase. Product-form conversion remains gated behind Milestone 2 and the Core completion gate; Studio, Plugins, MCP mutation tools, and SDK distribution must not become parallel sources of truth in the meantime.
 
+The Milestone 2 design was approved on 2026-10-05. Its canonical implementation boundary is [Golden-path Core completion design](../specs/2026-10-05-golden-path-core-completion-design.md). The selected first path is React with Vite, Mantine, NestJS with the Fastify adapter, Drizzle ORM, and PostgreSQL. Approval of the design does not change the milestone evidence state.
+
 ## Product outcome
 
 A developer who does not know the target stack should be able to describe a business outcome, answer only material owner questions, and receive:
@@ -449,6 +451,8 @@ Exit criteria:
 - time, Agent turns, Token use, execution cost, changed files, tests, and residual gaps are reported through Core contracts.
 
 ### Milestone 2: core completion on one production-capable golden path
+
+Design status: approved for implementation planning on 2026-10-05. Implementation and certification remain evidence-incomplete.
 
 Scope:
 
