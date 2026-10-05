@@ -59,6 +59,24 @@ function pack(overrides = {}) {
         { name: 'drizzle-orm', range: 'stable' },
       ],
       database: { engine: 'postgresql', major: 18, extensions: [] },
+      referenceCombinations: [
+        {
+          id: 'baseline',
+          runtime: { node: '24.18.0' },
+          packageManager: { version: '11.0.0' },
+          packages: [
+            { name: 'react', version: '19.3.0' },
+            { name: 'react-dom', version: '19.3.0' },
+            { name: 'vite', version: '8.3.0' },
+            { name: '@mantine/core', version: '9.6.0' },
+            { name: '@nestjs/core', version: '12.0.0' },
+            { name: '@nestjs/platform-fastify', version: '12.0.0' },
+            { name: 'fastify', version: '5.12.5' },
+            { name: 'drizzle-orm', version: '0.44.6' }
+          ],
+          database: { version: '18.6', extensions: [] }
+        }
+      ],
     },
     detection: {
       requiredPaths: ['package.json'],

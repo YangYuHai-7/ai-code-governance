@@ -10,7 +10,7 @@
     "lifecycle": { "enum": ["active", "planned", "deprecated"] },
     "maturity": { "enum": ["candidate", "guided", "executable", "certified"] },
     "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-    "compatibility": { "type": "object" },
+    "compatibility": { "type": "object", "required": ["referenceCombinations"] },
     "detection": { "type": "object" },
     "architecture": { "type": "object" },
     "generation": { "type": "object" },

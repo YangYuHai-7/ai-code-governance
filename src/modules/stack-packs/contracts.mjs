@@ -153,7 +153,7 @@ export function validateGoldenPathPack(value) {
   enumeration(value.maturity, ['candidate', 'guided', 'executable', 'certified'], 'pack.maturity');
   digest(value.sourceDigest, 'pack.sourceDigest');
 
-  fields(value.compatibility, ['runtime', 'packageManager', 'packages', 'database'], ['runtime', 'packageManager', 'packages', 'database'], 'pack.compatibility');
+  fields(value.compatibility, ['runtime', 'packageManager', 'packages', 'database', 'referenceCombinations'], ['runtime', 'packageManager', 'packages', 'database', 'referenceCombinations'], 'pack.compatibility');
   fields(value.compatibility.runtime, ['node'], ['node'], 'pack.compatibility.runtime');
   fields(value.compatibility.runtime.node, ['major', 'minMinor'], ['major', 'minMinor'], 'pack.compatibility.runtime.node');
   integer(value.compatibility.runtime.node.major, 'pack.compatibility.runtime.node.major', { min: 1, max: 99 });
@@ -171,6 +171,27 @@ export function validateGoldenPathPack(value) {
   enumeration(value.compatibility.database.engine, ['postgresql'], 'pack.compatibility.database.engine');
   integer(value.compatibility.database.major, 'pack.compatibility.database.major', { min: 1, max: 99 });
   uniqueStrings(value.compatibility.database.extensions, 'pack.compatibility.database.extensions');
+  validateCatalog(value.compatibility.referenceCombinations, 'pack.compatibility.referenceCombinations', (entry, path) => {
+    fields(entry, ['id', 'runtime', 'packageManager', 'packages', 'database'], ['id', 'runtime', 'packageManager', 'packages', 'database'], path);
+    id(entry.id, `${path}.id`);
+    fields(entry.runtime, ['node'], ['node'], `${path}.runtime`);
+    string(entry.runtime.node, `${path}.runtime.node`, { max: 64 });
+    fields(entry.packageManager, ['version'], ['version'], `${path}.packageManager`);
+    string(entry.packageManager.version, `${path}.packageManager.version`, { max: 64 });
+    const referencePackages = new Set();
+    list(entry.packages, `${path}.packages`, { min: 1, max: 128 }).forEach((item, itemIndex) => {
+      const itemPath = `${path}.packages[${itemIndex}]`;
+      fields(item, ['name', 'version'], ['name', 'version'], itemPath);
+      string(item.name, `${itemPath}.name`, { max: 214, pattern: PACKAGE });
+      string(item.version, `${itemPath}.version`, { max: 64 });
+      if (referencePackages.has(item.name)) fail(`${itemPath}.name`, `duplicate package ${item.name}`);
+      referencePackages.add(item.name);
+    });
+    if (referencePackages.size !== packageNames.size || [...packageNames].some((name) => !referencePackages.has(name))) fail(`${path}.packages`, 'must declare every compatible package exactly once');
+    fields(entry.database, ['version', 'extensions'], ['version', 'extensions'], `${path}.database`);
+    string(entry.database.version, `${path}.database.version`, { max: 64 });
+    uniqueStrings(entry.database.extensions, `${path}.database.extensions`);
+  });
 
   fields(value.detection, ['requiredPaths', 'requiredPackages', 'forbiddenPackages'], ['requiredPaths', 'requiredPackages', 'forbiddenPackages'], 'pack.detection');
   uniqueStrings(value.detection.requiredPaths, 'pack.detection.requiredPaths', { min: 1 }).forEach((entry, index) => safePath(entry, `pack.detection.requiredPaths[${index}]`));
