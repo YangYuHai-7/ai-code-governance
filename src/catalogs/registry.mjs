@@ -2,6 +2,7 @@ import path from 'node:path';
 import { CONFIG_PATH, PACKAGE_ROOT, SUPPORTED_CLIENTS } from '../constants.mjs';
 import { readJson } from '../adapters/filesystem/index.mjs';
 import { usageError } from '../kernel/index.mjs';
+import { loadGoldenPathPack } from '../modules/stack-packs/index.mjs';
 
 /** Historical governance roots, kept in this order because they feed a recorded hash. */
 const LEGACY_GOVERNANCE_ROOTS = Object.freeze([
@@ -47,7 +48,35 @@ export function loadCapabilityRegistry() {
   if (registry.schema_version !== 1 || !Array.isArray(registry.packs)) {
     throw new Error('Capability pack registry is invalid.');
   }
+  const ids = new Set();
+  for (const pack of registry.packs) {
+    if (!pack || typeof pack !== 'object' || typeof pack.id !== 'string' || pack.id.length === 0 || ids.has(pack.id)) {
+      throw new Error('Capability pack registry has an invalid or duplicate pack ID.');
+    }
+    ids.add(pack.id);
+    if (pack.contract === undefined) continue;
+    if (!pack.contract || typeof pack.contract !== 'object' || Array.isArray(pack.contract)) {
+      throw new Error(`Capability pack registry contract is invalid for ${pack.id}.`);
+    }
+    const keys = Object.keys(pack.contract);
+    if (keys.length !== 1 || keys[0] !== 'goldenPathPackId' || typeof pack.contract.goldenPathPackId !== 'string' || pack.contract.goldenPathPackId.length === 0) {
+      throw new Error(`Capability pack registry contract is invalid for ${pack.id}.`);
+    }
+  }
   return registry;
+}
+
+/**
+ * Resolve an opt-in Golden Path contract for a legacy capability entry.
+ *
+ * Stack detection intentionally does not call this function: a generic React or Node project
+ * must never become a Golden Path project solely because it matched legacy registry evidence.
+ */
+export function resolveGoldenPathPackForCapability(id, registry = loadCapabilityRegistry()) {
+  const entry = registry.packs.find((candidate) => candidate.id === id);
+  if (!entry) throw usageError(`Unsupported technology stack: ${id}`);
+  if (!entry.contract) return null;
+  return loadGoldenPathPack(entry.contract.goldenPathPackId);
 }
 
 export function resolveAgents(ids, registry = loadAgentRegistry()) {
@@ -220,4 +249,3 @@ export function inferClientScopeFromRepository(relativePaths, registry = loadAge
   const clients = order.filter((id) => selected.has(id));
   return { clients, evidence };
 }
-

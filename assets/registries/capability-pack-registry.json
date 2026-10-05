@@ -51,6 +51,9 @@
       "release": "v3.0",
       "lifecycle": "active",
       "evidence": "unverified",
+      "contract": {
+        "goldenPathPackId": "react-mantine-nest-fastify-drizzle-postgresql"
+      },
       "detect": {
         "manifest_any": ["package.json"],
         "dependency_any": ["react", "react-dom", "next", "gatsby"]
@@ -114,6 +117,9 @@
       "release": "v3.0",
       "lifecycle": "active",
       "evidence": "unverified",
+      "contract": {
+        "goldenPathPackId": "react-mantine-nest-fastify-drizzle-postgresql"
+      },
       "detect": {
         "manifest_any": ["package.json"],
         "dependency_any": ["express", "@nestjs/core", "fastify", "koa", "hapi"]

@@ -2,6 +2,19 @@ import path from 'node:path';
 import { GENERATED_MARKER } from '../../constants.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { adapterSkillSuffix, normalizeRelative, skillAdapterContent, stableJson, unique } from '../../shared/index.mjs';
+import { derivePackMaturity } from '../stack-packs/index.mjs';
+
+export function renderStackPackMaturityClaim(input) {
+  const maturity = derivePackMaturity(input);
+  return {
+    packId: input.pack.id,
+    capabilityId: input.registryEntry.id,
+    maturity: maturity.maturity,
+    evidenceLevel: maturity.evidenceLevel,
+    claim: maturity.claim,
+    gaps: maturity.gaps,
+  };
+}
 
 function candidateSkill(capability, config) {
   if (config.artifactLanguage === 'zh-CN') return `---
@@ -116,7 +129,8 @@ ${capability.status === 'candidate'
 `;
 }
 
-export function renderCapabilityArtifacts(config, capabilities, lastHarvest) {
+export function renderCapabilityArtifacts(config, capabilities, lastHarvest, { stackPackInputs = [] } = {}) {
+  const stackPackClaims = stackPackInputs.map(renderStackPackMaturityClaim);
   const catalog = {
     schemaVersion: 1,
     lastHarvest,
@@ -124,6 +138,7 @@ export function renderCapabilityArtifacts(config, capabilities, lastHarvest) {
       ...capability,
       implementationPaths: capability.implementationPaths.map(normalizeRelative),
     })),
+    ...(stackPackClaims.length > 0 ? { stackPackClaims } : {}),
   };
   const artifacts = [{
     path: 'docs/ai/capability-evolution.json',

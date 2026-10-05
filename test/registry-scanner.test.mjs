@@ -64,6 +64,17 @@ test('detects React and Node from manifest dependencies', (context) => {
   assert.deepEqual(testCommand.verification.argv, ['npm', 'run', 'test']);
 });
 
+test('legacy stack detection stays independent from optional golden path contract metadata', (context) => {
+  const root = fixture('legacy-stack-detection');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
+    dependencies: { react: '19.0.0', express: '5.0.0' },
+  }));
+  const scan = scanProject(root);
+  assert.deepEqual(scan.stacks.map((stack) => stack.id), ['frontend-react', 'backend-node']);
+  assert.equal(scan.stacks.some((stack) => stack.contract), false);
+});
+
 test('uses generic fallback for an empty greenfield repository', (context) => {
   const root = fixture('greenfield');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
