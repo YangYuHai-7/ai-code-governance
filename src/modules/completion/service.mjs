@@ -15,6 +15,7 @@ import { isSafeRelative, normalizeRelative, sha256, stableJson } from '../../sha
 import { evaluateProductionReadiness } from './production-readiness.mjs';
 import { evaluateSurfaceVerification } from './surface-verification.mjs';
 import { assessHarvestEligibility, capabilitySourceChanged, completionCapabilityHarvestSummary, isProductionCapabilityPath } from '../capabilities/index.mjs';
+import { evaluateDeliveryCompletion, validateDeliverySession } from '../delivery-core/index.mjs';
 
 export const PRE_COMMIT_HOOK_MARKER = 'ai-code-governance:pre-commit-v1';
 
@@ -423,7 +424,21 @@ function nonUnitEvidencePath(relative) {
   return relative.startsWith('docs/') || relative.startsWith('.ai-governance/') || CLIENT_GOVERNANCE.isPath(relative);
 }
 
-function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null }) {
+function deliverySessionProjection(scan, reference) {
+  if (reference === null || reference === undefined) return null;
+  let value = reference;
+  if (typeof reference === 'string') {
+    if (!isSafeRelative(reference)) throw usageError('Delivery session reference must be a safe repository-relative JSON path.');
+    assertNoLinkAncestor(scan.root, reference);
+    value = readJson(path.join(scan.root, reference));
+  }
+  const session = validateDeliverySession(value);
+  const traceability = session.runtime?.traceability ?? { status: 'incomplete', requirementCoverage: [], orphanChanges: [], unverifiedNodes: [], gaps: ['Delivery session has no evaluated traceability graph.'] };
+  const completion = evaluateDeliveryCompletion({ session, traceability, evidence: session.runtime?.evidence ?? [], profile: 'advisory' });
+  return { id: session.id, state: session.state, completion, gaps: completion.residualGaps };
+}
+
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null, deliverySession = null }) {
   let { config, taskRoute, behaviorPaths, trustedBehaviorChange } = completionTaskRoute(scan, paths, taskLevel, gitRoot);
   let unit = workUnitRelative ? readWorkUnit(scan.root, workUnitRelative) : null;
   const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !nonUnitEvidencePath(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
@@ -505,7 +520,8 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     workUnit.recordedResults = projectVerification.qaResults;
   }
   const ok = routeAccepted && taskApproval.ok && workUnit.ok && governance.ok && memory.issues.length === 0 && ['not-requested', 'passed'].includes(projectVerification.status) && surfaceVerification.status !== 'blocked' && flow.status !== 'blocked';
-  const productionReadiness = evaluateProductionReadiness(scan);
+  const delivery = deliverySessionProjection(scan, deliverySession);
+  const productionReadiness = evaluateProductionReadiness(scan, delivery?.completion ?? null);
   const harvestInput = { taskRoute, changedPaths: paths, verification: projectVerification };
   const changeEvidence = harvestBindingReason ? { paths: [], reason: harvestBindingReason }
     : taskApproval.ok && assessHarvestEligibility(harvestInput).eligible ? capabilityChangedPaths(scan, paths) : { paths };
@@ -528,6 +544,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     flow,
     memory,
     workUnit,
+    deliverySession: delivery,
     productionReadiness,
     surfaceVerification,
     claimBoundary,
@@ -546,7 +563,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
   };
 }
 
-export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null, workUnit = null } = {}) {
+export function runCompletion(target, { fromGitHook = false, verificationCommand = null, taskLevel = null, reviewMode = null, approvalEvidence = null, approve = null, workUnit = null, deliverySession = null } = {}) {
   if (fromGitHook) {
     taskLevel ??= process.env.AICG_TASK_LEVEL ?? null;
     reviewMode ??= process.env.AICG_REVIEW_MODE ?? null;
@@ -563,7 +580,7 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     const root = resolveGitRepository(target);
     const paths = changedPaths(root);
     const scan = scanProject(target, { probeEnvironment: false });
-    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve, workUnit });
+    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve, workUnit, deliverySession });
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
   const root = resolveGitRepository(target);
@@ -579,5 +596,6 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     approve,
     gitRoot: root,
     workUnit,
+    deliverySession,
   }));
 }

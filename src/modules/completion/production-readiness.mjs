@@ -72,23 +72,27 @@ function constraintEvidence(scan) {
   return { status: 'recorded-unverified', declared: expected.length, covered, confirmedRiskSignals, path: businessAcceptanceResultsPath, issues: [] };
 }
 
-export function evaluateProductionReadiness(scan) {
+export function evaluateProductionReadiness(scan, deliveryCompletion = null) {
   const evidence = constraintEvidence(scan);
   const riskEvidence = evaluateRiskEvidence(scan);
   const hasConfirmedRisk = evidence.confirmedRiskSignals.length > 0;
   const hasDeclaredConstraints = evidence.declared > 0;
   const recorded = evidence.status === 'recorded-unverified';
   const riskRecorded = !hasConfirmedRisk || riskEvidence.status === 'recorded-unverified';
-  const blocked = ((hasDeclaredConstraints || hasConfirmedRisk) && !recorded) || !riskRecorded;
-  const eligible = recorded && riskRecorded;
+  const deliveryBlocked = deliveryCompletion !== null && deliveryCompletion.overall !== 'complete';
+  const blocked = ((hasDeclaredConstraints || hasConfirmedRisk) && !recorded) || !riskRecorded || deliveryBlocked;
+  const eligible = recorded && riskRecorded && !deliveryBlocked;
   return {
     state: blocked ? 'blocked' : 'unverified',
     reviewEligibility: eligible ? 'eligible-for-review' : 'not-eligible',
     constraintEvidence: evidence,
     riskEvidence,
+    deliveryCore: deliveryCompletion ? { sessionId: deliveryCompletion.sessionId, overall: deliveryCompletion.overall, residualGaps: deliveryCompletion.residualGaps } : null,
     reason: eligible
       ? 'Business acceptance plus negative and recovery evidence are recorded, but completion does not replay or certify arbitrary project evidence, deployment safety, or production operation.'
-      : blocked
+      : deliveryBlocked
+        ? 'Production readiness is blocked because the referenced delivery session has not satisfied its completion contract.'
+        : blocked
         ? 'Production readiness is blocked because owner-confirmed business constraints or risk signals lack complete business, negative, or recovery evidence bound to current source and configuration.'
         : 'Production readiness remains unverified because owner-confirmed business acceptance evidence is absent, incomplete, invalid, or not independently certified.',
   };

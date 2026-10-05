@@ -34,6 +34,7 @@ test('completion reports stale owning memory and exempts test-only and formattin
   assert.deepEqual(runCompletion(root, { taskLevel: 'L2' }).memory.issues, []);
   write(root, 'src/server/service.mjs', 'export function listWidgets() { return [1]; }\n');
   const result = runCompletion(root, { taskLevel: 'L2' });
+  assert.equal(result.deliverySession, null, 'legacy completion stays compatible when no delivery session is supplied');
   assert.equal(result.ok, false);
   assert.ok(result.memory.issues.some((issue) => /stale/.test(issue)));
 });
