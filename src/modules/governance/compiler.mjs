@@ -426,10 +426,11 @@ alwaysApply: true
 1. 保留无关的用户修改，将工作限制在请求范围内。
 2. 修改前先用 \`${routeCommand}\` 判定任务等级，并遵守其级别与角色建议。
 3. L2/L3 任务：先产出需求文档与开发 plan，逐项获得负责人确认并写入流程账本，之后才写业务代码。
-4. 将代码和测试视为当前行为的证据，保持受影响的治理声明准确。
-5. 如实报告证据，包括未实际运行的命令、客户端、平台和集成。
-6. 仅使用仓库中存在的命令，不得编造命令或添加未经批准的参数。
-7. 交付前运行一次 \`${completeCommand}\`，执行已发现的验证命令，并保存流程账本引用的测试报告。
+4. 每个新增或修改的代码单元只有一个主要职责，并归属于一个明确模块或组件；模块内保持高内聚，只通过公共契约协作，依赖装配集中在组合根。
+5. 将代码和测试视为当前行为的证据，保持受影响的治理声明准确。
+6. 如实报告证据，包括未实际运行的命令、客户端、平台和集成。
+7. 仅使用仓库中存在的命令，不得编造命令或添加未经批准的参数。
+8. 交付前运行一次 \`${completeCommand}\`，执行已发现的验证命令，并保存流程账本引用的测试报告。
 `;
   return `---
 alwaysApply: true
@@ -440,10 +441,11 @@ alwaysApply: true
 1. Preserve unrelated user changes and keep work inside the requested scope.
 2. Classify the task before editing with \`${routeCommand}\`; honor its level and role recommendations.
 3. For L2/L3 work, produce a requirement document and a development plan first, ask the owner to confirm every open question, bind both in the flow ledger, and only then write business code.
-4. Treat code and tests as current behavior evidence; keep affected governance claims accurate.
-5. Report evidence honestly, including commands, clients, platforms, and integrations that were not actually run.
-6. Use only repository commands that exist; do not invent commands or append unapproved arguments.
-7. Before delivery run \`${completeCommand}\` once with the discovered verification command and save the test report the flow ledger references.
+4. Give each new or changed code unit one primary responsibility and one owning module or component; keep internals cohesive, collaborate only through public contracts, and centralize dependency wiring in a composition root.
+5. Treat code and tests as current behavior evidence; keep affected governance claims accurate.
+6. Report evidence honestly, including commands, clients, platforms, and integrations that were not actually run.
+7. Use only repository commands that exist; do not invent commands or append unapproved arguments.
+8. Before delivery run \`${completeCommand}\` once with the discovered verification command and save the test report the flow ledger references.
 `;
 }
 

@@ -292,12 +292,42 @@ ${decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
     ? '- `aicg check .` 检查当前文件树的放置规则，以及 `docs/ai/module-graph.json` 声明的可静态分析的相对 JS/TS 依赖方向和跨模块公共入口。动态导入、别名、不支持的语言、内聚性和单一职责仍未经验证。'
     : '- 架构配置未处于 active 状态时，`aicg check .` 不强制检查依赖方向；这些边界仅为声明。'}
 - 如果策略是 advisory 或 legacy-unconfigured，保留当前产品结构，并在修改前请求单独批准的架构决策。
+
+## 代码设计约束
+
+1. 每项业务能力只有一个归属明确的模块或组件；每个代码单元只有一个主要职责和一个变化原因。相关状态、规则与测试放在所有者内部以保持高内聚。
+2. 跨模块协作只能经过最小且明确的公共契约。禁止访问其他模块内部文件、形成循环依赖或让领域代码依赖入口层、框架启动代码和基础设施适配器，以保持低耦合。
+3. 依赖装配、路由和适配器注册属于组合根。\`shared\` 只容纳稳定、无业务归属的基础原语，不得成为无明确所有者的垃圾场。
+4. 仅当存在多个独立实现、运行时扩展或第三方扩展需求时引入插件。插件必须声明版本化扩展接口、兼容策略、初始化与卸载生命周期以及失败隔离，并且不得访问宿主或其他插件的内部实现。
+5. 不得为了形式上的组件化或插件化预先创建空层、单实现接口或转发包装。拆分必须形成可独立理解、测试和替换的边界。
 `;
   const title = decision.status === 'active' ? 'Active future-code module boundary' : decision.status === 'advisory' ? 'Advisory architecture boundary' : 'Legacy-unconfigured architecture boundary';
   const graphGuidance = decision.verification.dependencyDirection === 'aicg-check-js-ts-module-graph'
     ? '- `aicg check .` enforces current-tree placement plus statically analyzable relative JS/TS dependency directions and cross-module public entrypoints declared in `docs/ai/module-graph.json`. Dynamic imports, aliases, unsupported languages, cohesion, and single responsibility remain unverified.'
     : '- `aicg check .` does not enforce dependency direction while the architecture profile is not active; those boundaries remain stated-only.';
-  return `---\nalwaysApply: false\nprofiles: [implementation]\n---\n\n<!-- ${GENERATED_MARKER} -->\n\n# ${title}\n\nThe sole current architecture policy is [architecture-profile.json](../architecture-profile.json). Its status is \`${decision.status}\` and mode is \`${decision.mode}\`.\n\n- Use the profile for new implementation only when it is active; do not infer approval to migrate or rewrite existing code.\n${graphGuidance}\n- If the profile is advisory or legacy-unconfigured, preserve the current product structure and request a separately approved architecture decision before changing it.\n`;
+  return `---
+alwaysApply: false
+profiles: [implementation]
+---
+
+<!-- ${GENERATED_MARKER} -->
+
+# ${title}
+
+The sole current architecture policy is [architecture-profile.json](../architecture-profile.json). Its status is \`${decision.status}\` and mode is \`${decision.mode}\`.
+
+- Use the profile for new implementation only when it is active; do not infer approval to migrate or rewrite existing code.
+${graphGuidance}
+- If the profile is advisory or legacy-unconfigured, preserve the current product structure and request a separately approved architecture decision before changing it.
+
+## Code design constraints
+
+1. Give each business capability one owning module or component. Give each code unit one primary responsibility and one reason to change; keep related state, rules, and tests together for high cohesion.
+2. Collaborate across modules only through a minimal explicit public contract. For low coupling, never import another module's internals, create dependency cycles, or make domain code depend on entrypoints, framework bootstrap, or infrastructure adapters.
+3. Keep dependency wiring, routes, and adapter registration in the composition root. Keep \`shared\` for stable primitives without business ownership; never use it as a dumping ground for ownerless code.
+4. Introduce a plugin only when multiple independent implementations, runtime extension, or third-party extension is required. A plugin declares a versioned extension interface, compatibility policy, initialization and unload lifecycle, and failure isolation; it never accesses host or sibling internals.
+5. Do not create empty layers, single-implementation interfaces, or forwarding wrappers merely to appear componentized or pluggable. A split must create a boundary that can be understood, tested, and replaced independently.
+`;
 }
 
 function entryFileAllowed(relative, placement) {

@@ -80,6 +80,27 @@ test('Chinese artifacts localize generated body instructions across selected dep
   }
 });
 
+test('existing-project development rules carry future-code design boundaries', (context) => {
+  const root = fixture('brownfield-design-boundaries');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'sample-service' }));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'index.js'), 'export const existing = true;\n');
+  const scan = scanProject(root);
+  const config = {
+    ...defaultConfig(scan),
+    clients: ['codex'],
+    governanceDepth: 'standard',
+    initialization: { lifecycle: 'existing', existingCodeStrategy: 'keep-existing', source: 'config' },
+  };
+  const rule = buildArtifacts(config, scan).find((artifact) => artifact.kind === 'development-unit-rule')?.content ?? '';
+  assert.match(rule, /one primary responsibility/i);
+  assert.match(rule, /cohesive/i);
+  assert.match(rule, /public contract/i);
+  assert.match(rule, /composition root/i);
+  assert.match(rule, /plugin.*justified extension point/i);
+});
+
 test('configuration defaults artifact and code documentation languages independently by project stage', (context) => {
   const greenfieldRoot = fixture('language-default-greenfield');
   const existingRoot = fixture('language-default-existing');

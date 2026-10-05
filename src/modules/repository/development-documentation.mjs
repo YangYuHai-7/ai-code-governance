@@ -300,7 +300,7 @@ profiles: [implementation]
 
 # ${label} development rule
 
-Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as leads until the cited source and tests have been reviewed. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
+Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as leads until the cited source and tests have been reviewed. Preserve existing code unless migration is separately approved. Give new or changed code one primary responsibility, keep related state, rules, and tests cohesive inside one owning module, and collaborate through a minimal public contract. Keep dependency wiring in a composition root and introduce a plugin only for a justified extension point with a versioned contract, lifecycle, and failure isolation. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
 `;
 }
 

@@ -13,6 +13,47 @@ import { deriveArchitectureDecision, evaluateModuleGraph, moduleGraphDeclaration
 const cli = path.resolve('bin/aicg.js');
 const ACTIVE_GRAPH_CONFIG = { architecture: { status: 'active', verification: { dependencyDirection: 'aicg-check-js-ts-module-graph' } } };
 
+test('generated implementation rules make cohesive component boundaries and justified plugins explicit', (context) => {
+  const root = fixture('software-design-rules');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+
+  for (const artifactLanguage of ['en', 'zh-CN']) {
+    const base = {
+      ...defaultConfig(scan),
+      clients: ['codex'],
+      governanceDepth: 'standard',
+      artifactLanguage,
+      initialization: { lifecycle: 'greenfield', existingCodeStrategy: null, source: 'config' },
+    };
+    const config = { ...base, architecture: deriveArchitectureDecision(scan, base) };
+    const artifacts = buildArtifacts(config, scan);
+    const content = (relative) => artifacts.find((artifact) => artifact.path === relative)?.content ?? '';
+    const always = content('docs/ai/policies/00_always.mdc');
+    const architecture = content('docs/ai/policies/15_architecture.mdc');
+
+    if (artifactLanguage === 'zh-CN') {
+      assert.match(always, /一个主要职责/);
+      assert.match(always, /公共契约/);
+      assert.match(always, /组合根/);
+      assert.match(architecture, /高内聚/);
+      assert.match(architecture, /低耦合/);
+      assert.match(architecture, /shared.*垃圾场/i);
+      assert.match(architecture, /多个独立实现.*运行时扩展/);
+      assert.match(architecture, /版本化.*生命周期.*失败隔离/s);
+    } else {
+      assert.match(always, /one primary responsibility/i);
+      assert.match(always, /public contract/i);
+      assert.match(always, /composition root/i);
+      assert.match(architecture, /high cohesion/i);
+      assert.match(architecture, /low coupling/i);
+      assert.match(architecture, /shared.*dumping ground/i);
+      assert.match(architecture, /multiple independent implementations.*runtime extension/i);
+      assert.match(architecture, /versioned.*lifecycle.*failure isolation/is);
+    }
+  }
+});
+
 test('minimal checker does not require unselected architecture artifacts or routes', (context) => {
   const root = fixture('minimal-optional-policy');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

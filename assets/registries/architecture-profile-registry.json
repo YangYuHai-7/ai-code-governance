@@ -8,13 +8,14 @@
       "summary": "A minimal module-boundary policy for new source without prescribing framework layers or creating product directories.",
       "translations": { "zh-CN": {
         "summary": "适用于新增源码的最小模块边界策略，不预设框架分层，也不创建产品目录。",
-        "invariants": ["将每项新增业务能力放在职责明确且有名称的功能或领域模块中。", "保持模块专属代码内聚，通过明确公共入口供其他模块使用。", "共享代码独立于具体业务模块。", "不得据此预先创建推测性的分层、仓储、接口、事件总线或空目录。", "不得将此策略视为移动、重写或格式化既有代码的授权。"]
+        "invariants": ["将每项新增业务能力放在职责明确且有名称的功能或领域模块中，每个代码单元只有一个主要职责。", "保持模块专属代码高内聚，仅通过最小且明确的公共契约供其他模块使用。", "依赖指向稳定契约，装配集中在组合根；共享代码独立于具体业务模块。", "仅在存在多个独立实现、运行时扩展或第三方扩展需求时引入具有版本化接口、生命周期与失败隔离的插件。", "不得据此预先创建推测性的分层、仓储、单实现接口、事件总线、插件或空目录。", "不得将此策略视为移动、重写或格式化既有代码的授权。"]
       } },
       "invariants": [
-        "Place each new business capability in a named feature or domain module with a clear responsibility.",
-        "Keep module-specific code cohesive and expose cross-module use through an explicit public entrypoint.",
-        "Keep shared code independent of concrete business modules.",
-        "Do not use this policy to pre-create speculative layers, repositories, interfaces, event buses, or empty directories.",
+        "Place each new business capability in a named feature or domain module with a clear responsibility; give each code unit one primary responsibility.",
+        "Keep module-specific code highly cohesive and expose cross-module use only through a minimal explicit public contract.",
+        "Point dependencies toward stable contracts, centralize wiring in a composition root, and keep shared code independent of concrete business modules.",
+        "Introduce a plugin only for multiple independent implementations, runtime extension, or third-party extension, with a versioned interface, lifecycle, and failure isolation.",
+        "Do not use this policy to pre-create speculative layers, repositories, single-implementation interfaces, event buses, plugins, or empty directories.",
         "Do not use this policy as authorization to move, rewrite, or reformat existing code."
       ],
       "placement": {
