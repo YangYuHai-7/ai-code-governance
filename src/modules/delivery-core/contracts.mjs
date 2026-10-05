@@ -1,5 +1,5 @@
 import { usageError } from '../../kernel/index.mjs';
-import { sha256 } from '../../shared/index.mjs';
+import { canonicalValueDigest } from '../../shared/index.mjs';
 
 export const REQUIREMENT_IR_VERSION = 2;
 export const ARCHITECTURE_IR_VERSION = 1;
@@ -314,18 +314,6 @@ export function validateDeliverySession(value) {
   return normalized(value);
 }
 
-function semanticProjection(value) {
-  if (Array.isArray(value)) return value.map(semanticProjection);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.keys(value).filter((key) => !VOLATILE_KEYS.has(key)).sort().map((key) => [key, semanticProjection(value[key])]));
-}
-
-function canonicalJson(value) {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
-  return JSON.stringify(value);
-}
-
 export function canonicalContractDigest(kind, value) {
   const validators = {
     requirement: validateRequirementIr,
@@ -335,5 +323,5 @@ export function canonicalContractDigest(kind, value) {
     session: validateDeliverySession,
   };
   if (!validators[kind]) fail('contract kind', `unsupported kind ${kind}`);
-  return sha256(canonicalJson(semanticProjection(validators[kind](value))));
+  return canonicalValueDigest(validators[kind](value), { omit: VOLATILE_KEYS });
 }
