@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import {
   GOLDEN_PATH_PACK_VERSION,
   QUALITY_MATRIX_VERSION,
+  GOLDEN_PATH_PACK_ID,
+  listGoldenPathPacks,
+  loadGoldenPathPack,
   packContractDigest,
   validateGoldenPathPack,
   validateQualityMatrix,
@@ -139,4 +142,18 @@ test('contracts reject duplicate gates, missing gate owners, unsafe paths, unkno
   assert.throws(() => validateGoldenPathPack({ ...pack(), future: true }), /unknown field/i);
   assert.throws(() => validateGoldenPathPack(pack({ schemaVersion: 2 })), /unsupported version/i);
   assert.throws(() => validateQualityMatrix(matrix({ schemaVersion: 2 })), /unsupported version/i);
+});
+
+test('the first package-owned golden path validates and is loaded deterministically', () => {
+  assert.equal(GOLDEN_PATH_PACK_ID, 'react-mantine-nest-fastify-drizzle-postgresql');
+  const packs = listGoldenPathPacks();
+  assert.deepEqual(packs.map((entry) => entry.id), [GOLDEN_PATH_PACK_ID]);
+  const value = loadGoldenPathPack(GOLDEN_PATH_PACK_ID);
+  assert.equal(value.id, GOLDEN_PATH_PACK_ID);
+  assert.ok(Object.isFrozen(value));
+  for (const gate of value.qualityMatrix.gates.filter((entry) => entry.required)) {
+    assert.ok(gate.owner);
+    assert.ok(gate.applicability);
+  }
+  assert.throws(() => loadGoldenPathPack('unknown-pack'), /Unknown golden path Pack/i);
 });
