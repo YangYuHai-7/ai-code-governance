@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "release", "lifecycle", "maturity", "sourceDigest", "compatibility", "detection", "architecture", "generation", "qualityMatrix", "failureCatalog", "repairCatalog", "knownLimitations"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "release": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "lifecycle": { "enum": ["active", "planned", "deprecated"] },
+    "maturity": { "enum": ["candidate", "guided", "executable", "certified"] },
+    "sourceDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "compatibility": { "type": "object" },
+    "detection": { "type": "object" },
+    "architecture": { "type": "object" },
+    "generation": { "type": "object" },
+    "qualityMatrix": { "$ref": "quality-matrix-v1-schema.json" },
+    "failureCatalog": { "type": "array" },
+    "repairCatalog": { "type": "array" },
+    "knownLimitations": { "type": "array" }
+  }
+}
