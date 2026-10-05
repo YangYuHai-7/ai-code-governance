@@ -25,6 +25,17 @@
         "repository-instructions",
         "skills"
       ],
+      "runtime": {
+        "status": "unverified",
+        "capabilities": {
+          "structuredRequirement": false,
+          "architectureProposal": false,
+          "boundedPatch": false,
+          "usageEvidence": false,
+          "cancellation": false,
+          "resume": false
+        }
+      },
       "assist": {
         "command": "codex",
         "args": [
@@ -62,6 +73,17 @@
         "repository-instructions",
         "skills"
       ],
+      "runtime": {
+        "status": "unverified",
+        "capabilities": {
+          "structuredRequirement": false,
+          "architectureProposal": false,
+          "boundedPatch": false,
+          "usageEvidence": false,
+          "cancellation": false,
+          "resume": false
+        }
+      },
       "assist": {
         "command": "claude",
         "args": [
@@ -103,6 +125,17 @@
         "rules",
         "skills"
       ],
+      "runtime": {
+        "status": "unverified",
+        "capabilities": {
+          "structuredRequirement": false,
+          "architectureProposal": false,
+          "boundedPatch": false,
+          "usageEvidence": false,
+          "cancellation": false,
+          "resume": false
+        }
+      },
       "assist": {
         "command": "cursor-agent",
         "args": [
@@ -174,6 +207,17 @@
         "repository-instructions",
         "skills"
       ],
+      "runtime": {
+        "status": "unverified",
+        "capabilities": {
+          "structuredRequirement": false,
+          "architectureProposal": false,
+          "boundedPatch": false,
+          "usageEvidence": false,
+          "cancellation": false,
+          "resume": false
+        }
+      },
       "assist": {
         "command": "dsh",
         "args": [

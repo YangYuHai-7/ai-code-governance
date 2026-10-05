@@ -24,6 +24,19 @@ test('fresh all-client scope includes Copilot but legacy selection remains uncha
   assert.equal(defaultConfig(scan).governanceFootprint, 'compact');
 });
 
+test('agent runtime metadata is explicit and never inferred from assist commands', () => {
+  const registry = loadAgentRegistry();
+  assert.ok(registry.agents.some((agent) => agent.runtime), 'at least one runtime declaration is required');
+  for (const agent of registry.agents) {
+    if (!agent.runtime) continue;
+    assert.equal(agent.runtime.status, 'unverified');
+    assert.deepEqual(Object.keys(agent.runtime.capabilities).sort(), ['architectureProposal', 'boundedPatch', 'cancellation', 'resume', 'structuredRequirement', 'usageEvidence'].sort());
+    assert.ok(Object.values(agent.runtime.capabilities).every((value) => value === false));
+  }
+  assert.equal(registry.agents.find((agent) => agent.id === 'generic').runtime, undefined);
+  assert.equal(registry.agents.find((agent) => agent.id === 'generic').assist, null);
+});
+
 test('an existing managed configuration defaults to the preserve footprint', (context) => {
   const root = fixture('legacy-footprint');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
