@@ -118,3 +118,32 @@ test('only a current E4 receipt bound to this Pack and exact facts may claim cer
   assert.equal(stale.maturity, 'guided');
   assert.ok(stale.gaps.some((gap) => gap.code === 'stale-evaluation-receipt'));
 });
+test('a E4 receipt still certifies when no certification result is supplied', () => {
+  const result = derivePackMaturity({ registryEntry: linkedEntry(), pack, compatibility: compatible(), evaluation: receipt('E4-golden-path-certified') });
+  assert.equal(result.maturity, 'certified');
+  assert.deepEqual(result.gaps, []);
+});
+
+test('a certified certification result is required to publish the certified maturity', () => {
+  const result = derivePackMaturity({
+    registryEntry: linkedEntry(), pack, compatibility: compatible(),
+    evaluation: receipt('E4-golden-path-certified'),
+    certification: { status: 'certified', evidenceLevel: 'E4-golden-path-certified', gaps: [] },
+  });
+  assert.equal(result.maturity, 'certified');
+  assert.deepEqual(result.gaps, []);
+});
+
+test('a blocked certification withholds the certified claim and names the exact certification gaps', () => {
+  const result = derivePackMaturity({
+    registryEntry: linkedEntry(), pack, compatibility: compatible(),
+    evaluation: receipt('E4-golden-path-certified'),
+    certification: { status: 'blocked', evidenceLevel: 'E3-agent-executable', gaps: [{ code: 'missing-e3', detail: 'no current E3 receipt' }, { code: 'qualified-user-rejected:ai-identity', detail: 'the participant is an AI agent' }] },
+  });
+  assert.equal(result.maturity, 'executable-candidate');
+  assert.match(result.claim, /withheld|not certified/i);
+  const codes = result.gaps.map((gap) => gap.code);
+  assert.ok(codes.includes('certification-not-passed'));
+  assert.ok(codes.includes('certification-missing-e3'));
+  assert.ok(codes.includes('certification-qualified-user-rejected:ai-identity'));
+});

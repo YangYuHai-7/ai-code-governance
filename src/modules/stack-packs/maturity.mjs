@@ -48,7 +48,7 @@ function evidenceGaps(level, stale) {
  * Legacy registry lifecycle and evidence fields are deliberately excluded from the decision:
  * they describe detection availability, not executable or certified Golden Path support.
  */
-export function derivePackMaturity({ registryEntry, pack, compatibility, evaluation = null }) {
+export function derivePackMaturity({ registryEntry, pack, compatibility, evaluation = null, certification = null }) {
   const linked = registryEntry?.contract?.goldenPathPackId === pack?.id;
   const compatible = compatibility?.status === 'compatible';
   const receipt = receiptMatches(evaluation, compatibility ?? {});
@@ -68,6 +68,27 @@ export function derivePackMaturity({ registryEntry, pack, compatibility, evaluat
   // only level whose complete validated receipt closes every published maturity gap.
   gaps.push(...evidenceGaps(receipt.level, receipt.stale));
 
+  // A certified maturity claim additionally requires a certified certification result when one is
+  // supplied; a blocked or incomplete certification can only withhold the claim and add gaps.
+  let certificationBlocked = false;
+  if (certification !== null) {
+    const valid = Boolean(certification) && typeof certification === 'object' && ['certified', 'incomplete', 'blocked'].includes(certification.status) && Array.isArray(certification.gaps);
+    if (!valid) {
+      certificationBlocked = true;
+      gaps.push(gap('certification-invalid', 'The certification result is malformed; no certified claim is published.'));
+    } else if (!(certification.status === 'certified' && certification.evidenceLevel === 'E4-golden-path-certified')) {
+      certificationBlocked = true;
+      gaps.push(gap('certification-not-passed', `Certification status is ${certification.status}; the certified claim is withheld.`));
+      for (const item of certification.gaps) gaps.push(gap(`certification-${item.code}`, item.detail ?? item.code));
+    }
+  }
+
+  if (compatible && receipt.valid && receipt.level === 'E4-golden-path-certified' && certificationBlocked) return freeze({
+    maturity: 'executable-candidate',
+    evidenceLevel: receipt.level,
+    claim: `Golden Path ${pack.id} has E4 evaluation evidence, but the certified claim is withheld because certification did not pass.`,
+    gaps,
+  });
   if (compatible && receipt.valid && receipt.level === 'E4-golden-path-certified') return freeze({
     maturity: 'certified',
     evidenceLevel: receipt.level,
