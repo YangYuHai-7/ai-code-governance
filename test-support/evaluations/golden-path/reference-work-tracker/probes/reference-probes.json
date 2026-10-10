@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "probes": [
+    {
+      "id": "cross-layer-import",
+      "description": "An application module imports infrastructure directly, crossing a layer boundary.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/application/leak.ts"
+      ],
+      "affectedGates": [
+        "architecture-boundaries"
+      ],
+      "expectation": "The architecture policy reports a forbidden layer dependency."
+    },
+    {
+      "id": "private-feature-import",
+      "description": "One web feature imports another feature private module instead of its public entrypoint.",
+      "scope": "project",
+      "targets": [
+        "project/apps/web/src/features/boards/bridge.ts"
+      ],
+      "affectedGates": [
+        "architecture-boundaries"
+      ],
+      "expectation": "The architecture policy reports a cross-feature private import."
+    },
+    {
+      "id": "contract-drift",
+      "description": "The published contract package gains a field that the transport and web clients do not know.",
+      "scope": "project",
+      "targets": [
+        "project/packages/contracts/src/board.ts"
+      ],
+      "affectedGates": [
+        "contract-tests",
+        "static-types"
+      ],
+      "expectation": "Contract checks fail against the published schema."
+    },
+    {
+      "id": "unsafe-dto-actor",
+      "description": "The transport accepts an actor identifier from the request body.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/transport/board-routes.ts"
+      ],
+      "affectedGates": [
+        "security-probes",
+        "contract-tests"
+      ],
+      "expectation": "The authorization negative probe fails."
+    },
+    {
+      "id": "domain-framework-import",
+      "description": "The domain imports the persistence framework.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/domain/board.ts"
+      ],
+      "affectedGates": [
+        "architecture-boundaries",
+        "static-types"
+      ],
+      "expectation": "The architecture policy reports a domain framework dependency."
+    },
+    {
+      "id": "transaction-leak",
+      "description": "The application service opens the database transaction instead of the infrastructure adapter.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/application/board-service.ts"
+      ],
+      "affectedGates": [
+        "architecture-boundaries",
+        "api-integration"
+      ],
+      "expectation": "Boundary and integration checks fail."
+    },
+    {
+      "id": "cross-tenant-access",
+      "description": "A valid board identifier from another organization is accepted because the tenant check was dropped.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/domain/board.ts"
+      ],
+      "affectedGates": [
+        "security-probes",
+        "api-integration"
+      ],
+      "expectation": "The tenant authorization probe fails."
+    },
+    {
+      "id": "lost-update",
+      "description": "The optimistic version check is removed so concurrent updates overwrite each other.",
+      "scope": "project",
+      "targets": [
+        "project/apps/api/src/domain/work-item.ts"
+      ],
+      "affectedGates": [
+        "api-integration",
+        "migration-safety"
+      ],
+      "expectation": "The concurrency probe fails."
+    },
+    {
+      "id": "failed-migration",
+      "description": "The initial migration is no longer transactional.",
+      "scope": "project",
+      "targets": [
+        "project/migrations/0001_init.sql"
+      ],
+      "affectedGates": [
+        "migration-safety"
+      ],
+      "expectation": "The migration check fails."
+    },
+    {
+      "id": "missing-acceptance-test",
+      "description": "The acceptance-bound unit test is deleted.",
+      "scope": "project",
+      "targets": [
+        "project/tests/unit/domain.unit.ts"
+      ],
+      "affectedGates": [
+        "unit-tests"
+      ],
+      "expectation": "The unit gate fails on a missing acceptance test."
+    },
+    {
+      "id": "stale-evidence",
+      "description": "The recorded architecture evidence diverges from the approved contract.",
+      "scope": "project",
+      "targets": [
+        "expected-architecture.json"
+      ],
+      "affectedGates": [
+        "requirement-traceability"
+      ],
+      "expectation": "Traceability reports stale evidence."
+    },
+    {
+      "id": "omitted-gate",
+      "description": "The security script is removed from the manifest so the gate cannot run.",
+      "scope": "project",
+      "targets": [
+        "project/package.json"
+      ],
+      "affectedGates": [
+        "security-probes"
+      ],
+      "expectation": "The omitted gate stays blocked instead of passing."
+    },
+    {
+      "id": "unauthorized-path",
+      "description": "A workspace mutation lands outside the approved project authority.",
+      "scope": "outside-project",
+      "targets": [
+        "unauthorized-probe.txt"
+      ],
+      "affectedGates": [
+        "architecture-boundaries"
+      ],
+      "expectation": "The authority check rejects the mutation and reports it."
+    },
+    {
+      "id": "interrupted-resume-drift",
+      "description": "A delivery session state file diverges after an interrupted resume.",
+      "scope": "project",
+      "targets": [
+        "project/.ai-governance/state/delivery-sessions/probe/session.json"
+      ],
+      "affectedGates": [
+        "requirement-traceability",
+        "api-integration"
+      ],
+      "expectation": "Resume stops for reconciliation instead of trusting the drifted state."
+    }
+  ]
+}
