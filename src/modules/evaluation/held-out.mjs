@@ -38,10 +38,17 @@ function providerPath(root, relative, label) {
 }
 
 // The provider root is read-only input: the loader verifies but never writes inside it.
-export function loadHeldOutEvaluationSet(root) {
+export function loadHeldOutEvaluationSet(root, options = {}) {
   if (typeof root !== 'string' || root.length === 0) fail('heldOut.root', 'a provider root is required');
   const resolved = path.resolve(root);
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) fail('heldOut.root', 'the provider root must be an existing directory');
+  // A provider that lives inside the reference fixture could leak evaluation input into the
+  // implementation context, so it is refused outright.
+  for (const forbidden of Array.isArray(options.forbiddenRoots) ? options.forbiddenRoots : []) {
+    if (typeof forbidden !== 'string' || forbidden.length === 0) continue;
+    const forbiddenRoot = path.resolve(forbidden);
+    if (resolved === forbiddenRoot || resolved.startsWith(`${forbiddenRoot}${path.sep}`)) fail('heldOut.root', 'the provider root must not live inside the reference fixture');
+  }
   const manifestPath = path.join(resolved, 'manifest.json');
   if (!fs.existsSync(manifestPath)) fail('heldOut.manifest', 'manifest.json is required');
   let manifest;

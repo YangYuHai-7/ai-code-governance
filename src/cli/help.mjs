@@ -46,6 +46,8 @@ Advanced delivery (agent runtime, optional; each name keeps its full reference b
   aicg delivery complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json] [--enforce]
   aicg delivery hook <install|status> [path] [--yes] [--json]
   aicg delivery release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
+  aicg evaluation golden-path <path> --requirement <relative-json> [--pack <id>] [--agent <id>] [--live-agent] [--output <relative-path>] [--json]
+  aicg evaluation held-out <provider-root> [--output <relative-path>] [--json]   Read-only held-out provider evaluation; live execution needs explicit authority.
 
   session    Persist and inspect one recoverable delivery state machine. Current built-in Agent entries remain unverified and are never activated as executable adapters implicitly.
   work-unit  Preview or validate one bounded vertical feature document. Writes a local report and never launches Agents.
@@ -120,6 +122,8 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg delivery complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json] [--enforce]
   aicg delivery hook <install|status> [路径] [--yes] [--json]
   aicg delivery release-check [路径] --type <bugfix|feature|major> [--evidence <相对路径.json>] [--json] [--enforce]
+  aicg evaluation golden-path <路径> --requirement <相对路径.json> [--pack <标识>] [--agent <标识>] [--live-agent] [--output <相对路径>] [--json]
+  aicg evaluation held-out <提供方根目录> [--output <相对路径>] [--json]   只读的 held-out 提供方评估；实跑需要显式授权。
 
   session       持久化并检查可恢复的交付状态机。内置 Agent 条目仍为未验证状态，不会被隐式启用为可执行适配器。
   work-unit     预览或校验一个垂直功能工作单元，只写本地报告，不启动 Agent。

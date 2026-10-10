@@ -153,3 +153,7 @@ test('a provider that changes during evaluation is blocked and failures are reta
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+test('a provider inside the reference fixture is refused', () => {
+  assert.throws(() => loadHeldOutEvaluationSet(providerRoot, { forbiddenRoots: [path.dirname(providerRoot)] }), /reference fixture/i);
+  assert.equal(loadHeldOutEvaluationSet(providerRoot, { forbiddenRoots: [] }).cases.length, 2);
+});

@@ -20,7 +20,7 @@ function preflight(environment) {
 // Held-out provider evaluation requires explicit authority; without it the command reports blocked
 // evidence and never copies or executes a case. The live provider harness is not wired in this build.
 async function heldOutCommand(target, options = {}) {
-  const set = loadHeldOutEvaluationSet(path.resolve(target ?? '.'));
+  const set = loadHeldOutEvaluationSet(path.resolve(target ?? '.'), { forbiddenRoots: [path.resolve(process.cwd(), 'test-support/evaluations/golden-path/reference-work-tracker')] });
   if (options['live-agent'] === true) throw usageError('the live held-out provider harness is not wired in this build; provide --output with a dry run instead.');
   const run = await runHeldOutEvaluationSet(set, {
     authorized: false,
