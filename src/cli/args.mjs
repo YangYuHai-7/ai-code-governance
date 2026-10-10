@@ -45,7 +45,7 @@ export function parseArgs(argv, {
     }
   } else if (command === 'evaluation') {
     action = args.shift() ?? null;
-    if (action !== 'golden-path') throw usageError('evaluation requires an action: golden-path.');
+    if (!['golden-path', 'held-out'].includes(action)) throw usageError('evaluation requires an action: golden-path or held-out.');
   } else if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');

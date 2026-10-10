@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readJson, writeText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import { runGoldenPathEvaluation } from '../../modules/evaluation/index.mjs';
+import { loadHeldOutEvaluationSet, runGoldenPathEvaluation, runHeldOutEvaluationSet } from '../../modules/evaluation/index.mjs';
 import { GOLDEN_PATH_PACK_ID, listGoldenPathPacks, loadGoldenPathPack } from '../../modules/stack-packs/index.mjs';
 
 function preflight(environment) {
@@ -17,10 +17,28 @@ function preflight(environment) {
   return { status: checks.every((check) => check.status === 'passed') ? 'passed' : 'blocked', checks };
 }
 
+// Held-out provider evaluation requires explicit authority; without it the command reports blocked
+// evidence and never copies or executes a case. The live provider harness is not wired in this build.
+async function heldOutCommand(target, options = {}) {
+  const set = loadHeldOutEvaluationSet(path.resolve(target ?? '.'));
+  if (options['live-agent'] === true) throw usageError('the live held-out provider harness is not wired in this build; provide --output with a dry run instead.');
+  const run = await runHeldOutEvaluationSet(set, {
+    authorized: false,
+    referenceDigests: { requirement: '0'.repeat(64), repository: '0'.repeat(64) },
+    thresholdPolicy: { minimumStructurallyDistinctCases: 2 },
+  });
+  const report = `${JSON.stringify(run, null, 2)}\n`;
+  if (options.output) writeText(path.resolve(options.output), report);
+  else process.stdout.write(report);
+  if (run.status !== 'passed') process.exitCode = 1;
+  return run;
+}
+
 // The default surface is a preflight/dry evaluation. Live Agent execution requires --live-agent and
 // an authorized environment; the command never fabricates a level it cannot evidence.
 export async function evaluationCommand(target, action, options = {}) {
-  if (action !== 'golden-path') throw usageError('evaluation requires an action: golden-path.');
+  if (action === 'held-out') return heldOutCommand(target, options);
+  if (action !== 'golden-path') throw usageError('evaluation requires an action: golden-path or held-out.');
   const root = path.resolve(target ?? '.');
   const packId = options.pack ?? GOLDEN_PATH_PACK_ID;
   const pack = loadGoldenPathPack(packId);

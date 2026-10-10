@@ -84,3 +84,92 @@ export function loadHeldOutEvaluationSet(root) {
     cases: Object.freeze(cases),
   });
 }
+
+export const HELD_OUT_RUN_VERSION = 1;
+const RUN_STATUSES = Object.freeze(['passed', 'incomplete', 'blocked']);
+const RUN_BLOCKING = Object.freeze(['provider-authority', 'held-out-overlap', 'provider-mutated']);
+
+function digestCaseRepository(entry) { return digestHeldOutTree(entry.absolute.repository); }
+function digestCaseRequirement(entry) { return digestFile(entry.absolute.requirement); }
+
+export function validateHeldOutEvaluationRun(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('heldOutRun', 'expected an object');
+  const allowed = ['schemaVersion', 'id', 'status', 'cases', 'gaps', 'sourceDigest', 'evaluatedAt'];
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) fail(`heldOutRun.${key}`, 'unknown field');
+  for (const key of allowed) if (!Object.hasOwn(value, key)) fail(`heldOutRun.${key}`, 'required field is missing');
+  if (value.schemaVersion !== HELD_OUT_RUN_VERSION) fail('heldOutRun.schemaVersion', `unsupported version ${value.schemaVersion}`);
+  if (!ID.test(value.id)) fail('heldOutRun.id', 'invalid run id');
+  if (!RUN_STATUSES.includes(value.status)) fail('heldOutRun.status', 'unsupported status');
+  if (!Array.isArray(value.cases)) fail('heldOutRun.cases', 'expected an array');
+  value.cases.forEach((entry, index) => {
+    const casePath = `heldOutRun.cases[${index}]`;
+    for (const key of ['caseId', 'runId', 'verdict', 'level', 'inputDigest', 'outputDigest']) if (typeof entry?.[key] !== 'string' || entry[key].length === 0) fail(`${casePath}.${key}`, 'expected a string');
+    if (!DIGEST.test(entry.inputDigest) || !DIGEST.test(entry.outputDigest)) fail(casePath, 'expected canonical digests');
+  });
+  if (!Array.isArray(value.gaps)) fail('heldOutRun.gaps', 'expected an array');
+  value.gaps.forEach((gap, index) => {
+    if (typeof gap?.code !== 'string' || gap.code.length === 0) fail(`heldOutRun.gaps[${index}].code`, 'expected a code');
+    if (typeof gap?.detail !== 'string' || gap.detail.length === 0) fail(`heldOutRun.gaps[${index}].detail`, 'expected a detail');
+  });
+  if (!DIGEST.test(value.sourceDigest ?? '')) fail('heldOutRun.sourceDigest', 'expected a canonical digest');
+  if (typeof value.evaluatedAt !== 'string' || Number.isNaN(Date.parse(value.evaluatedAt))) fail('heldOutRun.evaluatedAt', 'expected an ISO date-time');
+  return Object.freeze(JSON.parse(JSON.stringify(value)));
+}
+
+// Evaluator-owned inputs are read-only: every case runs in an isolated copy and the provider
+// digests are re-verified afterwards, so a mutated provider can never pass silently.
+export async function runHeldOutEvaluationSet(set, dependencies = {}) {
+  if (!set || typeof set !== 'object' || !Array.isArray(set.cases) || set.schemaVersion !== HELD_OUT_SET_VERSION || !DIGEST.test(set.sourceDigest ?? '')) fail('heldOutRun.set', 'a loaded held-out evaluation set is required');
+  const clock = dependencies.clock ?? (() => new Date().toISOString());
+  const gaps = [];
+  const add = (code, detail) => gaps.push({ code, detail });
+  const reference = dependencies.referenceDigests ?? {};
+  const threshold = dependencies.thresholdPolicy?.minimumStructurallyDistinctCases ?? 0;
+  const cases = [];
+
+  if (dependencies.authorized !== true) {
+    add('provider-authority', 'held-out evaluation requires explicit provider authority; no case was copied or executed');
+    return validateHeldOutEvaluationRun({ schemaVersion: HELD_OUT_RUN_VERSION, id: `held-out-run.${set.sourceDigest.slice(0, 24)}`, status: 'blocked', cases, gaps, sourceDigest: set.sourceDigest, evaluatedAt: clock() });
+  }
+  for (const entry of set.cases) {
+    if (entry.repositoryDigest === reference.repository || entry.requirementDigest === reference.requirement) {
+      add('held-out-overlap', `${entry.id} reuses reference digests and is not held out`);
+    }
+  }
+  if (gaps.some((gap) => gap.code === 'held-out-overlap')) {
+    return validateHeldOutEvaluationRun({ schemaVersion: HELD_OUT_RUN_VERSION, id: `held-out-run.${set.sourceDigest.slice(0, 24)}`, status: 'blocked', cases, gaps, sourceDigest: set.sourceDigest, evaluatedAt: clock() });
+  }
+  const distinct = set.cases.filter((entry) => entry.structurallyDistinct === true).length;
+  if (distinct < threshold) add('insufficient-distinct-cases', `${distinct} structurally distinct cases are available; ${threshold} are required`);
+  if (typeof dependencies.copyCase !== 'function' || typeof dependencies.evaluateCase !== 'function') fail('heldOutRun.dependencies', 'copyCase and evaluateCase effects are required');
+  if (typeof dependencies.workRoot !== 'string' || dependencies.workRoot.length === 0) fail('heldOutRun.workRoot', 'an isolated work root is required');
+  const runIds = new Set();
+  for (const entry of set.cases) {
+    const destination = `${dependencies.workRoot.replace(/[\\/]$/, '')}/${entry.id}`;
+    const root = await dependencies.copyCase(entry, destination);
+    const result = await dependencies.evaluateCase({ caseEntry: entry, workRoot: root ?? destination });
+    const runId = typeof result?.runId === 'string' && result.runId.length > 0 ? result.runId : `run.${entry.id}`;
+    if (runIds.has(runId)) add('duplicate-run', `run ${runId} was reused across cases; independence is not proven`);
+    runIds.add(runId);
+    if (result?.verdict !== 'passed') add(`case-not-passed:${entry.id}`, `${entry.id} reported ${result?.verdict ?? 'no verdict'}`);
+    cases.push({
+      caseId: entry.id, runId,
+      verdict: typeof result?.verdict === 'string' ? result.verdict : 'blocked',
+      level: typeof result?.level === 'string' ? result.level : 'E0-generated',
+      inputDigest: entry.inputDigest,
+      outputDigest: canonicalValueDigest(result ?? { missing: true }),
+    });
+  }
+  for (const entry of set.cases) {
+    if (digestCaseRepository(entry) !== entry.repositoryDigest || digestCaseRequirement(entry) !== entry.requirementDigest) {
+      add('provider-mutated', `${entry.id} provider inputs changed during evaluation`);
+    }
+  }
+  const blocked = gaps.some((gap) => RUN_BLOCKING.includes(gap.code));
+  const status = blocked ? 'blocked' : gaps.length === 0 ? 'passed' : 'incomplete';
+  return validateHeldOutEvaluationRun({
+    schemaVersion: HELD_OUT_RUN_VERSION,
+    id: `held-out-run.${canonicalValueDigest({ source: set.sourceDigest, cases: cases.map((entry) => entry.caseId) }).slice(0, 24)}`,
+    status, cases, gaps, sourceDigest: set.sourceDigest, evaluatedAt: clock(),
+  });
+}
