@@ -43,6 +43,9 @@ export function parseArgs(argv, {
       subAction = args.shift() ?? null;
       if (!SUB_ACTIONS[action].includes(subAction)) throw usageError(`delivery ${action} requires an action: ${SUB_ACTIONS[action].join(', ')}.`);
     }
+  } else if (command === 'evaluation') {
+    action = args.shift() ?? null;
+    if (action !== 'golden-path') throw usageError('evaluation requires an action: golden-path.');
   } else if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');
