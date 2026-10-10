@@ -125,6 +125,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg delivery release-check [路径] --type <bugfix|feature|major> [--evidence <相对路径.json>] [--json] [--enforce]
   aicg evaluation golden-path <路径> --requirement <相对路径.json> [--pack <标识>] [--agent <标识>] [--live-agent] [--output <相对路径>] [--json]
   aicg evaluation held-out <提供方根目录> [--output <相对路径>] [--json]   只读的 held-out 提供方评估；实跑需要显式授权。
+  aicg candidate review [路径] [--json]   只读查看候选规则状态与下一个合法动作；该命令不会批准或提升任何候选。
 
   session       持久化并检查可恢复的交付状态机。内置 Agent 条目仍为未验证状态，不会被隐式启用为可执行适配器。
   work-unit     预览或校验一个垂直功能工作单元，只写本地报告，不启动 Agent。
