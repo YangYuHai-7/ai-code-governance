@@ -84,3 +84,37 @@ export function deduplicateCandidateRules(existing, candidate) {
     digest: signature,
   })]);
 }
+const VOLATILE_OBSERVATION_KEYS = new Set(['detail', 'at', 'timestamp', 'count', 'runId', 'message', 'observedAt']);
+
+function observationSignature(projectId, observation, digest) {
+  if (typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest)) return digest;
+  if (typeof observation.rule === 'string' && observation.rule.length > 0) return sha256(JSON.stringify({ projectId, rule: observation.rule }));
+  if (typeof observation.id === 'string' && observation.id.length > 0) return sha256(JSON.stringify({ projectId, id: observation.id }));
+  const stable = Object.fromEntries(Object.entries(observation)
+    .filter(([key]) => !VOLATILE_OBSERVATION_KEYS.has(key))
+    .sort(([left], [right]) => left.localeCompare(right)));
+  return sha256(JSON.stringify({ projectId, stable }));
+}
+
+// Telemetry observations enter the candidate lifecycle here: recorded, never approved, and merged
+// when they describe the same rule so one project cannot accumulate duplicate global candidates.
+export function recordCandidateObservation({ store, projectId, observation, digest = undefined } = {}) {
+  if (!store || typeof store.read !== 'function' || typeof store.write !== 'function') {
+    throw usageError('candidateObservation.store must expose read() and write().');
+  }
+  if (typeof projectId !== 'string' || projectId.length === 0) throw usageError('candidateObservation.projectId is required.');
+  if (!observation || typeof observation !== 'object' || Array.isArray(observation)) throw usageError('candidateObservation.observation must be an object.');
+  const existing = store.read();
+  const list = Array.isArray(existing) ? existing : [];
+  const signature = observationSignature(projectId, observation, digest);
+  const duplicate = list.find((entry) => entry.digest === signature);
+  if (duplicate) return Object.freeze({ status: 'duplicate', candidate: duplicate });
+  const candidate = createCandidateRule({
+    id: `candidate.${signature.slice(0, 12)}`,
+    projectId,
+    observationId: typeof observation.id === 'string' && observation.id.length > 0 ? observation.id : `observation.${signature.slice(0, 12)}`,
+    digest: signature,
+  });
+  store.write(Object.freeze([...list, candidate]));
+  return Object.freeze({ status: 'recorded', candidate });
+}
