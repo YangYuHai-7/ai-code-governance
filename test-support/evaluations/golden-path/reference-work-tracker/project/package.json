@@ -1,0 +1,64 @@
+{
+  "name": "reference-work-tracker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24.18.0"
+  },
+  "packageManager": "npm@11.0.0",
+  "aicgEvaluation": {
+    "environment": {
+      "runtime": {
+        "node": "24.18.0"
+      },
+      "packageManager": {
+        "name": "npm",
+        "version": "11.0.0",
+        "lockfile": "package-lock.json"
+      },
+      "database": {
+        "engine": "postgresql",
+        "version": "18.6",
+        "extensions": []
+      }
+    }
+  },
+  "scripts": {
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "architecture": "node scripts/architecture-check.mjs",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:contract": "vitest run tests/contract",
+    "test:e2e": "playwright test e2e",
+    "test:security": "vitest run tests/security",
+    "test:migration": "node scripts/migration-check.mjs",
+    "test:observability": "vitest run tests/observability",
+    "test:performance": "vitest run tests/performance",
+    "build": "tsc --noEmit && vite build",
+    "start:local": "node scripts/start-local.mjs"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "vite": "8.3.0",
+    "@mantine/core": "9.6.0",
+    "@nestjs/core": "12.0.0",
+    "@nestjs/platform-fastify": "12.0.0",
+    "fastify": "5.12.5",
+    "drizzle-orm": "0.44.6"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vitest": "3.2.4",
+    "@playwright/test": "1.55.0",
+    "prettier": "3.6.2",
+    "eslint": "9.35.0",
+    "drizzle-kit": "0.31.4",
+    "@types/node": "24.5.2",
+    "@types/react": "19.1.12",
+    "@types/react-dom": "19.1.9"
+  }
+}

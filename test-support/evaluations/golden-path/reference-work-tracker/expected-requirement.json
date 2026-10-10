@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "id": "requirement.reference-work-tracker",
+  "title": "Tenant-scoped work tracker",
+  "summary": "Members of an organization sign in, browse boards, and maintain work items inside their own tenant through an audited, optimistic-concurrency write path.",
+  "actors": [
+    {
+      "id": "actor.member",
+      "name": "Organization member",
+      "goals": [
+        "Sign in",
+        "Browse boards and work items",
+        "Update work item state"
+      ]
+    }
+  ],
+  "goals": [
+    {
+      "id": "goal.track",
+      "actorId": "actor.member",
+      "statement": "Track work items on organization boards"
+    }
+  ],
+  "scope": [
+    "Account session",
+    "Organization membership",
+    "Boards",
+    "Work items with state",
+    "Audit entries",
+    "Pagination"
+  ],
+  "nonGoals": [
+    "External identity providers",
+    "Payments",
+    "Email delivery",
+    "Cloud deployment"
+  ],
+  "preconditions": [
+    "The member has an active session"
+  ],
+  "businessRules": [
+    {
+      "id": "rule.tenant",
+      "statement": "Every read and write is scoped to the actor organization."
+    },
+    {
+      "id": "rule.version",
+      "statement": "A work item update carries its expected version and is rejected on mismatch."
+    },
+    {
+      "id": "rule.audit",
+      "statement": "Every accepted mutation appends an audit entry with actor and item identity."
+    }
+  ],
+  "stateTransitions": [
+    {
+      "id": "transition.start",
+      "from": "todo",
+      "event": "start",
+      "to": "in-progress",
+      "guard": "The actor belongs to the item organization"
+    },
+    {
+      "id": "transition.finish",
+      "from": "in-progress",
+      "event": "finish",
+      "to": "done"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "input.update",
+      "name": "workItemUpdate",
+      "type": "object",
+      "required": true,
+      "rules": [
+        "Validated against the published contract"
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "id": "output.page",
+      "name": "workItemPage",
+      "type": "object",
+      "rules": [
+        "Paged and tenant scoped"
+      ]
+    }
+  ],
+  "failures": [
+    {
+      "id": "failure.tenant",
+      "condition": "A record belongs to another organization",
+      "outcome": "Return not-found without revealing the record"
+    },
+    {
+      "id": "failure.version",
+      "condition": "The expected version is stale",
+      "outcome": "Reject the update with a conflict"
+    }
+  ],
+  "permissions": [
+    {
+      "id": "permission.read",
+      "actorId": "actor.member",
+      "action": "workItem.read",
+      "effect": "allow",
+      "condition": "The item organization matches the actor organization"
+    },
+    {
+      "id": "permission.write",
+      "actorId": "actor.member",
+      "action": "workItem.update",
+      "effect": "allow",
+      "condition": "Same organization and current version"
+    }
+  ],
+  "dataLifecycle": [
+    {
+      "id": "data.workItem",
+      "data": "Work item and audit entry",
+      "retention": "Retained while the organization exists",
+      "deletion": "Deleted with the organization"
+    }
+  ],
+  "nfrs": [
+    {
+      "id": "nfr.latency",
+      "category": "performance",
+      "requirement": "API p95 latency stays under 250 ms"
+    },
+    {
+      "id": "nfr.bundle",
+      "category": "performance",
+      "requirement": "Keep the web bundle under 300 KB"
+    },
+    {
+      "id": "nfr.accessibility",
+      "category": "accessibility",
+      "requirement": "Keyboard focus and accessible names for the board and work item flow"
+    },
+    {
+      "id": "nfr.observability",
+      "category": "observability",
+      "requirement": "Emit structured logs with request correlation and a health check"
+    }
+  ],
+  "rollout": {
+    "strategy": "incremental",
+    "safeguards": [
+      "Feature flag"
+    ]
+  },
+  "rollback": {
+    "trigger": "Error budget exceeded",
+    "action": "Disable the flag and revert the migration"
+  },
+  "acceptanceScenarios": [
+    {
+      "id": "acceptance.flow",
+      "given": [
+        "A signed-in member",
+        "A board in their organization"
+      ],
+      "when": "The member moves a work item to in-progress",
+      "then": [
+        "The item state changes",
+        "An audit entry is written"
+      ]
+    },
+    {
+      "id": "acceptance.tenant",
+      "given": [
+        "A work item in another organization"
+      ],
+      "when": "The member requests it by identifier",
+      "then": [
+        "The API returns not-found"
+      ]
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "assumption.synthetic",
+      "statement": "All records and identities are synthetic",
+      "status": "confirmed"
+    }
+  ],
+  "openQuestions": [],
+  "ownerDecisions": [],
+  "sourceEvidence": [
+    {
+      "id": "source.reference",
+      "source": "operator-request",
+      "level": "stated",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "id": "architecture.reference-work-tracker",
+  "requirementDigest": "9c505c15284f3f0153e23ee3318d8708284f1f8ad40f2596c8d6bdaeabb49958",
+  "modules": [
+    {
+      "id": "web-feature",
+      "name": "Web features",
+      "owns": [
+        "apps/web/src/features/boards",
+        "apps/web/src/features/work-items"
+      ]
+    },
+    {
+      "id": "api-transport",
+      "name": "API transport",
+      "owns": [
+        "apps/api/src/transport"
+      ]
+    },
+    {
+      "id": "api-application",
+      "name": "API application",
+      "owns": [
+        "apps/api/src/application"
+      ]
+    },
+    {
+      "id": "api-domain",
+      "name": "API domain",
+      "owns": [
+        "apps/api/src/domain"
+      ]
+    },
+    {
+      "id": "api-infrastructure",
+      "name": "API infrastructure",
+      "owns": [
+        "apps/api/src/infrastructure"
+      ]
+    },
+    {
+      "id": "contracts",
+      "name": "Published contracts",
+      "owns": [
+        "packages/contracts/src"
+      ]
+    }
+  ],
+  "publicContracts": [
+    {
+      "id": "contract.workItem",
+      "moduleId": "contracts",
+      "kind": "schema",
+      "name": "WorkItem"
+    },
+    {
+      "id": "contract.board",
+      "moduleId": "contracts",
+      "kind": "schema",
+      "name": "Board"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "api-transport",
+      "to": "api-application",
+      "direction": "outbound"
+    },
+    {
+      "from": "api-transport",
+      "to": "contracts",
+      "direction": "outbound"
+    },
+    {
+      "from": "api-application",
+      "to": "api-domain",
+      "direction": "outbound"
+    },
+    {
+      "from": "api-infrastructure",
+      "to": "api-domain",
+      "direction": "outbound"
+    },
+    {
+      "from": "web-feature",
+      "to": "contracts",
+      "direction": "outbound"
+    }
+  ],
+  "compositionRoots": [
+    {
+      "id": "root.web",
+      "path": "apps/web/src/main.tsx",
+      "modules": [
+        "web-feature"
+      ]
+    },
+    {
+      "id": "root.api",
+      "path": "apps/api/src/main.ts",
+      "modules": [
+        "api-transport",
+        "api-application",
+        "api-infrastructure"
+      ]
+    }
+  ],
+  "decisions": [
+    {
+      "id": "decision.tenant",
+      "statement": "Every repository call takes the organization id from the session, never from the request body",
+      "status": "approved"
+    },
+    {
+      "id": "decision.version",
+      "statement": "Work item updates carry an expected version and fail as a conflict on mismatch",
+      "status": "approved"
+    }
+  ],
+  "constraints": [
+    {
+      "id": "constraint.layers",
+      "statement": "Dependencies point inward from transport to domain",
+      "level": "enforced"
+    },
+    {
+      "id": "constraint.contracts",
+      "statement": "Transport and web features share only the published contract package",
+      "level": "enforced"
+    }
+  ],
+  "risks": [],
+  "evidenceGaps": [
+    {
+      "id": "external-identity",
+      "statement": "External identity providers are not evaluated",
+      "status": "open"
+    },
+    {
+      "id": "cloud-deployment",
+      "statement": "Cloud deployment and production provisioning are not evaluated",
+      "status": "open"
+    },
+    {
+      "id": "evidence-incomplete",
+      "statement": "The workload remains an implementation candidate until E4 evidence exists",
+      "status": "open"
+    }
+  ]
+}
