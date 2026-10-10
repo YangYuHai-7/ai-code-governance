@@ -175,3 +175,15 @@ export function platformEvidence(records = [], platformPolicy = {}) {
   });
   return Object.freeze({ entries: Object.freeze(entries), verified: Object.freeze(entries.filter((entry) => entry.verified).map((entry) => entry.platform)) });
 }
+// Publication is evidence-derived: E4 authorizes Milestone 3 but never performs product-form work,
+// and anything below E4 leaves the roadmap explicitly evidence-incomplete with exact gaps.
+export function publicationDecision(certification) {
+  const current = validateGoldenPathCertification(certification);
+  const certified = current.status === 'certified' && current.evidenceLevel === 'E4-golden-path-certified';
+  return Object.freeze({
+    milestone2: certified ? 'complete' : 'evidence-incomplete',
+    milestone3: certified ? 'authorized' : 'blocked',
+    performsPhaseB: false,
+    gaps: Object.freeze(certified ? [] : current.gaps.map((gap) => Object.freeze({ code: gap.code, detail: gap.detail }))),
+  });
+}

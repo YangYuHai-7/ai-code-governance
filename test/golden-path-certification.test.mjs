@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
-import { evaluateGoldenPathCertification, platformEvidence, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
+import { evaluateGoldenPathCertification, platformEvidence, publicationDecision, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const PACK = 'react-mantine-nest-fastify-drizzle-postgresql';
@@ -142,4 +142,27 @@ test('platform evidence separates verified platforms from informational ones', (
   assert.equal(failing.verified.length, 0);
   assert.equal(failing.entries.find((entry) => entry.platform === 'win32').status, 'failed');
   assert.equal(failing.entries.find((entry) => entry.platform === 'linux').status, 'missing');
+});
+test('E4 authorizes Milestone 3 without performing it, and anything less stays evidence-incomplete', () => {
+  const certified = evaluateGoldenPathCertification(inputs());
+  const authorized = publicationDecision(certified);
+  assert.equal(authorized.milestone2, 'complete');
+  assert.equal(authorized.milestone3, 'authorized');
+  assert.equal(authorized.performsPhaseB, false);
+  assert.deepEqual(authorized.gaps, []);
+
+  const incomplete = evaluateGoldenPathCertification(inputs({ evaluationReceipts: inputs().evaluationReceipts.map((entry) => record({ ...entry, receipt: { ...entry.receipt, level: 'E2-integrated' } })) }));
+  const pending = publicationDecision(incomplete);
+  assert.equal(pending.milestone2, 'evidence-incomplete');
+  assert.equal(pending.milestone3, 'blocked');
+  assert.equal(pending.performsPhaseB, false);
+  assert.ok(pending.gaps.length > 0);
+  assert.ok(pending.gaps.some((gap) => gap.code === 'missing-e3'));
+
+  const blocked = publicationDecision(evaluateGoldenPathCertification(inputs({ evaluationReceipts: [record({ caseDigests: { requirement: HASH.requirement, repository: HASH.repository } })] })));
+  assert.equal(blocked.milestone2, 'evidence-incomplete');
+  assert.equal(blocked.milestone3, 'blocked');
+  assert.ok(blocked.gaps.some((gap) => gap.code === 'held-out-overlap'));
+
+  assert.throws(() => publicationDecision({ ...certified, status: 'unknown' }), /status/);
 });
