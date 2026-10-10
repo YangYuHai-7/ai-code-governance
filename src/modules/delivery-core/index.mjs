@@ -9,3 +9,4 @@ export * from './verification.mjs';
 export * from './traceability.mjs';
 export * from './completion.mjs';
 export * from './risk-profiles.mjs';
+export * from './quality-matrix.mjs';

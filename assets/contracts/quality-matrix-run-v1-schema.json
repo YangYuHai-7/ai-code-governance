@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/quality-matrix-run-v1-schema.json",
+  "title": "AICG Quality Matrix Run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "planId",
+    "requiredGateIds",
+    "results",
+    "status",
+    "digests",
+    "artifactDigests",
+    "artifactBytes",
+    "completedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "planId": {
+      "$ref": "#/$defs/id"
+    },
+    "requiredGateIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gateId",
+          "status"
+        ],
+        "properties": {
+          "gateId": {
+            "$ref": "#/$defs/id"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "blocked",
+              "not-run",
+              "stale",
+              "unsupported",
+              "not-applicable"
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "failureClassification": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cleanup": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "enum": [
+                  "clean",
+                  "failed"
+                ]
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "blocked"
+      ]
+    },
+    "digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirement",
+        "architecture",
+        "repository",
+        "pack",
+        "risk",
+        "environment"
+      ],
+      "properties": {
+        "requirement": {
+          "$ref": "#/$defs/digest"
+        },
+        "architecture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "repository": {
+          "$ref": "#/$defs/digest"
+        },
+        "pack": {
+          "$ref": "#/$defs/digest"
+        },
+        "risk": {
+          "$ref": "#/$defs/digest"
+        },
+        "environment": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "artifactDigests": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gateId",
+          "path",
+          "digest",
+          "bytes"
+        ],
+        "properties": {
+          "gateId": {
+            "$ref": "#/$defs/id"
+          },
+          "path": {
+            "$ref": "#/$defs/path"
+          },
+          "digest": {
+            "$ref": "#/$defs/digest"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 536870912
+          }
+        }
+      }
+    },
+    "artifactBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 536870912
+    },
+    "completedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}
