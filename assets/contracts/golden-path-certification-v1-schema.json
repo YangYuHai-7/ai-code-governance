@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/golden-path-certification-v1-schema.json",
+  "title": "AICG Golden Path Certification v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "evidenceLevel",
+    "matrix",
+    "thresholds",
+    "gaps",
+    "sourceDigests",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "status": {
+      "enum": [
+        "certified",
+        "incomplete",
+        "blocked"
+      ]
+    },
+    "evidenceLevel": {
+      "enum": [
+        "E0-generated",
+        "E1-deterministic",
+        "E2-integrated",
+        "E3-agent-executable",
+        "E4-golden-path-certified"
+      ]
+    },
+    "matrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entries"
+      ],
+      "properties": {
+        "entries": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "caseId",
+              "platform",
+              "runId",
+              "level",
+              "verdict",
+              "evaluatedAt"
+            ],
+            "properties": {
+              "caseId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "platform": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "runId": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "level": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "verdict": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "evaluatedAt": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimumHeldOutCases",
+        "requireQualifiedHuman",
+        "requireNegativeProbes",
+        "maxAgeDays"
+      ],
+      "properties": {
+        "minimumHeldOutCases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "requireQualifiedHuman": {
+          "type": "boolean"
+        },
+        "requireNegativeProbes": {
+          "type": "boolean"
+        },
+        "maxAgeDays": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "detail"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        }
+      }
+    },
+    "sourceDigests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pack",
+        "requirement",
+        "repository",
+        "environment",
+        "policy"
+      ],
+      "properties": {
+        "pack": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "requirement": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "policy": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "maxLength": 64
+    }
+  }
+}
