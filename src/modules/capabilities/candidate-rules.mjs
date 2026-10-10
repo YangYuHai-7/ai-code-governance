@@ -50,9 +50,19 @@ export function transitionCandidateRule(rule, event) {
     if (!event.approver || event.approver.class !== 'human-owner') throw usageError('A candidate rule needs a human owner approval.');
     if (event.approver.projectId === current.projectId) throw usageError('A project can never promote its own rule.');
   }
+  if (event.type === 'offline-evaluate') {
+    const evidence = event.evidence;
+    if (!evidence || typeof evidence !== 'object' || !/^[a-f0-9]{64}$/.test(evidence.digest ?? '')) {
+      throw usageError('An offline evaluation must carry a passed receipt digest.');
+    }
+    if (evidence.status === 'failed') throw usageError('An offline evaluation failed; the candidate cannot advance to review.');
+    if (evidence.status !== 'passed') throw usageError('An offline evaluation must carry a passed receipt digest.');
+  }
   if (event.type === 'canary' || event.type === 'monitor' || event.type === 'promote') {
     if (!event.evidence || typeof event.evidence !== 'object') throw usageError(`${event.type} requires policy evidence.`);
   }
+  if (event.type === 'canary' && event.evidence.current !== true) throw usageError('A canary requires current canary evidence.');
+  if (event.type === 'monitor' && event.evidence.monitoredWindowPassed !== true) throw usageError('Monitoring requires a passed monitored window.');
   if (event.type === 'promote') {
     if (event.evidence.canaryPassed === false) throw usageError('A candidate rule whose canary regressed must roll back instead of promoting.');
     if (event.evidence.monitoredWindowPassed !== true) throw usageError('Promotion requires a passed monitored window.');
@@ -66,6 +76,7 @@ export function transitionCandidateRule(rule, event) {
     history: Object.freeze([...current.history, Object.freeze({
       event: event.type, from: current.state, to: transition.to,
       actor: event.approver?.identity ?? event.reviewer?.identity ?? null, at: event.at ?? null,
+      evidenceDigest: typeof event.evidence?.digest === 'string' && /^[a-f0-9]{64}$/.test(event.evidence.digest) ? event.evidence.digest : null,
     })]),
   });
 }

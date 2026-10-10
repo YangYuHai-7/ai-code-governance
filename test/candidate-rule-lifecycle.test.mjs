@@ -14,7 +14,7 @@ function advance(events = []) {
 test('a candidate travels the governed lifecycle and a project can never promote its own rule', () => {
   const promoted = advance([
     { type: 'deduplicate', duplicateOf: null },
-    { type: 'offline-evaluate', evidence: { cases: 3, regressions: 0 } },
+    { type: 'offline-evaluate', evidence: { status: 'passed', cases: 3, regressions: 0, digest: 'd'.repeat(64) } },
     { type: 'independent-review', reviewer },
     { type: 'approve', approver },
     { type: 'canary', evidence: { current: true, projectIds: ['project-beta'] } },
@@ -32,7 +32,7 @@ test('illegal transitions are rejected instead of skipping governance', () => {
 });
 
 test('self-review, self-approval, and Agent approval are refused', () => {
-  const reviewed = advance([{ type: 'deduplicate' }, { type: 'offline-evaluate', evidence: {} }]);
+  const reviewed = advance([{ type: 'deduplicate' }, { type: 'offline-evaluate', evidence: { status: 'passed', digest: 'd'.repeat(64) } }]);
   assert.throws(() => transitionCandidateRule(reviewed, { type: 'independent-review', reviewer: { class: 'independent-reviewer', projectId: 'project-alpha' } }), /independently reviewed/);
   const ready = transitionCandidateRule(reviewed, { type: 'independent-review', reviewer });
   assert.throws(() => transitionCandidateRule(ready, { type: 'approve', approver: { class: 'human-owner', projectId: 'project-alpha' } }), /never promote its own/);
@@ -50,7 +50,7 @@ test('an identical observation is deduplicated instead of creating a second cand
 
 test('a failed canary rolls back and promotion needs a monitored window', () => {
   const canaried = advance([
-    { type: 'deduplicate' }, { type: 'offline-evaluate', evidence: {} },
+    { type: 'deduplicate' }, { type: 'offline-evaluate', evidence: { status: 'passed', digest: 'd'.repeat(64) } },
     { type: 'independent-review', reviewer }, { type: 'approve', approver },
     { type: 'canary', evidence: { current: true } },
   ]);
