@@ -568,3 +568,13 @@ Metrics must retain failed and blocked samples. Aggregate success rates without 
 - Capability-pack state changes start in the machine registry and synchronize human documentation.
 - Completed milestones require current release evidence; plans, generated files, and passing synthetic fixtures alone do not close them.
 - Keep exact dates in release and evaluation evidence. This roadmap retains priority and dependency order unless a dated release commitment is separately approved.
+
+## Current execution status (evaluator-derived)
+
+This section is updated only from certification-evaluator output; editorial rounding is not permitted.
+
+- **Milestone 1 (Core semantic and runtime foundation): complete** — delivery-core contracts, requirement compilation, session state and durable store, Agent runtime contract, bounded workspace transactions, recoverable runtime, cross-stack verification runner, traceability and production completion, and the Core CLI surface, each with a red/green gate and a requirement-to-code cross-verification record.
+- **Milestone 2 (one production-capable golden path): evidence-incomplete.** The Pack foundation, alias-aware architecture policy, risk-profile activation, managed verification, the reference workload, negative probes, the bounded Codex adapter, the opt-in evaluation command, and the certification machinery (evidence evaluator, held-out boundary, cross-OS workflow, qualified-user acceptance, publication decision, maturity gate) are implemented and verified. Milestone 2 is **not** closed because the external evidence it requires does not exist yet.
+- Exact gaps: `missing-e3`, `missing-held-out-case`, `missing-qualified-human`, `insufficient-held-out-cases`, `missing-negative-probes`, and `platform-missing:linux|darwin|win32`.
+- **Milestone 3 (product-form conversion) is not authorized.** An E4 verdict would authorize it without performing it; nothing in this repository performs Phase B work.
+- Machine gates: `evaluateGoldenPathCertification()` refuses E4 on any gap, `publicationDecision()` keeps Milestone 2 evidence-incomplete and Milestone 3 blocked below E4, `derivePackMaturity()` withholds the certified claim unless a certified certification result is supplied, and `applyQualifiedUserEvidence()` lets a rejected human acceptance only add gaps.

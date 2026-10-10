@@ -9,7 +9,7 @@ import {
   loadGoldenPathPack,
   resolvePackCompatibility,
 } from '../src/modules/stack-packs/index.mjs';
-import { renderCapabilityArtifacts } from '../src/modules/capabilities/artifacts.mjs';
+import { renderCapabilityArtifacts, renderStackPackMaturityClaim } from '../src/modules/capabilities/artifacts.mjs';
 
 const pack = loadGoldenPathPack('react-mantine-nest-fastify-drizzle-postgresql');
 
@@ -146,4 +146,21 @@ test('a blocked certification withholds the certified claim and names the exact 
   assert.ok(codes.includes('certification-not-passed'));
   assert.ok(codes.includes('certification-missing-e3'));
   assert.ok(codes.includes('certification-qualified-user-rejected:ai-identity'));
+});
+test('the rendered maturity claim carries the certification verdict into capability artifacts', () => {
+  const rendered = renderStackPackMaturityClaim({
+    registryEntry: linkedEntry(), pack, compatibility: compatible(),
+    evaluation: receipt('E4-golden-path-certified'),
+    certification: { status: 'blocked', evidenceLevel: 'E3-agent-executable', gaps: [{ code: 'missing-qualified-human', detail: 'no qualified-user acceptance is recorded' }] },
+  });
+  assert.equal(rendered.maturity, 'executable-candidate');
+  assert.match(rendered.claim, /withheld/i);
+  assert.ok(rendered.gaps.some((gap) => gap.code === 'certification-missing-qualified-human'));
+  const certified = renderStackPackMaturityClaim({
+    registryEntry: linkedEntry(), pack, compatibility: compatible(),
+    evaluation: receipt('E4-golden-path-certified'),
+    certification: { status: 'certified', evidenceLevel: 'E4-golden-path-certified', gaps: [] },
+  });
+  assert.equal(certified.maturity, 'certified');
+  assert.deepEqual(certified.gaps, []);
 });
