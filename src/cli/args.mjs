@@ -46,6 +46,9 @@ export function parseArgs(argv, {
   } else if (command === 'evaluation') {
     action = args.shift() ?? null;
     if (!['golden-path', 'held-out'].includes(action)) throw usageError('evaluation requires an action: golden-path or held-out.');
+  } else if (command === 'review') {
+    action = args.shift() ?? null;
+    if (action !== 'evidence') throw usageError('review requires an action: evidence.');
   } else if (command === 'candidate') {
     action = args.shift() ?? null;
     if (action !== 'review') throw usageError('candidate requires an action: review.');
