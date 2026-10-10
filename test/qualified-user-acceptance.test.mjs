@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateQualifiedUserAcceptance, validateQualifiedUserAcceptance } from '../src/modules/evaluation/index.mjs';
+import { evaluateQualifiedUserAcceptance, qualifiedUserEvidence, validateQualifiedUserAcceptance } from '../src/modules/evaluation/index.mjs';
 
 const HASH = { requirement: 'a'.repeat(64), pack: 'b'.repeat(64), run: 'c'.repeat(64), repository: 'd'.repeat(64) };
 
@@ -64,4 +64,12 @@ test('the published acceptance contract is closed and versioned', () => {
   assert.throws(() => validateQualifiedUserAcceptance({ ...receipt, extra: true }), /extra/);
   assert.throws(() => validateQualifiedUserAcceptance({ ...receipt, schemaVersion: 2 }), /schemaVersion/);
   assert.throws(() => validateQualifiedUserAcceptance({ ...receipt, participant: { class: 'robot', stackFamiliarity: 'unfamiliar', identity: 'x' } }), /class/);
+});
+test('an acceptance evaluation maps into certification evidence without softening a rejection', () => {
+  const accepted = qualifiedUserEvidence(evaluateQualifiedUserAcceptance(acceptance()));
+  assert.equal(accepted.qualifiedHuman, true);
+  assert.deepEqual(accepted.gaps, []);
+  const rejected = qualifiedUserEvidence(evaluateQualifiedUserAcceptance(acceptance({ participant: { class: 'implementer', stackFamiliarity: 'unfamiliar', identity: 'implementer-1' } })));
+  assert.equal(rejected.qualifiedHuman, false);
+  assert.ok(rejected.gaps.some((gap) => gap.code === 'qualified-user-rejected:implementer-self-acceptance'));
 });

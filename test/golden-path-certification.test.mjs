@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
-import { evaluateGoldenPathCertification, platformEvidence, publicationDecision, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
+import { applyQualifiedUserEvidence, evaluateGoldenPathCertification, platformEvidence, publicationDecision, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
 
 const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const PACK = 'react-mantine-nest-fastify-drizzle-postgresql';
@@ -165,4 +165,16 @@ test('E4 authorizes Milestone 3 without performing it, and anything less stays e
   assert.ok(blocked.gaps.some((gap) => gap.code === 'held-out-overlap'));
 
   assert.throws(() => publicationDecision({ ...certified, status: 'unknown' }), /status/);
+});
+test('qualified-user evidence is applied to the certification result, never assumed', () => {
+  const certified = evaluateGoldenPathCertification(inputs());
+  const accepted = applyQualifiedUserEvidence(certified, { status: 'accepted', gaps: [] });
+  assert.equal(accepted.status, 'certified');
+  assert.equal(accepted.evidenceLevel, 'E4-golden-path-certified');
+
+  const rejected = applyQualifiedUserEvidence(certified, { status: 'rejected', gaps: [{ code: 'ai-identity', detail: 'the participant is an AI agent' }] });
+  assert.equal(rejected.status, 'blocked');
+  assert.ok(rejected.gaps.some((gap) => gap.code === 'qualified-user-rejected:ai-identity'));
+  assert.equal(validateGoldenPathCertification(rejected).status, 'blocked');
+  assert.equal(publicationDecision(rejected).milestone3, 'blocked');
 });

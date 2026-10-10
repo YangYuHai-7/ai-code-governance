@@ -94,3 +94,13 @@ export function validateQualifiedUserAcceptance(value) {
   });
   return Object.freeze(JSON.parse(JSON.stringify(value)));
 }
+// Certification consumes this projection: a rejected acceptance can only add gaps, never remove one.
+export function qualifiedUserEvidence(evaluation) {
+  if (!evaluation || typeof evaluation !== 'object' || !['accepted', 'rejected'].includes(evaluation.status) || !Array.isArray(evaluation.gaps)) {
+    throw usageError('A qualified-user evaluation result is required.');
+  }
+  return Object.freeze({
+    qualifiedHuman: evaluation.status === 'accepted',
+    gaps: Object.freeze(evaluation.status === 'accepted' ? [] : evaluation.gaps.map((gap) => Object.freeze({ code: `qualified-user-rejected:${gap.code}`, detail: String(gap.detail ?? gap.code) }))),
+  });
+}

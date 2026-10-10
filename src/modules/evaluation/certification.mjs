@@ -1,3 +1,4 @@
+import { qualifiedUserEvidence } from './qualified-user.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
 import { validateGoldenPathPack } from '../stack-packs/index.mjs';
@@ -186,4 +187,11 @@ export function publicationDecision(certification) {
     performsPhaseB: false,
     gaps: Object.freeze(certified ? [] : current.gaps.map((gap) => Object.freeze({ code: gap.code, detail: gap.detail }))),
   });
+}
+// Applied after evaluation: absent or rejected qualified-user evidence can only lower the verdict.
+export function applyQualifiedUserEvidence(certification, evaluation) {
+  const current = validateGoldenPathCertification(certification);
+  const evidence = qualifiedUserEvidence(evaluation);
+  if (evidence.qualifiedHuman) return current;
+  return validateGoldenPathCertification({ ...current, status: 'blocked', gaps: [...current.gaps, ...evidence.gaps] });
 }
