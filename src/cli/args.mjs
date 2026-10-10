@@ -51,7 +51,7 @@ export function parseArgs(argv, {
     if (action !== 'evidence') throw usageError('review requires an action: evidence.');
   } else if (command === 'candidate') {
     action = args.shift() ?? null;
-    if (action !== 'review') throw usageError('candidate requires an action: review.');
+    if (!['review', 'observe'].includes(action)) throw usageError('candidate requires an action: review or observe.');
   } else if (command === 'work-unit') {
     action = args.shift() ?? null;
     if (!['plan', 'status'].includes(action)) throw usageError('work-unit requires an action: plan or status.');

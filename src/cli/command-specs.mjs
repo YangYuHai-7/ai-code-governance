@@ -12,7 +12,7 @@ export const COMMAND_FLAGS = Object.freeze({
   config: new Set(['config', 'output', 'yes', 'json', 'locale', 'no-open', 'auto-exit', 'enforce', 'help']),
   delivery: new Set(['work-unit', 'json', 'enforce', 'help', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'yes', 'verify', 'task-level', 'review-mode', 'approval-evidence', 'approve', 'from-git-hook', 'type', 'evidence', 'replay', 'session', 'agent', 'profile', 'requirement', 'text']),
   evaluation: new Set(['golden-path', 'held-out', 'pack', 'requirement', 'agent', 'live-agent', 'output', 'json', 'help']),
-  candidate: new Set(['review', 'json', 'help']),
+  candidate: new Set(['review', 'observe', 'text', 'id', 'project', 'json', 'help']),
   review: new Set(['evidence', 'session', 'json', 'help']),
   check: new Set(['json', 'enforce', 'help']),
   sync: new Set(['dry-run', 'force', 'migrate-links', 'prune', 'approve', 'config', 'help']),

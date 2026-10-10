@@ -49,6 +49,7 @@ Advanced delivery (agent runtime, optional; each name keeps its full reference b
   aicg evaluation golden-path <path> --requirement <relative-json> [--pack <id>] [--agent <id>] [--live-agent] [--output <relative-path>] [--json]
   aicg evaluation held-out <provider-root> [--output <relative-path>] [--json]   Read-only held-out provider evaluation; live execution needs explicit authority.
   aicg candidate review [path] [--json]   Read-only view of candidate-rule state and the next legal action; it never approves or promotes.
+  aicg candidate observe [path] --text <observation> [--project <id>] [--json]   Record one project observation as a candidate; recording never approves it.
   aicg review evidence [path] --session <id> --evidence <relative-json> [--json]   Record validated review evidence; it never approves or completes a session.
 
   session    Persist and inspect one recoverable delivery state machine. Current built-in Agent entries remain unverified and are never activated as executable adapters implicitly.
@@ -127,6 +128,7 @@ export const HELP_ZH = `AI 代码治理 CLI
   aicg evaluation golden-path <路径> --requirement <相对路径.json> [--pack <标识>] [--agent <标识>] [--live-agent] [--output <相对路径>] [--json]
   aicg evaluation held-out <提供方根目录> [--output <相对路径>] [--json]   只读的 held-out 提供方评估；实跑需要显式授权。
   aicg candidate review [路径] [--json]   只读查看候选规则状态与下一个合法动作；该命令不会批准或提升任何候选。
+  aicg candidate observe [路径] --text <观测> [--project <标识>] [--json]   把一次项目观测记录为候选；记录不等于批准。
   aicg review evidence [路径] --session <标识> --evidence <相对路径.json> [--json]   记录经校验的评审证据；该命令不会批准或完成会话。
 
   session       持久化并检查可恢复的交付状态机。内置 Agent 条目仍为未验证状态，不会被隐式启用为可执行适配器。

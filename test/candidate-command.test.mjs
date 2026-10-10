@@ -20,3 +20,20 @@ test('the candidate review command is registered, read-only, and action-checked'
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+test('an observation is recorded through the command and deduplicated on repeat', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-candidate-observe-'));
+  try {
+    const first = await candidateCommand(root, 'observe', { text: 'prefer-relative-imports', project: 'project-alpha', json: true });
+    assert.equal(first.status, 'recorded');
+    const stored = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/candidate-rules.json'), 'utf8'));
+    assert.equal(stored.length, 1);
+    assert.equal(stored[0].state, 'observed');
+    assert.equal(stored[0].projectId, 'project-alpha');
+    const second = await candidateCommand(root, 'observe', { text: 'prefer-relative-imports', project: 'project-alpha', json: true });
+    assert.equal(second.status, 'duplicate');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/state/candidate-rules.json'), 'utf8')).length, 1);
+    await assert.rejects(() => candidateCommand(root, 'observe', {}), /--text/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
