@@ -1,0 +1,11 @@
+{
+  "apps/web/src/main.tsx": "import './features/orders/index';\n",
+  "apps/web/src/features/orders/index.ts": "export const order = true;\n",
+  "apps/web/src/features/payments/index.ts": "export const payment = true;\n",
+  "apps/api/src/main.ts": "import './transport/index';\n",
+  "apps/api/src/transport/index.ts": "import '../application/index';\n",
+  "apps/api/src/application/index.ts": "import '../domain/index';\n",
+  "apps/api/src/domain/index.ts": "export const domain = true;\n",
+  "apps/api/src/infrastructure/index.ts": "import '../domain/index';\n",
+  "packages/contracts/src/index.ts": "export type Id = string;\n"
+}

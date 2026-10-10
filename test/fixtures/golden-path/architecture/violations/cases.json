@@ -1,0 +1,69 @@
+[
+  {
+    "name": "cycle",
+    "code": "dependency-cycle",
+    "entries": {
+      "apps/api/src/domain/a.ts": "import './b';\n",
+      "apps/api/src/domain/b.ts": "import './a';\n"
+    }
+  },
+  {
+    "name": "forbidden-direction",
+    "code": "forbidden-layer-dependency",
+    "entries": {
+      "apps/api/src/domain/index.ts": "import '../infrastructure/forbidden';\n",
+      "apps/api/src/infrastructure/forbidden.ts": "export const infrastructure = true;\n"
+    }
+  },
+  {
+    "name": "cross-feature-private",
+    "code": "cross-feature-private-import",
+    "entries": {
+      "apps/web/src/features/orders/private.ts": "export const privateOrder = true;\n",
+      "apps/web/src/features/payments/index.ts": "import '../orders/private';\n"
+    }
+  },
+  {
+    "name": "bypassed-public-entrypoint",
+    "code": "bypassed-public-entrypoint",
+    "entries": {
+      "apps/api/src/domain/private.ts": "export const privateDomain = true;\n",
+      "apps/api/src/application/index.ts": "import '../domain/private';\n"
+    }
+  },
+  {
+    "name": "domain-framework",
+    "code": "domain-framework-dependency",
+    "entries": {
+      "apps/api/src/domain/index.ts": "import { drizzle } from 'drizzle-orm';\n"
+    }
+  },
+  {
+    "name": "fastify-leak",
+    "code": "fastify-object-leakage",
+    "entries": {
+      "apps/api/src/application/index.ts": "import type { FastifyRequest } from 'fastify';\nexport type Input = FastifyRequest;\n"
+    }
+  },
+  {
+    "name": "database-access",
+    "code": "direct-database-access",
+    "entries": {
+      "apps/api/src/application/index.ts": "import { drizzle } from 'drizzle-orm';\nexport const db = drizzle;\n"
+    }
+  },
+  {
+    "name": "non-root-construction",
+    "code": "non-root-construction",
+    "entries": {
+      "apps/api/src/application/index.ts": "NestFactory.create(AppModule);\n"
+    }
+  },
+  {
+    "name": "misplaced-contract",
+    "code": "misplaced-contract-ownership",
+    "entries": {
+      "apps/api/src/application/user.contract.ts": "export type User = { id: string };\n"
+    }
+  }
+]
