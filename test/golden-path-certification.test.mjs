@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
-import { evaluateGoldenPathCertification, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
+import { evaluateGoldenPathCertification, platformEvidence, validateGoldenPathCertification } from '../src/modules/evaluation/index.mjs';
 
+const testRoot = path.dirname(fileURLToPath(import.meta.url));
 const PACK = 'react-mantine-nest-fastify-drizzle-postgresql';
 const pack = loadGoldenPathPack(PACK);
 const HASH = {
@@ -108,4 +112,34 @@ test('the certification contract is closed and versioned', () => {
   assert.throws(() => validateGoldenPathCertification({ ...receipt, extra: true }), /extra/);
   assert.throws(() => validateGoldenPathCertification({ ...receipt, schemaVersion: 2 }), /schemaVersion/);
   assert.throws(() => validateGoldenPathCertification({ ...receipt, status: 'unknown' }), /status/);
+});
+test('the cross-OS workflow is manual, exact, and never turns a non-blocking result into verified support', () => {
+  const workflowPath = path.join(testRoot, '..', '.github/workflows/golden-path-evaluation.yml');
+  const workflow = fs.readFileSync(workflowPath, 'utf8');
+  for (const platform of ['ubuntu-latest', 'macos-latest', 'windows-latest']) assert.ok(workflow.includes(platform), platform);
+  assert.ok(workflow.includes('workflow_dispatch'));
+  assert.doesNotMatch(workflow, /pull_request|schedule:/);
+  assert.match(workflow, /node-version/);
+  assert.match(workflow, /24\./);
+  assert.match(workflow, /actions\/upload-artifact/);
+  assert.match(workflow, /if:\s*always\(\)/);
+  assert.doesNotMatch(workflow, /continue-on-error/);
+  assert.doesNotMatch(workflow, /dangerously|--full-auto|--yolo/);
+  assert.match(workflow, /receipt/i);
+  assert.ok(fs.existsSync(path.join(testRoot, '..', 'docs/internal/validation/golden-path-cross-os-runbook.md')));
+});
+
+test('platform evidence separates verified platforms from informational ones', () => {
+  const records = ['linux', 'darwin', 'win32'].map((platform, index) => ({
+    platform,
+    receipt: { level: 'E3-agent-executable', verdict: 'passed', digests: { pack: 'a'.repeat(64), repository: 'b'.repeat(64) }, evaluatedAt: `2026-10-0${index + 1}T00:00:00.000Z` },
+  }));
+  const claimed = platformEvidence(records, { claimed: ['linux', 'darwin'], informational: [{ platform: 'win32', status: 'informational' }] });
+  assert.deepEqual(claimed.verified, ['darwin', 'linux']);
+  assert.equal(claimed.entries.find((entry) => entry.platform === 'win32').verified, false);
+  assert.equal(claimed.entries.find((entry) => entry.platform === 'win32').status, 'informational-passed');
+  const failing = platformEvidence([{ platform: 'win32', receipt: { level: 'E3-agent-executable', verdict: 'failed', digests: { pack: 'a'.repeat(64), repository: 'b'.repeat(64) }, evaluatedAt: '2026-10-01T00:00:00.000Z' } }], { claimed: ['linux', 'darwin', 'win32'], informational: [] });
+  assert.equal(failing.verified.length, 0);
+  assert.equal(failing.entries.find((entry) => entry.platform === 'win32').status, 'failed');
+  assert.equal(failing.entries.find((entry) => entry.platform === 'linux').status, 'missing');
 });

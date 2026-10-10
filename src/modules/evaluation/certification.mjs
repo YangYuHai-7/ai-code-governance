@@ -159,3 +159,19 @@ export function validateGoldenPathCertification(value) {
   if (typeof value.evaluatedAt !== 'string' || Number.isNaN(Date.parse(value.evaluatedAt))) fail('goldenPathCertification.evaluatedAt', 'expected an ISO date-time');
   return Object.freeze(JSON.parse(JSON.stringify(value)));
 }
+// Receipts decide platform support: an informational platform is recorded but never verified, and a
+// missing receipt stays unverified instead of being rounded up to support.
+export function platformEvidence(records = [], platformPolicy = {}) {
+  const claimed = Array.isArray(platformPolicy.claimed) ? platformPolicy.claimed : [];
+  const informational = (platformPolicy.informational ?? []).map((entry) => (typeof entry === 'string' ? entry : entry?.platform)).filter(Boolean);
+  const platforms = [...new Set([...claimed, ...informational])].sort();
+  const entries = platforms.map((platform) => {
+    const list = (records ?? []).filter((entry) => entry.platform === platform);
+    const newest = [...list].sort((left, right) => Date.parse(right.receipt.evaluatedAt) - Date.parse(left.receipt.evaluatedAt))[0];
+    if (!newest) return Object.freeze({ platform, status: 'missing', verified: false });
+    if (informational.includes(platform)) return Object.freeze({ platform, status: newest.receipt.verdict === 'passed' ? 'informational-passed' : 'informational-failed', verified: false });
+    const passed = newest.receipt.verdict === 'passed';
+    return Object.freeze({ platform, status: passed ? 'verified' : 'failed', verified: passed });
+  });
+  return Object.freeze({ entries: Object.freeze(entries), verified: Object.freeze(entries.filter((entry) => entry.verified).map((entry) => entry.platform)) });
+}

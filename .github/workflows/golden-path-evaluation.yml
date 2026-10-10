@@ -1,0 +1,67 @@
+name: golden-path-evaluation
+
+# Manual, evaluator-authorized only. There is deliberately no timed trigger and no merge-request
+# trigger: a CI conclusion alone is not platform evidence.
+on:
+  workflow_dispatch:
+    inputs:
+      pack-release:
+        description: Exact golden path Pack release under evaluation
+        required: true
+      codex-version:
+        description: Exact Codex CLI version pinned into every receipt
+        required: true
+      node-version:
+        description: Exact Node version (24 floor)
+        required: true
+        default: '24.18.0'
+      postgres-version:
+        description: Exact PostgreSQL version
+        required: true
+        default: '18.6'
+      evaluation-set-digest:
+        description: Held-out evaluation set digest
+        required: true
+      artifact-retention-days:
+        description: Artifact retention in days
+        required: true
+        default: '14'
+
+jobs:
+  evaluate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            informational: false
+          - os: macos-latest
+            platform: darwin
+            informational: false
+          - os: windows-latest
+            platform: win32
+            informational: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Evaluate the golden path
+        run: node scripts/golden-path-reference-evaluation.mjs --fixture reference-work-tracker --output reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json
+      - name: Validate the receipt
+        shell: bash
+        run: |
+          node --input-type=module -e "import { validateGoldenPathEvaluation } from './src/modules/evaluation/index.mjs'; import fs from 'node:fs'; const value = JSON.parse(fs.readFileSync('reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json','utf8')); validateGoldenPathEvaluation(value); console.log('receipt valid', value.evidenceLevel, value.verdict);"
+      - name: Upload the platform receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-path-receipt-${{ matrix.platform }}
+          path: reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json
+          retention-days: ${{ inputs.artifact-retention-days }}
+          if-no-files-found: warn
+# Secrets stay in the environment and never inside uploaded artifacts. The workflow publishes no
+# package and deploys no application. A missing or failing platform stays unverified; only the
+# evaluator turns receipts into a certification matrix entry.
