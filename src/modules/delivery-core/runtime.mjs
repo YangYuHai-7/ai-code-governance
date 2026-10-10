@@ -78,7 +78,12 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
     const adapter = agentFor(session, capability);
     const key = `${phase}:${session.requirementDigest ?? session.requestDigest}:${session.runtime?.retries ?? 0}`;
     safeAppend(store, session.id, { id: `effect.${canonicalValueDigest({ key, phase }).slice(0, 24)}.before`, effect: phase, phase: 'before', key });
-    const result = await runAgentTurn(adapter, { prompt: `${phase} for delivery session ${session.id}`, semanticDigest: session.architectureDigest ?? session.requirementDigest ?? session.requestDigest, idempotencyKey: key }, {
+    const result = await runAgentTurn(adapter, {
+      phase, prompt: `${phase} for delivery session ${session.id}`,
+      semanticDigest: session.architectureDigest ?? session.requirementDigest ?? session.requestDigest,
+      idempotencyKey: key, authority: session.authority,
+      responseSchema: session.runtime?.agentResponseSchema ?? undefined,
+    }, {
       timeoutMs: Math.min(session.budgets.maxElapsedMs, 120_000), maxInputBytes: 256 * 1024, maxOutputBytes: 2 * 1024 * 1024,
       maxInputTokens: session.budgets.maxInputTokens, maxOutputTokens: session.budgets.maxOutputTokens, maxCost: session.budgets.maxCost,
     });

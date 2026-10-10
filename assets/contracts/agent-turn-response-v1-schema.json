@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/agent-turn-response-v1-schema.json",
+  "title": "AICG Agent Turn Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "proposal",
+    "findings"
+  ],
+  "properties": {
+    "proposal": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096
+      }
+    }
+  }
+}

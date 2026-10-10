@@ -1,7 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
-const CAPABILITIES = ['structuredRequirement', 'architectureProposal', 'boundedPatch', 'usageEvidence', 'cancellation', 'resume'];
+const CAPABILITIES = ['structuredRequirement', 'architectureProposal', 'boundedPatch', 'usageEvidence', 'cancellation', 'resume', 'independentReview'];
 
 export function createAgentRuntimeAdapter({ id, capabilities = {}, prepareTurn, invoke, cancel = null }) {
   if (typeof id !== 'string' || !ID.test(id)) throw usageError('Invalid Agent runtime id.');

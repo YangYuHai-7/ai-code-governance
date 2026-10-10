@@ -3,7 +3,7 @@ import { canonicalValueDigest } from '../../shared/index.mjs';
 
 export const AGENT_RUNTIME_CAPABILITIES = Object.freeze([
   'structuredRequirement', 'architectureProposal', 'boundedPatch',
-  'usageEvidence', 'cancellation', 'resume',
+  'usageEvidence', 'cancellation', 'resume', 'independentReview',
 ]);
 
 export function normalizeAgentCapabilities(value = {}) {
@@ -75,6 +75,14 @@ export async function runAgentTurn(adapter, request, limits = {}) {
   if (!processResult || typeof processResult !== 'object' || !Number.isInteger(processResult.exitCode)) return result('invalid-output', base, { findings: Object.freeze(['Agent process result is malformed.']) });
   const processEvidence = Object.freeze({ agentId: adapter.id, exitCode: processResult.exitCode, durationMs: Number.isFinite(processResult.durationMs) ? processResult.durationMs : Date.now() - started, cancelled: false });
   if (processResult.exitCode !== 0) return result('failed', base, { findings: Object.freeze([String(processResult.stderr ?? `Agent exited with code ${processResult.exitCode}`).slice(0, 4096)]), processEvidence });
+  // A structurally valid Agent process can still have exceeded its authority.
+  if (processResult.authorityViolation === true) {
+    const findings = Array.isArray(processResult.findings) && processResult.findings.length ? processResult.findings.map(String) : ['Agent changed paths outside its authority.'];
+    return result('rejected', base, { findings: Object.freeze(findings), processEvidence });
+  }
+  if (typeof processResult.invalidOutput === 'string' && processResult.invalidOutput.length > 0) {
+    return result('invalid-output', base, { findings: Object.freeze([processResult.invalidOutput]), processEvidence });
+  }
   const stdout = typeof processResult.stdout === 'string' || Buffer.isBuffer(processResult.stdout) ? String(processResult.stdout) : '';
   if (Buffer.byteLength(stdout) > maxOutputBytes) return result('budget-exceeded', base, { findings: Object.freeze([`Agent output exceeds ${maxOutputBytes} bytes.`]), processEvidence });
   let parsed;
