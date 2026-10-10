@@ -7,6 +7,7 @@ import {
   createDeliveryRuntime,
   createSessionCheckpoint,
   evaluateDeliveryCompletion,
+  evaluateQualityMatrixRun,
 } from '../src/modules/delivery-core/index.mjs';
 import { loadGoldenPathPack, validateGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
@@ -246,4 +247,48 @@ test('a passing architecture evaluation is recorded before the plan is approved'
   assert.equal(approved.state, 'plan-approved');
   assert.equal(approved.runtime.architectureEvaluation.status, 'passed');
   assert.match(approved.runtime.architectureEvaluation.digest, /^[a-f0-9]{64}$/);
+});
+function qualityRunFor(session) {
+  const plan = {
+    schemaVersion: 1, id: 'quality-run.runtime', packId: 'pack.runtime', matrixId: 'quality.runtime',
+    requiredGateIds: ['unit-tests'],
+    gates: [{ id: 'unit-tests', owner: 'functional', purpose: 'unit', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' }],
+    digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: 'c'.repeat(64), risk: 'd'.repeat(64), environment: 'e'.repeat(64) },
+  };
+  return evaluateQualityMatrixRun({ plan, results: [{ gateId: 'unit-tests', status: 'passed', cleanup: { status: 'clean' } }], artifacts: [], environment: plan.digests.environment });
+}
+
+test('a quality matrix receipt is persisted before the session reaches review', async () => {
+  const store = memoryStore();
+  let run = null;
+  const runtime = createDeliveryRuntime({
+    store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run(session) { run = qualityRunFor(session); return { status: 'passed', commands: 1, evidence: [], qualityMatrixRun: run, qualityMatrixPlanId: run.planId, environmentDigest: run.digests.environment }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.quality-receipt' });
+  const ready = await advance(runtime, started.id, 3);
+  assert.equal(ready.state, 'review-ready');
+  assert.equal(ready.runtime.qualityMatrixRun.planId, run.planId);
+  assert.equal(ready.runtime.qualityMatrixPlanId, run.planId);
+  assert.equal(ready.runtime.environmentDigest, run.digests.environment);
+});
+
+test('entering repair invalidates the prior quality matrix receipt', async () => {
+  const store = memoryStore();
+  let calls = 0;
+  const runtime = createDeliveryRuntime({
+    store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run(session) { calls += 1; const run = qualityRunFor(session); return { status: calls === 1 ? 'failed' : 'passed', commands: 1, evidence: [], qualityMatrixRun: run, qualityMatrixPlanId: run.planId, environmentDigest: run.digests.environment }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.repair-invalidation' });
+  const repairing = await advance(runtime, started.id, 3);
+  assert.equal(repairing.state, 'repairing');
+  assert.equal(repairing.runtime.qualityMatrixRun, null);
+  assert.equal(repairing.runtime.qualityMatrixPlanId, null);
+  const ready = await advance(runtime, started.id, 2);
+  assert.equal(ready.state, 'review-ready');
+  assert.ok(ready.runtime.qualityMatrixRun);
+  assert.equal(calls, 2);
 });

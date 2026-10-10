@@ -6,7 +6,9 @@ import {
   canonicalContractDigest,
   createDeliverySession,
   evaluateDeliveryCompletion,
+  evaluateQualityMatrixRun,
   evaluateTraceability,
+  riskProfileSetDigest,
 } from '../src/modules/delivery-core/index.mjs';
 import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, digest, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
@@ -98,22 +100,57 @@ function riskProfileSet() {
   });
 }
 
-test('required quality gates stay residual gaps until a passing receipt exists', () => {
+function planFor(session, set, ids = set.requiredGateIds) {
+  const sorted = [...ids].sort();
+  return {
+    schemaVersion: 1, id: 'quality-run.completion', packId: 'pack.completion', matrixId: 'quality.completion',
+    requiredGateIds: sorted,
+    gates: sorted.map((id) => ({ id, owner: 'functional', purpose: 'unit', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' })),
+    digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: set.packDigest, risk: riskProfileSetDigest(set), environment: 'e'.repeat(64) },
+  };
+}
+
+function runFor(session, set, { ids, status = 'passed' } = {}) {
+  const plan = planFor(session, set, ids);
+  const results = plan.requiredGateIds.map((gateId) => (status === 'failed' && gateId === plan.requiredGateIds[0]
+    ? { gateId, status: 'failed', failureClassification: 'functional' }
+    : { gateId, status: 'passed', cleanup: { status: 'clean' } }));
+  return evaluateQualityMatrixRun({ plan, results, artifacts: [], environment: plan.digests.environment });
+}
+
+function withRun(base, set, run, extra = {}) {
+  return session({ runtime: { riskProfileSet: set, qualityMatrixRun: run, qualityMatrixPlanId: run.planId, environmentDigest: run.digests.environment, pack: { id: 'pack.completion', digest: set.packDigest }, ...extra } });
+}
+
+test('a current quality matrix run covering every activated gate satisfies production verification', () => {
   const set = riskProfileSet();
-  assert.ok(set.requiredGateIds.length > 0);
-  const current = session({ runtime: { riskProfileSet: set } });
-  const blocked = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
-  assert.notEqual(blocked.overall, 'complete');
-  assert.ok(blocked.residualGaps.some((gap) => gap === `quality gate ${set.requiredGateIds[0]}: required evidence is missing, stale, failed, or unrun.`));
+  const base = session();
+  const current = withRun(base, set, runFor(base, set));
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.gates.find((gate) => gate.id === 'automated-verification').status, 'passed');
+  assert.equal(contract.overall, 'complete');
+});
 
-  const receipts = set.requiredGateIds.map((gateId) => ({ gateId, status: 'passed' }));
-  const satisfied = session({ runtime: { riskProfileSet: set, qualityGateReceipts: receipts } });
-  assert.equal(evaluateDeliveryCompletion({ session: satisfied, traceability: traceability(), evidence: currentEvidence(satisfied), profile: 'production' }).overall, 'complete');
+test('a failed, incomplete, or stale quality matrix run keeps production blocked', () => {
+  const set = riskProfileSet();
+  const base = session();
+  const failedSession = withRun(base, set, runFor(base, set, { status: 'failed' }));
+  const failed = evaluateDeliveryCompletion({ session: failedSession, traceability: traceability(), evidence: currentEvidence(failedSession), profile: 'production' });
+  assert.notEqual(failed.overall, 'complete');
+  assert.ok(failed.residualGaps.some((gap) => gap.includes('quality matrix run')));
 
-  const failed = session({ runtime: { riskProfileSet: set, qualityGateReceipts: receipts.map((receipt) => receipt.gateId === set.requiredGateIds[0] ? { ...receipt, status: 'failed' } : receipt) } });
-  const reopened = evaluateDeliveryCompletion({ session: failed, traceability: traceability(), evidence: currentEvidence(failed), profile: 'production' });
-  assert.notEqual(reopened.overall, 'complete');
-  assert.ok(reopened.residualGaps.some((gap) => gap.startsWith(`quality gate ${set.requiredGateIds[0]}`)));
+  const partialSession = withRun(base, set, runFor(base, set, { ids: set.requiredGateIds.slice(1) }));
+  const uncovered = evaluateDeliveryCompletion({ session: partialSession, traceability: traceability(), evidence: currentEvidence(partialSession), profile: 'production' });
+  assert.ok(uncovered.residualGaps.some((gap) => gap.includes('does not cover')));
+
+  const staleRun = runFor(base, set);
+  const staleSession = { ...withRun(base, set, staleRun), repositoryDigest: 'f'.repeat(64) };
+  const stale = evaluateDeliveryCompletion({ session: staleSession, traceability: traceability(), evidence: currentEvidence(staleSession), profile: 'production' });
+  assert.ok(stale.residualGaps.some((gap) => gap.includes('stale') && gap.includes('repository')));
+
+  const movedPlan = withRun(base, set, runFor(base, set), { qualityMatrixPlanId: 'quality-run.other' });
+  const moved = evaluateDeliveryCompletion({ session: movedPlan, traceability: traceability(), evidence: currentEvidence(movedPlan), profile: 'production' });
+  assert.ok(moved.residualGaps.some((gap) => gap.includes('stale') && gap.includes('plan')));
 });
 
 test('a failed golden path architecture evaluation blocks production completion', () => {

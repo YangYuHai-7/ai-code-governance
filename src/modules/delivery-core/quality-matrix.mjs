@@ -1,6 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest, isSafeRelative } from '../../shared/index.mjs';
 import { validateQualityMatrix } from '../stack-packs/index.mjs';
+import { validateEvidenceIr } from './contracts.mjs';
 import { riskProfileSetDigest, validateRiskProfileSet } from './risk-profiles.mjs';
 
 export const QUALITY_MATRIX_RUN_VERSION = 1;
@@ -287,4 +288,92 @@ export function evaluateQualityMatrixRun({ plan, results, artifacts = [], enviro
 
 export function qualityMatrixRunDigest(value) {
   return canonicalValueDigest(validateQualityMatrixRun(value), { omit: ['completedAt'] });
+}
+
+function driverFor(drivers, purpose) {
+  if (purpose === 'migration') return drivers.database;
+  if (purpose === 'e2e') return drivers.browser;
+  if (purpose === 'integration' || purpose === 'contract') return drivers.http;
+  return drivers.command;
+}
+
+function resultFor(gate, receipt) {
+  const status = ['passed', 'failed', 'blocked'].includes(receipt?.status) ? receipt.status : 'blocked';
+  const entry = { gateId: gate.id, status, cleanup: { status: 'clean', reason: null } };
+  if (receipt?.cleanup?.status === 'failed') entry.cleanup = { status: 'failed', reason: receipt.cleanup.reason ?? 'cleanup failed' };
+  if (status === 'failed') entry.failureClassification = receipt?.failure?.classification ?? 'functional';
+  if (status === 'blocked') entry.failureClassification = receipt?.failure?.classification ?? 'infrastructure';
+  if (status !== 'passed') entry.reason = receipt?.failure?.message ?? `gate ${gate.id} did not pass`;
+  if (Number.isSafeInteger(receipt?.durationMs) && receipt.durationMs >= 0) entry.durationMs = receipt.durationMs;
+  return entry;
+}
+
+function skippedResult(gateId, reason) {
+  return { gateId, status: 'not-run', reason, cleanup: { status: 'clean', reason: null } };
+}
+
+function evidenceFor(plan, sessionId, run, entry, artifacts) {
+  return validateEvidenceIr({
+    schemaVersion: 1,
+    id: `evidence.gate.${canonicalValueDigest({ runId: run.id, gateId: entry.gateId }).slice(0, 24)}`,
+    sessionId,
+    source: 'automated-test',
+    verificationLevel: 'enforced',
+    semanticDigest: plan.digests.requirement,
+    repositoryDigest: plan.digests.repository,
+    commandDigest: null,
+    resultDigest: canonicalValueDigest(entry),
+    artifactDigests: artifacts.map((artifact) => ({ path: artifact.path, digest: artifact.digest })),
+    status: entry.status === 'passed' ? 'passed' : entry.status === 'failed' ? 'failed' : entry.status === 'not-run' ? 'unrun' : 'blocked',
+    recordedAt: new Date().toISOString(),
+  });
+}
+
+// Executes one planned quality matrix: deterministic gate order, fail-fast with guaranteed cleanup,
+// and one Evidence IR record per gate. Effects remain behind the injected drivers and ports.
+export async function executeQualityMatrix({ root, plan, drivers, context = {}, policy = {}, signal = null }) {
+  fields({ root, plan, drivers, context, policy, signal }, ['root', 'plan', 'drivers', 'context', 'policy', 'signal'], ['root', 'plan', 'drivers', 'context', 'policy', 'signal'], 'qualityMatrixExecution');
+  string(root, 'qualityMatrixExecution.root', { max: 4096 });
+  const current = validateQualityMatrixPlan(plan);
+  object(drivers, 'qualityMatrixExecution.drivers');
+  if (!Object.values(drivers).some((driver) => typeof driver === 'function')) fail('qualityMatrixExecution.drivers', 'at least one gate driver is required');
+  object(context, 'qualityMatrixExecution.context');
+  object(policy, 'qualityMatrixExecution.policy');
+  string(policy.sessionId, 'qualityMatrixExecution.policy.sessionId', { max: 128, pattern: ID });
+  const failFast = policy.failFast === undefined ? true : policy.failFast;
+  if (typeof failFast !== 'boolean') fail('qualityMatrixExecution.policy.failFast', 'expected a boolean');
+  if (signal !== null && typeof signal?.aborted !== 'boolean') fail('qualityMatrixExecution.signal', 'expected an AbortSignal');
+
+  const results = [];
+  const collected = [];
+  let cleanup = Object.freeze({ status: 'clean', reason: null });
+  let stopped = null;
+  try {
+    for (const gateId of current.requiredGateIds) {
+      const gate = current.gates.find((candidate) => candidate.id === gateId);
+      if (signal?.aborted) { results.push(skippedResult(gateId, 'verification was aborted')); continue; }
+      if (stopped) { results.push(skippedResult(gateId, `not executed after ${stopped}`)); continue; }
+      const driver = driverFor(drivers, gate.purpose);
+      if (typeof driver !== 'function') {
+        results.push({ gateId, status: 'blocked', reason: `no driver is registered for purpose ${gate.purpose}`, failureClassification: 'capability', cleanup: { status: 'clean', reason: null } });
+        stopped = gateId;
+        continue;
+      }
+      let receipt;
+      try { receipt = await driver({ ...context, root }, gate); }
+      catch (error) { receipt = { gateId: gate.id, status: 'blocked', failure: { classification: 'infrastructure', message: error.message }, artifacts: [] }; }
+      const entry = resultFor(gate, receipt);
+      results.push(entry);
+      for (const artifact of receipt?.artifacts ?? []) collected.push({ gateId, path: artifact.path, digest: artifact.digest, bytes: artifact.bytes });
+      if (entry.status !== 'passed' && failFast) stopped = gateId;
+    }
+  } finally {
+    if (typeof context.process?.cleanupAll === 'function') {
+      try { cleanup = await context.process.cleanupAll('quality-matrix-finished'); }
+      catch (error) { cleanup = Object.freeze({ status: 'failed', reason: error.message }); }
+    }
+  }
+  const run = evaluateQualityMatrixRun({ plan: current, results, artifacts: collected, environment: current.digests.environment });
+  const evidence = run.results.map((entry) => evidenceFor(current, policy.sessionId, run, entry, collected.filter((artifact) => artifact.gateId === entry.gateId)));
+  return Object.freeze({ run, evidence: Object.freeze(evidence), cleanup });
 }

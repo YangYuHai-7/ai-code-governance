@@ -1,10 +1,10 @@
 import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
 import { validateCompletionContract, validateDeliverySession, validateEvidenceIr } from './contracts.mjs';
-import { validateRiskProfileSet } from './risk-profiles.mjs';
+import { validateQualityMatrixRun } from './quality-matrix.mjs';
+import { riskProfileSetDigest, validateRiskProfileSet } from './risk-profiles.mjs';
 
 const STAGES = ['governance', 'requirements', 'architecture', 'implementation', 'automated-verification', 'independent-review', 'human-acceptance', 'deployability', 'deployment'];
-const GATE_RECEIPT_STATUS = Object.freeze(['passed', 'failed', 'blocked', 'unrun', 'stale', 'unsupported']);
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const HASH = /^[a-f0-9]{64}$/;
 
@@ -50,20 +50,24 @@ export function normalizeArchitectureEvaluation(result) {
   });
 }
 
-// Managed verification will replace this interim receipt hook with bound gate evidence.
-function qualityGateReceipts(value) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value) || value.length > 256) throw usageError('Delivery completion quality gate receipts must be an array.');
-  const seen = new Set();
-  return value.map((receipt, index) => {
-    const path = `qualityGateReceipts[${index}]`;
-    closedObject(receipt, ['gateId', 'status'], path);
-    if (typeof receipt.gateId !== 'string' || !ID.test(receipt.gateId)) throw usageError(`${path}.gateId must be a quality gate ID.`);
-    if (!GATE_RECEIPT_STATUS.includes(receipt.status)) throw usageError(`${path}.status is unsupported.`);
-    if (seen.has(receipt.gateId)) throw usageError(`${path}.gateId duplicates ${receipt.gateId}.`);
-    seen.add(receipt.gateId);
-    return receipt;
-  });
+// A quality matrix run is current only while every semantic, repository, Pack, risk, plan, and
+// environment digest it was produced under still matches the session.
+function qualityMatrixState(session, riskProfileSet) {
+  if (!session.runtime?.qualityMatrixRun) return null;
+  const run = validateQualityMatrixRun(session.runtime.qualityMatrixRun);
+  const stale = [];
+  if (run.digests.requirement !== session.requirementDigest) stale.push('requirement');
+  if (run.digests.repository !== session.repositoryDigest) stale.push('repository');
+  const packDigest = session.runtime?.pack?.digest ?? null;
+  if (packDigest && run.digests.pack !== packDigest) stale.push('pack');
+  if (riskProfileSet && run.digests.risk !== riskProfileSetDigest(riskProfileSet)) stale.push('risk');
+  const environmentDigest = session.runtime?.environmentDigest ?? null;
+  if (environmentDigest && run.digests.environment !== environmentDigest) stale.push('environment');
+  const planId = session.runtime?.qualityMatrixPlanId ?? null;
+  if (planId && run.planId !== planId) stale.push('plan');
+  const activated = riskProfileSet?.requiredGateIds ?? [];
+  const uncovered = activated.filter((gateId) => !run.requiredGateIds.includes(gateId));
+  return { run, stale, uncovered };
 }
 
 function currentEvidence(items, session, source) {
@@ -84,7 +88,7 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   const records = evidence.map(validateEvidenceIr);
   if (!['advisory', 'production'].includes(profile)) throw usageError('Delivery completion profile must be advisory or production.');
   const riskProfileSet = current.runtime?.riskProfileSet ? validateRiskProfileSet(current.runtime.riskProfileSet) : null;
-  const receipts = qualityGateReceipts(current.runtime?.qualityGateReceipts);
+  const matrix = qualityMatrixState(current, riskProfileSet);
   const architectureEvaluation = current.runtime?.architectureEvaluation ? validateArchitectureEvaluation(current.runtime.architectureEvaluation) : null;
   const automated = currentEvidence(records, current, 'automated-test');
   const reviews = currentEvidence(records, current, 'independent-review');
@@ -96,7 +100,12 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
     requirements: { passed: Boolean(current.requirementDigest && current.requirement), evidence: [] },
     architecture: { passed: Boolean(current.architectureDigest && current.architecture && !(current.architecture.evidenceGaps ?? []).some((gap) => gap.status === 'open') && (!architectureEvaluation || architectureEvaluation.status === 'passed')), evidence: [] },
     implementation: { passed: traceability.status === 'complete' && !(traceability.orphanChanges ?? []).length, evidence: [] },
-    'automated-verification': { passed: automated.length > 0, evidence: automated.map((entry) => entry.id) },
+    'automated-verification': {
+      passed: matrix
+        ? matrix.stale.length === 0 && matrix.uncovered.length === 0 && matrix.run.status === 'passed'
+        : automated.length > 0,
+      evidence: matrix ? [] : automated.map((entry) => entry.id),
+    },
     'independent-review': { passed: reviews.length > 0, evidence: reviews.map((entry) => entry.id) },
     'human-acceptance': { passed: acceptance.length > 0, evidence: acceptance.map((entry) => entry.id) },
     deployability: { passed: deploymentEvidence.length > 0, evidence: deploymentEvidence.map((entry) => entry.id) },
@@ -104,9 +113,10 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   };
   const gaps = [...traceability.gaps];
   if (architectureEvaluation && architectureEvaluation.status !== 'passed') gaps.push(`architecture: golden path architecture evaluation failed (${architectureEvaluation.issueCodes.join(', ') || 'no issue code'}).`);
-  if (riskProfileSet) {
-    const satisfied = new Set(receipts.filter((receipt) => receipt.status === 'passed').map((receipt) => receipt.gateId));
-    for (const gateId of riskProfileSet.requiredGateIds) if (!satisfied.has(gateId)) gaps.push(`quality gate ${gateId}: required evidence is missing, stale, failed, or unrun.`);
+  if (matrix) {
+    if (matrix.stale.length) gaps.push(`quality matrix run is stale for ${matrix.stale.join(', ')}.`);
+    for (const gateId of matrix.uncovered) gaps.push(`quality gate ${gateId}: the current run does not cover an activated gate.`);
+    if (matrix.run.status !== 'passed') gaps.push(`quality matrix run status is ${matrix.run.status}.`);
   }
   const gates = STAGES.map((stage) => {
     const reason = applicability(current, stage);

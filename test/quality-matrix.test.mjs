@@ -7,6 +7,7 @@ import {
   activateRiskProfiles,
   canonicalContractDigest,
   evaluateQualityMatrixRun,
+  executeQualityMatrix,
   planQualityMatrix,
   qualityMatrixRunDigest,
   riskProfileSetDigest,
@@ -180,4 +181,90 @@ test('the run receipt contract is closed, versioned, and digest-bound', () => {
   const schema = JSON.parse(fs.readFileSync(path.join(root, 'assets/contracts/quality-matrix-run-v1-schema.json'), 'utf8'));
   assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
   assert.equal(schema.additionalProperties, false);
+});
+function miniPlan(ids, digests = {}) {
+  const gates = [...ids].sort().map((id) => ({ id, owner: 'functional', purpose: id === 'static-lint' ? 'lint' : id === 'migration-safety' ? 'migration' : 'unit', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' }));
+  return {
+    schemaVersion: 1, id: 'quality-run.mini', packId: 'pack.mini', matrixId: 'quality.mini',
+    requiredGateIds: gates.map((gate) => gate.id), gates,
+    digests: { requirement: 'a'.repeat(64), architecture: null, repository: 'b'.repeat(64), pack: 'c'.repeat(64), risk: 'd'.repeat(64), environment: 'e'.repeat(64), ...digests },
+  };
+}
+
+function driverResult(gate, overrides = {}) {
+  return { gateId: gate.id, status: 'passed', evidence: { gateId: gate.id, status: 'passed', summary: 'ok', checks: [] }, artifacts: [], cleanup: { status: 'clean', reason: null }, failure: null, ...overrides };
+}
+
+function executionContext(overrides = {}) {
+  const cleanupCalls = [];
+  return {
+    cleanupCalls,
+    value: {
+      capabilities: { commands: true, http: true, database: true, browser: true },
+      artifacts: { record({ path, content }) { return { path, digest: 'a'.repeat(64), bytes: Buffer.byteLength(content ?? '') }; } },
+      secrets: ['super-secret-value'],
+      process: { async cleanupAll(reason) { cleanupCalls.push(reason); return { state: 'clean', cleaned: [], forced: [], failures: [], reason }; } },
+      ...overrides,
+    },
+  };
+}
+
+const passingDrivers = {
+  command: async (context, gate) => driverResult(gate),
+  http: async (context, gate) => driverResult(gate),
+  database: async (context, gate) => driverResult(gate),
+  browser: async (context, gate) => driverResult(gate),
+};
+
+test('matrix execution is deterministic, records evidence per gate, and always cleans up', async () => {
+  const plan = miniPlan(['unit-tests', 'static-lint']);
+  const { cleanupCalls, value } = executionContext();
+  const result = await executeQualityMatrix({ root: process.cwd(), plan, drivers: passingDrivers, context: value, policy: { sessionId: 'session.quality' } });
+  assert.deepEqual(result.run.results.map((entry) => entry.gateId), ['static-lint', 'unit-tests']);
+  assert.equal(result.run.status, 'passed');
+  assert.equal(result.evidence.length, 2);
+  for (const record of result.evidence) {
+    assert.equal(record.schemaVersion, 1);
+    assert.equal(record.sessionId, 'session.quality');
+    assert.equal(record.source, 'automated-test');
+    assert.equal(record.status, 'passed');
+    assert.equal(record.semanticDigest, plan.digests.requirement);
+    assert.equal(record.repositoryDigest, plan.digests.repository);
+    assert.match(record.resultDigest, /^[a-f0-9]{64}$/);
+  }
+  assert.deepEqual(cleanupCalls, ['quality-matrix-finished']);
+  assert.ok(Object.isFrozen(result.run));
+});
+
+test('fail-fast and abort keep cleanup and mark skipped gates not-run', async () => {
+  const plan = miniPlan(['unit-tests', 'static-lint']);
+  const failing = { ...passingDrivers, command: async (context, gate) => driverResult(gate, { status: 'failed', failure: { classification: 'functional', message: 'boom' } }) };
+  const { cleanupCalls, value } = executionContext();
+  const failed = await executeQualityMatrix({ root: process.cwd(), plan, drivers: failing, context: value, policy: { sessionId: 'session.quality', failFast: true } });
+  assert.equal(failed.run.status, 'failed');
+  assert.deepEqual(failed.run.results.map((entry) => [entry.gateId, entry.status]), [['static-lint', 'failed'], ['unit-tests', 'not-run']]);
+  assert.deepEqual(cleanupCalls, ['quality-matrix-finished']);
+
+  const aborted = executionContext();
+  const controller = new AbortController();
+  controller.abort();
+  const stopped = await executeQualityMatrix({ root: process.cwd(), plan, drivers: passingDrivers, context: aborted.value, policy: { sessionId: 'session.quality' }, signal: controller.signal });
+  assert.equal(stopped.run.status, 'blocked');
+  assert.deepEqual(stopped.run.results.map((entry) => entry.status), ['not-run', 'not-run']);
+  assert.deepEqual(aborted.cleanupCalls, ['quality-matrix-finished']);
+});
+
+test('a throwing or missing driver stays blocked instead of passing', async () => {
+  const plan = miniPlan(['unit-tests', 'static-lint']);
+  const throwing = { ...passingDrivers, command: async () => { throw new Error('runner exploded'); } };
+  const { value } = executionContext();
+  const blocked = await executeQualityMatrix({ root: process.cwd(), plan, drivers: throwing, context: value, policy: { sessionId: 'session.quality' } });
+  assert.equal(blocked.run.status, 'blocked');
+  assert.equal(blocked.run.results[0].failureClassification, 'infrastructure');
+  const databasePlan = miniPlan(['migration-safety']);
+  const partial = { command: passingDrivers.command };
+  const missing = await executeQualityMatrix({ root: process.cwd(), plan: databasePlan, drivers: partial, context: executionContext().value, policy: { sessionId: 'session.quality' } });
+  assert.equal(missing.run.status, 'blocked');
+  assert.equal(missing.run.results[0].gateId, 'migration-safety');
+  assert.equal(missing.run.results[0].failureClassification, 'capability');
 });

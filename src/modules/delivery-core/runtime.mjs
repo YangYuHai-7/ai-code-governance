@@ -5,6 +5,7 @@ import { runAgentTurn } from './agent-contract.mjs';
 import { normalizeArchitectureEvaluation } from './completion.mjs';
 import { canonicalContractDigest, validateDeliverySession } from './contracts.mjs';
 import { classifyDeliveryFailure } from './failures.mjs';
+import { validateQualityMatrixRun } from './quality-matrix.mjs';
 import { activateRiskProfiles } from './risk-profiles.mjs';
 import { createDeliverySession, resumeDeliverySession, transitionDeliverySession } from './session.mjs';
 
@@ -94,6 +95,18 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
     return persist(session, next, { id: `event.${type}.${session.sequence}`, type: 'failure', category: failure.category });
   }
 
+  // A verified receipt is persisted before the session state changes, so a restart cannot lose it.
+  function verifiedRuntime(session, checked) {
+    const runtime = { ...session.runtime };
+    if (checked?.qualityMatrixRun) {
+      const run = validateQualityMatrixRun(checked.qualityMatrixRun);
+      runtime.qualityMatrixRun = run;
+      runtime.qualityMatrixPlanId = checked.qualityMatrixPlanId ?? run.planId;
+      runtime.environmentDigest = checked.environmentDigest ?? run.digests.environment;
+    }
+    return runtime;
+  }
+
   function repositoryFacts(session) {
     const snapshot = session.repositorySnapshot ?? {};
     return { paths: Array.isArray(snapshot.paths) ? snapshot.paths : [], packages: Array.isArray(snapshot.packages) ? snapshot.packages : [] };
@@ -180,13 +193,16 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
           safeAppend(store, session.id, { id: `verification.${canonicalValueDigest(key).slice(0, 24)}.after`, effect: 'verification', phase: 'after', key, status: checked.status });
           const commands = (session.usage?.commands ?? 0) + (checked.commands ?? 0);
           if (commands > session.budgets.maxCommands) return budgetFailure(session, 'Verification command budget exceeded.');
-          const counted = mutated(session, `verification:${key}`, { usage: usage(session, { commands }) }, clock);
+          const counted = mutated(session, `verification:${key}`, { usage: usage(session, { commands }), runtime: verifiedRuntime(session, checked) }, clock);
           session = persist(session, counted);
           if (checked.status === 'passed') {
             const next = transitionDeliverySession(session, { id: `event.review.${session.sequence}`, idempotencyKey: `review:${key}`, type: 'ready-for-review', at: timestamp(clock) });
             return persist(session, next);
           }
           if ((session.runtime?.retries ?? 0) >= (session.runtime?.maxRetries ?? 2)) throw Object.assign(new Error('Verification retry limit exceeded.'), { category: 'verification' });
+          // A repair invalidates every gate receipt that produced the failed verification.
+          const invalidated = mutated(session, `repair-invalidate:${key}`, { runtime: { ...session.runtime, qualityMatrixRun: null, qualityMatrixPlanId: null, environmentDigest: null } }, clock);
+          session = persist(session, invalidated);
           const next = transitionDeliverySession(session, { id: `event.repair.${session.sequence}`, idempotencyKey: `repair:${key}`, type: 'request-repair', failure: { category: 'verification', message: 'Verification failed.' }, at: timestamp(clock) });
           return persist(session, next);
         }
