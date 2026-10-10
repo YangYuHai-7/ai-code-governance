@@ -1,5 +1,7 @@
 import http from 'node:http';
 
+export * from './verification.mjs';
+
 export function listenOnLoopback(handler) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(handler);
