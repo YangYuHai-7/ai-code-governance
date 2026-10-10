@@ -170,3 +170,34 @@ test('malformed risk and architecture bindings fail closed', () => {
   const tampered = session({ runtime: { riskProfileSet: { ...riskProfileSet(), requirementDigest: 'not-a-digest' } } });
   assert.throws(() => evaluateDeliveryCompletion({ session: tampered, traceability: traceability(), evidence: [], profile: 'production' }), /requirementDigest/);
 });
+test('production completion consumes executed review independence when it is recorded', () => {
+  const baseline = session();
+  assert.equal(evaluateDeliveryCompletion({ session: baseline, traceability: traceability(), evidence: currentEvidence(baseline), profile: 'production' }).overall, 'complete');
+
+  const shared = session({ runtime: { reviewSessions: [
+    { role: 'implementer', identity: 'agent-1', sessionId: 'session.a' },
+    { role: 'reviewer', identity: 'agent-1', sessionId: 'session.b' },
+  ] } });
+  const blocked = evaluateDeliveryCompletion({ session: shared, traceability: traceability(), evidence: currentEvidence(shared), profile: 'production' });
+  assert.notEqual(blocked.overall, 'complete');
+  assert.ok(blocked.residualGaps.some((gap) => gap.startsWith('review-independence:shared-identity')));
+
+  const satisfied = session({ runtime: { reviewRisk: 'high', reviewSessions: [
+    { role: 'implementer', identity: 'agent-1', sessionId: 'session.a' },
+    { role: 'reviewer', identity: 'agent-2', sessionId: 'session.b' },
+    { role: 'referee', identity: 'agent-3', sessionId: 'session.c' },
+  ] } });
+  assert.equal(evaluateDeliveryCompletion({ session: satisfied, traceability: traceability(), evidence: currentEvidence(satisfied), profile: 'production' }).overall, 'complete');
+});
+
+test('production completion consumes structured review findings when they are recorded', () => {
+  const finding = { id: 'finding.1', role: 'reviewer', severity: 'critical', statement: 'Unbounded retry.', evidence: 'apps/api/src/transport/board-routes.ts:12', proposedResolution: 'Bound retries.', disposition: 'open', owner: 'reviewer-1' };
+  const blocked = session({ runtime: { reviewFindings: [finding] } });
+  const contract = evaluateDeliveryCompletion({ session: blocked, traceability: traceability(), evidence: currentEvidence(blocked), profile: 'production' });
+  assert.notEqual(contract.overall, 'complete');
+  assert.ok(contract.residualGaps.some((gap) => gap.startsWith('review-finding:unresolved-critical')));
+
+  const selfReview = session({ runtime: { reviewFindings: [{ ...finding, severity: 'minor', disposition: 'resolved', owner: 'implementer-1' }], implementerIdentity: 'implementer-1' } });
+  const selfContract = evaluateDeliveryCompletion({ session: selfReview, traceability: traceability(), evidence: currentEvidence(selfReview), profile: 'production' });
+  assert.ok(selfContract.residualGaps.some((gap) => gap.startsWith('review-finding:self-review-finding')));
+});

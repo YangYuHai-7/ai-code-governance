@@ -1,6 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
 import { validateCompletionContract, validateDeliverySession, validateEvidenceIr } from './contracts.mjs';
+import { evaluateReviewFindings, evaluateReviewIndependence } from '../release/index.mjs';
 import { validateQualityMatrixRun } from './quality-matrix.mjs';
 import { riskProfileSetDigest, validateRiskProfileSet } from './risk-profiles.mjs';
 
@@ -89,6 +90,12 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   if (!['advisory', 'production'].includes(profile)) throw usageError('Delivery completion profile must be advisory or production.');
   const riskProfileSet = current.runtime?.riskProfileSet ? validateRiskProfileSet(current.runtime.riskProfileSet) : null;
   const matrix = qualityMatrixState(current, riskProfileSet);
+  const reviewSeparation = current.runtime?.reviewSessions
+    ? evaluateReviewIndependence({ risk: current.runtime.reviewRisk ?? 'standard', sessions: current.runtime.reviewSessions })
+    : null;
+  const reviewFindings = Array.isArray(current.runtime?.reviewFindings)
+    ? evaluateReviewFindings({ findings: current.runtime.reviewFindings, approver: current.runtime.reviewApprover ?? null, implementerIdentity: current.runtime.implementerIdentity ?? null })
+    : null;
   const architectureEvaluation = current.runtime?.architectureEvaluation ? validateArchitectureEvaluation(current.runtime.architectureEvaluation) : null;
   const automated = currentEvidence(records, current, 'automated-test');
   const reviews = currentEvidence(records, current, 'independent-review');
@@ -106,13 +113,20 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
         : automated.length > 0,
       evidence: matrix ? [] : automated.map((entry) => entry.id),
     },
-    'independent-review': { passed: reviews.length > 0, evidence: reviews.map((entry) => entry.id) },
+    'independent-review': {
+      passed: reviews.length > 0
+        && (!reviewSeparation || reviewSeparation.status === 'satisfied')
+        && (!reviewFindings || reviewFindings.status === 'clean'),
+      evidence: reviews.map((entry) => entry.id),
+    },
     'human-acceptance': { passed: acceptance.length > 0, evidence: acceptance.map((entry) => entry.id) },
     deployability: { passed: deploymentEvidence.length > 0, evidence: deploymentEvidence.map((entry) => entry.id) },
     deployment: { passed: Boolean(current.runtime?.deploymentEvidenceId && deploymentEvidence.some((entry) => entry.id === current.runtime.deploymentEvidenceId)), evidence: deploymentEvidence.map((entry) => entry.id) },
   };
   const gaps = [...traceability.gaps];
   if (architectureEvaluation && architectureEvaluation.status !== 'passed') gaps.push(`architecture: golden path architecture evaluation failed (${architectureEvaluation.issueCodes.join(', ') || 'no issue code'}).`);
+  if (reviewSeparation) for (const gap of reviewSeparation.gaps) gaps.push(`review-independence:${gap.code}: ${gap.detail}`);
+  if (reviewFindings) for (const gap of reviewFindings.gaps) gaps.push(`review-finding:${gap.code}: ${gap.detail}`);
   if (matrix) {
     if (matrix.stale.length) gaps.push(`quality matrix run is stale for ${matrix.stale.join(', ')}.`);
     for (const gateId of matrix.uncovered) gaps.push(`quality gate ${gateId}: the current run does not cover an activated gate.`);
