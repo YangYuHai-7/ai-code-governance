@@ -146,3 +146,29 @@ v3.1 不自动比 v3.0 更可靠；`active` 也不等于 `certified`。当前 v3
 - 把 WSL 结果当作原生 Windows 结果。
 - 因为用户选择了“其他”就悄悄套用最接近的官方包。
 - 把能力包的 `supported` 写成目标项目已经 `certified`。
+## 覆盖摘要（机器生成）
+
+该区块由 `renderCapabilityCoverageSummary()` 生成，并由 `test/capability-coverage-doc.test.mjs` 逐字节校验；请勿手工编辑，覆盖状态以能力包注册表与评估记录为准。
+
+<!-- GENERATED: capability-coverage-summary -->
+
+| 能力包 | 成熟度候选 | 声明证据 | 评估记录 | 标准技能覆盖 | 场景证据 | 未决缺口数 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `frontend-react` | `detected` | `unverified` | `none` | `partial` | `synthetic-only` | 3 |
+| `frontend-vue` | `detected` | `unverified` | `none` | `unverified` | `none` | 2 |
+| `frontend-angular` | `detected` | `unverified` | `none` | `unverified` | `none` | 2 |
+| `backend-node` | `detected` | `unverified` | `none` | `partial` | `synthetic-only` | 4 |
+| `backend-java` | `detected` | `unverified` | `none` | `unverified` | `none` | 4 |
+| `frontend-svelte` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `backend-python` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `backend-go` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `backend-php` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-dotnet` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-android` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-ios` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-hybrid-mobile` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-desktop` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `platform-c-cpp` | `unverified` | `unverified` | `none` | `none` | `none` | 0 |
+| `generic-unknown` | `detected` | `unverified` | `none` | `unverified` | `none` | 3 |
+
+<!-- END GENERATED: capability-coverage-summary -->

@@ -54,6 +54,26 @@ export function validateCapabilityCoverage({ registry, evaluationRecords = [] } 
   return Object.freeze({ status: findings.length === 0 ? 'clean' : 'drifted', findings: Object.freeze(findings.map((finding) => Object.freeze(finding))) });
 }
 
+// The published coverage summary is generated, never hand-maintained: the drift test compares the
+// document block with this renderer byte for byte.
+export const COVERAGE_SUMMARY_START = '<!-- GENERATED: capability-coverage-summary -->';
+export const COVERAGE_SUMMARY_END = '<!-- END GENERATED: capability-coverage-summary -->';
+
+export function renderCapabilityCoverageSummary({ registry, evaluationRecords = [] } = {}) {
+  const summary = summarizeCapabilityCoverage({ registry, evaluationRecords });
+  const rows = summary.map((entry) => `| \`${entry.id}\` | \`${entry.maturityCandidate}\` | \`${entry.claimedEvidence}\` | \`${entry.evaluationLevel ?? 'none'}\` | \`${entry.standardSkillCoverage}\` | \`${entry.scenarioEvidence}\` | ${entry.gaps.length} |`);
+  return [
+    COVERAGE_SUMMARY_START,
+    '',
+    '| 能力包 | 成熟度候选 | 声明证据 | 评估记录 | 标准技能覆盖 | 场景证据 | 未决缺口数 |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+    ...rows,
+    '',
+    COVERAGE_SUMMARY_END,
+    '',
+  ].join('\n');
+}
+
 export function summarizeCapabilityCoverage({ registry, evaluationRecords = [] } = {}) {
   object(registry, 'capabilityRegistry');
   if (!Array.isArray(registry.packs)) fail('capabilityRegistry.packs', 'expected an array');
