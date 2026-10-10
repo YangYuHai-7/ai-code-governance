@@ -1,8 +1,11 @@
 import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
+import { packContractDigest, validateGoldenPathPack } from '../stack-packs/index.mjs';
 import { runAgentTurn } from './agent-contract.mjs';
+import { normalizeArchitectureEvaluation } from './completion.mjs';
 import { canonicalContractDigest, validateDeliverySession } from './contracts.mjs';
 import { classifyDeliveryFailure } from './failures.mjs';
+import { activateRiskProfiles } from './risk-profiles.mjs';
 import { createDeliverySession, resumeDeliverySession, transitionDeliverySession } from './session.mjs';
 
 function timestamp(clock) { return (clock ?? (() => new Date().toISOString()))(); }
@@ -27,9 +30,13 @@ function safeAppend(store, id, event) {
   catch (error) { if (!/duplicate event/i.test(error.message)) throw error; }
 }
 
-export function createDeliveryRuntime({ store, agents = [], workspace, verifier, clock }) {
+export function createDeliveryRuntime({ store, agents = [], workspace, verifier, clock, pack = null, architectureEvaluator = null }) {
   if (!store || !['create', 'read', 'compareAndSwap', 'appendEvent'].every((name) => typeof store[name] === 'function')) throw usageError('Delivery runtime requires a session store.');
   if (!Array.isArray(agents)) throw usageError('Delivery runtime agents must be an array.');
+  const goldenPath = pack === null || pack === undefined ? null : validateGoldenPathPack(pack);
+  const goldenPathDigest = goldenPath ? packContractDigest(goldenPath) : null;
+  const evaluateArchitecture = typeof architectureEvaluator === 'function' ? architectureEvaluator : architectureEvaluator?.evaluate?.bind(architectureEvaluator);
+  if (architectureEvaluator && typeof evaluateArchitecture !== 'function') throw usageError('Delivery runtime architectureEvaluator must be a function or expose evaluate().');
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   if (byId.size !== agents.length) throw usageError('Delivery runtime Agent ids must be unique.');
   const applyWorkspace = typeof workspace === 'function' ? workspace : workspace?.apply?.bind(workspace);
@@ -87,12 +94,18 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
     return persist(session, next, { id: `event.${type}.${session.sequence}`, type: 'failure', category: failure.category });
   }
 
+  function repositoryFacts(session) {
+    const snapshot = session.repositorySnapshot ?? {};
+    return { paths: Array.isArray(snapshot.paths) ? snapshot.paths : [], packages: Array.isArray(snapshot.packages) ? snapshot.packages : [] };
+  }
+
   const runtime = {
     start(input) {
       const base = createDeliverySession({ ...input, clock });
       const selected = input.agentId ?? agents[0]?.id ?? null;
       if (selected && !byId.has(selected)) throw usageError(`Unknown delivery Agent ${selected}.`);
-      const session = validateDeliverySession({ ...base, activeAgentId: selected, runtime: { startedAt: timestamp(clock), retries: 0, maxRetries: input.maxRetries ?? 2, effects: {} } });
+      const bindings = goldenPath ? { pack: { id: goldenPath.id, digest: goldenPathDigest } } : {};
+      const session = validateDeliverySession({ ...base, activeAgentId: selected, runtime: { startedAt: timestamp(clock), retries: 0, maxRetries: input.maxRetries ?? 2, effects: {}, ...bindings } });
       store.create(session);
       safeAppend(store, session.id, { id: 'event.runtime.started', type: 'runtime-started' });
       return session;
@@ -121,8 +134,24 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
           return persist(session, next);
         }
         if (session.state === 'architecture-ready') {
-          const next = transitionDeliverySession(session, { id: `event.plan.${session.sequence}`, idempotencyKey: `plan:${session.architectureDigest}`, type: 'approve-plan', at: timestamp(clock) });
-          return persist(session, next);
+          let current = session;
+          if (evaluateArchitecture) {
+            const evaluation = normalizeArchitectureEvaluation(await evaluateArchitecture(current));
+            const bound = mutated(current, `architecture:${evaluation.digest}`, { runtime: { ...current.runtime, architectureEvaluation: evaluation } }, clock);
+            current = persist(current, bound);
+            if (evaluation.status !== 'passed') {
+              const message = `Golden path architecture evaluation failed (${evaluation.issueCodes.join(', ') || 'no issue code'}).`;
+              const blocked = transitionDeliverySession(current, { id: `event.architecture.${current.sequence}`, idempotencyKey: `architecture-failed:${evaluation.digest}`, type: 'block', failure: { category: 'policy', message }, reason: message, at: timestamp(clock) });
+              return persist(current, blocked);
+            }
+          }
+          if (goldenPath) {
+            const riskProfileSet = activateRiskProfiles({ requirement: current.requirement, architecture: current.architecture, repositoryFacts: repositoryFacts(current), pack: goldenPath });
+            const bound = mutated(current, `risk:${riskProfileSet.requirementDigest}`, { runtime: { ...current.runtime, riskProfileSet } }, clock);
+            current = persist(current, bound);
+          }
+          const next = transitionDeliverySession(current, { id: `event.plan.${current.sequence}`, idempotencyKey: `plan:${current.architectureDigest}`, type: 'approve-plan', at: timestamp(clock) });
+          return persist(current, next);
         }
         if (session.state === 'plan-approved' || session.state === 'repairing') {
           const effect = await agentEffect(session, 'boundedPatch', 'patch');
@@ -166,6 +195,7 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
     },
     resume(sessionId, currentInputs) {
       const session = store.read(sessionId);
+      if (goldenPathDigest && session.runtime?.pack && session.runtime.pack.digest !== goldenPathDigest) throw usageError('Delivery session Pack digest changed; reconcile the Pack before resume.');
       resumeDeliverySession(session, currentInputs);
       const agentId = currentInputs.agentId ?? session.activeAgentId;
       if (agentId && !byId.has(agentId)) throw usageError(`Unknown delivery Agent ${agentId}.`);

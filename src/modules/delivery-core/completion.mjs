@@ -1,7 +1,70 @@
 import { usageError } from '../../kernel/index.mjs';
+import { canonicalValueDigest } from '../../shared/index.mjs';
 import { validateCompletionContract, validateDeliverySession, validateEvidenceIr } from './contracts.mjs';
+import { validateRiskProfileSet } from './risk-profiles.mjs';
 
 const STAGES = ['governance', 'requirements', 'architecture', 'implementation', 'automated-verification', 'independent-review', 'human-acceptance', 'deployability', 'deployment'];
+const GATE_RECEIPT_STATUS = Object.freeze(['passed', 'failed', 'blocked', 'unrun', 'stale', 'unsupported']);
+const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
+const HASH = /^[a-f0-9]{64}$/;
+
+function closedObject(value, allowed, path) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw usageError(`${path} must be an object.`);
+  for (const key of Object.keys(value)) if (!allowed.includes(key)) throw usageError(`${path}.${key} is not a supported field.`);
+  return value;
+}
+
+function textList(value, path) {
+  if (!Array.isArray(value)) throw usageError(`${path} must be an array.`);
+  for (const entry of value) if (typeof entry !== 'string' || entry.length === 0) throw usageError(`${path} entries must be non-empty strings.`);
+  return value;
+}
+
+export function validateArchitectureEvaluation(value) {
+  closedObject(value, ['status', 'digest', 'issueCodes', 'unsupportedFiles'], 'architectureEvaluation');
+  if (!['passed', 'failed'].includes(value.status)) throw usageError('architectureEvaluation.status must be passed or failed.');
+  if (typeof value.digest !== 'string' || !HASH.test(value.digest)) throw usageError('architectureEvaluation.digest must be a canonical digest.');
+  textList(value.issueCodes, 'architectureEvaluation.issueCodes');
+  textList(value.unsupportedFiles, 'architectureEvaluation.unsupportedFiles');
+  return value;
+}
+
+// A golden path architecture evaluation is an effect result; only its bounded, replayable facts are
+// persisted in session runtime state.
+export function normalizeArchitectureEvaluation(result) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw usageError('Architecture evaluation must be an object.');
+  if (!['passed', 'failed'].includes(result.status)) throw usageError('Architecture evaluation must report passed or failed.');
+  const issues = result.issues ?? [];
+  if (!Array.isArray(issues)) throw usageError('Architecture evaluation issues must be an array.');
+  const issueCodes = issues.map((issue, index) => {
+    const code = typeof issue === 'string' ? issue : issue?.code;
+    if (typeof code !== 'string' || !ID.test(code)) throw usageError(`Architecture evaluation issue ${index} requires an issue code.`);
+    return code;
+  });
+  const unsupportedFiles = textList(result.unsupportedFiles ?? [], 'architectureEvaluation.unsupportedFiles');
+  return validateArchitectureEvaluation({
+    status: result.status,
+    digest: canonicalValueDigest({ status: result.status, issueCodes, unsupportedFiles }),
+    issueCodes,
+    unsupportedFiles,
+  });
+}
+
+// Managed verification will replace this interim receipt hook with bound gate evidence.
+function qualityGateReceipts(value) {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > 256) throw usageError('Delivery completion quality gate receipts must be an array.');
+  const seen = new Set();
+  return value.map((receipt, index) => {
+    const path = `qualityGateReceipts[${index}]`;
+    closedObject(receipt, ['gateId', 'status'], path);
+    if (typeof receipt.gateId !== 'string' || !ID.test(receipt.gateId)) throw usageError(`${path}.gateId must be a quality gate ID.`);
+    if (!GATE_RECEIPT_STATUS.includes(receipt.status)) throw usageError(`${path}.status is unsupported.`);
+    if (seen.has(receipt.gateId)) throw usageError(`${path}.gateId duplicates ${receipt.gateId}.`);
+    seen.add(receipt.gateId);
+    return receipt;
+  });
+}
 
 function currentEvidence(items, session, source) {
   return items.filter((entry) => entry.source === source && entry.status === 'passed' && entry.verificationLevel === 'verified' && entry.semanticDigest === session.requirementDigest && entry.repositoryDigest === session.repositoryDigest);
@@ -20,6 +83,9 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   if (!Array.isArray(evidence)) throw usageError('Delivery completion evidence must be an array.');
   const records = evidence.map(validateEvidenceIr);
   if (!['advisory', 'production'].includes(profile)) throw usageError('Delivery completion profile must be advisory or production.');
+  const riskProfileSet = current.runtime?.riskProfileSet ? validateRiskProfileSet(current.runtime.riskProfileSet) : null;
+  const receipts = qualityGateReceipts(current.runtime?.qualityGateReceipts);
+  const architectureEvaluation = current.runtime?.architectureEvaluation ? validateArchitectureEvaluation(current.runtime.architectureEvaluation) : null;
   const automated = currentEvidence(records, current, 'automated-test');
   const reviews = currentEvidence(records, current, 'independent-review');
   const acceptance = currentEvidence(records, current, 'human-acceptance');
@@ -28,7 +94,7 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   const facts = {
     governance: { passed: true, evidence: [] },
     requirements: { passed: Boolean(current.requirementDigest && current.requirement), evidence: [] },
-    architecture: { passed: Boolean(current.architectureDigest && current.architecture && !(current.architecture.evidenceGaps ?? []).some((gap) => gap.status === 'open')), evidence: [] },
+    architecture: { passed: Boolean(current.architectureDigest && current.architecture && !(current.architecture.evidenceGaps ?? []).some((gap) => gap.status === 'open') && (!architectureEvaluation || architectureEvaluation.status === 'passed')), evidence: [] },
     implementation: { passed: traceability.status === 'complete' && !(traceability.orphanChanges ?? []).length, evidence: [] },
     'automated-verification': { passed: automated.length > 0, evidence: automated.map((entry) => entry.id) },
     'independent-review': { passed: reviews.length > 0, evidence: reviews.map((entry) => entry.id) },
@@ -37,6 +103,11 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
     deployment: { passed: Boolean(current.runtime?.deploymentEvidenceId && deploymentEvidence.some((entry) => entry.id === current.runtime.deploymentEvidenceId)), evidence: deploymentEvidence.map((entry) => entry.id) },
   };
   const gaps = [...traceability.gaps];
+  if (architectureEvaluation && architectureEvaluation.status !== 'passed') gaps.push(`architecture: golden path architecture evaluation failed (${architectureEvaluation.issueCodes.join(', ') || 'no issue code'}).`);
+  if (riskProfileSet) {
+    const satisfied = new Set(receipts.filter((receipt) => receipt.status === 'passed').map((receipt) => receipt.gateId));
+    for (const gateId of riskProfileSet.requiredGateIds) if (!satisfied.has(gateId)) gaps.push(`quality gate ${gateId}: required evidence is missing, stale, failed, or unrun.`);
+  }
   const gates = STAGES.map((stage) => {
     const reason = applicability(current, stage);
     if (reason) return { id: stage, applicability: 'not-applicable', status: 'not-applicable', evidenceIds: [], reason };

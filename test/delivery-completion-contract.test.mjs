@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  activateRiskProfiles,
   buildTraceabilityGraph,
   canonicalContractDigest,
   createDeliverySession,
   evaluateDeliveryCompletion,
   evaluateTraceability,
 } from '../src/modules/delivery-core/index.mjs';
+import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, digest, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
 
 function session(overrides = {}) {
@@ -84,4 +86,50 @@ test('unresolved requirement questions and orphan production paths block complet
   const contract = evaluateDeliveryCompletion({ session: current, traceability: incomplete, evidence: currentEvidence(current), profile: 'production' });
   assert.equal(contract.implementation, 'partial');
   assert.notEqual(contract.overall, 'complete');
+});
+
+function riskProfileSet() {
+  const requirement = requirementFixture();
+  return activateRiskProfiles({
+    requirement,
+    architecture: architectureFixture(canonicalContractDigest('requirement', requirement)),
+    repositoryFacts: { paths: [], packages: [] },
+    pack: loadGoldenPathPack('react-mantine-nest-fastify-drizzle-postgresql'),
+  });
+}
+
+test('required quality gates stay residual gaps until a passing receipt exists', () => {
+  const set = riskProfileSet();
+  assert.ok(set.requiredGateIds.length > 0);
+  const current = session({ runtime: { riskProfileSet: set } });
+  const blocked = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.notEqual(blocked.overall, 'complete');
+  assert.ok(blocked.residualGaps.some((gap) => gap === `quality gate ${set.requiredGateIds[0]}: required evidence is missing, stale, failed, or unrun.`));
+
+  const receipts = set.requiredGateIds.map((gateId) => ({ gateId, status: 'passed' }));
+  const satisfied = session({ runtime: { riskProfileSet: set, qualityGateReceipts: receipts } });
+  assert.equal(evaluateDeliveryCompletion({ session: satisfied, traceability: traceability(), evidence: currentEvidence(satisfied), profile: 'production' }).overall, 'complete');
+
+  const failed = session({ runtime: { riskProfileSet: set, qualityGateReceipts: receipts.map((receipt) => receipt.gateId === set.requiredGateIds[0] ? { ...receipt, status: 'failed' } : receipt) } });
+  const reopened = evaluateDeliveryCompletion({ session: failed, traceability: traceability(), evidence: currentEvidence(failed), profile: 'production' });
+  assert.notEqual(reopened.overall, 'complete');
+  assert.ok(reopened.residualGaps.some((gap) => gap.startsWith(`quality gate ${set.requiredGateIds[0]}`)));
+});
+
+test('a failed golden path architecture evaluation blocks production completion', () => {
+  const failed = session({ runtime: { architectureEvaluation: { status: 'failed', digest, issueCodes: ['cross-feature-private-import'], unsupportedFiles: [] } } });
+  const contract = evaluateDeliveryCompletion({ session: failed, traceability: traceability(), evidence: currentEvidence(failed), profile: 'production' });
+  assert.equal(contract.overall, 'blocked');
+  assert.equal(contract.gates.find((gate) => gate.id === 'architecture').status, 'blocked');
+  assert.ok(contract.residualGaps.some((gap) => gap.includes('architecture evaluation failed')));
+
+  const passing = session({ runtime: { architectureEvaluation: { status: 'passed', digest, issueCodes: [], unsupportedFiles: [] } } });
+  assert.equal(evaluateDeliveryCompletion({ session: passing, traceability: traceability(), evidence: currentEvidence(passing), profile: 'production' }).overall, 'complete');
+});
+
+test('malformed risk and architecture bindings fail closed', () => {
+  const current = session({ runtime: { architectureEvaluation: { status: 'unknown', digest, issueCodes: [], unsupportedFiles: [] } } });
+  assert.throws(() => evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: [], profile: 'production' }), /architectureEvaluation/);
+  const tampered = session({ runtime: { riskProfileSet: { ...riskProfileSet(), requirementDigest: 'not-a-digest' } } });
+  assert.throws(() => evaluateDeliveryCompletion({ session: tampered, traceability: traceability(), evidence: [], profile: 'production' }), /requirementDigest/);
 });

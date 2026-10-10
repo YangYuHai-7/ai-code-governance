@@ -5,8 +5,13 @@ import {
   canonicalContractDigest,
   classifyDeliveryFailure,
   createDeliveryRuntime,
+  createSessionCheckpoint,
+  evaluateDeliveryCompletion,
 } from '../src/modules/delivery-core/index.mjs';
+import { loadGoldenPathPack, validateGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
+
+const goldenPathPack = loadGoldenPathPack('react-mantine-nest-fastify-drizzle-postgresql');
 
 function memoryStore({ failAfterWrite = false } = {}) {
   const sessions = new Map(), events = new Map(); let failed = false;
@@ -166,4 +171,79 @@ test('failure classification is explicit and unknown errors stop as internal', (
     assert.equal(classifyDeliveryFailure(error, {}).category, category);
   }
   assert.equal(classifyDeliveryFailure(Object.assign(new Error('stale'), { code: 'AICG_STALE_INPUT' }), {}).category, 'stale-input');
+});
+
+test('Pack and risk bindings persist across a checkpoint and resume', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+    clock: () => '2026-10-05T00:00:00.000Z',
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.pack-binding' });
+  assert.equal(started.runtime.pack.id, goldenPathPack.id);
+  const approved = await runtime.step(started.id);
+  assert.equal(approved.state, 'plan-approved');
+  assert.ok(approved.runtime.riskProfileSet.requiredGateIds.length > 0);
+  const checkpointed = createSessionCheckpoint(approved, 'durable bindings', () => '2026-10-05T00:01:00.000Z');
+  store.compareAndSwap(started.id, canonicalContractDigest('session', approved), checkpointed);
+  const resumed = runtime.resume(started.id, { requirementDigest: checkpointed.requirementDigest, architectureDigest: checkpointed.architectureDigest, authorityDigest: checkpointed.authorityDigest, repositoryDigest: checkpointed.repositoryDigest });
+  assert.equal(resumed.runtime.pack.digest, approved.runtime.pack.digest);
+  assert.deepEqual(resumed.runtime.riskProfileSet, approved.runtime.riskProfileSet);
+});
+
+test('a changed Pack digest blocks resume instead of discarding approvals', async () => {
+  const store = memoryStore();
+  const effects = {
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  };
+  const runtime = createDeliveryRuntime({ store, pack: goldenPathPack, ...effects });
+  const started = runtime.start({ ...approvedInput(), id: 'session.pack-change' });
+  const approved = await runtime.step(started.id);
+  const bindings = { requirementDigest: approved.requirementDigest, architectureDigest: approved.architectureDigest, authorityDigest: approved.authorityDigest, repositoryDigest: approved.repositoryDigest };
+  const movedPack = validateGoldenPathPack({ ...goldenPathPack, release: 'v2' });
+  const nextRuntime = createDeliveryRuntime({ store, pack: movedPack, ...effects });
+  assert.throws(() => nextRuntime.resume(started.id, bindings), /Pack digest/i);
+  assert.equal(runtime.resume(started.id, bindings).runtime.pack.digest, approved.runtime.pack.digest);
+});
+
+test('a failed golden path architecture evaluation blocks the run before plan approval', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    architectureEvaluator: () => ({ status: 'failed', issues: [{ code: 'cross-feature-private-import', path: 'src/fixture.mjs' }], unsupportedFiles: [] }),
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { throw new Error('not reached'); } },
+    verifier: { async run() { throw new Error('not reached'); } },
+    clock: () => '2026-10-05T00:00:00.000Z',
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.architecture-failure' });
+  const blocked = await runtime.step(started.id);
+  assert.equal(blocked.state, 'blocked');
+  assert.equal(blocked.lastFailure.category, 'policy');
+  assert.equal(blocked.runtime.architectureEvaluation.status, 'failed');
+  assert.deepEqual(blocked.runtime.architectureEvaluation.issueCodes, ['cross-feature-private-import']);
+  const contract = evaluateDeliveryCompletion({ session: blocked, traceability: { status: 'complete', gaps: [], orphanChanges: [] }, evidence: [], profile: 'production' });
+  assert.notEqual(contract.overall, 'complete');
+  assert.ok(contract.residualGaps.some((gap) => gap.includes('architecture evaluation failed')));
+});
+
+test('a passing architecture evaluation is recorded before the plan is approved', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    architectureEvaluator: () => ({ status: 'passed', issues: [], unsupportedFiles: [] }),
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.architecture-pass' });
+  const approved = await runtime.step(started.id);
+  assert.equal(approved.state, 'plan-approved');
+  assert.equal(approved.runtime.architectureEvaluation.status, 'passed');
+  assert.match(approved.runtime.architectureEvaluation.digest, /^[a-f0-9]{64}$/);
 });
