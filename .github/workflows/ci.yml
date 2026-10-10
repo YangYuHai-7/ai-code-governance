@@ -1,5 +1,9 @@
 name: CI
 
+# Layered CI: pull requests run the fast layer, main pushes and release tags run the full
+# platform matrix, and a manual dispatch can request either depth. Platform state is published
+# from the current run evidence only; Windows stays preview-only while its portability gaps are
+# open, so an informational Windows result is never reported as verified support.
 on:
   workflow_dispatch:
     inputs:
@@ -11,25 +15,29 @@ on:
         options:
           - fast
           - full
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
 
 permissions:
   contents: read
 
 jobs:
   fast:
-    if: ${{ inputs.suite == 'fast' }}
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'fast')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
       - run: npm run test:fast
       - run: npm run validate:skill
       - run: npm pack --dry-run
 
   full:
-    if: ${{ inputs.suite == 'full' }}
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full')
     # Windows still has open portability gaps, so it runs as an informational signal and must
     # not block the matrix. Linux and macOS are the verified platforms.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
@@ -49,3 +57,18 @@ jobs:
       - run: npm run smoke
       - run: npm pack --dry-run
       - run: npm run smoke:package
+
+  platform-state:
+    if: always()
+    needs: [fast, full]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record platform state from current run evidence
+        run: |
+          cat > platform-state.json <<JSON
+          {"event":"${{ github.event_name }}","ref":"${{ github.ref }}","sha":"${{ github.sha }}","fast":"${{ needs.fast.result }}","full":"${{ needs.full.result }}","verifiedPlatforms":["linux","darwin"],"previewOnly":["win32"],"note":"Windows is preview-only: an informational, non-blocking result is never verified support."}
+          JSON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: platform-state
+          path: platform-state.json
