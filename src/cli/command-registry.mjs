@@ -24,6 +24,7 @@ export const COMMAND_HANDLERS = Object.freeze({
   config: handler('./commands/configuration.mjs', 'configurationCommand', ['target', 'action', 'options']),
   delivery: handler('./commands/delivery.mjs', 'deliveryCommand', ['target', 'action', 'options', 'subAction']),
   evaluation: handler('./commands/evaluation.mjs', 'evaluationCommand', ['target', 'action', 'options']),
+  candidate: handler('./commands/candidate.mjs', 'candidateCommand', ['target', 'action', 'options']),
   enrich: handler('./commands/enrich.mjs', 'enrichCommand'),
   evidence: handler('./commands/evidence.mjs', 'evidenceCommand', ['target', 'action', 'options']),
   team: handler('./commands/read-only.mjs', 'teamCommand'),

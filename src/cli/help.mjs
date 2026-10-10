@@ -48,6 +48,7 @@ Advanced delivery (agent runtime, optional; each name keeps its full reference b
   aicg delivery release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
   aicg evaluation golden-path <path> --requirement <relative-json> [--pack <id>] [--agent <id>] [--live-agent] [--output <relative-path>] [--json]
   aicg evaluation held-out <provider-root> [--output <relative-path>] [--json]   Read-only held-out provider evaluation; live execution needs explicit authority.
+  aicg candidate review [path] [--json]   Read-only view of candidate-rule state and the next legal action; it never approves or promotes.
 
   session    Persist and inspect one recoverable delivery state machine. Current built-in Agent entries remain unverified and are never activated as executable adapters implicitly.
   work-unit  Preview or validate one bounded vertical feature document. Writes a local report and never launches Agents.
