@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aicg.dev/contracts/risk-profile-set-v1-schema.json",
+  "title": "AICG Risk Profile Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "requirementDigest",
+    "packDigest",
+    "profiles",
+    "requiredGateIds",
+    "ownerQuestions"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "requirementDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "packDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "category",
+          "kind",
+          "applicability",
+          "decisionId",
+          "gateIds",
+          "evidenceOwner",
+          "triggerEvidence",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "category": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "kind": {
+            "enum": [
+              "supported",
+              "owner-dependent"
+            ]
+          },
+          "applicability": {
+            "enum": [
+              "required",
+              "not-applicable",
+              "blocked"
+            ]
+          },
+          "decisionId": {
+            "$ref": "#/$defs/id"
+          },
+          "gateIds": {
+            "type": "array",
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/id"
+            }
+          },
+          "evidenceOwner": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "triggerEvidence": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "detail"
+              ],
+              "properties": {
+                "source": {
+                  "enum": [
+                    "requirement",
+                    "architecture",
+                    "repository"
+                  ]
+                },
+                "detail": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              }
+            }
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "requiredGateIds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "ownerQuestions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "profileId",
+          "question",
+          "material"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "profileId": {
+            "$ref": "#/$defs/id"
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "material": {
+            "const": true
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}
