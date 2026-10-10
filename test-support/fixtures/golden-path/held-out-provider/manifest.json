@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "held-out.reference-tracker",
+  "cases": [
+    {
+      "id": "case-alpha",
+      "repository": "cases/case-alpha/repo",
+      "requirement": "cases/case-alpha/requirement.json",
+      "repositoryDigest": "dc2c99814f81eee32047e0053a90a7ce2b6e113cbdcfd14c9968906e0c044851",
+      "requirementDigest": "b8296d8cc80c4789afeb655827ee9eafe9709e5aaec29c6ad7ae6f6f64366c5c",
+      "platforms": [
+        "linux"
+      ],
+      "structurallyDistinct": true
+    },
+    {
+      "id": "case-beta",
+      "repository": "cases/case-beta/repo",
+      "requirement": "cases/case-beta/requirement.json",
+      "repositoryDigest": "32c43aaeb1f8623ba6092bfd5358d785d49f23230777eed8b47d10248e480aaf",
+      "requirementDigest": "b9cbf7dc868806661b97e94c1497be4db15cc8ffe2bccfabd856791749dbc04c",
+      "platforms": [
+        "linux"
+      ],
+      "structurallyDistinct": true
+    }
+  ]
+}

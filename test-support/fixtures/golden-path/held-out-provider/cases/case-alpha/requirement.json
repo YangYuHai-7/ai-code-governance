@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 2,
+  "id": "requirement.case-alpha",
+  "title": "Held-out case-alpha requirement",
+  "summary": "Evaluator-owned held-out case for the golden path certification."
+}
