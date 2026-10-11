@@ -62,7 +62,9 @@ export function createBoardRepository(
         `SELECT count(*) FROM audit_entries WHERE item_id = ${id} AND action = ${sqlLiteral(taggedAction)}`,
       );
       if (Number(row?.[0]) !== 1) {
-        const error = new Error("the item version changed while this write was in flight");
+        const error = new Error(
+          "the item version changed while this write was in flight",
+        );
         error.name = "ConflictError";
         throw error;
       }

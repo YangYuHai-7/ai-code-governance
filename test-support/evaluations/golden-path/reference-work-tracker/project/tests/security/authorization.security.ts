@@ -102,7 +102,10 @@ describe("tenant authorization against the running service", () => {
       ],
       { encoding: "utf8" },
     );
-    expect(seed.status, `this gate requires PostgreSQL: ${seed.stderr ?? ""}`).toBe(0);
+    expect(
+      seed.status,
+      `this gate requires PostgreSQL: ${seed.stderr ?? ""}`,
+    ).toBe(0);
 
     const attempts = await Promise.all(
       Array.from({ length: 5 }, () =>

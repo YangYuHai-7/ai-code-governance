@@ -49,6 +49,29 @@ function run(argv, cwd, timeoutMs = 240000) {
   });
 }
 
+
+async function concurrencyProbe() {
+  // Exactly one of several writers claiming the same version may win. This runs against the single
+  // evaluation API process; the multi-process variant lives in scripts/golden-path-live-concurrency.mjs
+  // and is what proves the database-level guard rather than in-process serialization.
+  const { randomUUID } = await import("node:crypto");
+  const tenant = randomUUID();
+  const board = randomUUID();
+  const item = randomUUID();
+  const seeded = await run([PSQL, "-d", DATABASE, "-v", "ON_ERROR_STOP=1", "-c",
+    `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Matrix tenant'); INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Matrix board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Matrix item', 'todo', 1)`], WORK, 30000);
+  if (seeded.exitCode !== 0) return { status: "blocked", detail: `the probe tenant could not be seeded: ${seeded.stderr.slice(0, 120)}` };
+  const body = JSON.stringify({ organizationId: tenant, actorId: "member-synthetic-1", boardId: board, state: "in-progress", expectedVersion: 1 });
+  const statuses = await Promise.all(Array.from({ length: 5 }, () => fetch(`${API}/work-items/${item}`, { method: "PATCH", headers: { "content-type": "application/json" }, body }).then((response) => response.status).catch(() => 0)));
+  const accepted = statuses.filter((status) => status === 200).length;
+  const refused = statuses.filter((status) => status === 409).length;
+  const version = await psql(`SELECT version FROM work_items WHERE id = '${item}'`);
+  const audits = await psql(`SELECT count(*) FROM audit_entries WHERE item_id = '${item}'`);
+  const detail = `accepted ${accepted}, refused ${refused}, version ${version.stdout.trim()}, audits ${audits.stdout.trim()} (single process; see scripts/golden-path-live-concurrency.mjs for the multi-process check)`;
+  const passed = accepted === 1 && refused === 4 && Number(version.stdout.trim()) === 2 && Number(audits.stdout.trim()) === 1;
+  return { status: passed ? "passed" : "failed", detail };
+}
+
 function psql(sql) {
   return run([PSQL, '-d', DATABASE, '-v', 'ON_ERROR_STOP=1', '-tAc', sql], WORK, 30000);
 }
@@ -69,6 +92,7 @@ async function databaseProbe(probe) {
       ? { status: 'passed', detail: 'the rejected transaction rolled the state change back' }
       : { status: 'failed', detail: `state changed despite the rejected transaction (${before} -> ${after})` };
   }
+  if (probe === 'concurrent-writers') return concurrencyProbe();
   if (probe === 'tenant-isolation') {
     const foreign = await psql(`select count(*) from work_items where organization_id='22222222-2222-2222-2222-222222222222' and id='${ITEM}'`);
     const owned = await psql(`select count(*) from work_items where organization_id='${ORGANIZATION}' and id='${ITEM}'`);
@@ -124,7 +148,7 @@ const context = {
       return { status: response.status, body: await response.text() };
     },
   },
-  database: { plan: { 'migration-safety': ['migrations-applied', 'audit-transaction', 'tenant-isolation'] }, run: ({ probe }) => databaseProbe(probe) },
+  database: { plan: { 'migration-safety': ['migrations-applied', 'audit-transaction', 'tenant-isolation', 'concurrent-writers'] }, run: ({ probe }) => databaseProbe(probe) },
   browser: { plan: { 'browser-e2e': ['primary-flow', 'accessibility'] }, run: ({ scenario }) => browserScenario(scenario) },
 };
 
