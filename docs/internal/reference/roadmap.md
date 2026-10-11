@@ -592,6 +592,14 @@ A validated matrix receipt now exists for one macOS host: 14 of 14 required gate
 
 Feeding that receipt into the certification evaluator still returns `incomplete` with `missing-e3`, `missing-held-out-case`, `insufficient-held-out-cases`, `missing-qualified-human`, `missing-negative-probes`, and `platform-missing:linux`, `platform-missing:darwin`, `platform-missing:win32`, because a matrix run is not an evaluation receipt: E4 needs per-platform evaluation receipts, held-out provider execution, and a real qualified participant. A test guards that a single-host receipt can never produce a certification verdict.
 
+### Negative probe coverage (executed, incomplete)
+
+The Pack declares fourteen injected-defect probes with the gates that must catch each one. Running them against the real gates (mutation applied to a throwaway copy, the untouched copy as control, a probe counted only when the control passes and the mutated tree fails) detects **four**: `domain-framework-import` (architecture boundaries, static types), `transaction-leak` (architecture boundaries), `cross-tenant-access` (security probes), and `missing-acceptance-test` (unit tests). The receipt is `test-support/evaluations/golden-path/receipts/macos-probe-detection.json`.
+
+The remaining **ten are not caught by the gates that declare them**: `cross-layer-import`, `private-feature-import`, and `unauthorized-path` pass architecture boundaries; `contract-drift` passes static types; `unsafe-dto-actor` and `omitted-gate` pass security probes; `lost-update` and `failed-migration` pass migration safety; `stale-evidence` and `interrupted-resume-drift` pass requirement traceability. Four of these additionally touch an HTTP gate (`api-integration` or `contract-tests`) that the probe runner does not yet serve from the mutated tree, so that part is a harness gap rather than a detection gap.
+
+This is an open quality gap: declared negative-probe coverage is materially weaker than the Pack advertises. Closing it means extending the architecture policy, security probes, migration checks, and traceability checks to the patterns those probes inject, and serving the mutated tree so the HTTP gates can participate.
+
 ### Priority defect register closure (P1)
 
 - **P1-002, P1-003, P1-004, P1-005, P1-007, P1-008: delivered as mechanisms.** Architecture policy and alias-aware TypeScript analysis, version-aware compatibility, risk-activated requirements, the production quality matrix with managed drivers, bounded verification drivers, and the held-out evaluation boundary all exist with tests.
