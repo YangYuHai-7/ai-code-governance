@@ -191,3 +191,19 @@ test('canonical semantic digests ignore volatile timestamps but bind semantic mu
   assert.match(canonicalContractDigest('session', session()), /^[a-f0-9]{64}$/);
   assert.throws(() => canonicalContractDigest('unknown', {}), /contract kind/);
 });
+// The evidence and completion documents are versioned Core contracts as well, so they publish the
+// same rules as the session, requirement, and architecture contracts: a stable canonical digest for
+// the current version, and a refusal for an unsupported version or an undeclared field.
+test('the evidence and completion contracts publish the same version rules', () => {
+  for (const [name, validate, build] of [
+    ['evidence', validateEvidenceIr, evidence],
+    ['completion', validateCompletionContract, completion],
+  ]) {
+    const valid = build();
+    const accepted = validate(valid);
+    assert.equal(accepted.schemaVersion, valid.schemaVersion, `${name} keeps its schema version`);
+    assert.equal(canonicalContractDigest(name, accepted), canonicalContractDigest(name, validate(build())), `${name} has a stable canonical digest`);
+    assert.throws(() => validate({ ...valid, schemaVersion: 99 }), /schemaVersion|version/i, `${name} must refuse an unsupported version`);
+    assert.throws(() => validate({ ...valid, unexpectedField: true }), /unknown field/i, `${name} must refuse an undeclared field`);
+  }
+});
