@@ -1,0 +1,11 @@
+{
+  "check": "concurrent-writers-one-version",
+  "platform": "darwin",
+  "processes": 3,
+  "writers": 6,
+  "accepted": 1,
+  "refused": 5,
+  "version": 2,
+  "audits": 1,
+  "passed": true
+}
