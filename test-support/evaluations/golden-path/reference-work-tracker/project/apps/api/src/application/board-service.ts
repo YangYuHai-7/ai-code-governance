@@ -1,4 +1,12 @@
-import { auditEntry, paginate, requireOwnedBoard, transitionItem, type Board, type WorkItem, type WorkItemState } from '../domain/index';
+import {
+  auditEntry,
+  paginate,
+  requireOwnedBoard,
+  transitionItem,
+  type Board,
+  type WorkItem,
+  type WorkItemState,
+} from "../domain/index";
 
 export interface BoardStore {
   boards(organizationId: string): Board[];
@@ -11,14 +19,28 @@ export function createBoardService(store: BoardStore) {
     listBoards(organizationId: string): Board[] {
       return store.boards(organizationId);
     },
-    pageItems(organizationId: string, boardId: string, cursor: string | null, limit: number) {
+    pageItems(
+      organizationId: string,
+      boardId: string,
+      cursor: string | null,
+      limit: number,
+    ) {
       requireOwnedBoard(store.boards(organizationId), boardId, organizationId);
       return paginate(store.items(organizationId, boardId), cursor, limit);
     },
-    moveItem(organizationId: string, actorId: string, boardId: string, itemId: string, next: WorkItemState, expectedVersion: number): WorkItem {
+    moveItem(
+      organizationId: string,
+      actorId: string,
+      boardId: string,
+      itemId: string,
+      next: WorkItemState,
+      expectedVersion: number,
+    ): WorkItem {
       requireOwnedBoard(store.boards(organizationId), boardId, organizationId);
-      const item = store.items(organizationId, boardId).find((entry) => entry.id === itemId);
-      if (!item) throw new Error('work item not found');
+      const item = store
+        .items(organizationId, boardId)
+        .find((entry) => entry.id === itemId);
+      if (!item) throw new Error("work item not found");
       const updated = transitionItem(item, next, expectedVersion);
       store.save(updated, `move:${next}`, actorId);
       void auditEntry(organizationId, actorId, itemId, `move:${next}`);

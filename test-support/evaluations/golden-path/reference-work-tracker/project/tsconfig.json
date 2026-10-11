@@ -9,20 +9,8 @@
     "jsx": "react-jsx",
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": [
-      "node",
-      "vite/client"
-    ],
-    "lib": [
-      "ES2023",
-      "DOM",
-      "DOM.Iterable"
-    ]
+    "types": ["node", "vite/client"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
   },
-  "include": [
-    "apps",
-    "packages",
-    "tests",
-    "e2e"
-  ]
+  "include": ["apps", "packages", "tests", "e2e"]
 }

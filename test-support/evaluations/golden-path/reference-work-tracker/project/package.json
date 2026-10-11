@@ -37,7 +37,7 @@
     "test:migration": "node scripts/migration-check.mjs",
     "test:observability": "vitest run tests/observability",
     "test:performance": "vitest run tests/performance",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node scripts/build-api.mjs",
     "start:local": "node scripts/start-local.mjs"
   },
   "dependencies": {

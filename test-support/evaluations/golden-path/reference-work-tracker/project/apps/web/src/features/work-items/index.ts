@@ -1,1 +1,1 @@
-export { WorkItemBoard } from './WorkItemBoard';
+export { WorkItemBoard } from "./WorkItemBoard";
