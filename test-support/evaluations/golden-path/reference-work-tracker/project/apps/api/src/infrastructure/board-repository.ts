@@ -1,13 +1,23 @@
-import { drizzle } from 'drizzle-orm';
-import type { Board, WorkItem } from '../domain/index';
-import { auditEntries, workItems } from './drizzle/schema';
+import type { Board, WorkItem, WorkItemState } from '../domain/index';
+import { createDatabase, sqlLiteral, type Database, type DatabaseConfig } from './db';
 
-export function createBoardRepository(connectionString: string) {
-  const database = drizzle(connectionString);
+function board(row: string[]): Board { return { id: row[0], organizationId: row[1], title: row[2] }; }
+function item(row: string[]): WorkItem { return { id: row[0], organizationId: row[1], boardId: row[2], title: row[3], state: row[4] as WorkItemState, version: Number(row[5]) }; }
+
+export function createBoardRepository(config: DatabaseConfig, database: Database = createDatabase(config)) {
   return {
     database,
-    boards(organizationId: string): Board[] { void database; void organizationId; return []; },
-    items(organizationId: string, boardId: string): WorkItem[] { void organizationId; void boardId; return []; },
-    save(item: WorkItem, action: string): void { void workItems; void auditEntries; void item; void action; },
+    boards(organizationId: string): Board[] {
+      return database.query(`SELECT id, organization_id, title FROM boards WHERE organization_id = ${sqlLiteral(organizationId)} ORDER BY title`).map(board);
+    },
+    items(organizationId: string, boardId: string): WorkItem[] {
+      return database.query(`SELECT id, organization_id, board_id, title, state, version FROM work_items WHERE organization_id = ${sqlLiteral(organizationId)} AND board_id = ${sqlLiteral(boardId)} ORDER BY title`).map(item);
+    },
+    save(updated: WorkItem, action: string): void {
+      database.execute(`INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES (${sqlLiteral(updated.id)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(updated.boardId)}, ${sqlLiteral(updated.title)}, ${sqlLiteral(updated.state)}, ${updated.version}) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, version = EXCLUDED.version, title = EXCLUDED.title`);
+      database.execute(`INSERT INTO audit_entries (id, organization_id, actor_id, item_id, action) VALUES (${sqlLiteral(`audit-${updated.id}-${updated.version}`)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral('actor.session')}, ${sqlLiteral(updated.id)}, ${sqlLiteral(action)})`);
+    },
   };
 }
+
+export type BoardRepository = ReturnType<typeof createBoardRepository>;

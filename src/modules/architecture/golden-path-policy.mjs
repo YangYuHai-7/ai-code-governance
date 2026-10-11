@@ -111,7 +111,7 @@ export function evaluateGoldenPathArchitecture(scan, pack) {
       if (resolved.kind === 'external') {
         if (sourceModule?.id === 'api-domain' && current.compatibility.packages.some((entry) => entry.name === resolved.packageName)) {
           issues.push(issue('domain-framework-dependency', file.relative, resolved.packageName));
-        } else if (sourceModule?.id !== 'api-transport' && resolved.packageName === TRANSPORT_PACKAGE) {
+        } else if (sourceModule?.id !== 'api-transport' && !isCompositionRoot(file.relative, current) && resolved.packageName === TRANSPORT_PACKAGE) {
           issues.push(issue('fastify-object-leakage', file.relative, resolved.packageName));
         } else if (!['api-infrastructure', 'api-domain'].includes(sourceModule?.id) && resolved.packageName === DATABASE_PACKAGE) {
           issues.push(issue('direct-database-access', file.relative, resolved.packageName));
