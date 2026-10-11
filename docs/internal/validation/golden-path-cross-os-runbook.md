@@ -28,3 +28,15 @@ validated per-OS receipts are.
 - A missing or failing platform stays unverified and blocks any three-platform claim.
 - Secrets stay in the environment. Receipts and bounded logs are the only uploaded artifacts.
 - The workflow publishes no package and deploys no application.
+## Operational prerequisites (measured, not assumed)
+
+A host that cannot satisfy these refuses the evaluation instead of publishing a receipt. Each item below was required when the golden path was actually executed on one macOS host.
+
+- PostgreSQL of the exact declared version is running and reachable, and the `psql` client is available either on `PATH` or through `PSQL_BIN`, with `PGHOST`, `PGUSER`, and `PGDATABASE` set for the evaluation database.
+- The reference workload's dependencies are installed with the declared package manager version (`npm ci` inside the workload project) before any gate runs.
+- A browser engine is installed for the workload (`playwright install chromium`); the browser gate cannot run without it.
+- A running API and web client are reachable for the HTTP and browser gates, named by `AICG_LIVE_API` and `AICG_LIVE_WEB`.
+- The governance checkout is named by `AICG_ROOT`; the workload's architecture and traceability gates load the policy and the contracts from it and fail closed when it is absent.
+- On Windows the work root is derived from `os.tmpdir()` (`TEMP`/`TMP`, never a literal `/tmp`), and executables resolve with the `.cmd` suffix.
+- The browser scenario is stateful, so the documented seed is reset before the suite; the workload's end-to-end setup does this itself.
+- Receipts are per platform, and a quality matrix run is not an evaluation receipt: each claimed platform needs its own evaluation receipt before any certification question is asked.
