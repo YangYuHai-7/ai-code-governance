@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
 // Tenant isolation has to be attacked over the real surface: every case below talks to the running
@@ -80,5 +82,46 @@ describe("tenant authorization against the running service", () => {
     });
     expect(wrongTypes.status).toBeGreaterThanOrEqual(400);
     expect(wrongTypes.status).toBeLessThan(500);
+  });
+
+  it("accepts exactly one of many concurrent writes that claim the same version", async () => {
+    const psql = process.env.PSQL_BIN ?? "psql";
+    const database = process.env.PGDATABASE ?? "tracker";
+    const tenant = randomUUID();
+    const board = randomUUID();
+    const item = randomUUID();
+    const seed = spawnSync(
+      psql,
+      [
+        "-d",
+        database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Concurrency tenant'); INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Concurrency board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Concurrency item', 'todo', 1)`,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(seed.status, `this gate requires PostgreSQL: ${seed.stderr ?? ""}`).toBe(0);
+
+    const attempts = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        fetch(`${API}/work-items/${item}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            organizationId: tenant,
+            actorId: "member-synthetic-1",
+            boardId: board,
+            state: "in-progress",
+            expectedVersion: 1,
+          }),
+        }),
+      ),
+    );
+    const accepted = attempts.filter((response) => response.status === 200);
+    const refused = attempts.filter((response) => response.status === 409);
+    expect(accepted.length, "exactly one writer may win the version").toBe(1);
+    expect(refused.length).toBe(attempts.length - 1);
   });
 });
