@@ -1,0 +1,40 @@
+{
+  "check": "release-candidate-verification",
+  "platform": "darwin",
+  "runtime": {
+    "node": "24.18.0",
+    "packageManager": {
+      "name": "npm",
+      "version": "12.0.2"
+    }
+  },
+  "steps": [
+    {
+      "step": "test:full",
+      "exit": 0,
+      "ms": 249260
+    },
+    {
+      "step": "validate",
+      "exit": 0,
+      "ms": 2149
+    },
+    {
+      "step": "smoke",
+      "exit": 0,
+      "ms": 1826
+    },
+    {
+      "step": "smoke:package",
+      "exit": 0,
+      "ms": 4295
+    },
+    {
+      "step": "prepublish-check",
+      "exit": 0,
+      "ms": 0
+    }
+  ],
+  "passed": true,
+  "note": "Executed on a single macOS host. This is not cross-platform evidence: Windows and Linux remain unverified, and no Agent, held-out, or qualified-human evidence is implied."
+}
