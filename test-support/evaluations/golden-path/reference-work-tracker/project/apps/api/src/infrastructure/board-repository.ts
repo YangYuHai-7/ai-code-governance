@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Board, WorkItem, WorkItemState } from "../domain/index";
 import {
   createDatabase,
@@ -41,15 +42,30 @@ export function createBoardRepository(
         .map(item);
     },
     save(updated: WorkItem, action: string, actorId = "actor.session"): void {
-      // One transaction: the state change and its audit entry are accepted or rejected together.
+      const expected = updated.version - 1;
+      const id = sqlLiteral(updated.id);
+      const organization = sqlLiteral(updated.organizationId);
+      // Each attempt carries its own token in the audit action. The update is conditional on the
+      // version the caller saw, the audit row is written only from the rows that update returned,
+      // and the attempt is confirmed by looking for its own token. Comparing the row's final
+      // version instead would let a later writer mistake another writer's commit for its own.
+      const token = randomUUID();
+      const taggedAction = `${action}#${token}`;
       database.execute(
         [
           "BEGIN",
-          `INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES (${sqlLiteral(updated.id)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(updated.boardId)}, ${sqlLiteral(updated.title)}, ${sqlLiteral(updated.state)}, ${updated.version}) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, version = EXCLUDED.version, title = EXCLUDED.title`,
-          `INSERT INTO audit_entries (id, organization_id, actor_id, item_id, action) VALUES (gen_random_uuid(), ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(actorId)}, ${sqlLiteral(updated.id)}, ${sqlLiteral(action)})`,
+          `WITH updated AS (UPDATE work_items SET state = ${sqlLiteral(updated.state)}, version = ${updated.version} WHERE id = ${id} AND organization_id = ${organization} AND version = ${expected} RETURNING id) INSERT INTO audit_entries (id, organization_id, actor_id, item_id, action) SELECT gen_random_uuid(), ${organization}, ${sqlLiteral(actorId)}, id, ${sqlLiteral(taggedAction)} FROM updated`,
           "COMMIT",
         ].join("; "),
       );
+      const [row] = database.query(
+        `SELECT count(*) FROM audit_entries WHERE item_id = ${id} AND action = ${sqlLiteral(taggedAction)}`,
+      );
+      if (Number(row?.[0]) !== 1) {
+        const error = new Error("the item version changed while this write was in flight");
+        error.name = "ConflictError";
+        throw error;
+      }
     },
   };
 }
