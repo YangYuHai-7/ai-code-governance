@@ -343,3 +343,19 @@ test('an agent proposal outside the approved authority never reaches the workspa
   if (refused) assert.equal(applied.length, 0, 'a refused proposal applies nothing');
   else assert.ok(applied.length === 0 || !escaped, 'the workspace effect must not receive the escaping path');
 });
+test('tampered persisted data stops resume instead of being trusted', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.tampered' });
+  const approved = await runtime.step(started.id);
+  const bindings = { requirementDigest: approved.requirementDigest, architectureDigest: approved.architectureDigest, authorityDigest: approved.authorityDigest, repositoryDigest: approved.repositoryDigest };
+  const stored = store.read('session.tampered');
+  store.compareAndSwap('session.tampered', canonicalContractDigest('session', stored), { ...stored, requirementDigest: 'c'.repeat(64) });
+  assert.throws(() => runtime.resume('session.tampered', bindings), /stale|mismatch|conflict|digest/i);
+  assert.equal(store.read('session.tampered').state, stored.state, 'a refused resume must not advance the tampered session');
+});
