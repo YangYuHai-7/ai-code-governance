@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -244,7 +245,7 @@ async function main() {
   const read = (name, fallback = null) => { const index = args.indexOf(`--${name}`); return index === -1 ? fallback : args[index + 1]; };
   const fixture = read('fixture');
   if (!fixture) { console.error('usage: node scripts/golden-path-reference-evaluation.mjs --fixture <fixture-id> [--output <path>] [--fault <probe-id>]'); process.exit(2); }
-  const workRoot = fs.mkdtempSync(path.join(process.env.TMPDIR ?? '/tmp', 'aicg-reference-'));
+  const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-reference-'));
   const run = await runReferenceEvaluation({
     workRoot,
     environment: {

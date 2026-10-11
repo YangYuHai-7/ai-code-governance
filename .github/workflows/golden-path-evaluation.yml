@@ -2,6 +2,11 @@ name: golden-path-evaluation
 
 # Manual, evaluator-authorized only. There is deliberately no timed trigger and no merge-request
 # trigger: a CI conclusion alone is not platform evidence.
+#
+# This workflow does not pretend a stock runner is an evaluation host. The live evaluation needs a
+# real PostgreSQL instance, a running API and web client, and an installed browser, so the first
+# step verifies those capabilities and fails with an explicit message when they are absent. A run
+# that cannot inspect reality must not publish a receipt.
 on:
   workflow_dispatch:
     inputs:
@@ -43,17 +48,44 @@ jobs:
             platform: win32
             informational: true
     runs-on: ${{ matrix.os }}
+    env:
+      AICG_LIVE_API: ${{ vars.AICG_LIVE_API }}
+      AICG_LIVE_WEB: ${{ vars.AICG_LIVE_WEB }}
+      AICG_LIVE_PSQL: ${{ vars.AICG_LIVE_PSQL }}
+      AICG_LIVE_NPM: ${{ vars.AICG_LIVE_NPM }}
+      AICG_LIVE_DATABASE: ${{ vars.AICG_LIVE_DATABASE }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node-version }}
-      - name: Evaluate the golden path
-        run: node scripts/golden-path-reference-evaluation.mjs --fixture reference-work-tracker --output reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json
+      - name: Verify this runner can inspect reality
+        shell: bash
+        run: |
+          missing=""
+          command -v node >/dev/null 2>&1 || missing="$missing node"
+          command -v npm >/dev/null 2>&1 || missing="$missing npm"
+          command -v psql >/dev/null 2>&1 || missing="$missing psql"
+          if [ -z "${AICG_LIVE_API:-}" ] || [ -z "${AICG_LIVE_WEB:-}" ]; then missing="$missing running-api-and-web"; fi
+          if [ -n "$missing" ]; then
+            echo "::error::the golden path evaluation needs a provisioned host; missing:$missing. Provide a PostgreSQL ${{ inputs.postgres-version }} instance, a running API and web client (AICG_LIVE_API, AICG_LIVE_WEB), the psql client, and an installed browser, then re-run. No receipt is published from a host that cannot execute the gates."
+            exit 1
+          fi
+      - name: Install dependencies of the reference workload
+        shell: bash
+        run: |
+          cd test-support/evaluations/golden-path/reference-work-tracker/project
+          npm ci --no-audit --no-fund
+      - name: Evaluate the golden path with live drivers
+        shell: bash
+        run: |
+          node scripts/golden-path-live-evaluation.mjs > reports/aicg/evaluations/matrix-${{ matrix.platform }}.json
+        env:
+          AICG_LIVE_RECEIPT: reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json
       - name: Validate the receipt
         shell: bash
         run: |
-          node --input-type=module -e "import { validateGoldenPathEvaluation } from './src/modules/evaluation/index.mjs'; import fs from 'node:fs'; const value = JSON.parse(fs.readFileSync('reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json','utf8')); validateGoldenPathEvaluation(value); console.log('receipt valid', value.evidenceLevel, value.verdict);"
+          node --input-type=module -e "import { validateQualityMatrixRun } from './src/modules/delivery-core/index.mjs'; import fs from 'node:fs'; const value = JSON.parse(fs.readFileSync('reports/aicg/evaluations/reference-work-tracker-${{ matrix.platform }}.json','utf8')); validateQualityMatrixRun(value); console.log('matrix run valid', value.status, value.requiredGateIds.length, 'gates');"
       - name: Upload the platform receipt
         if: always()
         uses: actions/upload-artifact@v4

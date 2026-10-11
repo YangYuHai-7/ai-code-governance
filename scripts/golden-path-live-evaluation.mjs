@@ -13,7 +13,7 @@ import { executeHttpGate } from '../src/adapters/http/verification.mjs';
 const WORK = process.env.AICG_LIVE_WORK ?? '/tmp/aicg-ci';
 const API = process.env.AICG_LIVE_API ?? 'http://127.0.0.1:3103';
 const WEB = process.env.AICG_LIVE_WEB ?? 'http://127.0.0.1:4173';
-const NPM = process.env.AICG_LIVE_NPM ?? '/tmp/npm11/node_modules/.bin/npm';
+const NPM = process.env.AICG_LIVE_NPM ?? (process.platform === 'win32' ? 'npm.cmd' : '/tmp/npm11/node_modules/.bin/npm');
 const PSQL = process.env.AICG_LIVE_PSQL ?? '/opt/homebrew/opt/postgresql@18/bin/psql';
 const DATABASE = process.env.AICG_LIVE_DATABASE ?? 'tracker';
 const ORGANIZATION = '11111111-1111-1111-1111-111111111111';
@@ -77,7 +77,8 @@ async function databaseProbe(probe) {
 }
 
 async function browserScenario(scenario) {
-  const result = await run([path.join(WORK, 'node_modules/.bin/playwright'), 'test', `e2e/${scenario}.e2e.ts`], WORK, 180000);
+  const playwright = path.join(WORK, 'node_modules', '.bin', process.platform === 'win32' ? 'playwright.cmd' : 'playwright');
+  const result = await run([playwright, 'test', `e2e/${scenario}.e2e.ts`], WORK, 180000);
   return result.exitCode === 0
     ? { status: 'passed', detail: `${scenario} passed`, cleanup: { status: 'clean', reason: null } }
     : { status: 'failed', detail: `${scenario} exited ${result.exitCode}: ${(result.stderr || result.stdout).slice(-400)}` };
