@@ -600,7 +600,7 @@ The remaining **eight are not caught by the gates that declare them**: `unauthor
 
 This is an open quality gap: declared negative-probe coverage is materially weaker than the Pack advertises. Closing it means extending the security probes, migration checks, and traceability checks to the patterns those probes inject, and serving the mutated tree so the HTTP gates can participate.
 
-One detection gap was closed while investigating: the workload's own architecture gate was a hand-written token list that only forbade external packages, so it reported "architecture ok" on a mutated tree that the governance policy itself flags. It now loads and runs the policy from the governance checkout named by `AICG_ROOT` and fails closed when that checkout is absent, which is why two probes moved from undetected to detected and why the earlier matrix receipt predates that strengthening.
+One detection gap was closed while investigating: the workload's own architecture gate was a hand-written token list that only forbade external packages, so it reported "architecture ok" on a mutated tree that the governance policy itself flags. It now loads and runs the policy from the governance checkout named by `AICG_ROOT` and fails closed when that checkout is absent, which is why two probes moved from undetected to detected. The matrix receipt was regenerated afterwards, so the committed `macos-live-matrix.json` reflects the strengthened gate: 14 of 14 gates passed.
 
 ### Priority defect register closure (P1)
 
