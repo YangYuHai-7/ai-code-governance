@@ -8,12 +8,14 @@
     "baselineArchitecture": 0,
     "results": {
       "architecture-boundaries": {
-        "exit": 0,
-        "detail": "architecture ok"
+        "exit": 1,
+        "detail": "apps/api/src/application/leak.ts: forbidden-layer-dependency apps/api/src/infrastructure/index.ts"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "architecture-boundaries"
+    ],
+    "detected": true
   },
   {
     "faultId": "private-feature-import",
@@ -24,12 +26,14 @@
     "baselineArchitecture": 0,
     "results": {
       "architecture-boundaries": {
-        "exit": 0,
-        "detail": "architecture ok"
+        "exit": 1,
+        "detail": "apps/web/src/features/boards/bridge.ts: cross-feature-private-import apps/web/src/features/work-items/WorkItemBoard.tsx"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "architecture-boundaries"
+    ],
+    "detected": true
   },
   {
     "faultId": "contract-drift",
@@ -84,7 +88,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/api/src/domain/board.ts: drizzle-orm"
+        "detail": "apps/api/src/domain/board.ts: domain-framework-dependency drizzle-orm"
       },
       "static-types": {
         "exit": 2,
@@ -108,7 +112,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/api/src/application/board-service.ts: drizzle-orm"
+        "detail": "apps/api/src/application/board-service.ts: direct-database-access drizzle-orm"
       },
       "api-integration": {
         "exit": null,
@@ -240,7 +244,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 0,
-        "detail": "architecture ok"
+        "detail": "architecture ok: policy verified against react-mantine-nest-fastify-drizzle-postgresql"
       }
     },
     "detectedBy": [],

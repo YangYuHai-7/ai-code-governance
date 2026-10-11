@@ -35,7 +35,10 @@ const SCRIPTS = {
 
 function run(argv, cwd, timeoutMs = 240000) {
   return new Promise((resolve) => {
-    const child = spawn(argv[0], argv.slice(1), { cwd, env: { ...process.env, AICG_TRACEABILITY_ROOT: process.env.AICG_LIVE_FIXTURE ?? cwd } });
+    const child = spawn(argv[0], argv.slice(1), {
+      cwd,
+      env: { ...process.env, AICG_TRACEABILITY_ROOT: process.env.AICG_LIVE_FIXTURE ?? cwd, AICG_ROOT: process.env.AICG_ROOT ?? process.cwd() },
+    });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);

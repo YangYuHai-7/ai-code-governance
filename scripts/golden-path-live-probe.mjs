@@ -27,7 +27,7 @@ function runTool(projectDir, argv) {
   const result = spawnSync(argv[0], argv.slice(1), {
     cwd: projectDir,
     encoding: 'utf8',
-    env: { ...process.env, PATH: [path.join(WORK, 'node_modules/.bin'), process.env.PATH].join(':'), AICG_TRACEABILITY_ROOT: path.resolve(FIXTURE) },
+    env: { ...process.env, PATH: [path.join(WORK, 'node_modules/.bin'), process.env.PATH].join(':'), AICG_TRACEABILITY_ROOT: path.resolve(FIXTURE), AICG_ROOT: process.env.AICG_ROOT ?? process.cwd() },
   });
   return { exit: result.status, detail: ((result.stderr || '') + (result.stdout || '')).trim().split('\n').slice(0, 2).join(' | ').slice(0, 200) };
 }
