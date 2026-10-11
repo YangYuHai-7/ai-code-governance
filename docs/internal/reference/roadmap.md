@@ -586,6 +586,12 @@ This section is updated only from certification-evaluator output; editorial roun
 - **P2-003 (no governed candidate-rule lifecycle): closed.** The governed loop is implemented across `modules/capabilities/candidate-rules.mjs`, `candidate-evaluation.mjs`, `candidate-canary.mjs`, `candidate-store.mjs`, and `candidate-review.mjs`, with the read-only `aicg candidate review` command. No project can review, approve, or promote its own rule; receipts are digest-bound and a failed offline evaluation or canary cannot be retried into success. Residual: the CLI telemetry call site and the Chinese help line.
 - **P2-004 (novice delivery exposes too many engineering concepts): not started — Phase B.** It is gated by the E4 verdict and must not be implemented before that gate passes.
 
+### Live evaluation progress (single host)
+
+A validated matrix receipt now exists for one macOS host: 14 of 14 required gates passed with real drivers (build, format, lint, typecheck, architecture, unit, contract over HTTP, security, observability, performance, integration over HTTP, migration against PostgreSQL 18.6, browser through Playwright, and requirement traceability), and it is committed at `test-support/evaluations/golden-path/receipts/macos-live-matrix.json`. The receipt states its own boundary: one host, and not cross-platform, held-out, real-Agent, or qualified-human evidence.
+
+Feeding that receipt into the certification evaluator still returns `incomplete` with `missing-e3`, `missing-held-out-case`, `insufficient-held-out-cases`, `missing-qualified-human`, `missing-negative-probes`, and `platform-missing:linux`, `platform-missing:darwin`, `platform-missing:win32`, because a matrix run is not an evaluation receipt: E4 needs per-platform evaluation receipts, held-out provider execution, and a real qualified participant. A test guards that a single-host receipt can never produce a certification verdict.
+
 ### Priority defect register closure (P1)
 
 - **P1-002, P1-003, P1-004, P1-005, P1-007, P1-008: delivered as mechanisms.** Architecture policy and alias-aware TypeScript analysis, version-aware compatibility, risk-activated requirements, the production quality matrix with managed drivers, bounded verification drivers, and the held-out evaluation boundary all exist with tests.
