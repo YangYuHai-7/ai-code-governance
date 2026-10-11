@@ -1,9 +1,10 @@
 name: CI
 
 # Layered CI: pull requests run the fast layer, main pushes and release tags run the full
-# platform matrix, and a manual dispatch can request either depth. Platform state is published
-# from the current run evidence only; Windows stays preview-only while its portability gaps are
-# open, so an informational Windows result is never reported as verified support.
+# platform matrix, and a manual dispatch can request either depth. Platform state is derived from
+# the per-leg evidence the current run uploaded - never from a hard-coded list. Windows stays
+# preview-only while its portability gaps are open, so an informational Windows result is
+# reported as observed and is never published as verified support.
 on:
   workflow_dispatch:
     inputs:
@@ -39,7 +40,8 @@ jobs:
   full:
     if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.suite == 'full')
     # Windows still has open portability gaps, so it runs as an informational signal and must
-    # not block the matrix. Linux and macOS are the verified platforms.
+    # not block the matrix. The leg still records its own real status, so an informational
+    # Windows failure can never be republished as verified support.
     continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
@@ -57,18 +59,73 @@ jobs:
       - run: npm run smoke
       - run: npm pack --dry-run
       - run: npm run smoke:package
+      - name: Record this leg's real status
+        if: always()
+        shell: bash
+        run: |
+          node -e "const fs=require('fs');fs.writeFileSync('platform-leg.json',JSON.stringify({platform:'${{ runner.os }}',node:'${{ matrix.node }}',runner:'${{ matrix.os }}',status:'${{ job.status }}'}))"
+          cat platform-leg.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: platform-leg-${{ matrix.os }}-node${{ matrix.node }}
+          path: platform-leg.json
 
   platform-state:
     if: always()
     needs: [fast, full]
     runs-on: ubuntu-latest
     steps:
-      - name: Record platform state from current run evidence
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: platform-leg-*
+          path: legs
+      - name: Derive platform state from the legs this run produced
         run: |
-          cat > platform-state.json <<JSON
-          {"event":"${{ github.event_name }}","ref":"${{ github.ref }}","sha":"${{ github.sha }}","fast":"${{ needs.fast.result }}","full":"${{ needs.full.result }}","verifiedPlatforms":["linux","darwin"],"previewOnly":["win32"],"note":"Windows is preview-only: an informational, non-blocking result is never verified support."}
-          JSON
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const supported = { Linux: 'linux', Darwin: 'darwin' };
+          const legs = [];
+          const root = 'legs';
+          if (fs.existsSync(root)) {
+            for (const entry of fs.readdirSync(root)) {
+              const file = path.join(root, entry, 'platform-leg.json');
+              if (fs.existsSync(file)) legs.push(JSON.parse(fs.readFileSync(file, 'utf8')));
+            }
+          }
+          const verifiedPlatforms = [...new Set(legs.filter((leg) => leg.status === 'success' && supported[leg.platform]).map((leg) => supported[leg.platform]))].sort();
+          const failedLegs = legs.filter((leg) => leg.status !== 'success');
+          const supportedFailures = failedLegs.filter((leg) => supported[leg.platform]);
+          const state = {
+            event: process.env.EVENT_NAME,
+            ref: process.env.REF,
+            sha: process.env.SHA,
+            fast: process.env.FAST_RESULT,
+            full: process.env.FULL_RESULT,
+            legs,
+            verifiedPlatforms,
+            failedLegs: failedLegs.map((leg) => ({ platform: leg.platform, node: leg.node, status: leg.status })),
+            previewOnly: ['win32'],
+            note: legs.length === 0
+              ? 'The full platform matrix did not run for this event, so no platform is published as verified.'
+              : 'Windows is preview-only: its legs are recorded as observed and are never published as verified support.',
+          };
+          fs.writeFileSync('platform-state.json', JSON.stringify(state, null, 2));
+          console.log(JSON.stringify(state, null, 2));
+          if (supportedFailures.length > 0) {
+            console.error(`supported platform legs failed: ${supportedFailures.map((leg) => leg.platform).join(', ')}`);
+            process.exit(1);
+          }
+          NODE
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          FAST_RESULT: ${{ needs.fast.result }}
+          FULL_RESULT: ${{ needs.full.result }}
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: platform-state
           path: platform-state.json

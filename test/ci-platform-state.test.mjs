@@ -29,3 +29,18 @@ test('the required fast layer is never softened and node stays above the 24 floo
   assert.doesNotMatch(fastJob, /continue-on-error/);
   assert.match(fastJob, /node-version:\s*24/);
 });
+test('published platform state is derived from the legs the run produced, not from a literal list', () => {
+  assert.doesNotMatch(workflow, /"verifiedPlatforms":\["linux","darwin"\]/);
+  assert.match(workflow, /pattern:\s*platform-leg-\*/);
+  assert.match(workflow, /supportedFailures/);
+  assert.match(workflow, /verifiedPlatforms = \[\.\.\.new Set\(legs\.filter/);
+  assert.match(workflow, /platform-leg\.json/);
+  assert.match(workflow, /if:\s*always\(\)/);
+});
+
+test('every matrix leg records its own real status before the state job reads it', () => {
+  const fullJob = workflow.slice(workflow.indexOf('full:'), workflow.indexOf('platform-state:'));
+  assert.match(fullJob, /status:\s*'\$\{\{\s*job\.status\s*\}\}'/);
+  assert.match(fullJob, /if:\s*always\(\)/);
+  assert.match(workflow, /previewOnly:\s*\['win32'\]/);
+});

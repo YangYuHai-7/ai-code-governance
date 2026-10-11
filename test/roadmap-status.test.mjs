@@ -9,7 +9,9 @@ const roadmap = fs.readFileSync(path.join(testRoot, '..', 'docs/internal/referen
 
 test('the roadmap publishes an evaluator-derived status that cannot drift silently', () => {
   assert.match(roadmap, /Current execution status \(evaluator-derived\)/);
-  assert.match(roadmap, /Milestone 1 \(Core semantic and runtime foundation\): complete/);
+  assert.match(roadmap, /Milestone 1 \(Core semantic and runtime foundation\): implementation complete; milestone evidence-incomplete/);
+  assert.doesNotMatch(roadmap, /Milestone 1 \(Core semantic and runtime foundation\): complete/);
+  assert.match(roadmap, /remains \*\*evidence-incomplete\*\* and is not declared complete/);
   assert.match(roadmap, /Milestone 2 \(one production-capable golden path\): evidence-incomplete/);
   assert.match(roadmap, /Milestone 3[^\n]*not authorized/i);
   for (const code of ['missing-e3', 'missing-held-out-case', 'missing-qualified-human', 'platform-missing']) {
