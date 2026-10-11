@@ -215,12 +215,14 @@
     "baselineArchitecture": 0,
     "results": {
       "requirement-traceability": {
-        "exit": 0,
-        "detail": "traceability ok: 2 acceptance scenarios, 6 modules"
+        "exit": 1,
+        "detail": "the architecture contract is invalid: architecture.probeDrift: unknown field"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "requirement-traceability"
+    ],
+    "detected": true
   },
   {
     "faultId": "omitted-gate",
@@ -264,15 +266,17 @@
     "baselineArchitecture": 0,
     "results": {
       "requirement-traceability": {
-        "exit": 0,
-        "detail": "traceability ok: 2 acceptance scenarios, 6 modules"
+        "exit": 1,
+        "detail": "delivery session probe is executing without a resumable checkpoint"
       },
       "api-integration": {
         "exit": null,
         "detail": "no live tool mapped"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "requirement-traceability"
+    ],
+    "detected": true
   }
 ]
