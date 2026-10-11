@@ -206,7 +206,7 @@ test('a changed Pack digest blocks resume instead of discarding approvals', asyn
   const started = runtime.start({ ...approvedInput(), id: 'session.pack-change' });
   const approved = await runtime.step(started.id);
   const bindings = { requirementDigest: approved.requirementDigest, architectureDigest: approved.architectureDigest, authorityDigest: approved.authorityDigest, repositoryDigest: approved.repositoryDigest };
-  const movedPack = validateGoldenPathPack({ ...goldenPathPack, release: 'v2' });
+  const movedPack = validateGoldenPathPack({ ...goldenPathPack, release: 'v3' });
   const nextRuntime = createDeliveryRuntime({ store, pack: movedPack, ...effects });
   assert.throws(() => nextRuntime.resume(started.id, bindings), /Pack digest/i);
   assert.equal(runtime.resume(started.id, bindings).runtime.pack.digest, approved.runtime.pack.digest);

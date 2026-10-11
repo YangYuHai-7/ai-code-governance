@@ -466,7 +466,9 @@ test('ignored release evidence cannot pass without an auditable Git blob', (cont
 
 test('a project policy may tighten but cannot weaken the built-in release baseline', (context) => {
   const root = fixture('policy-floor');
-  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Removing a fixture that a Git subprocess just touched can fail with ENOTEMPTY on this platform,
+  // so the cleanup retries instead of turning a directory race into a failing gate.
+  context.after(() => fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }));
   const prepared = completeEvidence(root, 'feature', '5.0.0', '5.1.0');
   const policy = loadReleaseAcceptancePolicy();
   policy.tiers.feature.minimumParticipants.engineers = 1;
