@@ -4,9 +4,12 @@ import { describe, expect, it } from "vitest";
 // answer with a structured field instead of internals, and responses declare their cross-origin
 // surface. Asserting that a route was registered says none of that, so this gate talks to the API.
 const API = process.env.AICG_LIVE_API ?? "http://127.0.0.1:3103";
-const ORGANIZATION = process.env.AICG_LIVE_ORGANIZATION ?? "11111111-1111-1111-1111-111111111111";
-const ITEM = process.env.AICG_LIVE_ITEM ?? "cccccccc-1111-1111-1111-111111111111";
-const BOARD = process.env.AICG_LIVE_BOARD ?? "aaaaaaaa-1111-1111-1111-111111111111";
+const ORGANIZATION =
+  process.env.AICG_LIVE_ORGANIZATION ?? "11111111-1111-1111-1111-111111111111";
+const ITEM =
+  process.env.AICG_LIVE_ITEM ?? "cccccccc-1111-1111-1111-111111111111";
+const BOARD =
+  process.env.AICG_LIVE_BOARD ?? "aaaaaaaa-1111-1111-1111-111111111111";
 
 async function reachable(): Promise<boolean> {
   try {
@@ -19,24 +22,40 @@ async function reachable(): Promise<boolean> {
 
 describe("observability surface", () => {
   it("reports health with a correlation id and never leaks internals", async () => {
-    expect(await reachable(), `this gate requires a running API at ${API}`).toBe(true);
+    expect(
+      await reachable(),
+      `this gate requires a running API at ${API}`,
+    ).toBe(true);
 
     const health = await fetch(`${API}/health`);
     expect(health.status).toBe(200);
-    const body = (await health.json()) as { status?: string; correlationId?: string };
+    const body = (await health.json()) as {
+      status?: string;
+      correlationId?: string;
+    };
     expect(body.status).toBe("ok");
     expect(typeof body.correlationId).toBe("string");
     expect((body.correlationId ?? "").length).toBeGreaterThan(0);
     expect(health.headers.get("access-control-allow-origin")).toBeTruthy();
 
-    const listResponse = await fetch(`${API}/boards?organizationId=${ORGANIZATION}`);
+    const listResponse = await fetch(
+      `${API}/boards?organizationId=${ORGANIZATION}`,
+    );
     expect(listResponse.status).toBe(200);
-    expect(listResponse.headers.get("access-control-allow-origin")).toBeTruthy();
+    expect(
+      listResponse.headers.get("access-control-allow-origin"),
+    ).toBeTruthy();
 
     const conflict = await fetch(`${API}/work-items/${ITEM}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ organizationId: ORGANIZATION, actorId: "member-synthetic-1", boardId: BOARD, state: "done", expectedVersion: 999 }),
+      body: JSON.stringify({
+        organizationId: ORGANIZATION,
+        actorId: "member-synthetic-1",
+        boardId: BOARD,
+        state: "done",
+        expectedVersion: 999,
+      }),
     });
     expect(conflict.status).toBe(409);
     const errorBody = await conflict.text();
