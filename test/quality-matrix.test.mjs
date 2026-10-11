@@ -25,7 +25,7 @@ function exactFacts() {
     packageManager: { name: 'npm', version: '11.0.0', lockfile: 'package-lock.json' },
     packages: {
       react: '19.3.0', 'react-dom': '19.3.0', vite: '8.3.0', '@mantine/core': '9.6.0',
-      '@nestjs/core': '12.0.0', '@nestjs/platform-fastify': '12.0.0', fastify: '5.12.5', 'drizzle-orm': '0.44.6',
+      '@nestjs/core': '11.2.7', '@nestjs/platform-fastify': '11.2.7', fastify: '5.12.5', 'drizzle-orm': '0.44.6',
     },
     database: { engine: 'postgresql', version: '18.6', extensions: [] },
   };

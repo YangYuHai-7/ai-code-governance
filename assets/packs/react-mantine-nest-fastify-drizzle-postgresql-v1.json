@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "react-mantine-nest-fastify-drizzle-postgresql",
-  "release": "v1",
+  "release": "v2",
   "lifecycle": "active",
   "maturity": "candidate",
   "sourceDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -17,14 +17,38 @@
       "lockfile": "package-lock.json"
     },
     "packages": [
-      { "name": "react", "range": "19.x" },
-      { "name": "react-dom", "range": "19.x" },
-      { "name": "vite", "range": "8.x" },
-      { "name": "@mantine/core", "range": "9.x" },
-      { "name": "@nestjs/core", "range": "12.x" },
-      { "name": "@nestjs/platform-fastify", "range": "12.x" },
-      { "name": "fastify", "range": "5.x" },
-      { "name": "drizzle-orm", "range": "stable" }
+      {
+        "name": "react",
+        "range": "19.x"
+      },
+      {
+        "name": "react-dom",
+        "range": "19.x"
+      },
+      {
+        "name": "vite",
+        "range": "8.x"
+      },
+      {
+        "name": "@mantine/core",
+        "range": "9.x"
+      },
+      {
+        "name": "@nestjs/core",
+        "range": "11.x"
+      },
+      {
+        "name": "@nestjs/platform-fastify",
+        "range": "11.x"
+      },
+      {
+        "name": "fastify",
+        "range": "5.x"
+      },
+      {
+        "name": "drizzle-orm",
+        "range": "stable"
+      }
     ],
     "database": {
       "engine": "postgresql",
@@ -34,105 +58,374 @@
     "referenceCombinations": [
       {
         "id": "baseline-2026-10-05",
-        "runtime": { "node": "24.18.0" },
-        "packageManager": { "version": "11.0.0" },
+        "runtime": {
+          "node": "24.18.0"
+        },
+        "packageManager": {
+          "version": "11.0.0"
+        },
         "packages": [
-          { "name": "react", "version": "19.3.0" },
-          { "name": "react-dom", "version": "19.3.0" },
-          { "name": "vite", "version": "8.3.0" },
-          { "name": "@mantine/core", "version": "9.6.0" },
-          { "name": "@nestjs/core", "version": "12.0.0" },
-          { "name": "@nestjs/platform-fastify", "version": "12.0.0" },
-          { "name": "fastify", "version": "5.12.5" },
-          { "name": "drizzle-orm", "version": "0.44.6" }
+          {
+            "name": "react",
+            "version": "19.3.0"
+          },
+          {
+            "name": "react-dom",
+            "version": "19.3.0"
+          },
+          {
+            "name": "vite",
+            "version": "8.3.0"
+          },
+          {
+            "name": "@mantine/core",
+            "version": "9.6.0"
+          },
+          {
+            "name": "@nestjs/core",
+            "version": "11.2.7"
+          },
+          {
+            "name": "@nestjs/platform-fastify",
+            "version": "11.2.7"
+          },
+          {
+            "name": "fastify",
+            "version": "5.12.5"
+          },
+          {
+            "name": "drizzle-orm",
+            "version": "0.44.6"
+          }
         ],
-        "database": { "version": "18.6", "extensions": [] }
+        "database": {
+          "version": "18.6",
+          "extensions": []
+        }
       }
     ]
   },
   "detection": {
-    "requiredPaths": ["package.json"],
-    "requiredPackages": ["react", "@nestjs/core", "drizzle-orm"],
-    "forbiddenPackages": ["next"]
+    "requiredPaths": [
+      "package.json"
+    ],
+    "requiredPackages": [
+      "react",
+      "@nestjs/core",
+      "drizzle-orm"
+    ],
+    "forbiddenPackages": [
+      "next"
+    ]
   },
   "architecture": {
     "modules": [
       {
         "id": "web-feature",
-        "roots": ["apps/web/src/features"],
-        "allowedDependencies": ["web-shared", "contracts"],
-        "publicEntrypoints": ["index.ts"]
+        "roots": [
+          "apps/web/src/features"
+        ],
+        "allowedDependencies": [
+          "web-shared",
+          "contracts"
+        ],
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       },
       {
         "id": "api-transport",
-        "roots": ["apps/api/src/transport"],
-        "allowedDependencies": ["api-application", "contracts"],
-        "publicEntrypoints": ["index.ts"]
+        "roots": [
+          "apps/api/src/transport"
+        ],
+        "allowedDependencies": [
+          "api-application",
+          "contracts"
+        ],
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       },
       {
         "id": "api-application",
-        "roots": ["apps/api/src/application"],
-        "allowedDependencies": ["api-domain"],
-        "publicEntrypoints": ["index.ts"]
+        "roots": [
+          "apps/api/src/application"
+        ],
+        "allowedDependencies": [
+          "api-domain"
+        ],
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       },
       {
         "id": "api-domain",
-        "roots": ["apps/api/src/domain"],
+        "roots": [
+          "apps/api/src/domain"
+        ],
         "allowedDependencies": [],
-        "publicEntrypoints": ["index.ts"]
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       },
       {
         "id": "api-infrastructure",
-        "roots": ["apps/api/src/infrastructure"],
-        "allowedDependencies": ["api-domain"],
-        "publicEntrypoints": ["index.ts"]
+        "roots": [
+          "apps/api/src/infrastructure"
+        ],
+        "allowedDependencies": [
+          "api-domain"
+        ],
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       },
       {
         "id": "contracts",
-        "roots": ["packages/contracts/src"],
+        "roots": [
+          "packages/contracts/src"
+        ],
         "allowedDependencies": [],
-        "publicEntrypoints": ["index.ts"]
+        "publicEntrypoints": [
+          "index.ts"
+        ]
       }
     ],
-    "compositionRoots": ["apps/web/src/main.tsx", "apps/api/src/main.ts"]
+    "compositionRoots": [
+      "apps/web/src/main.tsx",
+      "apps/api/src/main.ts"
+    ]
   },
   "generation": {
-    "requiredPaths": ["apps/web/src/main.tsx", "apps/api/src/main.ts", "packages/contracts/src/index.ts"],
-    "forbiddenPaths": ["apps/api/src/domain/**/framework/**", "apps/api/src/domain/**/drizzle/**"]
+    "requiredPaths": [
+      "apps/web/src/main.tsx",
+      "apps/api/src/main.ts",
+      "packages/contracts/src/index.ts"
+    ],
+    "forbiddenPaths": [
+      "apps/api/src/domain/**/framework/**",
+      "apps/api/src/domain/**/drizzle/**"
+    ]
   },
   "qualityMatrix": {
     "schemaVersion": 1,
     "id": "quality.react-nest-postgres",
     "gates": [
-      { "id": "reproducible-build", "owner": "reproducibility", "applicability": "always", "required": true, "purpose": "build", "timeoutMs": 300000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 8388608, "evidence": "Lockfile, clean install, and build output are captured." },
-      { "id": "static-format", "owner": "static-quality", "applicability": "always", "required": true, "purpose": "format", "timeoutMs": 120000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 1048576, "evidence": "Formatter check output is captured." },
-      { "id": "static-lint", "owner": "static-quality", "applicability": "always", "required": true, "purpose": "lint", "timeoutMs": 120000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 1048576, "evidence": "Lint output is captured." },
-      { "id": "static-types", "owner": "static-quality", "applicability": "always", "required": true, "purpose": "typecheck", "timeoutMs": 120000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 1048576, "evidence": "Typecheck output is captured." },
-      { "id": "architecture-boundaries", "owner": "architecture", "applicability": "always", "required": true, "purpose": "architecture", "timeoutMs": 120000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 1048576, "evidence": "Architecture findings are captured." },
-      { "id": "unit-tests", "owner": "functional", "applicability": "always", "required": true, "purpose": "unit", "timeoutMs": 180000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 4194304, "evidence": "Unit test results are captured." },
-      { "id": "api-integration", "owner": "functional", "applicability": "always", "required": true, "purpose": "integration", "timeoutMs": 300000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 8388608, "evidence": "API and repository integration results are captured." },
-      { "id": "contract-tests", "owner": "contracts", "applicability": "always", "required": true, "purpose": "contract", "timeoutMs": 180000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 4194304, "evidence": "HTTP contract results are captured." },
-      { "id": "browser-e2e", "owner": "ux", "applicability": "always", "required": true, "purpose": "e2e", "timeoutMs": 300000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 16777216, "evidence": "Browser primary-flow results are captured." },
-      { "id": "security-probes", "owner": "security", "applicability": "risk-activated", "required": true, "purpose": "security", "timeoutMs": 180000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 4194304, "evidence": "Security and authorization negative probes are captured." },
-      { "id": "migration-safety", "owner": "data", "applicability": "risk-activated", "required": true, "purpose": "migration", "timeoutMs": 300000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 8388608, "evidence": "Clean, compatible, and recovery migration results are captured." },
-      { "id": "runtime-observability", "owner": "runtime", "applicability": "risk-activated", "required": true, "purpose": "observability", "timeoutMs": 180000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 4194304, "evidence": "Health, logs, correlation, and cleanup results are captured." },
-      { "id": "performance-budget", "owner": "performance", "applicability": "risk-activated", "required": true, "purpose": "performance", "timeoutMs": 300000, "maxOutputBytes": 2097152, "artifactBudgetBytes": 8388608, "evidence": "Latency, throughput, and bundle budgets are captured." },
-      { "id": "requirement-traceability", "owner": "traceability", "applicability": "always", "required": true, "purpose": "traceability", "timeoutMs": 60000, "maxOutputBytes": 1048576, "artifactBudgetBytes": 1048576, "evidence": "Requirement-to-file-to-test-to-evidence links are captured." }
+      {
+        "id": "reproducible-build",
+        "owner": "reproducibility",
+        "applicability": "always",
+        "required": true,
+        "purpose": "build",
+        "timeoutMs": 300000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 8388608,
+        "evidence": "Lockfile, clean install, and build output are captured."
+      },
+      {
+        "id": "static-format",
+        "owner": "static-quality",
+        "applicability": "always",
+        "required": true,
+        "purpose": "format",
+        "timeoutMs": 120000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 1048576,
+        "evidence": "Formatter check output is captured."
+      },
+      {
+        "id": "static-lint",
+        "owner": "static-quality",
+        "applicability": "always",
+        "required": true,
+        "purpose": "lint",
+        "timeoutMs": 120000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 1048576,
+        "evidence": "Lint output is captured."
+      },
+      {
+        "id": "static-types",
+        "owner": "static-quality",
+        "applicability": "always",
+        "required": true,
+        "purpose": "typecheck",
+        "timeoutMs": 120000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 1048576,
+        "evidence": "Typecheck output is captured."
+      },
+      {
+        "id": "architecture-boundaries",
+        "owner": "architecture",
+        "applicability": "always",
+        "required": true,
+        "purpose": "architecture",
+        "timeoutMs": 120000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 1048576,
+        "evidence": "Architecture findings are captured."
+      },
+      {
+        "id": "unit-tests",
+        "owner": "functional",
+        "applicability": "always",
+        "required": true,
+        "purpose": "unit",
+        "timeoutMs": 180000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 4194304,
+        "evidence": "Unit test results are captured."
+      },
+      {
+        "id": "api-integration",
+        "owner": "functional",
+        "applicability": "always",
+        "required": true,
+        "purpose": "integration",
+        "timeoutMs": 300000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 8388608,
+        "evidence": "API and repository integration results are captured."
+      },
+      {
+        "id": "contract-tests",
+        "owner": "contracts",
+        "applicability": "always",
+        "required": true,
+        "purpose": "contract",
+        "timeoutMs": 180000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 4194304,
+        "evidence": "HTTP contract results are captured."
+      },
+      {
+        "id": "browser-e2e",
+        "owner": "ux",
+        "applicability": "always",
+        "required": true,
+        "purpose": "e2e",
+        "timeoutMs": 300000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 16777216,
+        "evidence": "Browser primary-flow results are captured."
+      },
+      {
+        "id": "security-probes",
+        "owner": "security",
+        "applicability": "risk-activated",
+        "required": true,
+        "purpose": "security",
+        "timeoutMs": 180000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 4194304,
+        "evidence": "Security and authorization negative probes are captured."
+      },
+      {
+        "id": "migration-safety",
+        "owner": "data",
+        "applicability": "risk-activated",
+        "required": true,
+        "purpose": "migration",
+        "timeoutMs": 300000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 8388608,
+        "evidence": "Clean, compatible, and recovery migration results are captured."
+      },
+      {
+        "id": "runtime-observability",
+        "owner": "runtime",
+        "applicability": "risk-activated",
+        "required": true,
+        "purpose": "observability",
+        "timeoutMs": 180000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 4194304,
+        "evidence": "Health, logs, correlation, and cleanup results are captured."
+      },
+      {
+        "id": "performance-budget",
+        "owner": "performance",
+        "applicability": "risk-activated",
+        "required": true,
+        "purpose": "performance",
+        "timeoutMs": 300000,
+        "maxOutputBytes": 2097152,
+        "artifactBudgetBytes": 8388608,
+        "evidence": "Latency, throughput, and bundle budgets are captured."
+      },
+      {
+        "id": "requirement-traceability",
+        "owner": "traceability",
+        "applicability": "always",
+        "required": true,
+        "purpose": "traceability",
+        "timeoutMs": 60000,
+        "maxOutputBytes": 1048576,
+        "artifactBudgetBytes": 1048576,
+        "evidence": "Requirement-to-file-to-test-to-evidence links are captured."
+      }
     ]
   },
   "failureCatalog": [
-    { "id": "domain-framework-dependency", "owner": "architecture", "severity": "error", "repair": "Move framework imports to an infrastructure or transport adapter." },
-    { "id": "cross-feature-private-import", "owner": "architecture", "severity": "error", "repair": "Use the feature public entrypoint." },
-    { "id": "unsafe-actor-dto", "owner": "security", "severity": "error", "repair": "Resolve actor identity from the authenticated boundary." },
-    { "id": "transaction-leak", "owner": "data", "severity": "error", "repair": "Move transaction ownership to the application use case." }
+    {
+      "id": "domain-framework-dependency",
+      "owner": "architecture",
+      "severity": "error",
+      "repair": "Move framework imports to an infrastructure or transport adapter."
+    },
+    {
+      "id": "cross-feature-private-import",
+      "owner": "architecture",
+      "severity": "error",
+      "repair": "Use the feature public entrypoint."
+    },
+    {
+      "id": "unsafe-actor-dto",
+      "owner": "security",
+      "severity": "error",
+      "repair": "Resolve actor identity from the authenticated boundary."
+    },
+    {
+      "id": "transaction-leak",
+      "owner": "data",
+      "severity": "error",
+      "repair": "Move transaction ownership to the application use case."
+    }
   ],
   "repairCatalog": [
-    { "id": "architecture-local-repair", "owns": ["architecture"], "maxAttempts": 2 },
-    { "id": "verification-local-repair", "owns": ["functional", "contracts", "security", "data", "runtime", "performance"], "maxAttempts": 2 }
+    {
+      "id": "architecture-local-repair",
+      "owns": [
+        "architecture"
+      ],
+      "maxAttempts": 2
+    },
+    {
+      "id": "verification-local-repair",
+      "owns": [
+        "functional",
+        "contracts",
+        "security",
+        "data",
+        "runtime",
+        "performance"
+      ],
+      "maxAttempts": 2
+    }
   ],
   "knownLimitations": [
-    { "id": "external-identity", "statement": "External identity providers are not evaluated." },
-    { "id": "cloud-deployment", "statement": "Cloud deployment and production infrastructure provisioning are not evaluated." },
-    { "id": "evidence-incomplete", "statement": "The Pack remains a candidate until executable and certification evidence is recorded." }
+    {
+      "id": "external-identity",
+      "statement": "External identity providers are not evaluated."
+    },
+    {
+      "id": "cloud-deployment",
+      "statement": "Cloud deployment and production infrastructure provisioning are not evaluated."
+    },
+    {
+      "id": "evidence-incomplete",
+      "statement": "The Pack remains a candidate until executable and certification evidence is recorded."
+    }
   ]
 }
