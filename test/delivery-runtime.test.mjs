@@ -292,3 +292,33 @@ test('entering repair invalidates the prior quality matrix receipt', async () =>
   assert.ok(ready.runtime.qualityMatrixRun);
   assert.equal(calls, 2);
 });
+test('a cancelled session refuses further work and does not advance itself', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.cancelled-terminal' });
+  const approved = await runtime.step(started.id);
+  assert.equal(runtime.cancel(started.id).state, 'cancelled');
+  const afterCancel = canonicalContractDigest('session', store.read(started.id));
+  const bindings = { requirementDigest: approved.requirementDigest, architectureDigest: approved.architectureDigest, authorityDigest: approved.authorityDigest, repositoryDigest: approved.repositoryDigest };
+  // Refusal may arrive as a thrown error or as an unchanged cancelled session; either way the
+  // session must not advance, so the invariant is asserted rather than one mechanism.
+  const refuses = (attempt) => {
+    try {
+      attempt();
+      return true;
+    } catch (error) {
+      return /cancel/i.test(error.message);
+    }
+  };
+  assert.ok(refuses(() => runtime.step(started.id)), 'a cancelled session must not take another step');
+  assert.ok(refuses(() => runtime.resume(started.id, bindings)), 'a cancelled session must not resume');
+  assert.ok(refuses(() => runtime.cancel(started.id)), 'cancelling twice must not restart the session');
+  assert.equal(store.read(started.id).state, 'cancelled');
+  assert.equal(canonicalContractDigest('session', store.read(started.id)), afterCancel);
+  assert.equal(runtime.start({ ...approvedInput(), id: 'session.after-cancel' }).id, 'session.after-cancel');
+});

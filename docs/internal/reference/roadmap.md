@@ -19,7 +19,7 @@ The following work remains open before Milestone 1 can be closed:
 - validate at least one real supported Agent adapter against the same runtime contract without relaxing authority or structured-output boundaries;
 - run the candidate on held-out real repositories and retain failures, recovery evidence, elapsed time, Agent turns, Token use, and cost;
 - verify the release candidate on current macOS, Windows, and Linux evidence where a platform claim is made;
-- exercise requirement, permission, build, test, data, interruption, stale-evidence, and cancellation failures through the integrated CLI/runtime path;
+- exercise requirement, permission, build, test, data, interruption, stale-evidence, and cancellation failures through the integrated CLI/runtime path. Partially closed: interruption recovery, failure classification, the repair loop, injected-failure probes, and cancellation terminality are covered; the remaining failure classes still need the same integrated-path coverage.
 - publish schema/API compatibility and migration tests for future Core versions. Partially closed: the delivery session document is a versioned contract with a published compatibility test (`test/core-schema-compatibility.test.mjs`) that round-trips the current version and refuses an older, a newer, or a structurally broken document instead of reinterpreting it. The remaining Core contracts still need the same publication.
 
 Milestone 2 is therefore the next active capability phase. Product-form conversion remains gated behind Milestone 2 and the Core completion gate; Studio, Plugins, MCP mutation tools, and SDK distribution must not become parallel sources of truth in the meantime.
