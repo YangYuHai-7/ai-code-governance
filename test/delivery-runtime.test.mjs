@@ -322,3 +322,24 @@ test('a cancelled session refuses further work and does not advance itself', asy
   assert.equal(canonicalContractDigest('session', store.read(started.id)), afterCancel);
   assert.equal(runtime.start({ ...approvedInput(), id: 'session.after-cancel' }).id, 'session.after-cancel');
 });
+test('an agent proposal outside the approved authority never reaches the workspace effect', async () => {
+  const store = memoryStore();
+  const applied = [];
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [{ path: '../escape.txt', content: 'outside' }] }))],
+    workspace: { async apply(request) { applied.push(request); return { status: 'committed', changedFiles: 1, changedBytes: 8 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.authority-denied' });
+  let refused = false;
+  try {
+    await runtime.step(started.id);
+  } catch (error) {
+    refused = /authority|permission|not approved/i.test(error.message);
+  }
+  const escaped = applied.some((request) => JSON.stringify(request).includes('escape.txt'));
+  assert.equal(escaped, false, 'a path outside the approved authority must never be applied');
+  if (refused) assert.equal(applied.length, 0, 'a refused proposal applies nothing');
+  else assert.ok(applied.length === 0 || !escaped, 'the workspace effect must not receive the escaping path');
+});
