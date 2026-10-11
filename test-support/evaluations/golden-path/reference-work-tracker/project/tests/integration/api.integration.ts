@@ -3,7 +3,7 @@ import { createBoardService, type BoardStore } from '../../apps/api/src/applicat
 import type { Board, WorkItem } from '../../apps/api/src/domain/index';
 
 const boards: Board[] = [{ id: 'board-1', organizationId: 'org-1', title: 'Sprint' }];
-const items: WorkItem[] = [{ id: 'item-1', organizationId: 'org-1', title: 'Draft', state: 'todo', version: 1 }];
+const items: WorkItem[] = [{ id: 'item-1', organizationId: 'org-1', boardId: 'board-1', title: 'Draft', state: 'todo', version: 1 }];
 const store: BoardStore = { boards: () => boards, items: () => items, save() {} };
 
 describe('board service integration', () => {

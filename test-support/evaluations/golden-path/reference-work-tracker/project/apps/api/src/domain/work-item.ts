@@ -5,6 +5,7 @@ export type WorkItemState = 'todo' | 'in-progress' | 'done';
 export interface WorkItem {
   id: string;
   organizationId: string;
+  boardId: string;
   title: string;
   state: WorkItemState;
   version: number;
