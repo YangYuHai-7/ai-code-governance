@@ -15,7 +15,9 @@ function transportSources(directory: string): string[] {
 
 describe("transport input handling", () => {
   it("never reads an unvalidated request field directly", () => {
-    const files = transportSources(path.resolve(process.cwd(), "apps/api/src/transport"));
+    const files = transportSources(
+      path.resolve(process.cwd(), "apps/api/src/transport"),
+    );
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
       const text = readFileSync(file, "utf8");

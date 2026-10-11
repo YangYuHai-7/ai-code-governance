@@ -15,11 +15,18 @@ function contractSources(directory: string): string[] {
 describe("contract surface", () => {
   it("matches the approved export surface", () => {
     const root = process.cwd();
-    const approved = JSON.parse(readFileSync(path.join(root, "..", "expected-contracts.json"), "utf8")).surface as string[];
+    const approved = JSON.parse(
+      readFileSync(path.join(root, "..", "expected-contracts.json"), "utf8"),
+    ).surface as string[];
     const extracted = new Set<string>();
-    for (const file of contractSources(path.join(root, "packages/contracts/src"))) {
+    for (const file of contractSources(
+      path.join(root, "packages/contracts/src"),
+    )) {
       const text = readFileSync(file, "utf8");
-      for (const match of text.matchAll(/export\s+(?:interface|type|const|function|class|enum)\s+([A-Za-z0-9_]+)/g)) extracted.add(match[1]);
+      for (const match of text.matchAll(
+        /export\s+(?:interface|type|const|function|class|enum)\s+([A-Za-z0-9_]+)/g,
+      ))
+        extracted.add(match[1]);
     }
     const actual = [...extracted].sort();
     expect(actual.filter((name) => !approved.includes(name))).toEqual([]);
