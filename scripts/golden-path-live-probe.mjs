@@ -58,7 +58,10 @@ for (const faultId of ids) {
     results[gate] = runTool(path.join(probeRoot, 'project'), argv);
   }
   const detectedBy = Object.entries(results).filter(([, value]) => value.exit !== null && value.exit !== 0).map(([gate]) => gate);
-  report.push({ faultId, affectedGates: applied.affectedGates, changedPaths: applied.changedPaths.length, baselineArchitecture: baseline.exit, results, detectedBy, detected: detectedBy.length > 0 });
+  // The workspace authority check sees what a repository-scanning gate cannot: a mutation that
+  // reaches outside the approved workload root is reported as an authority violation.
+  if (applied.authorityViolation) detectedBy.push('workspace-authority');
+  report.push({ faultId, affectedGates: applied.affectedGates, changedPaths: applied.changedPaths.length, outOfScopePaths: applied.outOfScopePaths, baselineArchitecture: baseline.exit, results, detectedBy, detected: detectedBy.length > 0 });
   fs.rmSync(probeRoot, { recursive: true, force: true });
 }
 const target = process.env.AICG_LIVE_PROBE_REPORT;

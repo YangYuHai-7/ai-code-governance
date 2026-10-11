@@ -115,8 +115,13 @@ export function applyReferenceProbe({ fixtureRoot = REFERENCE_ROOT, workRoot, fa
   MUTATIONS[probe.id](workRoot);
   const after = treeMap(workRoot);
   const changedPaths = [...new Set([...before.keys(), ...after.keys()])].filter((relative) => before.get(relative) !== after.get(relative)).sort();
+  // A probe that reaches outside the workload root is an authority violation, not noise: the
+  // evaluator has to say so rather than silently dropping the path from the plan inputs.
+  const outOfScopePaths = changedPaths.filter((relative) => !relative.startsWith('project/'));
   return Object.freeze({
     probeId: probe.id,
+    outOfScopePaths: Object.freeze([...outOfScopePaths]),
+    authorityViolation: outOfScopePaths.length > 0,
     declaredTargets: Object.freeze([...probe.targets]),
     affectedGates: Object.freeze([...probe.affectedGates]),
     scope: probe.scope,
