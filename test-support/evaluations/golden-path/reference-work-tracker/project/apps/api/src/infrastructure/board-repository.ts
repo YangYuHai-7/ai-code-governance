@@ -13,9 +13,14 @@ export function createBoardRepository(config: DatabaseConfig, database: Database
     items(organizationId: string, boardId: string): WorkItem[] {
       return database.query(`SELECT id, organization_id, board_id, title, state, version FROM work_items WHERE organization_id = ${sqlLiteral(organizationId)} AND board_id = ${sqlLiteral(boardId)} ORDER BY title`).map(item);
     },
-    save(updated: WorkItem, action: string): void {
-      database.execute(`INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES (${sqlLiteral(updated.id)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(updated.boardId)}, ${sqlLiteral(updated.title)}, ${sqlLiteral(updated.state)}, ${updated.version}) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, version = EXCLUDED.version, title = EXCLUDED.title`);
-      database.execute(`INSERT INTO audit_entries (id, organization_id, actor_id, item_id, action) VALUES (${sqlLiteral(`audit-${updated.id}-${updated.version}`)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral('actor.session')}, ${sqlLiteral(updated.id)}, ${sqlLiteral(action)})`);
+    save(updated: WorkItem, action: string, actorId = 'actor.session'): void {
+      // One transaction: the state change and its audit entry are accepted or rejected together.
+      database.execute([
+        'BEGIN',
+        `INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES (${sqlLiteral(updated.id)}, ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(updated.boardId)}, ${sqlLiteral(updated.title)}, ${sqlLiteral(updated.state)}, ${updated.version}) ON CONFLICT (id) DO UPDATE SET state = EXCLUDED.state, version = EXCLUDED.version, title = EXCLUDED.title`,
+        `INSERT INTO audit_entries (id, organization_id, actor_id, item_id, action) VALUES (gen_random_uuid(), ${sqlLiteral(updated.organizationId)}, ${sqlLiteral(actorId)}, ${sqlLiteral(updated.id)}, ${sqlLiteral(action)})`,
+        'COMMIT',
+      ].join('; '));
     },
   };
 }

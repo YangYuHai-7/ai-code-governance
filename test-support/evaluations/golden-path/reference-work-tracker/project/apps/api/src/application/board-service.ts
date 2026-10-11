@@ -3,7 +3,7 @@ import { auditEntry, paginate, requireOwnedBoard, transitionItem, type Board, ty
 export interface BoardStore {
   boards(organizationId: string): Board[];
   items(organizationId: string, boardId: string): WorkItem[];
-  save(item: WorkItem, action: string): void;
+  save(item: WorkItem, action: string, actorId: string): void;
 }
 
 export function createBoardService(store: BoardStore) {
@@ -20,7 +20,7 @@ export function createBoardService(store: BoardStore) {
       const item = store.items(organizationId, boardId).find((entry) => entry.id === itemId);
       if (!item) throw new Error('work item not found');
       const updated = transitionItem(item, next, expectedVersion);
-      store.save(updated, `move:${next}`);
+      store.save(updated, `move:${next}`, actorId);
       void auditEntry(organizationId, actorId, itemId, `move:${next}`);
       return updated;
     },

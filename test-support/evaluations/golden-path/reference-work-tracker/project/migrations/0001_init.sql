@@ -1,17 +1,17 @@
 BEGIN;
 
-CREATE TABLE organizations (
+CREATE TABLE IF NOT EXISTS organizations (
   id UUID PRIMARY KEY,
   name TEXT NOT NULL
 );
 
-CREATE TABLE boards (
+CREATE TABLE IF NOT EXISTS boards (
   id UUID PRIMARY KEY,
   organization_id UUID NOT NULL REFERENCES organizations (id),
   title TEXT NOT NULL
 );
 
-CREATE TABLE work_items (
+CREATE TABLE IF NOT EXISTS work_items (
   id UUID PRIMARY KEY,
   organization_id UUID NOT NULL REFERENCES organizations (id),
   board_id UUID NOT NULL REFERENCES boards (id),
@@ -21,14 +21,14 @@ CREATE TABLE work_items (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE audit_entries (
+CREATE TABLE IF NOT EXISTS audit_entries (
   id UUID PRIMARY KEY,
   organization_id UUID NOT NULL REFERENCES organizations (id),
-  actor_id UUID NOT NULL,
+  actor_id TEXT NOT NULL,
   item_id UUID NOT NULL,
   action TEXT NOT NULL
 );
 
-CREATE INDEX work_items_organization_board_idx ON work_items (organization_id, board_id);
+CREATE INDEX IF NOT EXISTS work_items_organization_board_idx ON work_items (organization_id, board_id);
 
 COMMIT;
