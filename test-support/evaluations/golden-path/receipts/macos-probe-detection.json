@@ -161,12 +161,14 @@
         "detail": "no live tool mapped"
       },
       "migration-safety": {
-        "exit": 0,
-        "detail": "migrations ok: 0001_init.sql"
+        "exit": 1,
+        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "migration-safety"
+    ],
+    "detected": true
   },
   {
     "faultId": "failed-migration",
@@ -177,12 +179,14 @@
     "baselineArchitecture": 0,
     "results": {
       "migration-safety": {
-        "exit": 0,
-        "detail": "migrations ok: 0001_init.sql"
+        "exit": 1,
+        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "migration-safety"
+    ],
+    "detected": true
   },
   {
     "faultId": "missing-acceptance-test",
