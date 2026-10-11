@@ -359,3 +359,23 @@ test('tampered persisted data stops resume instead of being trusted', async () =
   assert.throws(() => runtime.resume('session.tampered', bindings), /stale|mismatch|conflict|digest/i);
   assert.equal(store.read('session.tampered').state, stored.state, 'a refused resume must not advance the tampered session');
 });
+test('a requirement the runtime cannot compile stops before any approval', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  let refused = false;
+  let sessionId = null;
+  try {
+    const started = runtime.start({ ...approvedInput(), id: 'session.bad-requirement', requirement: { schemaVersion: 2, id: 'requirement.incomplete' } });
+    sessionId = started.id;
+    await runtime.step(started.id);
+  } catch (error) {
+    refused = /requirement|invalid|incomplete/i.test(error.message);
+  }
+  assert.ok(refused, 'an uncompilable requirement must be refused, not approved');
+  if (sessionId !== null) assert.notEqual(store.read(sessionId).state, 'requirements-approved');
+});
