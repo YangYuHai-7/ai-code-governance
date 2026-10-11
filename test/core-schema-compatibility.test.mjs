@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { openDeliverySessionStore } from '../src/adapters/filesystem/index.mjs';
-import { canonicalContractDigest, createDeliverySession } from '../src/modules/delivery-core/index.mjs';
+import { canonicalContractDigest, createDeliverySession, validateArchitectureIr, validateRequirementIr } from '../src/modules/delivery-core/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
 
 // The Core session document is a published contract with a version, so a future change has a baseline
@@ -73,5 +73,23 @@ test('a structurally broken session document is refused with the same clear erro
     assert.throws(() => store.read('session.broken'), /Unreadable delivery session/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+// The other Core documents are versioned contracts too. Evidence and completion are not listed yet
+// because their fixtures do not exist: publishing a version contract for them needs a valid
+// instance first, not a guess.
+const PUBLISHED = [
+  { name: 'requirement', validate: validateRequirementIr, build: () => requirementFixture() },
+  { name: 'architecture', validate: validateArchitectureIr, build: () => architectureFixture(canonicalContractDigest('requirement', requirementFixture())) },
+];
+
+test('every published Core document contract accepts its version and refuses anything else', () => {
+  for (const contract of PUBLISHED) {
+    const valid = contract.build();
+    const accepted = contract.validate(valid);
+    assert.equal(accepted.schemaVersion, valid.schemaVersion, `${contract.name} keeps its schema version`);
+    assert.equal(canonicalContractDigest(contract.name, accepted), canonicalContractDigest(contract.name, contract.validate(contract.build())), `${contract.name} has a stable canonical digest`);
+    assert.throws(() => contract.validate({ ...valid, schemaVersion: 99 }), /schemaVersion|version/i, `${contract.name} must refuse an unsupported version`);
+    assert.throws(() => contract.validate({ ...valid, unexpectedField: true }), /unknown field/i, `${contract.name} must refuse an undeclared field`);
   }
 });
