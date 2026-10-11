@@ -1,0 +1,270 @@
+[
+  {
+    "faultId": "cross-layer-import",
+    "affectedGates": [
+      "architecture-boundaries"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "architecture-boundaries": {
+        "exit": 0,
+        "detail": "architecture ok"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "private-feature-import",
+    "affectedGates": [
+      "architecture-boundaries"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "architecture-boundaries": {
+        "exit": 0,
+        "detail": "architecture ok"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "contract-drift",
+    "affectedGates": [
+      "contract-tests",
+      "static-types"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "contract-tests": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      },
+      "static-types": {
+        "exit": 0,
+        "detail": ""
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "unsafe-dto-actor",
+    "affectedGates": [
+      "security-probes",
+      "contract-tests"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "security-probes": {
+        "exit": 0,
+        "detail": "RUN  v3.2.4 <tmp> | "
+      },
+      "contract-tests": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "domain-framework-import",
+    "affectedGates": [
+      "architecture-boundaries",
+      "static-types"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "architecture-boundaries": {
+        "exit": 1,
+        "detail": "apps/api/src/domain/board.ts: drizzle-orm"
+      },
+      "static-types": {
+        "exit": 2,
+        "detail": "apps/api/src/domain/board.ts(43,10): error TS2305: Module '\"drizzle-orm\"' has no exported member 'drizzle'."
+      }
+    },
+    "detectedBy": [
+      "architecture-boundaries",
+      "static-types"
+    ],
+    "detected": true
+  },
+  {
+    "faultId": "transaction-leak",
+    "affectedGates": [
+      "architecture-boundaries",
+      "api-integration"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "architecture-boundaries": {
+        "exit": 1,
+        "detail": "apps/api/src/application/board-service.ts: drizzle-orm"
+      },
+      "api-integration": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      }
+    },
+    "detectedBy": [
+      "architecture-boundaries"
+    ],
+    "detected": true
+  },
+  {
+    "faultId": "cross-tenant-access",
+    "affectedGates": [
+      "security-probes",
+      "api-integration"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "security-probes": {
+        "exit": 1,
+        "detail": "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | "
+      },
+      "api-integration": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      }
+    },
+    "detectedBy": [
+      "security-probes"
+    ],
+    "detected": true
+  },
+  {
+    "faultId": "lost-update",
+    "affectedGates": [
+      "api-integration",
+      "migration-safety"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "api-integration": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      },
+      "migration-safety": {
+        "exit": 0,
+        "detail": "migrations ok: 0001_init.sql"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "failed-migration",
+    "affectedGates": [
+      "migration-safety"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "migration-safety": {
+        "exit": 0,
+        "detail": "migrations ok: 0001_init.sql"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "missing-acceptance-test",
+    "affectedGates": [
+      "unit-tests"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "unit-tests": {
+        "exit": 1,
+        "detail": "No test files found, exiting with code 1 | "
+      }
+    },
+    "detectedBy": [
+      "unit-tests"
+    ],
+    "detected": true
+  },
+  {
+    "faultId": "stale-evidence",
+    "affectedGates": [
+      "requirement-traceability"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "requirement-traceability": {
+        "exit": 0,
+        "detail": "traceability ok: 2 acceptance scenarios, 6 modules"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "omitted-gate",
+    "affectedGates": [
+      "security-probes"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "security-probes": {
+        "exit": 0,
+        "detail": "RUN  v3.2.4 <tmp> | "
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "unauthorized-path",
+    "affectedGates": [
+      "architecture-boundaries"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "architecture-boundaries": {
+        "exit": 0,
+        "detail": "architecture ok"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  },
+  {
+    "faultId": "interrupted-resume-drift",
+    "affectedGates": [
+      "requirement-traceability",
+      "api-integration"
+    ],
+    "changedPaths": 1,
+    "baselineArchitecture": 0,
+    "results": {
+      "requirement-traceability": {
+        "exit": 0,
+        "detail": "traceability ok: 2 acceptance scenarios, 6 modules"
+      },
+      "api-integration": {
+        "exit": null,
+        "detail": "no live tool mapped"
+      }
+    },
+    "detectedBy": [],
+    "detected": false
+  }
+]
