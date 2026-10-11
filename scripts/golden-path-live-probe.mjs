@@ -10,21 +10,25 @@ import { applyReferenceProbe } from './golden-path-reference-evaluation.mjs';
 // the gate passes on the untouched copy and fails on the mutated one.
 const FIXTURE = process.env.AICG_LIVE_FIXTURE ?? 'test-support/evaluations/golden-path/reference-work-tracker';
 const WORK = process.env.AICG_LIVE_WORK ?? '/tmp/aicg-ci';
+// Gates run the declared npm scripts, exactly as the matrix does, so a workload that removes or
+// weakens a gate script is caught instead of being exercised through the underlying tool directly.
+const NPM = process.env.AICG_LIVE_NPM ?? '/tmp/npm11/node_modules/.bin/npm';
 const TOOLS = {
-  'architecture-boundaries': ['node', 'scripts/architecture-check.mjs'],
-  'static-types': ['tsc', '--noEmit'],
-  'static-format': ['prettier', '--check', '.'],
-  'static-lint': ['eslint', '.'],
-  'unit-tests': ['vitest', 'run', 'tests/unit'],
-  'security-probes': ['vitest', 'run', 'tests/security'],
+  'architecture-boundaries': ['run', 'architecture'],
+  'static-types': ['run', 'typecheck'],
+  'static-format': ['run', 'format:check'],
+  'static-lint': ['run', 'lint'],
+  'unit-tests': ['run', 'test:unit'],
+  'security-probes': ['run', 'test:security'],
+  'migration-safety': ['run', 'test:migration'],
   'requirement-traceability': ['node', 'scripts/traceability-check.mjs'],
-  'migration-safety': ['node', 'scripts/migration-check.mjs'],
 };
 
 function runTool(projectDir, argv) {
   const link = path.join(projectDir, 'node_modules');
   if (!fs.existsSync(link)) fs.symlinkSync(path.join(WORK, 'node_modules'), link, 'dir');
-  const result = spawnSync(argv[0], argv.slice(1), {
+  const command = argv[0] === 'run' ? [NPM, ...argv] : argv;
+  const result = spawnSync(command[0], command.slice(1), {
     cwd: projectDir,
     encoding: 'utf8',
     env: { ...process.env, PATH: [path.join(WORK, 'node_modules/.bin'), process.env.PATH].join(':'), AICG_ROOT: process.env.AICG_ROOT ?? process.cwd() },

@@ -9,7 +9,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/api/src/application/leak.ts: forbidden-layer-dependency apps/api/src/infrastructure/index.ts"
+        "detail": "apps/api/src/application/leak.ts: forbidden-layer-dependency apps/api/src/infrastructure/index.ts | "
       }
     },
     "detectedBy": [
@@ -27,7 +27,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/web/src/features/boards/bridge.ts: cross-feature-private-import apps/web/src/features/work-items/WorkItemBoard.tsx"
+        "detail": "apps/web/src/features/boards/bridge.ts: cross-feature-private-import apps/web/src/features/work-items/WorkItemBoard.tsx | "
       }
     },
     "detectedBy": [
@@ -50,7 +50,7 @@
       },
       "static-types": {
         "exit": 0,
-        "detail": ""
+        "detail": "> reference-work-tracker@0.0.0 typecheck | > tsc --noEmit"
       }
     },
     "detectedBy": [],
@@ -67,7 +67,7 @@
     "results": {
       "security-probes": {
         "exit": 0,
-        "detail": "RUN  v3.2.4 <tmp> | "
+        "detail": "> reference-work-tracker@0.0.0 test:security | > vitest run tests/security"
       },
       "contract-tests": {
         "exit": null,
@@ -88,11 +88,11 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/api/src/domain/board.ts: domain-framework-dependency drizzle-orm"
+        "detail": "apps/api/src/domain/board.ts: domain-framework-dependency drizzle-orm | "
       },
       "static-types": {
         "exit": 2,
-        "detail": "apps/api/src/domain/board.ts(43,10): error TS2305: Module '\"drizzle-orm\"' has no exported member 'drizzle'."
+        "detail": "> reference-work-tracker@0.0.0 typecheck | > tsc --noEmit"
       }
     },
     "detectedBy": [
@@ -112,7 +112,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 1,
-        "detail": "apps/api/src/application/board-service.ts: direct-database-access drizzle-orm"
+        "detail": "apps/api/src/application/board-service.ts: direct-database-access drizzle-orm | "
       },
       "api-integration": {
         "exit": null,
@@ -162,7 +162,7 @@
       },
       "migration-safety": {
         "exit": 1,
-        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables"
+        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables | "
       }
     },
     "detectedBy": [
@@ -180,7 +180,7 @@
     "results": {
       "migration-safety": {
         "exit": 1,
-        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables"
+        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables | "
       }
     },
     "detectedBy": [
@@ -233,12 +233,14 @@
     "baselineArchitecture": 0,
     "results": {
       "security-probes": {
-        "exit": 0,
-        "detail": "RUN  v3.2.4 <tmp> | "
+        "exit": 1,
+        "detail": "npm error Missing script: \"test:security\" | npm error"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "security-probes"
+    ],
+    "detected": true
   },
   {
     "faultId": "unauthorized-path",
@@ -250,7 +252,7 @@
     "results": {
       "architecture-boundaries": {
         "exit": 0,
-        "detail": "architecture ok: policy verified against react-mantine-nest-fastify-drizzle-postgresql"
+        "detail": "> reference-work-tracker@0.0.0 architecture | > node scripts/architecture-check.mjs"
       }
     },
     "detectedBy": [],
