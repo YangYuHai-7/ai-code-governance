@@ -86,6 +86,35 @@ if (fs.existsSync(sessionsRoot)) {
     if (!terminal.has(state) && !resumable) problems.push(`delivery session ${entry} is ${state || "stateless"} without a resumable checkpoint`);
   }
 }
+const contractsDir = path.join(root, "packages/contracts/src");
+if (fs.existsSync(contractsDir)) {
+  let approved = null;
+  try {
+    approved = loadFile("expected-contracts.json").surface ?? [];
+  } catch (error) {
+    problems.push(`the approved contract surface could not be read: ${error.message}`);
+  }
+  if (approved) {
+    const extracted = new Set();
+    const walk = (directory) => {
+      for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) walk(absolute);
+        else if (/\.tsx?$/.test(entry.name)) {
+          const text = fs.readFileSync(absolute, "utf8");
+          for (const match of text.matchAll(/export\s+(?:interface|type|const|function|class|enum)\s+([A-Za-z0-9_]+)/g)) extracted.add(match[1]);
+        }
+      }
+    };
+    walk(contractsDir);
+    const actual = [...extracted].sort();
+    const added = actual.filter((name) => !approved.includes(name));
+    const removed = approved.filter((name) => !actual.includes(name));
+    if (added.length > 0) problems.push(`the contract surface gained undeclared exports: ${added.join(", ")}`);
+    if (removed.length > 0) problems.push(`the contract surface lost approved exports: ${removed.join(", ")}`);
+  }
+}
+
 if (problems.length > 0) {
   process.stderr.write(`${problems.join("\n")}\n`);
   process.exit(1);

@@ -1,0 +1,10 @@
+{
+  "note": "approved export surface of packages/contracts; any change is contract drift until this file is updated on purpose",
+  "surface": [
+    "Board",
+    "Page",
+    "WorkItem",
+    "WorkItemState",
+    "isWorkItemState"
+  ]
+}

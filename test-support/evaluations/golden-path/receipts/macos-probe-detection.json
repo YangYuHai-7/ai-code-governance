@@ -45,16 +45,18 @@
     "baselineArchitecture": 0,
     "results": {
       "contract-tests": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 1,
+        "detail": "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | "
       },
       "static-types": {
         "exit": 0,
         "detail": "> reference-work-tracker@0.0.0 typecheck | > tsc --noEmit"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "contract-tests"
+    ],
+    "detected": true
   },
   {
     "faultId": "unsafe-dto-actor",
@@ -66,16 +68,18 @@
     "baselineArchitecture": 0,
     "results": {
       "security-probes": {
-        "exit": 0,
-        "detail": "> reference-work-tracker@0.0.0 test:security | > vitest run tests/security"
+        "exit": 1,
+        "detail": "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | "
       },
       "contract-tests": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 0,
+        "detail": "> reference-work-tracker@0.0.0 test:contract | > vitest run tests/contract"
       }
     },
-    "detectedBy": [],
-    "detected": false
+    "detectedBy": [
+      "security-probes"
+    ],
+    "detected": true
   },
   {
     "faultId": "domain-framework-import",

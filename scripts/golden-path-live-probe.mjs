@@ -19,6 +19,7 @@ const TOOLS = {
   'static-format': ['run', 'format:check'],
   'static-lint': ['run', 'lint'],
   'unit-tests': ['run', 'test:unit'],
+  'contract-tests': ['run', 'test:contract'],
   'security-probes': ['run', 'test:security'],
   'migration-safety': ['run', 'test:migration'],
   'requirement-traceability': ['node', 'scripts/traceability-check.mjs'],
