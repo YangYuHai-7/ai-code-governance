@@ -45,3 +45,23 @@ test('the committed matrix receipt proves execution, not certification', () => {
   assert.match(receipt.note, /not cross-platform, held-out, real-Agent, or qualified-human evidence/);
   assert.ok(!/\/Users\/|\/tmp\/|\/private\//.test(JSON.stringify(receipt)));
 });
+// A fully green release candidate is still not platform certification: the release receipt cannot
+// stand in for an evaluation receipt, and claiming a platform without one keeps the platform gap.
+test('a green release candidate cannot be smuggled in as evaluation evidence', () => {
+  const release = JSON.parse(fs.readFileSync(path.join(root, 'docs/internal/validation/receipts/macos-release-candidate.json'), 'utf8'));
+  const pack = loadGoldenPathPack('react-mantine-nest-fastify-drizzle-postgresql');
+  const requirement = JSON.parse(fs.readFileSync(path.join(root, fixture, 'expected-requirement.json'), 'utf8'));
+  const referenceDigests = {
+    pack: receipt.digests.pack,
+    requirement: canonicalContractDigest('requirement', requirement),
+    repository: receipt.digests.repository,
+    environment: receipt.digests.environment,
+  };
+  assert.throws(
+    () => evaluateGoldenPathCertification({ pack, referenceDigests, platformPolicy: { claimed: ['darwin'] }, thresholdPolicy: { minimumHeldOutCases: 1 }, evaluationReceipts: [release] }),
+    /unknown field|required field/i,
+  );
+  const result = evaluateGoldenPathCertification({ pack, referenceDigests, platformPolicy: { claimed: ['darwin'] }, thresholdPolicy: { minimumHeldOutCases: 1 }, evaluationReceipts: [] });
+  assert.equal(result.status, 'incomplete');
+  assert.ok(result.gaps.some((gap) => gap.code === 'platform-missing:darwin'), 'a claimed platform without an evaluation receipt stays missing');
+});
