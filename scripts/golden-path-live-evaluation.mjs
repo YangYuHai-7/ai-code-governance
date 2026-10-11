@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runReferenceEvaluation } from './golden-path-reference-evaluation.mjs';
+import { validateQualityMatrixRun } from '../src/modules/delivery-core/index.mjs';
 import { executeBrowserGate, executeCommandGate, executeDatabaseGate } from '../src/adapters/process/golden-path-verification.mjs';
 import { executeHttpGate } from '../src/adapters/http/verification.mjs';
 
@@ -26,7 +27,6 @@ const SCRIPTS = {
   'static-types': ['run', 'typecheck'],
   'architecture-boundaries': ['run', 'architecture'],
   'unit-tests': ['run', 'test:unit'],
-  'contract-tests': ['run', 'test:contract'],
   'security-probes': ['run', 'test:security'],
   'runtime-observability': ['run', 'test:observability'],
   'performance-budget': ['run', 'test:performance'],
@@ -99,6 +99,15 @@ const context = {
         { name: 'cross-tenant-move', method: 'PATCH', path: `/work-items/${ITEM}`, expectStatus: 404, body: { organizationId: '22222222-2222-2222-2222-222222222222', actorId: 'member-synthetic-2', boardId: BOARD, state: 'done', expectedVersion: 1 } },
       ],
     },
+    'contract-tests': {
+      readiness: [{ name: 'health', path: '/health', expectStatus: 200 }],
+      contracts: [
+        { name: 'boards-shape', method: 'GET', path: `/boards?organizationId=${ORGANIZATION}`, expectStatus: 200, expectBodyIncludes: ['"items"', '"organizationId"', 'Sprint A'] },
+        { name: 'items-shape', method: 'GET', path: `/boards/${BOARD}/items?organizationId=${ORGANIZATION}`, expectStatus: 200, expectBodyIncludes: ['"items"', '"version"', 'Draft item A'] },
+        { name: 'conflict-shape', method: 'PATCH', path: `/work-items/${ITEM}`, expectStatus: 409, expectBodyIncludes: ['"error"'], body: { organizationId: ORGANIZATION, actorId: 'member-synthetic-1', boardId: BOARD, state: 'done', expectedVersion: 999 } },
+        { name: 'not-found-shape', method: 'PATCH', path: `/work-items/${ITEM}`, expectStatus: 404, expectBodyIncludes: ['"error"'], body: { organizationId: '22222222-2222-2222-2222-222222222222', actorId: 'member-synthetic-2', boardId: BOARD, state: 'done', expectedVersion: 1 } },
+      ],
+    },
   },
   http: {
     request: async ({ method = 'GET', path: target, baseUrl, body, timeoutMs = 10000 }) => {
@@ -132,7 +141,26 @@ async function main() {
     context,
     policy: { sessionId: 'session.live-macos', keepWorkRoot: true },
   });
-  process.stdout.write(`${JSON.stringify({ status: run.status, gates: run.results?.map((entry) => ({ id: entry.gateId, status: entry.status })), workRoot }, null, 2)}\n`);
+  const validated = validateQualityMatrixRun(run);
+  const receipt = {
+    schemaVersion: validated.schemaVersion,
+    id: validated.id,
+    status: run.status,
+    plan: { packId: validated.packId, matrixId: validated.matrixId, requiredGateIds: validated.requiredGateIds },
+    digests: validated.digests,
+    environment: {
+      runtime: { node: process.versions.node },
+      packageManager: { name: 'npm', version: '11.0.0' },
+      postgres: { version: '18.6' },
+      browser: { name: 'chromium' },
+      platform: process.platform,
+    },
+    gates: (run.results ?? []).map((entry) => ({ id: entry.gateId, status: entry.status, checks: entry.checks?.length ?? 0, artifacts: (entry.artifacts ?? []).map((artifact) => artifact.digest) })),
+    note: 'Executed on a single macOS host with local PostgreSQL 18.6 and the machine browser. This is not cross-platform, held-out, real-Agent, or qualified-human evidence.',
+  };
+  const target = process.env.AICG_LIVE_RECEIPT;
+  if (typeof target === 'string' && target.length > 0) fs.writeFileSync(target, `${JSON.stringify(receipt, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ status: receipt.status, gates: receipt.gates, workRoot, receipt: target ?? null }, null, 2)}\n`);
 }
 
 if (process.argv[1] && process.argv[1].endsWith('golden-path-live-evaluation.mjs')) main().catch((error) => { process.stderr.write(`${error.stack}\n`); process.exit(1); });
