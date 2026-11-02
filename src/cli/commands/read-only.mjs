@@ -7,7 +7,7 @@ import { assessmentSummary } from '../../project-assessment.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { technicalStandardsSummary } from '../../technical-standards.mjs';
 import { readTeamContext, teamRecommendation } from '../../team-recommendation.mjs';
-import { addReadOnlyGuidance, printHumanGuidance } from '../read-only-guidance.mjs';
+import { addReadOnlyGuidance, printHumanGuidance, resolveLocale } from '../read-only-guidance.mjs';
 import { configForStandards, loadExistingConfig } from '../shared.mjs';
 
 function existingConfigForGuidance(scan) {
@@ -22,7 +22,9 @@ export function doctorCommand(target, options) {
   let result;
   try {
     const scan = scanProject(target, { probeEnvironment: true });
-    result = addReadOnlyGuidance('doctor', doctor(scan), scan, { locale: options.locale, config: existingConfigForGuidance(scan) });
+    const config = existingConfigForGuidance(scan);
+    const locale = resolveLocale(options.locale, config);
+    result = addReadOnlyGuidance('doctor', doctor(scan, { locale }), scan, { locale, config });
   } catch (error) { result = { ok: false, status: 'error', errors: [error.message] }; }
   const reportPath = writeGateReport(path.resolve(target), 'doctor', result);
   if (result.status === 'error') console.log(JSON.stringify({ ...result, reportPath, gateMode: options.enforce ? 'enforce' : 'report' }, null, 2));

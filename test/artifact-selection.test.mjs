@@ -14,15 +14,57 @@ import { surfaceVerificationProfiles } from '../src/modules/repository/index.mjs
 import { remapContentPaths } from '../src/modules/governance/layout.mjs';
 import { sha256, stableJson } from '../src/shared/index.mjs';
 
-const MINIMAL_CODEX_ALLOWLIST = [
+const COMPLETE_CODEX_ALLOWLIST = [
+  '.agents/skills/generic-unknown/SKILL.md',
+  '.agents/skills/standard-component-reuse/SKILL.md',
+  '.agents/skills/standard-module-boundaries/SKILL.md',
+  '.agents/skills/standard-professional-testing/SKILL.md',
+  '.agents/skills/standard-proportionate-design/SKILL.md',
+  '.agents/skills/standard-software-design-and-verification/SKILL.md',
+  '.agents/skills/standard-standard-skill-authoring/SKILL.md',
   '.ai-governance/config.json',
+  '.ai-governance/state/decision-ledger.json',
+  '.ai-governance/state/delivery-loop.json',
+  '.ai-governance/state/flow-state.json',
+  '.ai-governance/state/stack-profile.json',
+  '.ai-governance/state/task-routing-policy.json',
+  '.ai-governance/state/team-roster.json',
+  '.ai-governance/state/technical-standards.json',
+  '.ai-governance/state/verification-profiles.yaml',
+  '.gitignore',
   'AGENTS.md',
+  'docs/WORKFLOW.md',
   'docs/ai/README.md',
+  'docs/ai/agents/architect.md',
+  'docs/ai/agents/ba.md',
+  'docs/ai/agents/backend.md',
+  'docs/ai/agents/designer.md',
+  'docs/ai/agents/frontend.md',
+  'docs/ai/agents/fullstack.md',
+  'docs/ai/agents/pm.md',
+  'docs/ai/agents/tester.md',
   'docs/ai/context-map.yaml',
   'docs/ai/policies/00_always.mdc',
+  'docs/ai/policies/20_stack.mdc',
+  'docs/ai/policies/anti-patterns.md',
+  'docs/ai/routing/bootstrap-prompt.md',
+  'docs/ai/skills/generic-unknown/SKILL.md',
+  'docs/ai/skills/standards/component-reuse/SKILL.md',
+  'docs/ai/skills/standards/module-boundaries/SKILL.md',
+  'docs/ai/skills/standards/professional-testing/SKILL.md',
+  'docs/ai/skills/standards/proportionate-design/SKILL.md',
+  'docs/ai/skills/standards/software-design-and-verification/SKILL.md',
+  'docs/ai/skills/standards/standard-skill-authoring/SKILL.md',
+  'docs/development/README.md',
+  'docs/development/standards/component-reuse.md',
+  'docs/development/standards/module-boundaries.md',
+  'docs/development/standards/professional-testing.md',
+  'docs/development/standards/proportionate-design.md',
+  'docs/development/standards/software-design-and-verification.md',
+  'docs/development/standards/standard-skill-authoring.md',
   'docs/memory/INDEX.json',
   'docs/memory/README.md',
-  'docs/memory/SCHEMA.md',
+  'docs/memory/SCHEMA.md'
 ];
 
 function fixture(context) {
@@ -46,23 +88,33 @@ test('repository scan recognizes OpenSpec without treating plugin markers as wor
   assert.deepEqual(scanProject(root).externalWorkflows, ['openspec-change-governance']);
 });
 
-test('Codex-only minimal emits only the trusted kernel', (context) => {
+test('legacy minimal selects the full trusted baseline with roles and guidance', (context) => {
   const { config, scan } = fixture(context);
   const paths = buildArtifacts(config, scan).map((item) => item.path).sort();
-  assert.deepEqual(paths, MINIMAL_CODEX_ALLOWLIST);
-  assert.ok(paths.length + 1 <= 10, 'including the apply-generated manifest');
+  assert.deepEqual(paths, COMPLETE_CODEX_ALLOWLIST);
+  assert.ok(paths.includes('docs/ai/agents/architect.md'));
+  assert.ok(paths.includes('docs/ai/skills/standards/module-boundaries/SKILL.md'));
   assert.equal(paths.some((value) => /release|surface|acceptance|reviews|reports|lifecycle/.test(value)), false);
 });
 
+test('rebaseline preserves existing project-owned seed content', (context) => {
+  const { root, config, scan } = fixture(context);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const relative = 'docs/memory/README.md';
+  const ownerContent = '# Owner-reviewed project memory\n';
+  fs.writeFileSync(path.join(root, relative), ownerContent);
+
+  const plan = planArtifacts(root, buildArtifacts(config, scanProject(root)), {
+    replaceExisting: true,
+    rebaseline: true,
+  });
+  const operation = plan.operations.find((item) => item.path === relative);
+  assert.equal(operation.desired, ownerContent);
+  assert.equal(operation.changed, false);
+});
+
 test('fresh preset fixtures enforce installed file and byte budgets including the manifest', (context) => {
-  for (const [governanceDepth, expectedFiles, maxBytes] of [
-    // Standard and Complete carry the delivery process by default: one workflow document plus
-    // two runtime ledgers. Minimal stays the bootstrap-only kernel and never carries it. The
-    // phase-Skill family was removed, so the measured footprint dropped by roughly 23 files.
-    ['minimal', 9, 24 * 1024],
-    ['standard', 36, 128 * 1024],
-    ['complete', 38, 128 * 1024],
-  ]) {
+  for (const [governanceDepth, expectedFiles, maxBytes] of ['minimal', 'standard', 'complete'].map(depth => [depth, COMPLETE_CODEX_ALLOWLIST.length + 1, 256 * 1024])) {
     const { root, config, scan } = fixture(context);
     const artifacts = buildArtifacts({ ...config, governanceDepth }, scan);
     const plan = planArtifacts(root, artifacts);
@@ -85,27 +137,12 @@ test('fresh preset fixtures enforce installed file and byte budgets including th
   }
 });
 
-test('standard and complete do not eagerly enable evidence or lifecycle features', (context) => {
+test('the full framework does not eagerly enable external evidence or lifecycle integrations', (context) => {
   const { config, scan } = fixture(context);
-  for (const governanceDepth of ['standard', 'complete']) {
-    const paths = buildArtifacts({ ...config, governanceDepth }, scan).map((item) => item.path).sort();
-    const policy = ['docs/ai/policies/anti-patterns.md', '.ai-governance/state/stack-profile.json', 'docs/ai/policies/20_stack.mdc', '.ai-governance/state/technical-standards.json', 'docs/ai/skills/standards/software-design-and-verification/SKILL.md', '.agents/skills/standard-software-design-and-verification/SKILL.md', 'docs/ai/skills/standards/standard-skill-authoring/SKILL.md', '.agents/skills/standard-standard-skill-authoring/SKILL.md', 'docs/ai/skills/standards/professional-testing/SKILL.md', '.agents/skills/standard-professional-testing/SKILL.md'];
-    const routing = ['.gitignore', 'docs/ai/routing/bootstrap-prompt.md', '.ai-governance/state/decision-ledger.json', '.ai-governance/state/task-routing-policy.json', '.ai-governance/state/verification-profiles.yaml'];
-    const skills = governanceDepth === 'complete' ? ['docs/ai/skills/generic-unknown/SKILL.md', '.agents/skills/generic-unknown/SKILL.md'] : [];
-    // The delivery process is one workflow document plus two runtime ledgers, not a family of
-    // phase Skills. It is a workflow surface, not an evidence or lifecycle family, so the point
-    // of this test — that neither depth eagerly pulls in release/surface/acceptance artifacts —
-    // still holds.
-    const workflow = [
-      'docs/WORKFLOW.md',
-      '.ai-governance/state/delivery-loop.json',
-      '.ai-governance/state/flow-state.json',
-    ];
-    // Roles are agent definitions now, not a process Skill.
-    const fixedTeam = ['.ai-governance/state/team-roster.json'];
-    const agents = ['architect', 'ba', 'backend', 'designer', 'frontend', 'fullstack', 'pm', 'tester'].map((id) => 'docs/ai/agents/' + id + '.md');
-    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, ...routing, ...policy, ...skills, ...fixedTeam, ...workflow, ...agents].sort());
-    assert.ok(paths.length + 1 <= (governanceDepth === 'standard' ? 44 : 46));
+  for (const governanceDepth of ['minimal', 'standard', 'complete']) {
+    const paths = buildArtifacts({ ...config, governanceDepth }, scan).map(item => item.path).sort();
+    assert.deepEqual(paths, COMPLETE_CODEX_ALLOWLIST);
+    assert.equal(paths.some(value => /release-acceptance|surface-results|acceptance-results|lifecycle/.test(value)), false);
   }
 });
 
@@ -117,8 +154,8 @@ test('selection is pure and never calls builders for dormant definitions', (cont
     assert.deepEqual(Object.keys(definition).sort(), ['id', 'path', 'capability', 'activation', 'requires', 'ownership', 'routeProfiles', 'gateAssertions', 'build'].sort());
     definition.build = () => { throw new Error('selection must not render'); };
   }
-  assert.deepEqual(selectArtifactDefinitions(config, scan, definitions).map((item) => item.path).sort(), MINIMAL_CODEX_ALLOWLIST);
-  assert.deepEqual([...resolveGovernanceCapabilities(config, scan)], ['core', 'integration']);
+  assert.deepEqual(selectArtifactDefinitions(config, scan, definitions).map((item) => item.path).sort(), COMPLETE_CODEX_ALLOWLIST);
+  assert.deepEqual([...resolveGovernanceCapabilities(config, scan)], ['core', 'routing', 'policy', 'integration']);
   assert.equal(JSON.stringify({ config, scan }), before);
 });
 
@@ -131,7 +168,7 @@ test('first-use materializes only the requested evidence family and never manufa
   ]) {
     const snapshot = { ...scan, governanceUsage: [usage] };
     const paths = buildArtifacts(config, snapshot).map((item) => item.path).sort();
-    assert.deepEqual(paths, [...MINIMAL_CODEX_ALLOWLIST, relative].sort());
+    assert.deepEqual(paths, [...COMPLETE_CODEX_ALLOWLIST, relative].sort());
     assert.equal(selectedArtifactDefinitions(config, snapshot).find((item) => item.path === relative).activation, 'first-use');
   }
 });
@@ -145,7 +182,7 @@ test('first-use Chinese evidence artifacts localize prose and preserve every mac
   ]);
   assert.equal(sha256(expected.get('docs/ai/evidence/release-acceptance-policy.json')), 'bf8b8f04edd635455efb10334140d5b628d82f8ebebab06cbcaac42558e61e50');
   assert.equal(sha256(expected.get('.ai-governance/state/surface-verification-profiles.json')), '88aa04ba15670083cf35903d457f91ff58cac1899becd8b12fc8e7ba53d3eae1');
-  assert.equal(sha256(expected.get('docs/ai/evidence/acceptance-contract.json')), 'dab0093dbf16b694a1091d0148570d3776dd23faf29cede8854ad8093d2240cd');
+  assert.equal(sha256(expected.get('docs/ai/evidence/acceptance-contract.json')), 'd6c73574cb39184d254600f4154b211bf55a40204c30482f9fd835948d47b6a5');
   const proseKeys = new Set(['description', 'reason', 'claimBoundary', 'binding', 'coverage', 'applies_when', 'negative_case', 'expected_failure', 'recovery_case', 'expected_recovery', 'proves']);
   const machineFields = (value, location = [], requireChinese = false) => {
     if (typeof value === 'string' && (proseKeys.has(location.at(-1)) || ['claim_states', 'failure_policy'].includes(location.at(-2)))) {
@@ -184,19 +221,18 @@ test('minimal checker passes with optional policies absent and still rejects mis
   assert.ok(failed.errors.some((error) => error.includes('docs/ai/policies/00_always.mdc')));
 });
 
-test('selected clients receive only their native adapters at minimal depth', (context) => {
+test('full governance projects only the selected clients', (context) => {
   const { config, scan } = fixture(context);
-  for (const [clients, adapters] of [
-    [['codex'], []],
-    [['claude-code'], ['CLAUDE.md']],
-    [['cursor'], ['.cursor/rules/ai-code-governance.mdc']],
-    [['codex', 'claude-code', 'cursor'], ['CLAUDE.md', '.cursor/rules/ai-code-governance.mdc']],
-  ]) {
-    assert.deepEqual(buildArtifacts({ ...config, clients }, scan).map((item) => item.path).sort(), [...MINIMAL_CODEX_ALLOWLIST, ...adapters].sort());
+  for (const clients of [['codex'], ['claude-code'], ['cursor'], ['codex', 'claude-code', 'cursor']]) {
+    const paths = buildArtifacts({ ...config, clients }, scan).map(item => item.path);
+    for (const [client, directory] of [['codex', '.agents/'], ['claude-code', '.claude/'], ['cursor', '.cursor/']]) {
+      assert.equal(paths.some(relative => relative.startsWith(directory)), (client === 'codex' ? clients.includes('codex') || clients.includes('cursor') : clients.includes(client)), client);
+    }
+    assert.ok(paths.includes('docs/ai/agents/architect.md'));
   }
 });
 
-test('downgrading to minimal retains former managed and seed artifacts without deletion', (context) => {
+test('legacy minimal cannot downgrade the framework and retains owner-edited seeds', (context) => {
   const { root, config, scan } = fixture(context);
   const standard = { ...config, governanceDepth: 'complete' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(standard, scan)));
@@ -205,7 +241,7 @@ test('downgrading to minimal retains former managed and seed artifacts without d
   const original = fs.readFileSync(canonical, 'utf8');
   const plan = planArtifacts(root, buildArtifacts(config, scanProject(root)));
   assert.equal(plan.operations.some((operation) => operation.remove), false);
-  assert.ok(plan.retained.some((entry) => entry.path === '.ai-governance/state/stack-profile.json'));
+  assert.ok(plan.operations.some((entry) => entry.path === '.ai-governance/state/stack-profile.json'));
   applyArtifactPlan(root, plan);
   assert.equal(fs.readFileSync(canonical, 'utf8'), original);
   assert.equal(checkProject(scanProject(root)).ok, true);
@@ -285,11 +321,18 @@ for (const scenario of ['business', 'architecture-active', 'architecture-advisor
   });
 }
 
+
+function makeLegacyConditionalRoute(target) {
+  const text = fs.readFileSync(target, 'utf8');
+  fs.writeFileSync(target, text.replace(/  behavior_change:[\s\S]*?(?=  bugfix:)/, '  behavior_change:\n    extends: ordinary\n    required: []\n    conditional: {}\n'));
+}
+
 test('conditional upgrade preserves custom conditions comments order and CRLF bytes', (context) => {
   const { root, config, scan } = fixture(context);
   config.features.knowledge = false;
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
   const target = path.join(root, 'docs/ai/context-map.yaml');
+  makeLegacyConditionalRoute(target);
   const custom = '    conditional:\n      # Owner route before generated additions.\n      local_operations:\n        - docs/owner-runbook.md\n      # Keep this trailing comment.\n';
   const original = fs.readFileSync(target, 'utf8').replace('    conditional: {}\n', custom).replaceAll('\n', '\r\n');
   fs.writeFileSync(target, original);
@@ -312,6 +355,7 @@ test('untrusted and ambiguous conditional upgrades fail closed without changing 
     config.features.knowledge = false;
     applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
     const target = path.join(root, 'docs/ai/context-map.yaml');
+  makeLegacyConditionalRoute(target);
     const manifestPath = path.join(root, '.ai-governance/manifest.json');
     if (scenario === 'foreign') {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -325,11 +369,11 @@ test('untrusted and ambiguous conditional upgrades fail closed without changing 
       fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace('    conditional: {}', replacement));
     }
     const before = [target, manifestPath, path.join(root, '.ai-governance/config.json')].map((file) => [file, fs.readFileSync(file, 'utf8')]);
-    const upgraded = { ...config, governanceDepth: 'standard' };
+    const upgraded = { ...config, domainConstraints: ['Keep owner data scoped.'] };
     const plan = planArtifacts(root, buildArtifacts(upgraded, scanProject(root)));
     assert.throws(() => applyArtifactPlan(root, plan, { transactional: true, verify: () => checkProject(scanProject(root)) }));
     for (const [file, bytes] of before) assert.equal(fs.readFileSync(file, 'utf8'), bytes);
-    assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/technical-standards.json')), false);
+    assert.equal(fs.existsSync(path.join(root, '.ai-governance/state/technical-standards.json')), true);
   }
 });
 
@@ -338,6 +382,7 @@ test('a trusted conditional upgrade appends generated paths to an existing owner
   config.features.knowledge = false;
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
   const target = path.join(root, 'docs/ai/context-map.yaml');
+  makeLegacyConditionalRoute(target);
   fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replace(
     '    conditional: {}',
     '    conditional:\n      stack:\n        - docs/owner.md',

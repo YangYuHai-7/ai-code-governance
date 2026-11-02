@@ -20,7 +20,7 @@ if (part === 'unit') {
 test('lazy command architecture resolves every declared handler and preserves dispatch keys and arguments', async () => {
   // The retired commands remain in the registry so existing scripts keep working and emit a
   // single deprecation line. New code should call the surviving replacement.
-  const expected = ['help', 'version', 'request', 'route', 'flow', 'telemetry', 'init', 'config', 'delivery', 'evaluation', 'candidate', 'review', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
+  const expected = ['help', 'version', 'request', 'route', 'flow', 'telemetry', 'init', 'handoff', 'config', 'studio', 'delivery', 'evaluation', 'candidate', 'review', 'enrich', 'evidence', 'team', 'complete', 'work-unit', 'test-case', 'hook', 'release-check', 'doctor', 'assess', 'architecture', 'standards', 'harvest', 'promote', 'check', 'sync'];
   assert.deepEqual(Object.keys(COMMAND_REGISTRY).sort(), expected.sort());
   assert.deepEqual(Object.keys(COMMAND_HANDLERS).sort(), expected.filter((name) => !['help', 'version'].includes(name)).sort());
   for (const [command, definition] of Object.entries(COMMAND_HANDLERS)) {
@@ -170,7 +170,7 @@ test('guided onboarding asks clients first and artifact language second', async 
   assert.deepEqual(config.clients, ['codex']);
   assert.deepEqual(config.initialization, { lifecycle: 'greenfield', existingCodeStrategy: null, source: null });
   assert.deepEqual(config.stacks, ['generic-unknown']);
-  assert.equal(config.governanceDepth, 'minimal');
+  assert.equal(Object.hasOwn(config, 'governanceDepth'), false);
   assert.equal(config.invocationMode, 'npm-exec-pinned');
   assert.equal(config.features.aiAssist, false);
   assert.equal(config.features.knowledge, true);
@@ -215,10 +215,10 @@ test('missing local executable requires an explicit bootstrap or global choice a
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   await assert.rejects(promptGuidedConfig(scan, defaultConfig(scan), {
-    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '1', '']),
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '']),
   }), /explicit selection/i);
   const global = await promptGuidedConfig(scan, defaultConfig(scan), {
-    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '1', '2']),
+    locale: 'en', readline: scriptedReadline(['1', '', '1', '', '1', '', '2']),
   });
   assert.equal(global.invocationMode, 'global');
   for (const invocationMode of ['project-local', 'global', 'npm-exec-pinned']) {
@@ -276,8 +276,11 @@ test('full onboarding accepts ordinary constraints with no confirmed risk signal
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   const readline = scriptedReadline([
-    '1', '', '1', '', '', '1', '', '', '', '',
-    'Every workspace belongs to one owner.', '', '',
+    '1', '', // clients and artifact language
+    '1', '', // test format and case directory
+    '', '', // target stacks and operating systems
+    '', 'n', 'n', 'n', 'n', '', // knowledge, optional runtime/integrations, delivery loop
+    'Every workspace belongs to one owner.', '', 'n',
   ]);
 
   const config = await promptConfig(scan, defaultConfig(scan), { locale: 'en', readline });

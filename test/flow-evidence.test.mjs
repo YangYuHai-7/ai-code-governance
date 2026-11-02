@@ -82,3 +82,21 @@ test('L3 completion binds a consistent design decision instead of trusting the a
   fs.writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2) + '\n');
   assert.equal(runCompletion(root, { taskLevel: 'L3' }).flow.design.status, 'chosen');
 });
+
+test('legacy approved design state requires current proposal bindings without manufacturing owner acceptance', context => {
+  const root = governed(context, 'legacy-design');
+  satisfyFlow(root);
+  const ledgerPath = ['.ai-governance/state/flow-state.json', 'docs/ai/flow-state.json']
+    .map(relative => path.join(root, relative)).find(absolute => fs.existsSync(absolute));
+  const ledger = JSON.parse(fs.readFileSync(ledgerPath, 'utf8'));
+  ledger.design = { status: 'approved', proposals: [] };
+  fs.writeFileSync(ledgerPath, JSON.stringify(ledger));
+  assert.equal(runCompletion(root, { taskLevel: 'L3' }).flow.status, 'blocked');
+  ledger.design.proposals = [ledger.plan];
+  fs.writeFileSync(ledgerPath, JSON.stringify(ledger));
+  const result = runCompletion(root, { taskLevel: 'L3' });
+  assert.equal(result.flow.design.status, 'chosen');
+  assert.equal(result.flow.design.approvalStatus, 'declared-approved');
+  fs.appendFileSync(path.join(root, ledger.plan.path), '\nChanged design\n');
+  assert.equal(runCompletion(root, { taskLevel: 'L3' }).flow.status, 'blocked');
+});

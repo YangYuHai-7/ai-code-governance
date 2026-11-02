@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { memoryIssues } from '../memory/index.mjs';
 import { projectConventionIssues } from '../standards/index.mjs';
 import path from 'node:path';
+import { assessProjectArchitecture } from './delivery-assessment.mjs';
+import { buildWorkflowArtifacts } from './workflow.mjs';
 import { CONFIG_PATH, MANAGED_END, MANAGED_START, MANIFEST_PATH, MANIFEST_SCHEMA_VERSION, TEMPLATE_VERSION } from '../../constants.mjs';
 import { capabilityEvidenceIssues } from '../capabilities/index.mjs';
 import { architecturePlacementIssues, evaluateModuleGraph } from '../architecture/index.mjs';
@@ -842,6 +844,10 @@ export function checkProject(scan, options = {}) {
         governanceCostDrift = built.governanceCostDrift;
       } else expected = renderSelectedArtifacts(selected, config.governanceFootprint ?? 'compact');
       expectedResolved = true;
+      if (config.workflowPreservation) {
+        const compatibility = buildWorkflowArtifacts(config, scan.root).compatibility;
+        if (compatibility.status === 'preserved-legacy') warnings.push(`docs/WORKFLOW.md: owner-approved template v${compatibility.templateVersion} preserved unchanged; newer template additions require an explicit migration and do not invalidate its approval.`);
+      }
     } catch (error) {
       structureErrors.push(`Cannot resolve expected artifacts: ${error.message}`);
     }
@@ -864,7 +870,7 @@ export function checkProject(scan, options = {}) {
     // instead of silently ignoring the owner edit (for example a rejected Skill decision).
     try {
       const input = JSON.parse(readText(path.join(scan.root, 'aicg.config.json'), ''));
-      for (const key of ['governanceDepth', 'artifactLanguage', 'clients', 'stacks', 'initialization', 'features']) {
+      for (const key of ['artifactLanguage', 'clients', 'stacks', 'initialization', 'features']) {
         if (input[key] === undefined || config[key] === undefined) continue;
         if (stableJson(input[key]) !== stableJson(config[key])) warnings.push('aicg.config.json: ' + key + ' differs from the recorded governance config; the recorded .ai-governance/config.json is authoritative');
       }
@@ -883,7 +889,8 @@ export function checkProject(scan, options = {}) {
     const firstPartySkills = scan.files
       .filter((entry) => ['file', 'link'].includes(entry.type) && isFirstPartyGeneratedSkill(entry.relative))
       .map((entry) => entry.relative);
-    structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills, config, [...(options.externalGovernancePaths ?? []), ...firstPartySkills]));
+    // An unresolved artifact graph cannot establish that a registered Skill is unmanaged.
+    if (expectedResolved) structureErrors.push(...unmanagedExecutableGovernanceIssues(scan, expected, trustedHistoricalFiles, legalSeedDefinitions, approvedProjectSkills, config, [...(options.externalGovernancePaths ?? []), ...firstPartySkills]));
     const lingeringRetired = firstPartySkills.filter((relative) => !expectedSkillPaths.has(relative));
     if (lingeringRetired.length > 0) warnings.push(lingeringRetired.length + ' first-party governance Skill(s) from an earlier template are no longer selected (for example ' + lingeringRetired[0] + '); run "aicg sync . --prune" to remove them.');
     for (const relative of expectedPaths) {
@@ -989,8 +996,9 @@ export function checkProject(scan, options = {}) {
       for (const issue of moduleGraph.issues) {
         structureErrors.push(`architecture module graph: ${issue.source} -> ${issue.target}: ${issue.rule}`);
       }
-      if (moduleGraph.status === 'stated-only' && moduleGraph.unsupportedFiles.length > 0) {
-        warnings.push(`architecture module graph: unsupported dynamic relative module loading in ${moduleGraph.unsupportedFiles.join(', ')}; dependency direction remains stated-only for those files.`);
+      if (moduleGraph.status === 'uncovered') warnings.push('architecture module graph: no applicable source files were inspected; dependency direction is unverified.');
+      if (moduleGraph.unsupportedFiles.length > 0) {
+        warnings.push(`architecture module graph: unsupported source or module loading in ${moduleGraph.unsupportedFiles.join(', ')}; dependency direction remains stated-only for those files.`);
       }
     } catch (error) {
       structureErrors.push(`architecture module graph: ${error.message}`);
@@ -1020,6 +1028,8 @@ export function checkProject(scan, options = {}) {
     const lintContextPlane = (relative, content) => {
       if (typeof content !== 'string' || !content) return;
       if (relative.startsWith('.ai-governance/')) return;
+      // Human guides may record verification history; compiled Skills remain linted.
+      if (relative.startsWith('docs/development/') && !contextMapReferencedPaths(contextMapRouting).has(relative)) return;
       // VCS ignore controls name the runtime output directories on purpose; they are not
       // agent-facing instructions and never load into an agent context.
       if (relative === '.gitignore' || relative === '.gitattributes') return;
@@ -1069,6 +1079,7 @@ export function checkProject(scan, options = {}) {
     const everyExpectedPath = new Set(expected.map((artifact) => artifact.path));
     const clientSkillDirs = selectedSkillDirectories(config.clients ?? []);
     for (const artifact of expected) {
+      if (artifact.kind === 'project-convention-candidate') continue;
       if (!artifact.path.startsWith('docs/ai/skills/') || !artifact.path.endsWith('/SKILL.md')) continue;
       const adapterSuffix = adapterSkillSuffix(artifact.path);
       for (const directory of clientSkillDirs) {
@@ -1120,6 +1131,8 @@ export function checkProject(scan, options = {}) {
 
   const acceptance = config && manifest && gateAssertions.has('acceptance-evidence') ? acceptanceEvidence(scan.root, config.governanceFootprint ?? 'compact') : { status: 'unverified', issues: [] };
   const brownfield = config && manifest ? brownfieldProgress(scan, config) : null;
+  const architectureDocumentation = config && manifest ? assessProjectArchitecture(scan, config) : null;
+  if (architectureDocumentation?.findings.length) warnings.push(`architecture documentation: ${architectureDocumentation.findings.length} gap(s); see architectureDocumentation in the JSON report. A generated diagram skeleton is not completed project understanding.`);
   if (brownfield?.gaps.length) {
     const enrichment = config?.features?.brownfieldEnrichment ?? 'ask';
     const decided = config?.brownfieldEnrichmentDecision?.status ?? null;
@@ -1141,6 +1154,20 @@ export function checkProject(scan, options = {}) {
   // actionable cleanup signal without making the managed set pass or fail on them.
   const orphans = manifest ? collectGovernanceOrphans(scan, manifest, config) : { status: 'no-manifest', count: 0, files: [], truncated: false };
   if (orphans.count > 0) warnings.push(`governance orphans: ${orphans.count} unmanaged file(s) under docs/ai or client skill directories; see orphans in the JSON report`);
+  const repair = governanceRepairPreview(scan, orphans);
+  const health = governanceHealth({
+    config,
+    manifest,
+    errors,
+    warnings,
+    present,
+    reachable,
+    acceptance,
+    clientCoverage,
+    moduleGraph,
+    orphans,
+    brownfield,
+  });
   // Read-only sensor surface for the dynamic-equilibrium loop. It records what this run
   // observed (finding classes, orphans, measured context cost); it writes nothing, because a
   // check must never mutate state, and the promote/demote actuator is a separate decision.
@@ -1155,6 +1182,7 @@ export function checkProject(scan, options = {}) {
     errors,
     warnings,
     brownfield,
+    architectureDocumentation,
     evidence: {
       present: present ? 'pass' : 'fail',
       reachable: reachable ? 'pass' : 'fail',
@@ -1168,6 +1196,8 @@ export function checkProject(scan, options = {}) {
       semanticDesign: 'stated-only',
     },
     orphans,
+    repair,
+    health,
     clientCoverage,
     telemetry,
     boundaries: [
@@ -1237,12 +1267,99 @@ function collectGovernanceOrphans(scan, manifest, config = null) {
   };
 }
 
+function looksLikeHistoricalGeneratedGovernance(root, relative) {
+  try {
+    const stat = fs.lstatSync(path.join(root, relative));
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 256 * 1024) return false;
+    const content = fs.readFileSync(path.join(root, relative), 'utf8');
+    return AICG_GENERATED_MARKERS.some((marker) => marker.test(content));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A check may classify cleanup candidates, but it must never delete or adopt them. The real prune
+ * command still prepares the exact content-bound plan and requires a separate approval.
+ */
+function governanceRepairPreview(scan, orphans) {
+  if (!orphans || orphans.count === 0) {
+    return {
+      status: 'not-needed',
+      mutatesRepository: false,
+      applicationRequiresExactApproval: true,
+      previewCommand: null,
+      candidates: [],
+    };
+  }
+  return {
+    status: 'review-required',
+    mutatesRepository: false,
+    applicationRequiresExactApproval: true,
+    previewCommand: 'aicg sync . --prune --dry-run',
+    candidates: orphans.files.map((relative) => ({
+      path: relative,
+      classification: looksLikeHistoricalGeneratedGovernance(scan.root, relative)
+        ? 'historical-generated-review'
+        : 'owner-review-required',
+    })),
+    truncated: orphans.truncated,
+    boundary: 'This read-only classification grants no deletion or adoption authority; inspect an exact prune plan before applying any cleanup.',
+  };
+}
+
+function governanceHealth({ config, manifest, errors, warnings, present, reachable, acceptance, clientCoverage, moduleGraph, orphans, brownfield }) {
+  const clients = clientCoverage.length === 0
+    ? 'not-selected'
+    : clientCoverage.every((entry) => entry.runtimeVerified) ? 'runtime-verified' : 'unverified';
+  const unsupported = moduleGraph?.coverage?.unsupportedFiles ?? moduleGraph?.unsupportedFiles?.length ?? 0;
+  const inspected = moduleGraph?.coverage?.inspectedFiles ?? moduleGraph?.inspectedFiles?.length ?? 0;
+  const candidates = moduleGraph?.coverage?.candidateFiles ?? inspected + unsupported;
+  const architecture = candidates === 0 || moduleGraph?.status === 'uncovered'
+    ? 'unverified'
+    : unsupported > 0 ? 'partial' : moduleGraph?.status ?? 'unverified';
+  const nextActions = [];
+  const add = (id, summary, command = null) => {
+    if (!nextActions.some((entry) => entry.id === id)) nextActions.push({ id, summary, command });
+  };
+  if (!config || !manifest) add('initialize-governance', 'Create and approve the base governance configuration before relying on project checks.', 'aicg init . --guided');
+  if (errors.some((error) => error.includes('exact artifact planHash approval'))) {
+    add('refresh-governance-approval', 'Preview the current generated artifacts and refresh the stale approval binding.', 'aicg sync . --dry-run');
+  }
+  if (present === false) add('repair-governance-structure', 'Resolve the named structural findings before claiming that governance is present.');
+  if (reachable === false) add('repair-governance-routes', 'Reconnect the shared entrypoint, context routes, and selected client projections.');
+  if (orphans.count > 0) add('review-governance-orphans', 'Classify retained governance files and inspect an exact cleanup plan without deleting owner content.', 'aicg sync . --prune --dry-run');
+  if (architecture === 'partial' || architecture === 'unverified') add('complete-architecture-coverage', 'Use the selected AI tool to research and complete project-specific architecture guidance, then recheck measured coverage.');
+  if (clients === 'unverified') add('record-real-client-replay', 'Run each selected AI client through its real configured entrypoint and retain current positive, negative, and recovery evidence.');
+  if (acceptance.status !== 'pass') add('record-enforcement-evidence', 'Run the configured integration probes; generated files and structural checks alone do not prove enforcement.');
+  if (brownfield?.gaps.length) add('complete-brownfield-enrichment', 'Use the selected AI tool to inspect the real code and close only evidence-backed brownfield gaps.');
+  const attention = warnings.length > 0 || clients === 'unverified' || acceptance.status !== 'pass' || architecture === 'partial' || architecture === 'unverified';
+  return {
+    overall: errors.length > 0 ? 'blocked' : attention ? 'attention' : 'structural-pass',
+    stages: {
+      bootstrap: config && manifest ? 'generated' : 'missing',
+      structure: present ? 'pass' : 'fail',
+      reachability: reachable ? 'pass' : 'fail',
+      enforcement: acceptance.status,
+      clients,
+      architecture,
+    },
+    architectureCoverage: { candidates, inspected, unsupported },
+    nextActions,
+    boundary: 'This health summary does not combine structural generation, integration execution, project verification, human review, or real-user acceptance into one pass state.',
+  };
+}
+
 export function printCheck(result, json = false) {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
   console.log(`governance_check=${result.ok ? 'pass' : 'fail'}`);
+  if (result.health) {
+    console.log(`health=${result.health.overall} bootstrap=${result.health.stages.bootstrap} structure=${result.health.stages.structure} reachability=${result.health.stages.reachability} enforcement=${result.health.stages.enforcement} clients=${result.health.stages.clients} architecture=${result.health.stages.architecture}`);
+    for (const action of result.health.nextActions) console.log(`NEXT_ACTION: ${action.id}${action.command ? ` command=${action.command}` : ''} ${action.summary}`);
+  }
   console.log(`present=${result.evidence.present} reachable=${result.evidence.reachable} enforced=${result.evidence.enforced} real-client-verified=${result.evidence.realClientVerified}`);
   for (const coverage of result.clientCoverage ?? []) {
     console.log(`client=${coverage.clientId} declared=${coverage.declared} projected=${coverage.projected} checked=${coverage.checked ? 'pass' : 'fail'} runtime-verified=${coverage.runtimeVerified ? 'pass' : 'unverified'}`);

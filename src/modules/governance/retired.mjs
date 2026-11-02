@@ -68,7 +68,7 @@ function isFirstPartySuffix(suffix) {
 
 /** True when a canonical or adapter Skill path belongs to a first-party AICG Skill family. */
 export function isFirstPartyGeneratedSkill(relative) {
-  if (typeof relative !== 'string') return false;
+  if (typeof relative !== 'string' || !relative.endsWith('/SKILL.md')) return false;
   if (relative.startsWith('docs/ai/skills/')) return isFirstPartySuffix(relative.slice('docs/ai/skills/'.length));
   for (const directory of declaredSkillDirectories()) {
     if (relative.startsWith(directory + '/')) return isFirstPartySuffix(relative.slice(directory.length + 1));

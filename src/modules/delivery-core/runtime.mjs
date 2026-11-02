@@ -6,6 +6,7 @@ import { normalizeArchitectureEvaluation } from './completion.mjs';
 import { canonicalContractDigest, validateDeliverySession } from './contracts.mjs';
 import { classifyDeliveryFailure } from './failures.mjs';
 import { validateQualityMatrixRun } from './quality-matrix.mjs';
+import { qualityMatrixState } from './quality-matrix-current.mjs';
 import { activateRiskProfiles } from './risk-profiles.mjs';
 import { createDeliverySession, resumeDeliverySession, transitionDeliverySession } from './session.mjs';
 
@@ -31,6 +32,19 @@ function safeAppend(store, id, event) {
   catch (error) { if (!/duplicate event/i.test(error.message)) throw error; }
 }
 
+function verificationFailureMessage(matrix, goldenPath) {
+  if (!matrix) return goldenPath
+    ? 'Required quality matrix receipt is missing; rerun verification with all activated gates.'
+    : 'Verifier reported failure; inspect its evidence and rerun verification.';
+  if (matrix.stale.length) return `Quality matrix receipt is stale for ${matrix.stale.join(', ')}; rerun verification against current inputs.`;
+  if (matrix.uncovered.length) return `Quality matrix receipt does not cover activated gates ${matrix.uncovered.join(', ')}; rerun verification with those gates.`;
+  if (matrix.run.status !== 'passed') {
+    const gates = matrix.run.results.filter((entry) => entry.status !== 'passed').map((entry) => entry.gateId);
+    return `Quality matrix gates ${gates.join(', ')} did not pass; inspect gate evidence and rerun verification.`;
+  }
+  return 'Verifier reported failure; inspect its evidence and rerun verification.';
+}
+
 export function createDeliveryRuntime({ store, agents = [], workspace, verifier, clock, pack = null, architectureEvaluator = null }) {
   if (!store || !['create', 'read', 'compareAndSwap', 'appendEvent'].every((name) => typeof store[name] === 'function')) throw usageError('Delivery runtime requires a session store.');
   if (!Array.isArray(agents)) throw usageError('Delivery runtime agents must be an array.');
@@ -44,11 +58,13 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
   const runVerifier = typeof verifier === 'function' ? verifier : verifier?.run?.bind(verifier);
   if (typeof applyWorkspace !== 'function' || typeof runVerifier !== 'function') throw usageError('Delivery runtime requires workspace and verifier effects.');
 
+  function readSession(id) { return validateDeliverySession(store.read(id)); }
+
   function persist(current, next, event = null) {
     if (event) safeAppend(store, current.id, event);
     try { return store.compareAndSwap(current.id, canonicalContractDigest('session', current), next); }
     catch (error) {
-      const durable = store.read(current.id);
+      const durable = readSession(current.id);
       if (canonicalContractDigest('session', durable) === canonicalContractDigest('session', next)) return durable;
       throw error;
     }
@@ -128,10 +144,16 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
       safeAppend(store, session.id, { id: 'event.runtime.started', type: 'runtime-started' });
       return session;
     },
-    status(sessionId) { return store.read(sessionId); },
+    status(sessionId) { return readSession(sessionId); },
     async step(sessionId) {
-      let session = store.read(sessionId);
+      let session = readSession(sessionId);
       if (['completed', 'cancelled', 'review-ready', 'blocked', 'failed'].includes(session.state)) return session;
+      const blockedProfiles = session.runtime?.riskProfileSet?.profiles?.filter((profile) => profile.applicability === 'blocked').map((profile) => profile.id) ?? [];
+      if (blockedProfiles.length) {
+        const message = `Owner decision required for risk profiles ${blockedProfiles.join(', ')}.`;
+        const blocked = transitionDeliverySession(session, { id: `event.risk.${session.sequence}`, idempotencyKey: `risk-blocked:${session.sequence}`, type: 'block', failure: { category: 'business-decision', message }, reason: message, at: timestamp(clock) });
+        return persist(session, blocked);
+      }
       if (elapsedExceeded(session)) return budgetFailure(session, 'Elapsed-time budget exceeded.');
       try {
         if (session.state === 'requirements-pending') {
@@ -167,6 +189,12 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
             const riskProfileSet = activateRiskProfiles({ requirement: current.requirement, architecture: current.architecture, repositoryFacts: repositoryFacts(current), pack: goldenPath });
             const bound = mutated(current, `risk:${riskProfileSet.requirementDigest}`, { runtime: { ...current.runtime, riskProfileSet } }, clock);
             current = persist(current, bound);
+            const blockedProfiles = riskProfileSet.profiles.filter((profile) => profile.applicability === 'blocked').map((profile) => profile.id);
+            if (blockedProfiles.length) {
+              const message = `Owner decision required for risk profiles ${blockedProfiles.join(', ')}.`;
+              const blocked = transitionDeliverySession(current, { id: `event.risk.${current.sequence}`, idempotencyKey: `risk-blocked:${riskProfileSet.requirementDigest}`, type: 'block', failure: { category: 'business-decision', message }, reason: message, at: timestamp(clock) });
+              return persist(current, blocked);
+            }
           }
           const next = transitionDeliverySession(current, { id: `event.plan.${current.sequence}`, idempotencyKey: `plan:${current.architectureDigest}`, type: 'approve-plan', at: timestamp(clock) });
           return persist(current, next);
@@ -195,12 +223,16 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
           const key = `verification:${session.architectureDigest}:${session.runtime?.retries ?? 0}`;
           safeAppend(store, session.id, { id: `verification.${canonicalValueDigest(key).slice(0, 24)}.before`, effect: 'verification', phase: 'before', key });
           const checked = await runVerifier(session, key);
-          safeAppend(store, session.id, { id: `verification.${canonicalValueDigest(key).slice(0, 24)}.after`, effect: 'verification', phase: 'after', key, status: checked.status });
+          const checkedRuntime = verifiedRuntime(session, checked);
+          const matrix = qualityMatrixState({ ...session, runtime: checkedRuntime }, checkedRuntime.riskProfileSet ?? null);
+          const matrixPassed = matrix && matrix.run.status === 'passed' && matrix.stale.length === 0 && matrix.uncovered.length === 0;
+          const verificationStatus = checked.status === 'passed' && (matrixPassed || (!goldenPath && !matrix)) ? 'passed' : 'failed';
+          safeAppend(store, session.id, { id: `verification.${canonicalValueDigest(key).slice(0, 24)}.after`, effect: 'verification', phase: 'after', key, status: verificationStatus });
           const commands = (session.usage?.commands ?? 0) + (checked.commands ?? 0);
           if (commands > session.budgets.maxCommands) return budgetFailure(session, 'Verification command budget exceeded.');
-          const counted = mutated(session, `verification:${key}`, { usage: usage(session, { commands }), runtime: verifiedRuntime(session, checked) }, clock);
+          const counted = mutated(session, `verification:${key}`, { usage: usage(session, { commands }), runtime: checkedRuntime }, clock);
           session = persist(session, counted);
-          if (checked.status === 'passed') {
+          if (verificationStatus === 'passed') {
             const next = transitionDeliverySession(session, { id: `event.review.${session.sequence}`, idempotencyKey: `review:${key}`, type: 'ready-for-review', at: timestamp(clock) });
             return persist(session, next);
           }
@@ -208,16 +240,17 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
           // A repair invalidates every gate receipt that produced the failed verification.
           const invalidated = mutated(session, `repair-invalidate:${key}`, { runtime: { ...session.runtime, qualityMatrixRun: null, qualityMatrixPlanId: null, environmentDigest: null } }, clock);
           session = persist(session, invalidated);
-          const next = transitionDeliverySession(session, { id: `event.repair.${session.sequence}`, idempotencyKey: `repair:${key}`, type: 'request-repair', failure: { category: 'verification', message: 'Verification failed.' }, at: timestamp(clock) });
+          const next = transitionDeliverySession(session, { id: `event.repair.${session.sequence}`, idempotencyKey: `repair:${key}`, type: 'request-repair', failure: { category: 'verification', message: verificationFailureMessage(matrix, goldenPath) }, at: timestamp(clock) });
           return persist(session, next);
         }
         throw new Error(`Unsupported runtime state ${session.state}.`);
-      } catch (error) { return failFrom(store.read(sessionId), error, session.state === 'verifying' ? 'verification' : 'runtime'); }
+      } catch (error) { return failFrom(readSession(sessionId), error, session.state === 'verifying' ? 'verification' : 'runtime'); }
     },
     resume(sessionId, currentInputs) {
-      const session = store.read(sessionId);
+      const session = readSession(sessionId);
       if (goldenPathDigest && session.runtime?.pack && session.runtime.pack.digest !== goldenPathDigest) throw usageError('Delivery session Pack digest changed; reconcile the Pack before resume.');
       resumeDeliverySession(session, currentInputs);
+      if (session.runtime?.riskProfileSet?.profiles.some((profile) => profile.applicability === 'blocked')) throw usageError('Owner decision is required for blocked risk profiles before resume.');
       const agentId = currentInputs.agentId ?? session.activeAgentId;
       if (agentId && !byId.has(agentId)) throw usageError(`Unknown delivery Agent ${agentId}.`);
       if (agentId && session.state !== 'blocked' && session.state !== 'failed') {
@@ -232,7 +265,7 @@ export function createDeliveryRuntime({ store, agents = [], workspace, verifier,
       return session;
     },
     cancel(sessionId) {
-      const session = store.read(sessionId);
+      const session = readSession(sessionId);
       const next = transitionDeliverySession(session, { id: `event.cancel.${session.sequence}`, idempotencyKey: `cancel:${session.sequence}`, type: 'cancel', at: timestamp(clock) });
       return persist(session, next);
     },

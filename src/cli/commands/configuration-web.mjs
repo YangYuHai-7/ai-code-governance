@@ -8,6 +8,7 @@ import { randomToken, sha256, stableJson } from '../../shared/index.mjs';
 import { scanProject } from '../../scanner.mjs';
 import { classifyProject } from '../../project-assessment.mjs';
 import { buildExecutionPlan } from '../../execution-plan.mjs';
+import { buildGovernanceHandoff } from '../../modules/governance/handoff-prompt.mjs';
 import { buildTemplate, safeOutput } from './configuration.mjs';
 import { applyRepositoryFamilyInit, detectsRepositoryFamily, initCommand, prepareInit, prepareRepositoryFamilyInit } from './init.mjs';
 import { clientSupportFromClients, inspectManagedConfigTrust, loadExistingConfig, mergeConfig, normalizeClientSupport } from '../shared.mjs';
@@ -288,6 +289,7 @@ export async function openConfigurationPage(root, options = {}) {
     const restored = managed ? mergeConfig(template, normalizeClientSupport(managed)) : (current.config ?? scanned);
     return { ...common, template: restored, config: current.config, sha: current.sha,
       configSource: managed ? 'managed' : current.config ? 'editable' : 'scan',
+      ...(managed ? { handoff: buildGovernanceHandoff({ root: scan.root, config: restored, scan, phase: 'applied', configPath: CONFIG_PATH, locale: 'zh-CN' }) } : {}),
       scanComplete: scan.scanBudget?.complete !== false && (scan.governanceUnits ?? []).every((unit) => ['scanned', 'uninitialized'].includes(unit.status)),
       assessment: classifyProject(scan),
       repositoryFamily: familyFromScan(scan),
@@ -403,13 +405,15 @@ export async function openConfigurationPage(root, options = {}) {
                 notices: result.assistSuppressed
                   ? ['This repository family is generated deterministically, so AI assist is skipped. Run AI completion separately per member.']
                   : [],
+                handoff: buildGovernanceHandoff({ root: result.scan.root, config: result.config, scan: result.scan, phase: 'configured', configPath: CONFIG_FILE, locale: 'zh-CN' }),
               });
             }
             const plan = execution(result);
             lastPreview = { sha: current.sha, hash: plan.planHash, family: false };
             return send(response, 200, { planHash: plan.planHash, files: plan.operations.filter((entry) => entry.kind !== 'manifest').map(({ path: relative, action }) => ({ path: relative, action, changed: action !== 'keep' })),
               conflicts: result.plan.conflicts, requiredPermissions: plan.requiredPermissions, linksToMigrate: plan.linksToMigrate,
-              skippedMembers: (result.scan.governanceUnits ?? []).filter((unit) => unit.status === 'uninitialized').map((unit) => unit.path) });
+              skippedMembers: (result.scan.governanceUnits ?? []).filter((unit) => unit.status === 'uninitialized').map((unit) => unit.path),
+              handoff: buildGovernanceHandoff({ root: result.scan.root, config: result.config, scan: result.scan, phase: 'configured', configPath: CONFIG_FILE, locale: 'zh-CN' }) });
           }
           if (request.method === 'POST' && url.pathname === '/api/apply') {
             const { planHash } = await readBody(request);
@@ -421,11 +425,13 @@ export async function openConfigurationPage(root, options = {}) {
               if (family.combined.planHash !== planHash) return send(response, 409, { error: 'The family plan changed since the preview. Preview again before applying.' });
               lastPreview = null;
               const units = applyRepositoryFamilyInit(family, FAMILY_OPTIONS);
-              return send(response, 200, { applied: true, family: true, planHash, units, governanceReview: null });
+              return send(response, 200, { applied: true, family: true, planHash, units, governanceReview: null,
+                handoff: buildGovernanceHandoff({ root: result.scan.root, config: result.config, scan: result.scan, phase: 'applied', configPath: CONFIG_PATH, locale: 'zh-CN' }) });
             }
             lastPreview = null;
             const applied = await initCommand(scan.root, { config: file, yes: true, approve: planHash, skipCompletionAssist: true, review: true, replaceExisting: true });
             return send(response, 200, { applied: true, planHash,
+              handoff: applied.handoff,
               governanceReview: applied.governanceReview ? {
                 status: applied.governanceReview.independentReview.status,
                 score: applied.governanceReview.score.score,
@@ -438,7 +444,7 @@ export async function openConfigurationPage(root, options = {}) {
             const current = savedState(file);
             if (expectedSha !== current.sha) return send(response, 409, { error: 'Configuration changed on disk. Reload before rebuilding the baseline.' });
             const trust = inspectManagedConfigTrust(scan.root);
-            if (trust.state !== 'drifted' && trust.state !== 'unrecorded') return send(response, 409, { error: 'No drifted managed configuration to rebuild.' });
+            if (trust.state !== 'drifted' && trust.state !== 'unrecorded' && trust.legacyUnapprovedTeam !== true) return send(response, 409, { error: 'No recoverable managed configuration to rebuild.' });
             const managedPath = path.join(scan.root, CONFIG_PATH);
             const previous = lstatSafe(managedPath)?.isFile() ? readText(managedPath) : null;
             // Validate the page's in-memory configuration before touching any file: a failed rebuild

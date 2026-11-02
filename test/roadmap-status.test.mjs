@@ -12,11 +12,13 @@ test('the roadmap publishes an evaluator-derived status that cannot drift silent
   assert.match(roadmap, /Milestone 1 \(Core semantic and runtime foundation\): implementation complete; milestone evidence-incomplete/);
   assert.doesNotMatch(roadmap, /Milestone 1 \(Core semantic and runtime foundation\): complete/);
   assert.match(roadmap, /remains \*\*evidence-incomplete\*\* and is not declared complete/);
-  assert.match(roadmap, /Milestone 2 \(one production-capable golden path\): evidence-incomplete/);
+  assert.match(roadmap, /Milestone 2 \(one production-capable golden path\): historical reference E3; current certification evidence-incomplete/);
   assert.match(roadmap, /Milestone 3[^\n]*not authorized/i);
-  for (const code of ['missing-e3', 'missing-held-out-case', 'missing-qualified-human', 'platform-missing']) {
+  for (const code of ['missing-held-out-case', 'missing-qualified-human', 'insufficient-held-out-cases', 'platform-missing:linux', 'platform-missing:win32']) {
     assert.ok(roadmap.includes(code), code);
   }
+  for (const code of ['stale-matrix-run', 'missing-e3', 'platform-missing:darwin']) assert.ok(roadmap.includes(code), code);
+  assert.doesNotMatch(roadmap, /Current evidence clears `missing-e3`/);
   for (const gate of ['evaluateGoldenPathCertification', 'publicationDecision', 'derivePackMaturity', 'applyQualifiedUserEvidence']) {
     assert.ok(roadmap.includes(gate), gate);
   }

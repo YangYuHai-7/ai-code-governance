@@ -42,6 +42,36 @@ export function writeText(target, content) {
   return true;
 }
 
+export function resolvePath(...segments) {
+  return path.resolve(...segments);
+}
+
+export function joinPath(...segments) {
+  return path.join(...segments);
+}
+
+export function removeTree(target) {
+  fs.rmSync(target, { recursive: true, force: true });
+}
+
+export function digestFileInventory(root, { ignored = [] } = {}) {
+  const ignoredNames = new Set(ignored);
+  const files = new Map();
+  function visit(directory, prefix = '') {
+    const entries = fs.readdirSync(directory, { withFileTypes: true })
+      .sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      if (ignoredNames.has(entry.name)) continue;
+      const absolute = path.join(directory, entry.name);
+      const relative = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory() && !entry.isSymbolicLink()) visit(absolute, relative);
+      else if (entry.isFile()) files.set(relative, crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex'));
+    }
+  }
+  visit(root);
+  return files;
+}
+
 // Codes that mean "this environment will not replace an existing file through rename".
 // Sandbox seatbelts report the intercepted syscall as EPERM/EACCES; Windows locks and
 // read-only destinations report EPERM/EBUSY/EEXIST. EXDEV shows up when the staging

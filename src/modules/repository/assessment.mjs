@@ -3,6 +3,7 @@ import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { clientGovernanceHomeDirectories } from '../../catalogs/index.mjs';
 import { detectSurfaceSignals } from './surface-signals.mjs';
 import { repositoryFamilyMembersSnapshot } from './repository-family.mjs';
+import { isGovernanceArchivePath } from './production-scope.mjs';
 
 const GOVERNANCE_PREFIXES = [
   'AGENTS.md',
@@ -10,6 +11,7 @@ const GOVERNANCE_PREFIXES = [
   '.gitignore',
   ...clientGovernanceHomeDirectories().map((home) => `${home}/`),
   'docs/ai/',
+  'docs/development/',
   'docs/memory/',
   // The single delivery workflow document is generated governance, not product source, so it
   // must not inflate the classified product-file count on a rescan.
@@ -60,7 +62,7 @@ const GREENFIELD_SAFE_PATHS = [
 ];
 
 function isGovernancePath(relative) {
-  return GOVERNANCE_PREFIXES.some((prefix) => relative === prefix || relative.startsWith(prefix));
+  return isGovernanceArchivePath(relative) || GOVERNANCE_PREFIXES.some((prefix) => relative === prefix || relative.startsWith(prefix));
 }
 
 function normalizedExtension(relative) {
@@ -308,12 +310,6 @@ export function buildDecisionLedger(scan, config = null) {
         value: config?.stacks ?? scan.stacks.map((stack) => stack.id),
         source: configured ? 'governance-config' : 'repository-evidence',
         status: configured ? 'recorded' : 'inferred',
-      },
-      {
-        id: 'governance-depth',
-        value: config?.governanceDepth ?? null,
-        source: configured ? 'governance-config' : 'needs-user-input',
-        status: configured ? 'recorded' : 'pending',
       },
       {
         id: 'project-lifecycle',

@@ -112,6 +112,51 @@
       "proves": "A selected technology is covered by usable coding guidance, not merely listed in an inventory."
     },
     {
+      "id": "framework-baseline-before-code",
+      "applies_when": "A new project selects a framework and asks AICG to guide production code generation.",
+      "negative_case": "Select a framework before creating a dependency manifest, then remove its implementation baseline Skill or replace it with a workflow-only router.",
+      "expected_failure": "The production-code readiness gate exits non-zero and names the missing framework baseline; an unknown framework stays unverified rather than borrowing another framework's rules.",
+      "recovery_case": "Restore version-applicable implementation guidance with placement, correct and incorrect examples, error boundaries, and focused checks.",
+      "expected_recovery": "The same gate exits zero for baseline coverage while real coding quality remains separately unverified.",
+      "proves": "Framework selection yields useful coding guidance before source code exists."
+    },
+    {
+      "id": "unit-skill-routing",
+      "applies_when": "The project has multiple development units or stacks.",
+      "negative_case": "Route a frontend change to backend-only guidance, omit a required unit baseline, or make the unit entrypoint unable to discover its Skill.",
+      "expected_failure": "The real structure or routing gate exits non-zero and names the affected unit and Skill.",
+      "recovery_case": "Restore the unit-specific route and replay a representative task from each unit entrypoint.",
+      "expected_recovery": "The same gate exits zero with no cross-unit Skill leakage.",
+      "proves": "A developer in each unit receives the relevant implementation instructions without repository-wide searching."
+    },
+    {
+      "id": "brownfield-convention-review",
+      "applies_when": "An existing project asks AICG to guide production code generation.",
+      "negative_case": "Treat an observed repeated helper or directory pattern as an adopted convention without checking its callers, error behavior, tests, and owner decision.",
+      "expected_failure": "The acceptance gate exits non-zero or leaves the convention unverified and names the missing evidence.",
+      "recovery_case": "Record a source-backed candidate, review whether it is sound, and adopt a scoped project Skill only with current evidence and a verification command.",
+      "expected_recovery": "The gate accepts the reviewed overlay without migrating unrelated existing code.",
+      "proves": "Existing-project Skills teach safe reuse and placement without canonizing bugs."
+    },
+    {
+      "id": "one-sentence-brownfield-update",
+      "applies_when": "An already governed repository is updated through an AI coding Agent after the user says only 'update the governance framework'.",
+      "negative_case": "Change source layout or a shared helper, then issue the one-sentence request. The Agent only regenerates adapters, asks for routine CLI flags or duplicate approval, or claims completion without updating the affected development Skill.",
+      "expected_failure": "The observed Agent run remains failed or unverified and names the stale unit guidance or unnecessary user intervention; phrase registration and a dry-run alone do not pass.",
+      "recovery_case": "Have the Agent inspect current code and ownership, update the affected canonical development guidance, apply safe managed changes, run governance checks, and reserve user questions for a concrete foreign-file, deletion, migration, or owner-decision conflict.",
+      "expected_recovery": "A recorded real Agent run completes the in-scope update from that one sentence, shows the changed files and check results, and leaves unresolved decisions explicit.",
+      "proves": "Existing-project governance can be maintained through a natural-language request without hiding missing decisions or treating adapter sync as the whole update."
+    },
+    {
+      "id": "skill-guided-task-replay",
+      "applies_when": "A generated framework is claimed ready for production code generation.",
+      "negative_case": "Give a developer unfamiliar with the project only the generated entrypoints and a bounded feature or repair task; the result misplaces code, duplicates a common helper, breaks a contract, or lacks relevant tests.",
+      "expected_failure": "Production-code readiness remains unverified or fails; file presence and governance check success cannot override the task result.",
+      "recovery_case": "Fix the baseline or project overlay, then repeat the same task class with a fresh implementation and independent review.",
+      "expected_recovery": "The reviewer records correct placement, reuse, contract behavior, failure paths, and executed tests for the frozen candidate.",
+      "proves": "The generated framework helps a newcomer produce reviewable code for its declared stack and project scope."
+    },
+    {
       "id": "business-pattern-routing",
       "applies_when": "The framework generates one or more business-pattern skills from requirements, domain documents, code, tests, ADRs, or user-confirmed business invariants.",
       "negative_case": "Remove a business skill's evidence or owner, or make its representative request resolve to an unrelated or empty profile set.",

@@ -1,3 +1,4 @@
+import { liveFetch } from "../support/live-client";
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
@@ -16,7 +17,7 @@ const ITEM =
 
 async function reachable(): Promise<boolean> {
   try {
-    await fetch(`${API}/health`, { signal: AbortSignal.timeout(5000) });
+    await liveFetch(`${API}/health`, { signal: AbortSignal.timeout(5000) });
     return true;
   } catch {
     return false;
@@ -24,7 +25,7 @@ async function reachable(): Promise<boolean> {
 }
 
 async function patch(body: unknown): Promise<Response> {
-  return fetch(`${API}/work-items/${ITEM}`, {
+  return liveFetch(`${API}/work-items/${ITEM}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -38,7 +39,7 @@ describe("tenant authorization against the running service", () => {
       `this gate requires a running API at ${API}`,
     ).toBe(true);
 
-    const foreignRead = await fetch(
+    const foreignRead = await liveFetch(
       `${API}/boards/${BOARD}/items?organizationId=${FOREIGN}`,
     );
     expect(foreignRead.status).toBe(404);
@@ -52,21 +53,20 @@ describe("tenant authorization against the running service", () => {
     });
     expect(foreignWrite.status).toBe(404);
 
-    const unknownTenant = await fetch(
+    const unknownTenant = await liveFetch(
       `${API}/boards?organizationId=00000000-0000-0000-0000-000000000000`,
     );
-    expect(unknownTenant.status).toBe(200);
-    expect(
-      ((await unknownTenant.json()) as { items: unknown[] }).items,
-    ).toEqual([]);
+    expect(unknownTenant.status).toBe(404);
 
-    const blankTenant = await fetch(`${API}/boards`);
-    expect(blankTenant.status).toBe(400);
+    const blankTenant = await globalThis.fetch(`${API}/boards`);
+    expect(blankTenant.status).toBe(401);
   });
 
   it("treats injection attempts and malformed bodies as refusals, never as data", async () => {
     const injected = encodeURIComponent("' OR '1'='1");
-    const response = await fetch(`${API}/boards?organizationId=${injected}`);
+    const response = await liveFetch(
+      `${API}/boards?organizationId=${injected}`,
+    );
     expect(response.status).toBe(400);
 
     const malformed = await patch({ state: "done" });
@@ -87,7 +87,7 @@ describe("tenant authorization against the running service", () => {
   it("accepts exactly one of many concurrent writes that claim the same version", async () => {
     const psql = process.env.PSQL_BIN ?? "psql";
     const database = process.env.PGDATABASE ?? "tracker";
-    const tenant = randomUUID();
+    const tenant = ORGANIZATION;
     const board = randomUUID();
     const item = randomUUID();
     const seed = spawnSync(
@@ -98,7 +98,7 @@ describe("tenant authorization against the running service", () => {
         "-v",
         "ON_ERROR_STOP=1",
         "-c",
-        `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Concurrency tenant'); INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Concurrency board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Concurrency item', 'todo', 1)`,
+        `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Concurrency tenant') ON CONFLICT (id) DO NOTHING; INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Concurrency board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Concurrency item', 'todo', 1)`,
       ],
       { encoding: "utf8" },
     );
@@ -109,7 +109,7 @@ describe("tenant authorization against the running service", () => {
 
     const attempts = await Promise.all(
       Array.from({ length: 5 }, () =>
-        fetch(`${API}/work-items/${item}`, {
+        liveFetch(`${API}/work-items/${item}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({

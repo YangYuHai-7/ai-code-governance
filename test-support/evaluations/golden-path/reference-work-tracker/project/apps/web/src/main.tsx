@@ -1,64 +1,94 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 import "@mantine/core/styles.css";
 import type { Board, WorkItem } from "../../../packages/contracts/src/index";
 import { BoardList } from "./features/boards/index";
+import { createClient } from "./api-client";
 import { WorkItemBoard } from "./features/work-items/index";
 
 const API_BASE =
   (import.meta.env.VITE_API_BASE_URL as string | undefined) ??
   "http://127.0.0.1:3103";
-const ORGANIZATION_ID =
-  (import.meta.env.VITE_ORGANIZATION_ID as string | undefined) ??
-  "11111111-1111-1111-1111-111111111111";
+const client = createClient(
+  API_BASE,
+  (import.meta.env.VITE_SESSION_TOKEN as string | undefined) ?? "",
+);
 
 export function App() {
   const [boards, setBoards] = useState<Board[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [items, setItems] = useState<WorkItem[]>([]);
 
+  const [error, setError] = useState<string | null>(null);
+  const generation = useRef(0);
+  const mutation = useRef<AbortController | null>(null);
+
   useEffect(() => {
-    void fetch(`${API_BASE}/boards?organizationId=${ORGANIZATION_ID}`)
-      .then((response) => response.json())
-      .then((payload: { items: Board[] }) => {
+    const controller = new AbortController();
+    let active = true;
+    void client
+      .boards(controller.signal)
+      .then((payload) => {
+        if (!active) return;
         setBoards(payload.items);
         setSelected(payload.items[0]?.id ?? null);
+      })
+      .catch((failure: Error) => {
+        if (active) setError(failure.message);
       });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
-    if (selected === null) return;
-    void fetch(
-      `${API_BASE}/boards/${selected}/items?organizationId=${ORGANIZATION_ID}`,
-    )
-      .then((response) => response.json())
-      .then((payload: { items: WorkItem[] }) => setItems(payload.items));
+    const current = ++generation.current;
+    mutation.current?.abort();
+    const controller = new AbortController();
+    let active = true;
+    setItems([]);
+    if (selected !== null) {
+      void client
+        .items(selected, controller.signal)
+        .then((payload) => {
+          if (active && current === generation.current) setItems(payload);
+        })
+        .catch((failure: Error) => {
+          if (active) setError(failure.message);
+        });
+    }
+    return () => {
+      active = false;
+      ++generation.current;
+      controller.abort();
+      mutation.current?.abort();
+    };
   }, [selected]);
 
   async function move(item: WorkItem, next: WorkItem["state"]) {
     if (selected === null) return;
-    await fetch(`${API_BASE}/work-items/${item.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        organizationId: ORGANIZATION_ID,
-        actorId: "member-synthetic-1",
-        boardId: selected,
-        state: next,
-        expectedVersion: item.version,
-      }),
-    });
-    const refreshed = await fetch(
-      `${API_BASE}/boards/${selected}/items?organizationId=${ORGANIZATION_ID}`,
-    );
-    if (refreshed.ok)
-      setItems(((await refreshed.json()) as { items: WorkItem[] }).items);
+    mutation.current?.abort();
+    const controller = new AbortController();
+    mutation.current = controller;
+    const current = generation.current;
+    setError(null);
+    try {
+      await client.move(selected, item, next, controller.signal);
+      const refreshed = await client.items(selected, controller.signal);
+      if (!controller.signal.aborted && current === generation.current)
+        setItems(refreshed);
+    } catch (failure) {
+      if (!controller.signal.aborted && current === generation.current)
+        setError((failure as Error).message);
+    }
   }
 
   return (
     <main style={{ padding: 24, maxWidth: 720 }}>
       <h1>Reference work tracker</h1>
+      {error && <p role="alert">{error}</p>}
       <BoardList boards={boards} selectedId={selected} onSelect={setSelected} />
       <WorkItemBoard
         items={items}

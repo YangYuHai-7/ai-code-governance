@@ -35,11 +35,16 @@ function inputs(overrides = {}) {
     pack,
     compatibility: { status: 'compatible', packDigest: HASH.pack },
     referenceDigests: { ...HASH },
-    evaluationReceipts: platforms.map((platform, index) => record({
-      id: `evidence.case-${index}`, caseId: `held-out-case-${index}`, runId: `run-${index}`, platform,
-      caseDigests: { requirement: String(index + 1).repeat(64), repository: String(index + 4).repeat(64) },
-      qualifiedHuman: index === 0,
-    })),
+    referenceMatrixRunId: 'run-reference',
+    evaluationReceipts: [
+      record({ id: 'evidence.reference', caseId: 'reference-case', caseClass: 'reference', runId: 'run-reference', platform: 'darwin',
+        caseDigests: { requirement: HASH.requirement, repository: HASH.repository } }),
+      ...platforms.map((platform, index) => record({
+        id: `evidence.case-${index}`, caseId: `held-out-case-${index}`, runId: `run-${index}`, platform,
+        caseDigests: { requirement: String(index + 1).repeat(64), repository: String(index + 4).repeat(64) },
+        qualifiedHuman: index === 0,
+      })),
+    ],
     platformPolicy: { claimed: platforms, informational: [] },
     thresholdPolicy: { minimumHeldOutCases: 3, requireQualifiedHuman: true, requireNegativeProbes: true },
     now: '2026-10-06T00:00:00.000Z',
@@ -54,7 +59,8 @@ test('complete held-out, multi-platform, qualified-human evidence yields E4', ()
   assert.equal(receipt.evidenceLevel, 'E4-golden-path-certified');
   assert.equal(receipt.status, 'certified');
   assert.deepEqual(receipt.gaps, []);
-  assert.equal(receipt.matrix.entries.length, 3);
+  assert.equal(receipt.matrix.entries.length, 4);
+  assert.equal(receipt.matrix.referenceRunId, 'run-reference');
   assert.equal(receipt.sourceDigests.pack, HASH.pack);
   assert.equal(validateGoldenPathCertification(receipt).status, 'certified');
 });
@@ -66,6 +72,19 @@ test('missing E3 and missing held-out cases stay incomplete with named gaps', ()
   assert.notEqual(e2Receipt.evidenceLevel, 'E4-golden-path-certified');
   const referenceOnly = inputs({ evaluationReceipts: [record({ caseClass: 'reference' })] });
   assert.ok(codes(evaluateGoldenPathCertification(referenceOnly)).includes('missing-held-out-case'));
+});
+
+test('an old reference E3 run cannot clear current E3 or platform gaps', () => {
+  const stale = inputs({ evaluationReceipts: [record({ id: 'evidence.old-reference', caseId: 'reference-case', caseClass: 'reference', runId: 'run-old', platform: 'darwin',
+    caseDigests: { requirement: HASH.requirement, repository: HASH.repository } })], platformPolicy: { claimed: ['darwin'], informational: [] } });
+  const result = evaluateGoldenPathCertification(stale);
+  for (const code of ['stale-matrix-run', 'missing-e3', 'platform-missing:darwin']) assert.ok(codes(result).includes(code), code);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.evidenceLevel, 'E0-generated');
+  const unspecified = evaluateGoldenPathCertification({ ...stale, referenceMatrixRunId: undefined });
+  assert.ok(codes(unspecified).includes('missing-current-matrix-run'));
+  assert.ok(codes(unspecified).includes('missing-e3'));
+  assert.equal(unspecified.matrix.referenceRunId, null);
 });
 
 test('held-out cases that reuse reference digests are rejected by overlap', () => {
@@ -112,6 +131,9 @@ test('the certification contract is closed and versioned', () => {
   assert.throws(() => validateGoldenPathCertification({ ...receipt, extra: true }), /extra/);
   assert.throws(() => validateGoldenPathCertification({ ...receipt, schemaVersion: 2 }), /schemaVersion/);
   assert.throws(() => validateGoldenPathCertification({ ...receipt, status: 'unknown' }), /status/);
+  assert.throws(() => evaluateGoldenPathCertification(inputs({ referenceMatrixRunId: 123 })), /referenceMatrixRunId/);
+  assert.throws(() => validateGoldenPathCertification({ ...receipt, matrix: { ...receipt.matrix, referenceRunId: 123 } }), /referenceRunId/);
+  assert.equal(validateGoldenPathCertification({ ...receipt, matrix: { entries: receipt.matrix.entries } }).status, 'certified', 'previous v1 result shape remains readable');
 });
 test('the cross-OS workflow is manual, exact, and never turns a non-blocking result into verified support', () => {
   const workflowPath = path.join(testRoot, '..', '.github/workflows/golden-path-evaluation.yml');

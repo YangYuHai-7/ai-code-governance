@@ -24,7 +24,8 @@ function enrichmentBody(config, zh) {
   ];
   const flow = [
     t('本项目当前的丰富化策略：' + state + '（ask/on/off）。', 'The enrichment policy recorded for this project is ' + state + ' (ask/on/off).'),
-    t('若为 ask 且 brownfieldEnrichmentDecision 为空：只问一次「是否现在把现有业务行为整理进 Memory、补全开发文档并生成开发 Skill？」。', 'When ask and brownfieldEnrichmentDecision is empty: ask once whether to record existing business behavior into Memory, complete the development docs and generate project Skills.'),
+    t('明确的“更新治理框架”请求已包含范围内、可由源码证明的开发文档和 Skill 更新；不要为同一范围重复询问。', 'An explicit governance update request already includes in-scope, code-backed development docs and Skills; do not ask again for that scope.'),
+    t('若为 ask 且 brownfieldEnrichmentDecision 为空，只在需要额外把现有业务行为整理进 Memory 时询问一次；不要把常规代码规范更新变成这个问题的前置条件。', 'When ask and brownfieldEnrichmentDecision is empty, ask once only if recording existing business behavior into Memory is additional scope; do not block routine coding-guidance updates on that question.'),
     t('把答复写入 brownfieldEnrichmentDecision（status/decidedBy/decidedAt/evidenceHash），此后不再询问。', 'Write the answer into brownfieldEnrichmentDecision (status/decidedBy/decidedAt/evidenceHash) and never ask again.'),
     t('若为 on：运行 aicg enrich <path>，按开发单元补全业务 Memory 与开发文档。', 'When on: run aicg enrich <path> to complete business Memory and development documentation per unit.'),
     t('若为 off：报告 gap 并继续，不生成业务内容。', 'When off: report the gap and continue without generating business content.'),
@@ -38,7 +39,7 @@ function enrichmentBody(config, zh) {
   const matrix = [
     '| ' + t('场景', 'Scenario') + ' | ' + t('期望结果', 'Expected result') + ' | ' + t('命令', 'Command') + ' |',
     '| --- | --- | --- |',
-    '| ' + t('尚未决策', 'No decision yet') + ' | ' + t('只询问一次并把答复写回配置', 'Ask exactly once and write the answer back') + ' | `aicg enrich <path>` |',
+    '| ' + t('业务 Memory 尚未决策', 'No business Memory decision yet') + ' | ' + t('仅对额外的业务整理询问一次并把答复写回配置', 'Ask once only for additional business extraction and write the answer back') + ' | `aicg enrich <path>` |',
     '| ' + t('已批准', 'Approved') + ' | ' + t('逐单元补全 Memory 与开发文档', 'Complete Memory and development docs per unit') + ' | `aicg enrich <path> --json` |',
     '| ' + t('仍存在未归属业务文件', 'Unowned business files remain') + ' | ' + t('报 warning，不阻断', 'Report a warning without blocking') + ' | `aicg check .` |',
   ].join('\n');
@@ -69,7 +70,7 @@ export function buildBrownfieldEnrichmentArtifacts(config) {
   const state = config.features?.brownfieldEnrichment ?? 'ask';
   const existing = config.initialization?.lifecycle === 'existing'
     || ['brownfield', 'monorepo', 'repository-family'].includes(config.projectMode);
-  if (state === 'off' || config.governanceDepth === 'minimal' || !existing) return { artifacts: [] };
+  if (state === 'off' || !existing) return { artifacts: [] };
   return { artifacts: [{
     path: BROWNFIELD_ENRICHMENT_SKILL,
     content: brownfieldEnrichmentSkill(config),

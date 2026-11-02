@@ -6,7 +6,7 @@ import { EVALUATION_LEVELS, validateGoldenPathEvaluation } from './contracts.mjs
 
 export const GOLDEN_PATH_CERTIFICATION_VERSION = 1;
 const CERTIFICATION_STATUSES = Object.freeze(['certified', 'incomplete', 'blocked']);
-const BLOCKING_CODES = Object.freeze(['held-out-overlap', 'stale-pack', 'stale-repository', 'duplicate-run']);
+const BLOCKING_CODES = Object.freeze(['held-out-overlap', 'stale-pack', 'stale-repository', 'stale-matrix-run', 'duplicate-run']);
 const DIGEST = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const MAX_LEVEL = 'E3-agent-executable';
@@ -51,6 +51,8 @@ export function evaluateGoldenPathCertification(input) {
   const pack = validateGoldenPathPack(input.pack);
   const referenceDigests = object(input.referenceDigests, 'referenceDigests');
   for (const key of ['pack', 'requirement', 'repository', 'environment']) if (!DIGEST.test(referenceDigests[key] ?? '')) fail(`referenceDigests.${key}`, 'expected a canonical digest');
+  const referenceMatrixRunId = input.referenceMatrixRunId ?? null;
+  if (referenceMatrixRunId !== null && (typeof referenceMatrixRunId !== 'string' || !ID.test(referenceMatrixRunId))) fail('referenceMatrixRunId', 'invalid current matrix run id');
   const platformPolicy = { claimed: input.platformPolicy?.claimed ?? [], informational: input.platformPolicy?.informational ?? [] };
   const thresholdPolicy = {
     minimumHeldOutCases: input.thresholdPolicy?.minimumHeldOutCases ?? 0,
@@ -63,6 +65,8 @@ export function evaluateGoldenPathCertification(input) {
   const now = input.now ?? new Date().toISOString();
   const gaps = [];
   const add = (code, detail) => gaps.push({ code, detail });
+  if (referenceMatrixRunId === null) add('missing-current-matrix-run', 'the current reference matrix run id is required before certification');
+  const currentReference = (record) => record.caseClass !== 'reference' || (referenceMatrixRunId !== null && record.runId === referenceMatrixRunId);
 
   const runIds = new Set();
   for (const record of records) {
@@ -94,8 +98,14 @@ export function evaluateGoldenPathCertification(input) {
     }
   }
 
-  const passing = records.filter((record) => record.receipt.verdict === 'passed');
-  if (!passing.some((record) => record.receipt.level === 'E3-agent-executable')) add('missing-e3', 'no current E3 agent-executable receipt exists');
+  const passing = records.filter((record) => record.receipt.verdict === 'passed' && currentReference(record));
+  const hasCurrentReferenceE3 = passing.some((record) => record.caseClass === 'reference' && record.receipt.level === 'E3-agent-executable');
+  if (!hasCurrentReferenceE3) {
+    if (referenceMatrixRunId !== null && records.some((record) => record.caseClass === 'reference' && record.receipt.verdict === 'passed' && record.receipt.level === 'E3-agent-executable')) {
+      add('stale-matrix-run', 'the available reference E3 receipt belongs to a different matrix run');
+    }
+    add('missing-e3', 'no E3 reference receipt matches the current matrix run');
+  }
   const heldOut = passing.filter((record) => record.caseClass === 'held-out');
   if (heldOut.length === 0) add('missing-held-out-case', 'no held-out case has passed');
   const independentCases = new Set(heldOut.map((record) => `${record.caseId}`));
@@ -105,7 +115,7 @@ export function evaluateGoldenPathCertification(input) {
 
   const claimed = Array.isArray(platformPolicy.claimed) ? platformPolicy.claimed : [];
   for (const platform of claimed) {
-    const platformRecords = records.filter((record) => record.platform === platform);
+    const platformRecords = records.filter((record) => record.platform === platform && currentReference(record));
     const newest = [...platformRecords].sort((left, right) => Date.parse(right.receipt.evaluatedAt) - Date.parse(left.receipt.evaluatedAt))[0];
     if (!newest) add(`platform-missing:${platform}`, `platform ${platform} is claimed but has no evaluation receipt`);
     else if (newest.receipt.verdict !== 'passed') add(`platform-failed:${platform}`, `platform ${platform} is claimed but its newest receipt did not pass`);
@@ -121,6 +131,7 @@ export function evaluateGoldenPathCertification(input) {
     schemaVersion: GOLDEN_PATH_CERTIFICATION_VERSION,
     status, evidenceLevel,
     matrix: {
+      referenceRunId: referenceMatrixRunId,
       entries: records.map((record) => ({ caseId: record.caseId, platform: record.platform, runId: record.runId, level: record.receipt.level, verdict: record.receipt.verdict, evaluatedAt: record.receipt.evaluatedAt })),
     },
     thresholds: thresholdPolicy,
@@ -139,6 +150,7 @@ export function validateGoldenPathCertification(value) {
   if (!CERTIFICATION_STATUSES.includes(value.status)) fail('goldenPathCertification.status', 'unsupported status');
   if (![...EVALUATION_LEVELS, 'E4-golden-path-certified'].includes(value.evidenceLevel)) fail('goldenPathCertification.evidenceLevel', 'unsupported level');
   object(value.matrix, 'goldenPathCertification.matrix');
+  if (Object.hasOwn(value.matrix, 'referenceRunId') && value.matrix.referenceRunId !== null && (typeof value.matrix.referenceRunId !== 'string' || !ID.test(value.matrix.referenceRunId))) fail('goldenPathCertification.matrix.referenceRunId', 'invalid run id');
   if (!Array.isArray(value.matrix.entries)) fail('goldenPathCertification.matrix.entries', 'expected an array');
   value.matrix.entries.forEach((entry, index) => {
     const path = `goldenPathCertification.matrix.entries[${index}]`;

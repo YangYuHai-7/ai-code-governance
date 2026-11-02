@@ -12,7 +12,13 @@ The existing reference filenames remain stable because they are linked from the 
 
 ## Delivery workflow
 
+- [skill-setup.md](skill-setup.md) — initialization and optional capability curation.
+- [skill-delivery.md](skill-delivery.md) — product-change routing, drafts and verification.
+- [skill-maintenance.md](skill-maintenance.md) — ownership, context, specialists and repository checks.
+- [skill-authoring.md](skill-authoring.md) — composable methods, conditional references and completion criteria.
 - `initializer.md`
+- `governance-refresh.md`
+- `architecture-documentation.md`
 - `interview-protocol.md`
 - `gates-and-hooks.md`
 - `harness.md`

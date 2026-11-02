@@ -4,8 +4,8 @@ import path from 'node:path';
 import { loadAgentRegistry, loadCapabilityRegistry } from '../../catalogs/index.mjs';
 import { LOCAL_OUTPUT_PREFIXES } from '../../constants.mjs';
 import { commandExists, commandVersion, resolveGitRoot } from '../../adapters/process/index.mjs';
-import { exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
-import { matchSimpleGlob, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { assertNoLinkAncestor, exists, readJson, readText, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
+import { isSafeRelative, matchSimpleGlob, normalizeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { dependencyFacts } from './dependencies.mjs';
 import { loadAicgIgnore, scanExclusionEvidenceHash } from './aicg-ignore.mjs';
 import {
@@ -15,7 +15,7 @@ import {
   nestedGitRepositoryMember,
 } from './repository-family.mjs';
 import { evaluateVerificationCommandTrust } from './verification-commands.mjs';
-import { isProductionScopePath } from './production-scope.mjs';
+import { isProductionScopePath, isGovernanceArchivePath } from './production-scope.mjs';
 import { governanceRoots } from '../../catalogs/index.mjs';
 
 const DEFAULT_SCAN_BUDGET = Object.freeze({
@@ -166,8 +166,68 @@ function trustedCommand(input, evidence, legacy) {
   return { ...legacy, verification };
 }
 
+function mavenModelEvidence(root, pomText) {
+  const configPath = path.join(root, '.mvn', 'maven.config');
+  let mavenConfig = { status: 'absent' };
+  if (exists(configPath)) {
+    try {
+      assertNoLinkAncestor(root, '.mvn/maven.config');
+      const stat = fs.statSync(configPath);
+      mavenConfig = stat.isFile() && stat.size <= 64 * 1024
+        ? { status: 'parsed', text: readText(configPath) }
+        : { status: 'incomplete' };
+    } catch {
+      mavenConfig = { status: 'incomplete' };
+    }
+  }
+
+  const hasParent = /<parent(?:\s[^>]*)?>[\s\S]*?<\/parent>/i.test(pomText);
+  const moduleNames = [...pomText.matchAll(/<module(?:\s[^>]*)?>\s*([^<]+?)\s*<\/module>/gi)]
+    .map((match) => match[1].trim());
+  const modulePomTexts = [];
+  let modulesComplete = true;
+  for (const moduleName of moduleNames) {
+    const normalized = normalizeRelative(moduleName);
+    if (!isSafeRelative(normalized)) {
+      modulesComplete = false;
+      continue;
+    }
+    const modulePomRelative = `${normalized}/pom.xml`;
+    const modulePomPath = path.join(root, modulePomRelative);
+    try {
+      assertNoLinkAncestor(root, modulePomRelative);
+      const stat = fs.statSync(modulePomPath);
+      if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error('unreadable module POM');
+      modulePomTexts.push(readText(modulePomPath));
+    } catch {
+      modulesComplete = false;
+    }
+  }
+
+  return {
+    mavenConfig,
+    parents: { status: hasParent ? 'incomplete' : 'complete', pomTexts: [] },
+    modules: { status: modulesComplete ? 'complete' : 'incomplete', pomTexts: modulePomTexts },
+  };
+}
+
 function detectCommands(root, unitId = 'root', cwd = '.') {
   const commands = [];
+  // Discovery never runs MSBuild or treats an unevaluated build closure as trusted.
+  // Explicit targets avoid dotnet choosing an ambiguous solution implicitly.
+  const dotnetTargets = fs.readdirSync(root, { withFileTypes: true })
+    .filter(entry => entry.isFile() && /\.(?:slnx?|csproj|fsproj|vbproj)$/i.test(entry.name))
+    .map(entry => entry.name).sort();
+  const solutions = dotnetTargets.filter(name => /\.slnx?$/i.test(name));
+  for (const target of solutions.length ? solutions : dotnetTargets) {
+    for (const operation of ['build', 'test']) {
+      commands.push(trustedCommand({
+        id: commandId(unitId, 'dotnet', `${operation}:${target}`), unitId, cwd, argv: ['dotnet', operation, target],
+        source: { kind: 'declared', path: cwd === '.' ? target : `${cwd}/${target}`, sha256: sha256(readText(path.join(root, target))) },
+        purpose: ['verification'], scopeGlobs: [], sideEffects: ['build-output', 'project-code', 'package-restore'],
+      }, {}, { name: `dotnet-${operation}:${target}`, command: `dotnet ${operation} ${/\s/.test(target) ? JSON.stringify(target) : target}`, source: target }));
+    }
+  }
   const packagePath = path.join(root, 'package.json');
   if (exists(packagePath)) {
     try {
@@ -186,12 +246,18 @@ function detectCommands(root, unitId = 'root', cwd = '.') {
     }
   }
   if (exists(path.join(root, 'pom.xml'))) {
-    const pomText = readText(path.join(root, 'pom.xml'));
-    commands.push(trustedCommand({
-      id: commandId(unitId, 'maven', 'test'), unitId, cwd, argv: ['mvn', 'test'],
-      source: { kind: 'maven-pom', path: cwd === '.' ? 'pom.xml' : `${cwd}/pom.xml`, sha256: sha256(pomText) },
-      purpose: ['verification'], scopeGlobs: [], sideEffects: ['build-output'],
-    }, { pomText }, { name: 'maven-test', command: 'mvn test', source: 'pom.xml' }));
+    try {
+      assertNoLinkAncestor(root, 'pom.xml');
+      const pomText = readText(path.join(root, 'pom.xml'));
+      const executable = process.platform === 'win32' ? 'mvn.cmd' : 'mvn';
+      commands.push(trustedCommand({
+        id: commandId(unitId, 'maven', 'test'), unitId, cwd, argv: [executable, 'test'],
+        source: { kind: 'maven-pom', path: cwd === '.' ? 'pom.xml' : `${cwd}/pom.xml`, sha256: sha256(pomText) },
+        purpose: ['verification'], scopeGlobs: [], sideEffects: ['build-output'],
+      }, { pomText, mavenModel: mavenModelEvidence(root, pomText) }, { name: 'maven-test', command: `${executable} test`, source: 'pom.xml' }));
+    } catch {
+      // A linked or unreadable POM is visible in repository facts but never executable evidence.
+    }
   }
   if (exists(path.join(root, 'gradlew')) || exists(path.join(root, 'gradlew.bat'))) {
     const executable = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
@@ -402,7 +468,7 @@ export function scanProject(target, options = {}) {
   let exclusionEvidenceBytes = 0;
   const walked = walkFilesDetailed(root, {
     ...scanBudget,
-    ignoredAtAnyDepth: ['.git', '.hg', '.svn', 'node_modules', '.worktrees', 'worktrees', '.venv', '__pycache__', '.gradle', '.mypy_cache', '.pytest_cache', '.swc', 'logs', 'target'],
+    ignoredAtAnyDepth: ['.git', '.hg', '.svn', 'node_modules', '.worktrees', 'worktrees', '.venv', '__pycache__', '.gradle', '.angular', '.mypy_cache', '.pytest_cache', '.swc', 'logs', 'target', 'bin', 'obj', '.superpowers'],
     ignoredAtRoot: LOCAL_OUTPUT_PREFIXES.map((prefix) => prefix.replace(/\/$/, '')),
     caseInsensitiveIgnored: true,
     isOversizedFileRelevant: isOversizedFileRelevantToCodeScan,
@@ -446,7 +512,8 @@ export function scanProject(target, options = {}) {
   const files = walked.files;
   for (const exclusion of ignoredByPolicy) exclusion.evidenceHash = scanExclusionEvidenceHash(aicgIgnore.sha256, exclusion);
   const unverifiedExclusions = ignoredByPolicy.filter((entry) => entry.category !== 'generated-or-opaque' && entry.category !== 'repository-member');
-  const factFiles = files.filter((file) => !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix)));
+  const factFiles = files.filter((file) => !isGovernanceArchivePath(file.relative)
+    && !LOCAL_OUTPUT_PREFIXES.some((prefix) => file.relative.startsWith(prefix)));
   const capabilityRegistry = loadCapabilityRegistry();
   const dependencies = dependencyFacts(root, factFiles, scanBudget.maxFileBytes);
   const agentRegistry = loadAgentRegistry();

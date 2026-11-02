@@ -1,4 +1,4 @@
-export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'paths', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'task-kind', 'bugfix', 'session', 'agent', 'profile', 'requirement', 'pack']);
+export const VALUE_FLAGS = new Set(['config', 'assist', 'text', 'paths', 'approve', 'id', 'entrypoint', 'verify', 'consumer', 'type', 'evidence', 'clients', 'locale', 'task-level', 'review-mode', 'approval-evidence', 'work-unit', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'task-kind', 'bugfix', 'session', 'agent', 'profile', 'requirement', 'architecture', 'matrix', 'probes', 'pack']);
 
 export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided', 'family', 'no-family', 'no-assist', 'review', 'migrate-links', 'adopt-foreign-governance', 'prune', 'from-git-hook', 'replay', 'no-open', 'auto-exit', 'enforce', 'regenerate', 'help', 'version', 'live-agent']);
 
@@ -9,9 +9,11 @@ export const BOOLEAN_FLAGS = new Set(['yes', 'dry-run', 'force', 'json', 'guided
 // the surviving commands, not on the retired ones.
 export const COMMAND_FLAGS = Object.freeze({
   init: new Set(['config', 'assist', 'yes', 'dry-run', 'force', 'guided', 'family', 'no-family', 'no-assist', 'review', 'migrate-links', 'adopt-foreign-governance', 'approve', 'clients', 'locale', 'help']),
+  handoff: new Set(['config', 'text', 'scope', 'paths', 'task-kind', 'bugfix', 'json', 'locale', 'approval-evidence', 'approve', 'help']),
   config: new Set(['config', 'output', 'yes', 'json', 'locale', 'no-open', 'auto-exit', 'enforce', 'help']),
-  delivery: new Set(['work-unit', 'json', 'enforce', 'help', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'yes', 'verify', 'task-level', 'review-mode', 'approval-evidence', 'approve', 'from-git-hook', 'type', 'evidence', 'replay', 'session', 'agent', 'profile', 'requirement', 'text']),
-  evaluation: new Set(['golden-path', 'held-out', 'pack', 'requirement', 'agent', 'live-agent', 'output', 'json', 'help']),
+  studio: new Set(['no-open', 'json', 'help']),
+  delivery: new Set(['paths', 'task-kind', 'bugfix', 'work-unit', 'json', 'enforce', 'help', 'scope', 'format', 'output', 'manifest', 'cases', 'priorities', 'tags', 'drivers', 'packet', 'results', 'ledger', 'report', 'yes', 'verify', 'task-level', 'review-mode', 'approval-evidence', 'approve', 'from-git-hook', 'type', 'evidence', 'replay', 'session', 'agent', 'profile', 'requirement', 'text']),
+  evaluation: new Set(['golden-path', 'held-out', 'pack', 'requirement', 'architecture', 'matrix', 'probes', 'agent', 'live-agent', 'output', 'json', 'help']),
   candidate: new Set(['review', 'observe', 'text', 'id', 'project', 'json', 'help']),
   review: new Set(['evidence', 'session', 'json', 'help']),
   check: new Set(['json', 'enforce', 'help']),

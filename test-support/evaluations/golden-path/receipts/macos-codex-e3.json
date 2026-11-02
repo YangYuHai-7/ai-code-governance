@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "golden-path-evaluation.e159c453b08521ec3b9bc6b7",
+  "packId": "react-mantine-nest-fastify-drizzle-postgresql",
+  "agent": {
+    "id": "codex",
+    "version": "0.162.0",
+    "real": true,
+    "live": true
+  },
+  "requirementPath": "expected-requirement.json",
+  "requirementDigest": "e02db369323b5842b2d7e1e49f980ec7891ce42a87e44fcafd569b3d0250c0ff",
+  "level": "E3-agent-executable",
+  "verdict": "passed",
+  "environment": {
+    "digest": "620ee44cb2de8ad31d943d277b19e36c701dbaa96bb9855b8c442e1953a7743f",
+    "capabilities": [
+      {
+        "name": "node",
+        "status": "passed",
+        "detail": "v24.18.0"
+      },
+      {
+        "name": "package-manager",
+        "status": "passed",
+        "detail": "matrix receipt npm 11.0.0"
+      },
+      {
+        "name": "postgresql",
+        "status": "passed",
+        "detail": "matrix receipt PostgreSQL 18.6"
+      },
+      {
+        "name": "browser",
+        "status": "passed",
+        "detail": "matrix receipt browser chromium"
+      },
+      {
+        "name": "ports",
+        "status": "passed",
+        "detail": "bound passed matrix receipt includes live API and browser gates"
+      },
+      {
+        "name": "disk",
+        "status": "passed",
+        "detail": "bound passed matrix receipt completed within its artifact budget"
+      },
+      {
+        "name": "executables",
+        "status": "passed",
+        "detail": "codex 0.162.0"
+      }
+    ]
+  },
+  "matrix": {
+    "status": "passed",
+    "runId": "quality-run-result.f996415970e0c06cce5c60e5",
+    "requiredGateIds": [
+      "api-integration",
+      "architecture-boundaries",
+      "browser-e2e",
+      "contract-tests",
+      "migration-safety",
+      "performance-budget",
+      "reproducible-build",
+      "requirement-traceability",
+      "runtime-observability",
+      "security-probes",
+      "static-format",
+      "static-lint",
+      "static-types",
+      "unit-tests"
+    ],
+    "resolvedGateIds": [
+      "api-integration",
+      "architecture-boundaries",
+      "browser-e2e",
+      "contract-tests",
+      "migration-safety",
+      "performance-budget",
+      "reproducible-build",
+      "requirement-traceability",
+      "runtime-observability",
+      "security-probes",
+      "static-format",
+      "static-lint",
+      "static-types",
+      "unit-tests"
+    ]
+  },
+  "trace": {
+    "requirement": "requirement.reference-work-tracker",
+    "architecture": "architecture.proposal",
+    "patch": "patch.proposal",
+    "test": "quality-matrix.tests",
+    "evidence": "quality-run-result.f996415970e0c06cce5c60e5",
+    "review": "independent-review"
+  },
+  "budget": {
+    "agentTurns": 4,
+    "elapsedMs": 597439
+  },
+  "failureHistory": [],
+  "cleanup": {
+    "status": "clean",
+    "reason": null
+  },
+  "entrypoint": "npm run start:local",
+  "rollback": "Disable the flag and revert the migration",
+  "gaps": [],
+  "evaluatedAt": "2026-10-11T04:13:22.165Z"
+}

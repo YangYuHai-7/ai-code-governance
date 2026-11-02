@@ -122,3 +122,32 @@ test('greenfield projects and projects with an approved team never emit proposal
   const approved = { ...configFor(scan, { stacks: ['backend-node'] }), agentTeam: { enabled: true, status: 'approved', roleProposals: [{ id: 'x', title: 'X', capabilities: ['domain-review'], responsibilities: [], outOfScope: [], domainNeedIds: [], evidenceIds: [], status: 'approved-available' }] } };
   assert.deepEqual(proposedProjectRoles(approved, scan, projectRoleContext(approved, scan)), []);
 });
+
+test('generated governance documentation cannot create new domain roles during post-apply scanning', (t) => {
+  const root = fixture(t, 'no-self-corroboration', {
+    'packages/sample/src/index.ts': 'export const value = 1;\n',
+    'src/main/java/App.java': 'class App {}\n',
+    'docs/ai/development/packages/sample/README.md': '# Generated source inventory\n',
+    'docs/ai/development/src/main/README.md': '# Generated source inventory\n',
+    'docs/ai/agents/sample-domain-specialist.md': '# Candidate\n',
+    'packages/sample/docs/ai/skills/development-sample/SKILL.md': '# Generated Skill\n',
+  });
+  const scan = scanProject(root);
+  const config = configFor(scan, { stacks: ['backend-java'] });
+  assert.deepEqual(proposedProjectRoles(config, scan, projectRoleContext(config, scan)), []);
+});
+
+test('nested generated READMEs cannot change the selected domain roles by inflating unit counts', (t) => {
+  const root = fixture(t, 'stable-selection', {
+    'packages/alpha/src/a.ts': 'x', 'packages/alpha/src/b.ts': 'x',
+    'packages/bravo/src/a.ts': 'x', 'packages/bravo/src/b.ts': 'x',
+    'packages/charlie/src/a.ts': 'x',
+    'test/alpha.test.ts': 'x', 'test/bravo.test.ts': 'x', 'test/charlie.test.ts': 'x',
+    'packages/charlie/README.md': '# Generated unit\n',
+    'packages/charlie/one/README.md': '# Generated unit\n',
+    'packages/charlie/two/README.md': '# Generated unit\n',
+  });
+  const scan = scanProject(root);
+  const config = configFor(scan, { stacks: ['backend-node'] });
+  assert.deepEqual(proposedProjectRoles(config, scan, projectRoleContext(config, scan)).map((role) => role.id), ['alpha-domain-specialist', 'bravo-domain-specialist']);
+});

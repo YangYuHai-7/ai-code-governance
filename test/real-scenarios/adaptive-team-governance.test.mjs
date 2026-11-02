@@ -105,8 +105,7 @@ for (const governanceDepth of ['minimal', 'standard']) test(`${governanceDepth} 
   assert.equal(stored.adaptiveDecisions?.roles[0].action, 'reject');
   for (const receipt of [...stored.adaptiveDecisions.skills, ...stored.adaptiveDecisions.roles]) assert.match(receipt.evidenceHash, /^[a-f0-9]{64}$/);
   assert.equal(managementPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
-  if (governanceDepth === 'minimal') assert.equal(fixedTeamPaths.some((relative) => fs.existsSync(path.join(f.root, relative))), false);
-  else assert.equal(fixedTeamPaths.every((relative) => fs.existsSync(path.join(f.root, relative))), true);
+  assert.equal(fixedTeamPaths.every((relative) => fs.existsSync(path.join(f.root, relative))), true);
   delete config.adaptiveGovernance.decisions;
   const again = preview(f, config);
   assert.equal(again.adaptiveGovernance.skills.candidates.some((entry) => entry.id === skillId), false);
@@ -285,10 +284,10 @@ for (const governanceDepth of ['complete']) {
   });
 }
 
-test('Minimal never materializes management artifacts and stale exact approval causes zero writes', (context) => {
+test('legacy depth preserves selected management artifacts and stale exact approval causes zero writes', (context) => {
   const f = fixture(context);
   const minimal = preview(f, selectedConfig({ governanceDepth: 'minimal' }));
-  assert.equal(minimal.files.some((item) => managementPaths.includes(item.path)), false);
+  assert.equal(minimal.files.some((item) => managementPaths.includes(item.path)), true);
   const result = preview(f, selectedConfig());
   const before = snapshot(f.root);
   const stale = command(['init', f.root, '--yes', '--config', f.answers, '--approve', '0'.repeat(64)]);

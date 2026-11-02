@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { requireOwnedBoard } from "../../apps/api/src/domain/index";
 
 // The transport must never read an unvalidated request field directly: each route casts the body to
 // a declared DTO first. Reading request.body.<field> is how an attacker-supplied actor or tenant id
@@ -14,6 +15,21 @@ function transportSources(directory: string): string[] {
 }
 
 describe("transport input handling", () => {
+  it("rejects a board owned by another organization", () => {
+    const board = {
+      id: "aaaaaaaa-1111-1111-1111-111111111111",
+      organizationId: "11111111-1111-1111-1111-111111111111",
+      title: "Tenant board",
+    };
+    expect(() =>
+      requireOwnedBoard(
+        [board],
+        board.id,
+        "22222222-2222-2222-2222-222222222222",
+      ),
+    ).toThrow(/not found/i);
+  });
+
   it("never reads an unvalidated request field directly", () => {
     const files = transportSources(
       path.resolve(process.cwd(), "apps/api/src/transport"),

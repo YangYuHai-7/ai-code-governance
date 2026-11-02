@@ -8,7 +8,7 @@ import { buildArtifacts, defaultConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
 import { resolveInitializationDecision } from '../src/project-assessment.mjs';
 import { scanProject } from '../src/scanner.mjs';
-import { deriveArchitectureDecision, evaluateModuleGraph, moduleGraphDeclaration, validateArchitectureDecision } from '../src/modules/architecture/index.mjs';
+import { architecturePlacementIssues, deriveArchitectureDecision, evaluateModuleGraph, moduleGraphDeclaration, validateArchitectureDecision } from '../src/modules/architecture/index.mjs';
 
 const cli = path.resolve('bin/aicg.js');
 const ACTIVE_GRAPH_CONFIG = { architecture: { status: 'active', verification: { dependencyDirection: 'aicg-check-js-ts-module-graph' } } };
@@ -440,6 +440,27 @@ test('existing new-code-standard preserves its source baseline and only detects 
   fs.mkdirSync(path.join(root, 'src', 'modules', 'new'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src', 'modules', 'new', 'index.ts'), 'export const fresh = true;\n');
   assert.equal(run(['check', root, '--json']).status, 0);
+});
+
+test('existing new-code-standard accepts new source inside a manifest-backed development unit', (context) => {
+  const root = fixture('existing-dotnet-development-unit');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeSource(root, 'src/engine/CadQuantity.Application/CadQuantity.Application.csproj', '<Project Sdk="Microsoft.NET.Sdk" />\n');
+  writeSource(root, 'src/engine/CadQuantity.Application/LegacyService.cs', 'namespace CadQuantity.Application;\n');
+  const initialScan = scanProject(root);
+  const base = {
+    ...defaultConfig(initialScan),
+    initialization: { lifecycle: 'existing', existingCodeStrategy: 'new-code-standard', source: 'config' },
+  };
+  const config = { ...base, architecture: deriveArchitectureDecision(initialScan, base) };
+
+  writeSource(root, 'src/engine/CadQuantity.Application/EstimateProjectService.cs', 'namespace CadQuantity.Application;\n');
+  assert.deepEqual(architecturePlacementIssues(scanProject(root), config), []);
+
+  writeSource(root, 'src/unowned/LooseService.cs', 'namespace Loose;\n');
+  assert.deepEqual(architecturePlacementIssues(scanProject(root), config), [
+    'src/unowned/LooseService.cs: new implementation source is outside the active module-boundaries-v1 src placement policy; place it in a named module directory or an approved entrypoint.',
+  ]);
 });
 
 test('existing new-code-standard module graph skips baseline dependency debt but checks new sources', (context) => {

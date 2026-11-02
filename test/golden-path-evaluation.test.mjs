@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
-import { runGoldenPathEvaluation } from '../src/modules/evaluation/index.mjs';
+import { evaluationCommand } from '../src/cli/commands/evaluation.mjs';
+import { digestEvaluationRepository, runGoldenPathEvaluation } from '../src/modules/evaluation/index.mjs';
 
 const PACK = 'react-mantine-nest-fastify-drizzle-postgresql';
 
@@ -100,4 +104,75 @@ test('a read-only review turn that writes is rejected and an incomplete matrix s
   assert.notEqual(incomplete.level, 'E3-agent-executable');
   assert.equal(incomplete.verdict, 'incomplete');
   assert.ok(incomplete.gaps.some((gap) => /matrix/i.test(gap)));
+});
+
+test('failed Agent findings are retained in the evaluation failure history', async () => {
+  const receipt = await evaluate({ liveAgent: true }, { turns: {
+    requirement: async () => ({ status: 'failed', findings: ['transport timed out'] }),
+    architecture: async () => ({ status: 'succeeded', proposal: {} }),
+    patch: async () => ({ status: 'succeeded', proposal: {}, unauthorizedPaths: [] }),
+    review: async () => ({ status: 'succeeded', findings: [], authority: 'read-only' }),
+  } });
+  assert.ok(receipt.failureHistory.some((entry) => /requirement.*transport timed out/i.test(entry)));
+});
+
+test('the evaluation receipt records elapsed execution time from a monotonic clock', async () => {
+  const ticks = [1_000, 1_275];
+  const receipt = await evaluate({ liveAgent: true }, { monotonicClock: () => ticks.shift() });
+  assert.equal(receipt.budget.elapsedMs, 275);
+});
+
+test('Agent changes invalidate a matrix that was captured before the patch', async () => {
+  const receipt = await evaluate({ liveAgent: true }, { turns: {
+    requirement: async () => ({ status: 'succeeded', proposal: {} }),
+    architecture: async () => ({ status: 'succeeded', proposal: {} }),
+    patch: async () => ({ status: 'succeeded', proposal: {}, unauthorizedPaths: [], changedPaths: ['project/app.ts'] }),
+    review: async () => ({ status: 'succeeded', findings: [], authority: 'read-only' }),
+  } });
+  assert.notEqual(receipt.level, 'E3-agent-executable');
+  assert.equal(receipt.matrix.status, 'blocked');
+  assert.ok(receipt.gaps.some((gap) => /predates Agent changes|rerun/i.test(gap)));
+});
+
+test('the live CLI builds real Agent dependencies and can issue an E3 receipt', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-evaluation-cli-'));
+  fs.writeFileSync(path.join(root, 'requirement.json'), JSON.stringify({
+    id: 'requirement.cli-live',
+    entrypoint: 'npm run start:local',
+    rollback: { action: 'revert the candidate change' },
+    acceptanceScenarios: [{ id: 'acceptance.cli-live' }],
+  }));
+  let calls = 0;
+  const liveDependencies = dependencies();
+  const receipt = await evaluationCommand(root, 'golden-path', {
+    requirement: 'requirement.json', agent: 'codex', 'live-agent': true, json: true,
+  }, {
+    buildLiveDependencies: async ({ document, requirementPath }) => {
+      calls += 1;
+      assert.equal(document.id, 'requirement.cli-live');
+      assert.equal(requirementPath, 'requirement.json');
+      return liveDependencies;
+    },
+    writeReport: () => {},
+  });
+  assert.equal(calls, 1);
+  assert.equal(receipt.level, 'E3-agent-executable');
+  assert.equal(receipt.verdict, 'passed');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('evaluation repository evidence is content-bound and portable across isolated copies', () => {
+  const first = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-evaluation-digest-a-'));
+  const second = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-evaluation-digest-b-'));
+  fs.mkdirSync(path.join(first, 'project'), { recursive: true });
+  fs.mkdirSync(path.join(second, 'project'), { recursive: true });
+  fs.writeFileSync(path.join(first, 'project', 'app.js'), 'export const value = 1;\n');
+  fs.writeFileSync(path.join(second, 'project', 'app.js'), 'export const value = 1;\n');
+  fs.mkdirSync(path.join(second, 'project', 'dist'), { recursive: true });
+  fs.mkdirSync(path.join(second, 'project', 'test-results'), { recursive: true });
+  fs.writeFileSync(path.join(second, 'project', 'dist', 'bundle.js'), 'generated output\n');
+  fs.writeFileSync(path.join(second, 'project', 'test-results', 'last-run.json'), '{}\n');
+  assert.equal(digestEvaluationRepository(first), digestEvaluationRepository(second));
+  fs.rmSync(first, { recursive: true, force: true });
+  fs.rmSync(second, { recursive: true, force: true });
 });

@@ -26,6 +26,7 @@ import { usageError } from '../../kernel/index.mjs';
 import { assertManagedArchitectureConfigTrusted, clientSupportFromClients, loadExistingConfig, mergeConfig, normalizeClientSupport, printScan } from '../shared.mjs';
 import { rollbackSnapshot, restoreRollbackSnapshot } from '../../modules/governance/artifact-rollback.mjs';
 import { reviewGeneratedGovernance } from '../../modules/governance/post-generation-review.mjs';
+import { buildGovernanceHandoff } from '../../modules/governance/handoff-prompt.mjs';
 
 // The write boundary must cover every root an agent can read governance from, or a newly
 // registered client's adapter directory is rejected as a non-governance path. Both sets
@@ -37,7 +38,7 @@ const GOVERNANCE_WRITE_PREFIXES = ['.ai-governance/', 'docs/memory/', ...GOVERNA
 const GOVERNANCE_WRITE_FILES = new Set(['.gitignore', 'reports/.gitkeep', 'reviews/.gitkeep', ...GOVERNANCE_ROOT_FILES]);
 
 function requireConfiguredChoices(supplied) {
-  for (const key of ['stacks', 'governanceDepth', 'artifactLanguage']) {
+  for (const key of ['stacks', 'artifactLanguage']) {
     if (supplied[key] === undefined) throw usageError(`--config must provide ${key} unless --yes is also used.`);
   }
 }
@@ -79,7 +80,7 @@ function recordArchitectureDecisionGap(config) {
 }
 
 function assertInitializationWriteBoundary(plan, config, scan) {
-  const approvedLayoutPaths = new Set(buildGreenfieldLayoutArtifacts(config).artifacts.map((artifact) => artifact.path));
+  const approvedLayoutPaths = new Set(buildGreenfieldLayoutArtifacts(config, scan).artifacts.map((artifact) => artifact.path));
   if (config.initialization?.lifecycle === 'existing' && config.projectMode !== 'repository-family') {
     for (const artifact of buildDevelopmentDocumentationArtifacts(config, scan).artifacts) {
       if (['development-unit-rule', 'development-unit-skill', 'development-unit-adapter-skill', 'development-unit-entrypoint'].includes(artifact.kind)) approvedLayoutPaths.add(artifact.path);
@@ -89,6 +90,7 @@ function assertInitializationWriteBoundary(plan, config, scan) {
     .map((operation) => operation.path)
     .filter((relative) => !GOVERNANCE_WRITE_FILES.has(relative)
       && !approvedLayoutPaths.has(relative)
+      && !/^docs\/development\/(?:[a-z0-9_-]+\/)*[a-z0-9_-]+\.md$/i.test(relative)
       && !/(^|\/)README\.md$/.test(relative)
       && !GOVERNANCE_WRITE_PREFIXES.some((prefix) => relative.startsWith(prefix)));
   if (unexpected.length > 0) {
@@ -121,9 +123,12 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const rememberedTeam = rememberedConfig?.agentTeam;
   if (config.agentTeam?.enabled) validateApprovedProjectAgentTeam(config.agentTeam);
   if (!request || typeof request !== 'object' || Array.isArray(request) || Buffer.byteLength(stableJson(request)) > 32768
-    || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation', 'publicSkillCatalog'].includes(key))
+    || Object.keys(request).some((key) => !['installedRoots', 'curatedCatalog', 'requiredCapabilities', 'projectTeam', 'domainCandidates', 'decisions', 'activation', 'publicSkillCatalog', 'bundledSkillImports'].includes(key))
     || (request.publicSkillCatalog !== undefined && typeof request.publicSkillCatalog !== 'boolean')
+    || (request.bundledSkillImports !== undefined && typeof request.bundledSkillImports !== 'boolean')
     || !Array.isArray(request.installedRoots)) throw usageError('adaptiveGovernance requires bounded metadata and explicit installedRoots.');
+  if (request.bundledSkillImports && !request.publicSkillCatalog) throw usageError('bundledSkillImports requires publicSkillCatalog: true.');
+  if (request.bundledSkillImports && false) throw usageError('bundledSkillImports requires Complete governance depth.');
   // Recorded decisions name exact candidate ids. They must stay visible through the
   // bounded candidate list, or a valid stored approval becomes an unknown id and every
   // later init fails on decision validation instead of on the real change.
@@ -138,7 +143,7 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
   const discoveryInput = { root: scan.root, installedRoots: request.installedRoots, curatedCatalog, requiredCapabilities: request.requiredCapabilities ?? [], keepIds };
   const discovery = serializeSkillDiscovery(discoverSkills(discoveryInput));
   const sourceSnapshot = stableJson(discovery);
-  const conventionDiscovery = config.features.knowledge && config.initialization.lifecycle === 'existing' && config.governanceDepth !== 'minimal'
+  const conventionDiscovery = config.features.knowledge && config.initialization.lifecycle === 'existing'
     ? discoverProjectConventionCandidates(scan, scanProjectMemoryFacts(scan)) : { candidates: [], gaps: [] };
   // Convention proposals share the existing evidence-bound decision receipts,
   // but cannot masquerade as installed/executable Skill metadata.
@@ -217,11 +222,11 @@ function prepareAdaptiveGovernance(config, scan, request, rememberedConfig) {
       : 'Previous add approval does not cover the current candidates. Existing governance stays unchanged; select again and exactly approve an atomic refresh. This blocked preview cannot authorize writes.';
     config = rememberedConfig;
   }
-  if (config.governanceDepth !== 'minimal' && hasSelection) {
+  if (hasSelection) {
     const evidenceId = `approval.${sha256(stableJson({ discovery, team, decisions, activation }))}`;
     const recommended = decideSkillCandidates(discovery, { selectedIds: selectedSkills });
     config = { ...config,
-      skillDiscovery: { enabled: true, decision: decideSkillCandidates(discovery, { selectedIds: selectedSkills, approvalPlanHash: recommended.planHash }) },
+      skillDiscovery: { enabled: true, bundledSkillImports: request.bundledSkillImports === true, decision: decideSkillCandidates(discovery, { selectedIds: selectedSkills, approvalPlanHash: recommended.planHash }) },
       agentTeam: buildApprovedProjectAgentTeam(team, { selectedIds: selectedRoles, approvalEvidenceId: evidenceId, activation }),
     };
     // Footprint overruns are advisories, not gates: they tell the owner when to split by
@@ -405,7 +410,10 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
   const explicitAdaptiveRequest = Object.hasOwn(config, 'adaptiveGovernance');
   if (explicitAdaptiveRequest && (!request || typeof request !== 'object' || Array.isArray(request))) throw usageError('adaptiveGovernance must be an object with explicit installedRoots.');
   delete config.adaptiveGovernance;
-  if (!request && (options['dry-run'] || options.approve || prompted || topologyMigrationRequired)) request = { installedRoots: [] };
+  // A routine preview must not rediscover and replace already approved Skill choices.
+  // Explicit adaptive requests and genuinely new onboarding retain discovery.
+  if (!request && (prompted || topologyMigrationRequired
+    || (!config.skillDiscovery?.artifactPlan && (options['dry-run'] || options.approve)))) request = { installedRoots: [] };
   let adaptive;
   try {
     adaptive = request ? prepareAdaptiveGovernance(config, scan, request, existing) : null;
@@ -417,6 +425,11 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
     throw error.code === 'AICG_USAGE' ? error : usageError(error.message);
   }
   if (adaptive) config = adaptive.config;
+  let skillReceiptRefresh = null;
+  if (adaptive?.summary.status !== 'decision-refresh-required') {
+    const refreshed = refreshSkillGovernanceReceipt(config, scan);
+    if (refreshed) { config = refreshed.config; skillReceiptRefresh = refreshed.refresh; }
+  }
   validateConfig(config);
   if (adaptive?.summary.status === 'decision-refresh-required') {
     // A blocked preview never recompiles stale approvals or proposes governance mutations.
@@ -431,12 +444,6 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
   // against, and a generator change can move that set without touching the
   // configuration. Refreshing the receipt here turns a permanent lock into an ordinary
   // exact-planHash approval: the new cost is covered by the hash the operator approves.
-  let skillReceiptRefresh = null;
-  const refreshed = refreshSkillGovernanceReceipt(config, scan);
-  if (refreshed) {
-    config = refreshed.config;
-    skillReceiptRefresh = refreshed.refresh;
-  }
   // A repository that already carries executable governance under AICG's canonical roots but
   // has no manifest cannot be taken over silently. Detect it once, before any plan is built,
   // so the owner chooses adopt-or-cancel instead of meeting a rollback wall of per-file
@@ -487,7 +494,6 @@ export async function prepareInit(target, options, { allowDefaults = false, supp
 function inheritedMemberConfig(parentConfig, unit) {
   const existing = unit.sourceFileCount > 0 || unit.manifests.length > 0;
   return {
-    governanceDepth: parentConfig.governanceDepth,
     artifactLanguage: parentConfig.artifactLanguage,
     interactionLanguage: parentConfig.interactionLanguage,
     supportedOs: parentConfig.supportedOs,
@@ -626,6 +632,7 @@ async function initRepositoryFamily(parent, options) {
       planHash: combined.planHash,
       units: combined.units,
       boundary: 'Each member remains an autonomous governance root. The combined approval binds every member plan and all repositories roll back if an apply or post-check fails.',
+      handoff: buildGovernanceHandoff({ root: prepared.parent.scan.root, config: prepared.parent.config, scan: prepared.parent.scan, phase: 'configured', configPath: options.config ?? 'aicg.config.json' }),
     }, null, 2));
     return;
   }
@@ -633,7 +640,8 @@ async function initRepositoryFamily(parent, options) {
     throw usageError(`Approval does not match the current family plan hash ${combined.planHash}. Re-run init --family --dry-run and approve the displayed hash.`);
   }
   const results = applyRepositoryFamilyInit(prepared, options);
-  console.log(JSON.stringify({ initialized: prepared.parent.scan.root, family: true, planHash: combined.planHash, units: results }, null, 2));
+  console.log(JSON.stringify({ initialized: prepared.parent.scan.root, family: true, planHash: combined.planHash, units: results,
+    handoff: buildGovernanceHandoff({ root: prepared.parent.scan.root, config: prepared.parent.config, scan: prepared.parent.scan, phase: 'applied', configPath: '.ai-governance/config.json' }) }, null, 2));
 }
 
 /**
@@ -694,6 +702,7 @@ export async function initCommand(target, options) {
       ...(plan.adaptiveGovernance ? { adaptiveGovernance: plan.adaptiveGovernance, contextCost: plan.contextCost } : {}),
       requiredPermissions: executionPlan.requiredPermissions,
       operations: executionPlan.operations,
+      handoff: buildGovernanceHandoff({ root: scan.root, config, scan, phase: 'configured', configPath: options.config ?? 'aicg.config.json' }),
     }, null, 2));
     return;
   }
@@ -730,7 +739,10 @@ export async function initCommand(target, options) {
       console.warn('WARN: AI completion remains unverified because no selected installed agent was chosen.');
     } else {
       const beforeProduct = config.initialization.lifecycle === 'existing' ? productFingerprints(scanProject(scan.root)) : null;
-      const assist = runAssist(agentId, scan.root, { lifecycle: config.initialization.lifecycle });
+      const assist = runAssist(agentId, scan.root, { lifecycle: config.initialization.lifecycle,
+        architectureDocumentation: config.features?.architectureDocumentation === true,
+        brownfieldEnrichment: config.features?.brownfieldEnrichment,
+        businessMemoryDeclined: config.brownfieldEnrichmentDecision?.status === 'declined' || config.features?.knowledge === false });
       const refreshed = scanProject(scan.root);
       const productChanges = beforeProduct ? changedProductPaths(beforeProduct, productFingerprints(refreshed)) : [];
       console.log(`ai_assist=${productChanges.length ? 'unverified' : assist.status} reason=${assist.reason}`);
@@ -758,5 +770,7 @@ export async function initCommand(target, options) {
     console.log(`governance_review=${governanceReview.independentReview.status} score=${governanceReview.score.score} report=${governanceReview.reportPath} check_report=${checkReportPath}`);
   }
   if (options.guided) printHumanGuidance(initSuccessGuidance(config));
-  return { applied, check: result, governanceReview };
+  const handoff = buildGovernanceHandoff({ root: scan.root, config, scan: scanProject(scan.root, { probeEnvironment: false }), phase: 'applied', configPath: '.ai-governance/config.json' });
+  if (!options.skipCompletionAssist) console.log(`handoff_status=${handoff.status} framework_status=${handoff.frameworkStatus}\n${handoff.prompt}`);
+  return { applied, check: result, governanceReview, handoff };
 }

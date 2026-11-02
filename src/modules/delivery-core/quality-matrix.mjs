@@ -172,12 +172,14 @@ function validateResult(entry, path) {
   if (entry.reason !== undefined && entry.reason !== null) string(entry.reason, `${path}.reason`, { max: 4096 });
   if (entry.status === 'not-applicable' && !entry.reason) fail(`${path}.reason`, 'not-applicable requires a reason');
   if (entry.status === 'failed' && !entry.failureClassification) fail(`${path}.failureClassification`, 'a failed gate requires a failure classification');
+  if (entry.status === 'passed' && entry.cleanup?.status !== 'clean') fail(`${path}.cleanup`, 'a passed gate requires explicit clean cleanup evidence');
   if (entry.failureClassification !== undefined && entry.failureClassification !== null) string(entry.failureClassification, `${path}.failureClassification`, { max: 128, pattern: ID });
   if (entry.cleanup !== undefined) {
     fields(entry.cleanup, ['status', 'reason'], ['status'], `${path}.cleanup`);
     if (!['clean', 'failed'].includes(entry.cleanup.status)) fail(`${path}.cleanup.status`, 'unsupported cleanup status');
     if (entry.cleanup.reason !== undefined && entry.cleanup.reason !== null) string(entry.cleanup.reason, `${path}.cleanup.reason`, { max: 4096 });
     if (entry.cleanup.status === 'failed' && !entry.cleanup.reason) fail(`${path}.cleanup.reason`, 'failed cleanup requires a reason');
+    if (entry.cleanup.status === 'failed' && entry.status === 'passed') fail(`${path}.cleanup`, 'a gate with failed cleanup cannot pass');
   }
   if (entry.durationMs !== undefined) integer(entry.durationMs, `${path}.durationMs`, { min: 0 });
   return entry;
@@ -298,18 +300,35 @@ function driverFor(drivers, purpose) {
 }
 
 function resultFor(gate, receipt) {
-  const status = ['passed', 'failed', 'blocked'].includes(receipt?.status) ? receipt.status : 'blocked';
-  const entry = { gateId: gate.id, status, cleanup: { status: 'clean', reason: null } };
-  if (receipt?.cleanup?.status === 'failed') entry.cleanup = { status: 'failed', reason: receipt.cleanup.reason ?? 'cleanup failed' };
+  const reportedStatus = ['passed', 'failed', 'blocked'].includes(receipt?.status) ? receipt.status : 'blocked';
+  const wrongGate = receipt?.gateId !== gate.id;
+  const cleanupFailed = receipt?.cleanup?.status === 'failed';
+  const missingCleanupProof = reportedStatus === 'passed' && receipt?.cleanup?.status !== 'clean';
+  const status = wrongGate || missingCleanupProof ? 'blocked' : reportedStatus;
+  const entry = { gateId: gate.id, status };
+  if (receipt?.cleanup?.status === 'clean') entry.cleanup = { status: 'clean', reason: null };
+  if (cleanupFailed) entry.cleanup = { status: 'failed', reason: receipt.cleanup.reason ?? 'cleanup failed' };
   if (status === 'failed') entry.failureClassification = receipt?.failure?.classification ?? 'functional';
-  if (status === 'blocked') entry.failureClassification = receipt?.failure?.classification ?? 'infrastructure';
-  if (status !== 'passed') entry.reason = receipt?.failure?.message ?? `gate ${gate.id} did not pass`;
+  if (status === 'blocked') entry.failureClassification = wrongGate ? 'invalid-receipt' : missingCleanupProof ? 'cleanup' : receipt?.failure?.classification ?? 'infrastructure';
+  if (status !== 'passed') entry.reason = wrongGate
+    ? `gate ${gate.id} received a result for ${receipt?.gateId ?? 'no gate'}`
+    : missingCleanupProof ? cleanupFailed ? entry.cleanup.reason : `gate ${gate.id} did not provide clean cleanup evidence`
+      : receipt?.failure?.message ?? `gate ${gate.id} did not pass`;
   if (Number.isSafeInteger(receipt?.durationMs) && receipt.durationMs >= 0) entry.durationMs = receipt.durationMs;
   return entry;
 }
 
 function skippedResult(gateId, reason) {
   return { gateId, status: 'not-run', reason, cleanup: { status: 'clean', reason: null } };
+}
+
+function finalCleanupResult(receipt) {
+  if (receipt?.state === 'clean' && Array.isArray(receipt.failures) && receipt.failures.length === 0) return { status: 'clean', reason: null };
+  const failed = Array.isArray(receipt?.failures) ? receipt.failures.filter((id) => typeof id === 'string').slice(0, 16) : [];
+  const reason = failed.length
+    ? `process cleanup failed for ${failed.join(', ')}`.slice(0, 4096)
+    : typeof receipt?.reason === 'string' && receipt.reason.length > 0 ? receipt.reason.slice(0, 4096) : 'final process cleanup failed or returned an invalid result';
+  return { status: 'failed', reason };
 }
 
 function evidenceFor(plan, sessionId, run, entry, artifacts) {
@@ -364,13 +383,24 @@ export async function executeQualityMatrix({ root, plan, drivers, context = {}, 
       catch (error) { receipt = { gateId: gate.id, status: 'blocked', failure: { classification: 'infrastructure', message: error.message }, artifacts: [] }; }
       const entry = resultFor(gate, receipt);
       results.push(entry);
-      for (const artifact of receipt?.artifacts ?? []) collected.push({ gateId, path: artifact.path, digest: artifact.digest, bytes: artifact.bytes });
+      if (receipt?.gateId === gate.id) for (const artifact of receipt?.artifacts ?? []) collected.push({ gateId, path: artifact.path, digest: artifact.digest, bytes: artifact.bytes });
       if (entry.status !== 'passed' && failFast) stopped = gateId;
     }
   } finally {
     if (typeof context.process?.cleanupAll === 'function') {
-      try { cleanup = await context.process.cleanupAll('quality-matrix-finished'); }
-      catch (error) { cleanup = Object.freeze({ status: 'failed', reason: error.message }); }
+      try { cleanup = finalCleanupResult(await context.process.cleanupAll('quality-matrix-finished')); }
+      catch (error) { cleanup = Object.freeze({ status: 'failed', reason: String(error?.message || 'final process cleanup threw').slice(0, 4096) }); }
+    }
+  }
+  if (cleanup.status === 'failed') {
+    const affected = results.filter((entry) => entry.status !== 'not-run');
+    for (const entry of affected.length ? affected : results.slice(0, 1)) {
+      if (entry.status === 'passed' || entry.status === 'not-run') {
+        entry.status = 'blocked';
+        entry.reason = `final process cleanup failed: ${cleanup.reason}`.slice(0, 4096);
+        entry.failureClassification = 'cleanup';
+      }
+      entry.cleanup = { status: 'failed', reason: cleanup.reason };
     }
   }
   const run = evaluateQualityMatrixRun({ plan: current, results, artifacts: collected, environment: current.digests.environment });

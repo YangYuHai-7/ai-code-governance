@@ -48,10 +48,6 @@ test('Chinese artifacts localize generated body instructions across selected dep
       ['.cursor/rules/ai-code-governance.mdc', /读取.*AGENTS/],
       ['CLAUDE.md', /原生导入/],
     ]) assert.match(body(relative), expected, `${governanceDepth}: ${relative}`);
-    if (governanceDepth === 'minimal') {
-      assert.match(body('AGENTS.md'), /L0.*只读.*L1.*低风险.*升级至 L2\/L3/s);
-      continue;
-    }
     for (const [relative, expected] of [
       ['docs/ai/routing/bootstrap-prompt.md', /检查仓库/],
       ['docs/ai/policies/anti-patterns.md', /直接编辑.*适配器/],
@@ -141,12 +137,12 @@ test('mutable governance state stays in managed config and the human README carr
   // point into the evidence plane (the config/manifest paths stay out of the loaded context).
   assert.doesNotMatch(readme.content, /\.ai-governance\/config\.json/);
   assert.doesNotMatch(readme.content, /Repository topology at initialization|Depth: `standard`/);
-  assert.equal(JSON.parse(initial.find((artifact) => artifact.path === '.ai-governance/config.json').content).governanceDepth, 'standard');
+  assert.equal(JSON.parse(initial.find((artifact) => artifact.path === '.ai-governance/config.json').content).governanceDepth, undefined);
 
   applyArtifactPlan(root, planArtifacts(root, initial));
   const complete = { ...standard, governanceDepth: 'complete' };
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(complete, scanProject(root))));
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).governanceDepth, 'complete');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8')).governanceDepth, undefined);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'docs/ai/README.md'), 'utf8'), /\.ai-governance\/config\.json/);
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
@@ -475,7 +471,7 @@ test('standard and complete governance route owner-confirmed constraints through
   }
 });
 
-test('minimal governance keeps owner constraints in configuration without materializing policy artifacts', (context) => {
+test('legacy minimal retains owner constraints and includes their policy guidance', (context) => {
   const root = fixture('minimal-business-constraints');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   initialize(root, (value) => ({
@@ -483,13 +479,13 @@ test('minimal governance keeps owner constraints in configuration without materi
     governanceDepth: 'minimal',
     domainConstraints: ['A cancellation must be explicit.'],
   }));
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/business-constraints/SKILL.md')), false);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/skills/business-constraints/SKILL.md')), true);
   const agents = fs.readFileSync(path.join(root, 'AGENTS.md'), 'utf8');
   const contextMap = fs.readFileSync(path.join(root, 'docs/ai/context-map.yaml'), 'utf8');
   assert.doesNotMatch(agents, /business constraint|business-constraints/i);
-  assert.doesNotMatch(contextMap, /business-constraints/);
-  assert.equal(fs.existsSync(path.join(root, 'docs/ai/policies/business-constraints.json')), false);
-  assert.doesNotMatch(contextMap, /docs\/ai\/skills\/business-constraints\/SKILL\.md/);
+  assert.match(contextMap, /business-constraints/);
+  assert.equal(fs.existsSync(path.join(root, 'docs/ai/policies/business-constraints.json')), true);
+  assert.match(contextMap, /docs\/ai\/skills\/business-constraints\/SKILL\.md/);
 });
 
 test('business constraint ids remain stable across reorder and insertion while duplicates are rejected', (context) => {
@@ -686,6 +682,8 @@ test('check permits a known canonical seed skill even when its route is dormant'
   fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
   fs.writeFileSync(path.join(root, relative), '---\nname: generic-unknown\ndescription: Human-maintained dormant canonical seed.\n---\n');
 
+  const plan = planArtifacts(root, buildArtifacts(defaultConfig(scanProject(root)), scanProject(root)));
+  applyArtifactPlan(root, plan);
   const result = checkProject(scanProject(root));
   assert.equal(result.ok, true, result.errors.join('; '));
 });

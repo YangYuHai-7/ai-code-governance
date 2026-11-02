@@ -10,7 +10,28 @@
   ],
   "properties": {
     "proposal": {
-      "type": "object"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "artifacts"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          }
+        }
+      }
     },
     "findings": {
       "type": "array",

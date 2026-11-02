@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 import { createCodexCliAdapter, probeCodexCli } from '../src/adapters/agents/index.mjs';
 import { AGENT_RUNTIME_CAPABILITIES, negotiateAgentAdapter, runAgentTurn } from '../src/modules/delivery-core/index.mjs';
@@ -6,6 +7,13 @@ import { AGENT_RUNTIME_CAPABILITIES, negotiateAgentAdapter, runAgentTurn } from 
 const SCHEMA = JSON.stringify({ type: 'object', required: ['proposal', 'findings'] });
 const VALID_MESSAGE = JSON.stringify({ proposal: { requirement: { id: 'requirement.probe' } }, findings: [] });
 const AUTHORITY = { allowedPaths: ['apps/api/src/application'], allowedCommands: [], allowNetwork: false, allowExternalEffects: false, maxChangedFiles: 4, maxChangedBytes: 4096 };
+
+test('the Codex response schema closes every object for strict structured output', () => {
+  const schema = JSON.parse(fs.readFileSync(new URL('../assets/contracts/agent-turn-response-v1-schema.json', import.meta.url), 'utf8'));
+  assert.equal(schema.additionalProperties, false);
+  assert.equal(schema.properties.proposal.additionalProperties, false);
+  assert.deepEqual(schema.properties.proposal.required, ['summary', 'artifacts']);
+});
 
 function fakeArtifactStore() {
   const files = new Map();
@@ -89,6 +97,12 @@ test('a valid turn parses usage from recognized JSONL events only', async () => 
   assert.deepEqual(executed.findings, []);
 });
 
+test('current Codex turn.completed usage is retained as evidence', async () => {
+  const stdout = '{"type":"turn.completed","usage":{"input_tokens":42,"cached_input_tokens":20,"output_tokens":7}}';
+  const executed = await runAgentTurn(adapterFor(fakeRunner({ stdout })), turnRequest(), { timeoutMs: 5000, maxOutputBytes: 65536 });
+  assert.deepEqual(executed.usage, { inputTokens: 42, outputTokens: 7, cost: 'unverified' });
+});
+
 test('malformed JSONL and a missing usage event keep usage unverified', async () => {
   const executed = await runAgentTurn(adapterFor(fakeRunner({ stdout: 'not json\n{"type":"other"}' })), turnRequest(), { timeoutMs: 5000, maxOutputBytes: 65536 });
   assert.equal(executed.status, 'succeeded');
@@ -106,6 +120,12 @@ test('changes outside the approved authority are rejected even after an exit-0 p
   assert.equal(executed.status, 'rejected');
   assert.match(executed.findings.join(' '), /apps\/web\/src\/main\.tsx/);
   assert.equal(executed.processEvidence.exitCode, 0);
+});
+
+test('authorized changed paths are returned so later evidence can be invalidated', async () => {
+  const executed = await runAgentTurn(adapterFor(fakeRunner({ changedPaths: ['apps/api/src/application/board-service.ts'] })), turnRequest({ phase: 'patch' }), { timeoutMs: 5000, maxOutputBytes: 65536 });
+  assert.equal(executed.status, 'succeeded');
+  assert.deepEqual(executed.changedPaths, ['apps/api/src/application/board-service.ts']);
 });
 
 test('cancellation terminates only the owned turn', async () => {

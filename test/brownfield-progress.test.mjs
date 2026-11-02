@@ -39,7 +39,7 @@ test('a brownfield repository with a build manifest receives development documen
   };
   const paths = buildArtifacts(config, scan).map((entry) => entry.path);
   assert.ok(paths.includes('docs/ai/development/index.json'));
-  assert.ok(paths.includes('docs/ai/development/root.md'));
+  assert.ok(paths.includes('docs/development/README.md'));
 });
 
 test('a code-less orchestrator generates no development documents and reports them not applicable', (context) => {

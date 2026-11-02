@@ -203,6 +203,22 @@ test('scan exclusions are audited and source-hiding rules remain unverified', (c
   assert.match(scan.scanIgnore.unverifiedExclusions[0].evidenceHash, /^[a-f0-9]{64}$/);
 });
 
+test('excludes conventional .NET outputs and local Superpowers workspaces from repository facts', (context) => {
+  const root = fixture('generated-dotnet-and-workspace-output');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'src/App/bin/Debug/net10.0'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/App/obj/Debug/net10.0'), { recursive: true });
+  fs.mkdirSync(path.join(root, '.superpowers/sdd/task'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/App/Program.cs'), 'public static class Program {}\n');
+  fs.writeFileSync(path.join(root, 'src/App/bin/Debug/net10.0/generated.cs'), 'public static class Generated {}\n');
+  fs.writeFileSync(path.join(root, 'src/App/obj/Debug/net10.0/generated.cs'), 'public static class Intermediate {}\n');
+  fs.writeFileSync(path.join(root, '.superpowers/sdd/task/progress.md'), 'local working note\n');
+
+  const scan = scanProject(root);
+
+  assert.deepEqual(scan.files.map((file) => file.relative), ['src/App/Program.cs']);
+});
+
 test('local review and report manifests cannot change repository facts', (context) => {
   const root = fixture('local-output-facts');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

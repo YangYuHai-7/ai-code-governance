@@ -29,10 +29,9 @@ function session() {
   });
 }
 
-function writeRaw(root, id, body) {
-  const directory = path.join(root, '.ai-governance/state/delivery-sessions', id);
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'session.json'), typeof body === 'string' ? body : JSON.stringify(body, null, 2));
+function replacePublishedSession(root, id, body) {
+  const file = path.join(root, '.ai-governance/state/delivery-sessions', id, 'session.json');
+  fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body, null, 2));
 }
 
 test('the current schema version round-trips through the durable store', () => {
@@ -55,8 +54,10 @@ test('an unsupported schema version is refused instead of reinterpreted', () => 
     const root = repository();
     try {
       const store = openDeliverySessionStore(root);
-      writeRaw(root, 'session.unsupported', { ...session(), schemaVersion });
-      assert.throws(() => store.read('session.unsupported'), /Unreadable delivery session/, `version ${schemaVersion} must be refused`);
+      const published = store.create(session());
+      assert.equal(store.read(published.id).schemaVersion, CURRENT_SCHEMA_VERSION);
+      replacePublishedSession(root, published.id, { ...published, schemaVersion });
+      assert.throws(() => store.read(published.id), /Unreadable delivery session/, `version ${schemaVersion} must be refused`);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -67,10 +68,12 @@ test('a structurally broken session document is refused with the same clear erro
   const root = repository();
   try {
     const store = openDeliverySessionStore(root);
-    writeRaw(root, 'session.broken', '{ not json');
-    assert.throws(() => store.read('session.broken'), /Unreadable delivery session/);
-    writeRaw(root, 'session.broken', { schemaVersion: CURRENT_SCHEMA_VERSION, id: '' });
-    assert.throws(() => store.read('session.broken'), /Unreadable delivery session/);
+    const published = store.create(session());
+    assert.equal(store.read(published.id).id, published.id);
+    replacePublishedSession(root, published.id, '{ not json');
+    assert.throws(() => store.read(published.id), /Unreadable delivery session/);
+    replacePublishedSession(root, published.id, { ...published, id: '' });
+    assert.throws(() => store.read(published.id), /Unreadable delivery session/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

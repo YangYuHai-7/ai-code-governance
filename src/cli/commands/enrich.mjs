@@ -11,6 +11,7 @@ import { loadExistingConfig, mergeConfig } from '../shared.mjs';
 import { defaultConfig, validateConfig } from '../../generator.mjs';
 import { assistCandidates, runAssist } from '../../assist.mjs';
 import { brownfieldProgress } from '../../modules/repository/brownfield-progress.mjs';
+import { assessProjectArchitecture } from '../../modules/governance/delivery-assessment.mjs';
 
 const INTENT = Object.freeze({ id: 'governance.initialize', handler: 'init', mode: 'write' });
 
@@ -33,16 +34,20 @@ async function assistEnrichment(target, options) {
   }
   const before = brownfieldProgress(scan, config);
   if (!before) throw usageError('aicg enrich --assist is for existing-code repositories.');
-  if (!options.regenerate && before.gaps.length === 0) {
+  const architectureBefore = assessProjectArchitecture(scan, config);
+  if (!options.regenerate && before.gaps.length === 0 && !architectureBefore?.findings.length) {
     console.log(JSON.stringify({ schemaVersion: 1, status: 'already-enriched', remainingGaps: [], boundary: 'Nothing to do; pass --regenerate to rebuild.' }, null, 2));
     return;
   }
   const candidates = assistCandidates(config);
   const agentId = options.agent && candidates.some((candidate) => candidate.id === options.agent) ? options.agent : (candidates[0] ? candidates[0].id : null);
   if (!agentId) throw usageError('No selected client provides an installed AI completion command; install one or select another client.');
-  const result = runAssist(agentId, scan.root, { lifecycle: 'existing' });
-  const after = brownfieldProgress(scanProject(scan.root), config);
-  const remaining = after ? after.gaps : before.gaps;
+  const result = runAssist(agentId, scan.root, { lifecycle: 'existing', architectureDocumentation: config.features?.architectureDocumentation === true,
+    businessMemoryDeclined: config.features?.knowledge === false });
+  const afterScan = scanProject(scan.root);
+  const after = brownfieldProgress(afterScan, config);
+  const architectureAfter = assessProjectArchitecture(afterScan, config);
+  const remaining = [...(after ? after.gaps : before.gaps), ...(architectureAfter?.findings ?? []).map((finding) => `${finding.path}: ${finding.message}`)];
   const report = { schemaVersion: 1, status: result.ok ? (remaining.length ? 'needs-review' : 'completed') : 'unverified', agent: agentId, reason: result.reason, remainingGaps: remaining, retry: result.retry, boundary: 'The AI completion ran separately; aicg only records what remains and never invents business meaning.' };
   console.log(JSON.stringify(report, null, 2));
   if (options.enforce && report.status === 'unverified') process.exitCode = 1;

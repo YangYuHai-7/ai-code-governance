@@ -11,7 +11,7 @@ import { canonicalPath } from './layout.mjs';
 
 const HASH = /^[a-f0-9]{64}$/;
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,127}$/;
-const BASE = { L0: [], L1: [], L2: ['requirements', 'plan'], L3: ['requirements', 'design', 'plan'] };
+const BASE = { L0: [], L1: [], 'L1.5': [], L2: ['requirements', 'plan'], L3: ['requirements', 'design', 'plan'] };
 const REVIEW = { single: [], 'quick-review': ['implementation', 'targeted-review'], 'independent-pk': ['proposal-1', 'proposal-2', 'referee'], 'high-consequence-pk': ['proposal-1', 'proposal-2', 'proposal-3', 'referee'] };
 const REVIEW_FIELDS = ['localReview', 'behaviorChange', 'publicContract', 'multiModule', 'irreversible', 'governance', 'release', 'confirmedRisk', 'multiSurface', 'migration', 'externalAction', 'professionalRisk'];
 
@@ -42,7 +42,7 @@ export function buildTaskApprovalPlan({ taskLevel, reviewMode, plannedPaths, cha
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (!taskLevel || !reviewMode) throw usageError('Approval plans require explicit taskLevel and reviewMode.');
-  if (!Array.isArray(plannedPaths) || plannedPaths.length > 10000) throw usageError('plannedPaths must be a bounded path array.');
+  if (!Array.isArray(plannedPaths) || plannedPaths.length > 50000) throw usageError('plannedPaths must be a bounded path array of at most 50000 entries.');
   if (typeof changeDigest !== 'string' || !HASH.test(changeDigest)) throw usageError('changeDigest must bind the current change content with SHA256.');
   if (!Array.isArray(requiredApprovals) || requiredApprovals.length > 64) throw usageError('requiredApprovals must contain at most 64 entries before normalization.');
   if (requiredApprovals.some((id) => typeof id !== 'string' || !ID.test(id))) throw usageError('requiredApprovals must contain approval IDs.');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,6 +70,9 @@ test('visual editor serves loopback UI and enforces save, preview, exact approva
     const preview = await request('preview', {});
     assert.equal(preview.status, 200);
     assert.match(preview.value.planHash, /^[a-f0-9]{64}$/);
+    assert.equal(preview.value.handoff.status, 'handoff-ready');
+    assert.equal(preview.value.handoff.phase, 'configured');
+    assert.match(preview.value.handoff.prompt, /所有已选择和实际发现的技术/);
     assert.equal((await request('apply', { planHash: 'wrong' })).status, 409);
     fs.appendFileSync(path.join(root, 'aicg.config.json'), '\n');
     assert.equal((await request('apply', { planHash: preview.value.planHash })).status, 409);
@@ -76,6 +80,9 @@ test('visual editor serves loopback UI and enforces save, preview, exact approva
     assert.equal(freshPreview.status, 200);
     const applied = await request('apply', { planHash: freshPreview.value.planHash });
     assert.equal(applied.status, 200, JSON.stringify(applied.value));
+    assert.equal(applied.value.handoff.status, 'handoff-ready');
+    assert.equal(applied.value.handoff.phase, 'applied');
+    assert.match(applied.value.handoff.prompt, /不要重新运行 aicg init/);
     assert.ok(fs.existsSync(path.join(root, '.ai-governance/config.json')));
     assert.equal((await request('apply', { planHash: freshPreview.value.planHash })).status, 409);
     assert.equal((await request('close', {})).status, 200);
@@ -199,7 +206,7 @@ test('an applied governance framework is restored even when a different editable
     const restored = await request('bootstrap');
     assert.equal(restored.value.configSource, 'managed');
     assert.deepEqual(restored.value.template.clients, ['deepseek']);
-    assert.equal(restored.value.template.governanceDepth, 'standard');
+    assert.equal(Object.hasOwn(restored.value.template, 'governanceDepth'), false);
     assert.deepEqual(restored.value.template.domainConstraints, ['applied constraint']);
     assert.ok(fs.existsSync(path.join(root, 'aicg.config.json')), 'the draft stays on disk');
     assert.equal((await request('close', {})).status, 200);
@@ -265,6 +272,59 @@ test('a drifted managed config is reported read-only and refuses preview instead
     assert.equal(fs.readFileSync(path.join(root, rebuilt.value.backupPath), 'utf8'), JSON.stringify(drifted, null, 2) + '\n');
     assert.deepEqual(JSON.parse(fs.readFileSync(configPath, 'utf8')).domainConstraints, ['owner edit after approval']);
     assert.equal((await request('bootstrap')).value.managedTrust.state, 'trusted');
+    assert.equal((await request('preview', {})).status, 200);
+    assert.equal((await request('close', {})).status, 200);
+  } finally {
+    child.kill();
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(stateHome, { recursive: true, force: true });
+  }
+});
+
+test('a trusted legacy team flag offers backed-up recovery without inventing approval', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-web-legacy-team-'));
+  const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-state-legacy-team-'));
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"existing-app"}\n');
+  fs.writeFileSync(path.join(root, 'src', 'app.mjs'), 'export const ready = true;\n');
+  const { child, ready } = start(root, stateHome);
+  try {
+    const url = await ready;
+    const page = await (await fetch(url)).text();
+    const token = page.match(/name="aicg-session" content="([a-f0-9]+)"/)[1];
+    const request = async (route, body) => {
+      const response = await fetch(new URL(`api/${route}`, url), { method: body === undefined ? 'GET' : 'POST',
+        headers: { 'x-aicg-session': token, ...(body === undefined ? {} : { origin: url.slice(0, -1), 'content-type': 'application/json' }) },
+        body: body === undefined ? undefined : JSON.stringify(body) });
+      return { status: response.status, value: await response.json() };
+    };
+    const { value: initial } = await request('bootstrap');
+    assert.equal((await request('save', { config: initial.template, expectedSha: initial.sha })).status, 200);
+    const firstPreview = await request('preview', {});
+    assert.equal(firstPreview.status, 200);
+    assert.equal((await request('apply', { planHash: firstPreview.value.planHash })).status, 200);
+
+    const configPath = path.join(root, '.ai-governance/config.json');
+    const manifestPath = path.join(root, '.ai-governance/manifest.json');
+    const legacy = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    legacy.agentTeam = { enabled: true };
+    legacy.skillDiscovery = { enabled: false };
+    const legacyContent = JSON.stringify(legacy, null, 2) + '\n';
+    fs.writeFileSync(configPath, legacyContent);
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    manifest.files.find((entry) => entry.path === '.ai-governance/config.json').sha256 = createHash('sha256').update(legacyContent).digest('hex');
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+
+    const { value: found } = await request('bootstrap');
+    assert.equal(found.managedTrust.state, 'trusted');
+    assert.equal(found.managedTrust.legacyUnapprovedTeam, true);
+    assert.equal((await request('preview', {})).status, 400);
+    assert.equal(fs.readFileSync(configPath, 'utf8'), legacyContent);
+    const recovered = await request('rebaseline', { config: found.template, expectedSha: found.sha });
+    assert.equal(recovered.status, 200, JSON.stringify(recovered.value));
+    assert.equal(recovered.value.skillManagementDropped, true);
+    assert.equal(fs.readFileSync(path.join(root, recovered.value.backupPath), 'utf8'), legacyContent);
+    assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).agentTeam.enabled, false);
     assert.equal((await request('preview', {})).status, 200);
     assert.equal((await request('close', {})).status, 200);
   } finally {
@@ -368,7 +428,7 @@ test('visual apply refuses foreign governance before writing and leaves the proj
     assert.match(page, /progress\.css/);
     assert.match(page, /handoff-text/);
     assert.match((await (await fetch(new URL('progress.css', url))).text()), /aicg-spin/);
-    assert.match((await (await fetch(new URL('app.js', url))).text()), /handoffPrompt/);
+    assert.match((await (await fetch(new URL('app.js', url))).text()), /showHandoff/);
     const token = page.match(/name="aicg-session" content="([a-f0-9]+)"/)[1];
     const request = async (route, body) => {
       const response = await fetch(new URL(`api/${route}`, url), { method: body === undefined ? 'GET' : 'POST',
@@ -716,22 +776,25 @@ test('progress stays readable while a long mutating operation holds the write lo
 });
 
 test('the handoff prompt carries the command contract, the enrichment mandate and the completion gate', () => {
-  const source = fs.readFileSync(path.join(packageRoot, 'assets/config-ui/app.js'), 'utf8');
+  const source = fs.readFileSync(path.join(packageRoot, 'src/modules/governance/handoff-prompt.mjs'), 'utf8');
+  const pageSource = fs.readFileSync(path.join(packageRoot, 'assets/config-ui/app.js'), 'utf8');
   for (const required of [
-    'aicg init . --config aicg.config.json --dry-run',
-    'aicg check . --enforce',
+    'init . --config ${configPath} --dry-run',
+    'check . --json --enforce',
     'AGENTS.md',
     'domainConstraints',
     '不要修改业务代码',
-    '不要贴哈希给我',
-    'ai-code-governance@',
+    '不要让我手工转贴哈希',
+    'governanceBootstrapCommand',
+    '每次面向我的首条实质回复都在第一行写“当前角色：role-id（原因）”',
+    '列出本轮实际使用的所有角色并逐个说明原因',
   ]) assert.ok(source.includes(required), 'the handoff prompt must include: ' + required);
   // A blocked preview must not offer a prompt that tells an agent to generate.
-  assert.ok(source.includes('if (blocked) hideHandoff(); else showHandoff();'), 'the handoff must be hidden when the preview is blocked');
+  assert.ok(pageSource.includes('if (blocked) hideHandoff(); else showHandoff(currentHandoff);'), 'the handoff must be hidden when the preview is blocked');
   // After apply the page leaves the preview loop and hands off the evidence-backed completion.
-  assert.ok(source.includes('markApplied'), 'apply must transition to the post-apply state');
-  assert.ok(source.includes('showHandoff(true)'), 'apply must show the applied handoff prompt');
-  assert.ok(source.includes('不要重新 init'), 'the applied prompt must not send the agent back through init');
+  assert.ok(pageSource.includes('markApplied'), 'apply must transition to the post-apply state');
+  assert.ok(pageSource.includes('showHandoff(handoff)'), 'apply must show the applied handoff prompt');
+  assert.ok(source.includes('不要重新运行 aicg init'), 'the applied prompt must not send the agent back through init');
 });
 
 test('a typed project path is opened by the primary control instead of re-opening the picker', () => {

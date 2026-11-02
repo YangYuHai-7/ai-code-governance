@@ -1,3 +1,4 @@
+import { liveFetch } from "../support/live-client";
 import { describe, expect, it } from "vitest";
 
 // Observability means the running service can be watched: health carries a correlation id, errors
@@ -13,7 +14,7 @@ const BOARD =
 
 async function reachable(): Promise<boolean> {
   try {
-    await fetch(`${API}/health`, { signal: AbortSignal.timeout(5000) });
+    await liveFetch(`${API}/health`, { signal: AbortSignal.timeout(5000) });
     return true;
   } catch {
     return false;
@@ -27,7 +28,7 @@ describe("observability surface", () => {
       `this gate requires a running API at ${API}`,
     ).toBe(true);
 
-    const health = await fetch(`${API}/health`);
+    const health = await liveFetch(`${API}/health`);
     expect(health.status).toBe(200);
     const body = (await health.json()) as {
       status?: string;
@@ -38,7 +39,7 @@ describe("observability surface", () => {
     expect((body.correlationId ?? "").length).toBeGreaterThan(0);
     expect(health.headers.get("access-control-allow-origin")).toBeTruthy();
 
-    const listResponse = await fetch(
+    const listResponse = await liveFetch(
       `${API}/boards?organizationId=${ORGANIZATION}`,
     );
     expect(listResponse.status).toBe(200);
@@ -46,7 +47,7 @@ describe("observability surface", () => {
       listResponse.headers.get("access-control-allow-origin"),
     ).toBeTruthy();
 
-    const conflict = await fetch(`${API}/work-items/${ITEM}`, {
+    const conflict = await liveFetch(`${API}/work-items/${ITEM}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

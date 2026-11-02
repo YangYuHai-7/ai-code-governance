@@ -18,7 +18,7 @@
 </div>
 
 > [!IMPORTANT]
-> 当前检出内容是 `0.6.1` 源码候选版。源码版本、npm 发布状态、平台认证和真实客户端执行属于不同的证据状态。
+> 当前检出内容是 `0.7.0` 源码版本。源码版本、npm 发布状态、平台认证和真实客户端执行属于不同的证据状态。
 
 <!-- sync:quick-start -->
 ## 快速开始
@@ -34,7 +34,7 @@ aicg config open
 
 页面只在 `127.0.0.1` 上打开，仅运行在本机，进来先是项目选择器。可以粘贴绝对路径、从**最近使用**里选，或浏览到项目文件夹；选中项目只会扫描，不写入任何文件。完整的首次配置分四步：
 
-1. **确认几个选择**——平时用哪些 AI 工具、项目是全新还是已有代码、治理规模多大、有没有你能自己说清的项目约定。其余答案都按扫描结果预选，页面会显示检测依据。
+1. **确认几个选择**——平时用哪些 AI 工具、项目是全新还是已有代码、有没有你能自己说清的项目约定。其余答案都按扫描结果预选，页面会显示检测依据。
 2. **预览**——点**看起来没问题，去预览**。页面会保存 `aicg.config.json` 并列出精确计划：即将写入的每一个文件，此时磁盘上还没有任何改动。
 3. **应用**——点**应用到项目**并确认。AICG 写入治理骨架并完成校验。
 4. **把提示词交给 AI 助手**——应用之后，页面会用**交给 AI 助手继续**区块替换预览，里面是一段可直接复制的提示词。把它粘贴给你的 AI 编程助手。提示词要求助手先读 `AGENTS.md` 和 `docs/WORKFLOW.md`，只改治理层，用真实代码与测试证据把生成的骨架补成真实内容，只问你必须自己拍板的决策，并在最后如实报告 `aicg check . --enforce` 的结果。
@@ -76,7 +76,8 @@ aicg init . --yes
 | 这是新项目还是已有代码的旧项目 | 按扫描结果判定 |
 | 涉及哪些技术栈 | 从 `package.json`、清单和源代码推断 |
 | 新治理对现有代码怎么处理 | 保持现有代码不变 |
-| 其他（skills、hooks、CI、治理深度） | 不显式打开则全部关闭 |
+| 完整治理框架 | 固定生成开发 Skills、角色和路由，无档位选择 |
+| 可选集成（hooks、CI、运行时） | 不显式打开则关闭 |
 
 不在这个表里的项目一律保持安全默认值。计划里每一条要写的文件都会在落盘前先打出来。
 
@@ -149,7 +150,7 @@ AICG 是仓库治理 CLI 和 Agent Skill，服务于新建与遗留项目，覆�
 3. **测试用例输出**——选择紧凑的 `aicg-json-v2`（推荐）或 Markdown 可读基线加 schema-v2 JSON，并选择仓库内放置目录。
 4. **项目生命周期**——已有项目确认检测到的技术栈；新项目选择目标技术栈，但不会假装架构已经建立。
 5. **旧代码策略**——选择 `keep-existing`、`new-code-standard` 或 `staged-migration`；初始化不会擅自改造产品代码。
-6. **治理预设**——根据证据从 Minimal 或 Standard 开始；Complete 必须主动选择，不会因一句模糊需求自动启用。
+6. **完整框架**——统一生成开发 Skills、角色职责和任务路由，不再选择治理档位；旧配置不能缩减基础能力。
 7. **可选能力**——记忆、Git hooks、CI、工作流、Skills 和专家角色分别决策。
 
 需要重复配置时，可在任意目录打开本地可视化配置页，并在页面选择项目。页面提供最近项目、绝对路径输入和文件夹浏览；传入路径则直接打开该项目。页面与命令行共用同一份 `aicg.config.json`，提供带解释的选择项，并可上传或下载 JSON 以共享配置。交互式 npm 安装（项目内或全局）会尝试自动打开项目选择页；如果 npm 跳过安装脚本或浏览器不可用，可手动打开。服务仅监听 `127.0.0.1`。上传后先在页面校验和保存；应用治理前还需重新预览精确计划并明确确认。
@@ -184,7 +185,7 @@ aicg init . --family --yes --clients codex --no-assist --approve <planHash>
 
 所有 AICG 检查默认仅报告提醒，退出码为 0，并把 JSON 结果写入 `reports/aicg/`。显式传入 `--enforce` 才会在检查失败时返回非零退出码。已安装的提交前 hook 默认使用报告模式。
 
-Standard 与 Complete 还会生成扩展后的 `professional-testing` Skill。它使用稳定 Case ID、共享上下文、最小 AI 执行包、证据绑定的 PASS/FAIL、幂等结果账本、自动补齐 `NOT_RUN` 和从账本生成的报告。自动化、AI 模拟真人与真实用户证据严格分开。
+所有框架均生成扩展后的 `professional-testing` Skill。它使用稳定 Case ID、共享上下文、最小 AI 执行包、证据绑定的 PASS/FAIL、幂等结果账本、自动补齐 `NOT_RUN` 和从账本生成的报告。自动化、AI 模拟真人与真实用户证据严格分开。
 
 ```bash
 aicg test-case init . --scope ACCOUNT --format aicg-json-v2 --output docs/ai/testing --yes
@@ -193,11 +194,7 @@ aicg test-case select . --manifest docs/ai/testing/ACCOUNT-test-cases.json --cas
 aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --packet reports/testing/ACCOUNT-packet.json --results reports/testing/ACCOUNT-external-results.json
 ```
 
-| 预设 | 新项目默认包含的能力 |
-| --- | --- |
-| **Minimal** | 配置、公共入口、规范总览、上下文映射、常驻规则、清单和选定的 Agent 适配器 |
-| **Standard** | Minimal，加上路由、验证说明、决策账本、本地报告路径以及相关政策或技术规范 Skills |
-| **Complete** | Standard，加上选定的技术栈 Skills；任务运行时、hooks、CI、工作流桥接和其他集成仍然可选 |
+开发文档、架构图和业务流程图统一放在 `docs/development/`；开发规则从这些文档正文编译为可执行的 Skills，包含适用条件、约束、正确与错误示例以及验证矩阵。
 
 <!-- sync:clients-and-footprint -->
 ## 客户端、正典布局与证据状态
@@ -260,7 +257,7 @@ aicg init . --yes --config decisions.json --approve <planHash>
 
 每条推荐都会展示来源状态、权限、成本以及明确的 `add`、`defer` 或 `reject` 决策。没有候选项会被预选。Agent 角色通过专业观点碰撞形成更好的结论，但角色 ID 不代表真实参与，AI 也不能替代具备资质的人类专业人员。
 
-Minimal 不生成管理类文件。经批准的 Standard/Complete 方案受文件数、字节数和管理上下文预算约束。常规同步会保留历史或已编辑文件；删除内容必须经过独立、精确的计划审批。
+经批准的可选自适应方案受文件数、字节数和管理上下文预算约束。常规同步会保留历史或已编辑文件；删除内容必须经过独立、精确的计划审批。
 
 <!-- sync:vertical-delivery -->
 ## 一个功能，一个交付边界

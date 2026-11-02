@@ -1,14 +1,15 @@
 import path from 'node:path';
 import { PACKAGE_ROOT } from '../kernel/config/constants.mjs';
-import { readJson } from '../adapters/filesystem/index.mjs';
+import { readJson, readBoundedRepositoryFile } from '../adapters/filesystem/index.mjs';
+import { sha256 } from '../shared/index.mjs';
 
 /**
  * The packaged public-Skill catalog: offline metadata for `adaptiveGovernance.curatedCatalog`.
  *
- * AICG never clones, installs, upgrades or executes a third-party Skill. This module only reads
+ * AICG never clones, upgrades, or executes a third-party Skill at runtime. This module reads
  * the snapshot committed under `assets/registries/`, which `scripts/skill-catalog.mjs` regenerates
- * from pinned upstream commits. Every record is a candidate that still needs an explicit owner
- * decision and the exact `--approve <planHash>`; nothing here is preselected or activated.
+ * from pinned upstream commits. Every record is a candidate that needs an explicit owner
+ * decision and exact `--approve <planHash>`; selected packaged Skills can then be copied.
  */
 export const PUBLIC_SKILL_SOURCES_PATH = 'assets/registries/public-skill-sources.json';
 export const PUBLIC_SKILL_CATALOG_PATH = 'assets/registries/public-skill-catalog.json';
@@ -64,7 +65,25 @@ export function loadPublicSkillCatalog() {
   return document;
 }
 
+const DRAWIO_ADAPTER_PATH = 'assets/skills/next-ai-draw-io/SKILL.md';
+
+function drawioAdapterRecord() {
+  const { bytes } = readBoundedRepositoryFile(PACKAGE_ROOT, DRAWIO_ADAPTER_PATH);
+  return {
+    id: 'next-ai-draw-io',
+    source: 'curated:next-ai-draw-io/mcp-adapter',
+    name: 'next-ai-draw-io',
+    version: '0.4.1-adapter',
+    capabilities: ['diagram-authoring', 'drawio-editing'],
+    capabilityOwner: 'diagram-authoring',
+    permissions: ['read-project', 'write-project', 'local-mcp', 'external-provider-optional'],
+    contentSha256: sha256(bytes),
+    contentBytes: bytes.length,
+    verifiedAt: '2026-10-12T14:28:58Z',
+  };
+}
+
 /** Detached copies for `discoverSkills({ curatedCatalog })`, safe to mutate in the caller. */
 export function loadCuratedSkillRecords() {
-  return loadPublicSkillCatalog().catalog.map((record) => structuredClone(record));
+  return [...loadPublicSkillCatalog().catalog, drawioAdapterRecord()].map((record) => structuredClone(record));
 }

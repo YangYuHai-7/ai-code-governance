@@ -502,10 +502,11 @@ export function planArtifacts(root, artifacts, options = {}) {
     if (artifact.ownership === 'seed') {
       const seedExists = !ancestor && Boolean(existingStat);
       const adoptForeign = options.adoptForeignGovernance === true;
-      // Adoption preserves every pre-existing canonical seed and extends the routing file
-      // instead of replacing it, even when the caller asked for replaceExisting.
-      let desired = seedExists && !replaceExisting ? current : artifact.content;
-      if (seedExists && relative === CONTEXT_MAP_PATH && !replaceExisting) {
+      // A seed is handed to the project after its first write. Rebuilding the managed baseline
+      // must not turn replaceExisting into authority to erase owner-authored seed content.
+      const preserveSeed = seedExists && (options.rebaseline === true || !replaceExisting);
+      let desired = preserveSeed ? current : artifact.content;
+      if (seedExists && relative === CONTEXT_MAP_PATH && (options.rebaseline === true || !replaceExisting)) {
         try {
           const merged = mergeLegacyContextMapSeed(current, artifact.content, { adoptForeign, migration: options.migration === true });
           if (legacyManagedProject || adoptForeign) desired = merged;

@@ -1,30 +1,14 @@
 import path from 'node:path';
-import { openDeliverySessionStore, readBoundedRepositoryFile, resolveProjectDirectory, snapshotPath, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
+import { openDeliverySessionStore, resolveProjectDirectory, snapshotPath, walkFilesDetailed } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
-import {
-  createDeliveryRuntime,
-  createDeliverySession,
-  normalizeDeliveryAuthority,
-  prepareRequirementCompilation,
-  validateDeliverySession,
-  validateRequirementIr,
-} from '../../modules/delivery-core/index.mjs';
+import { createDeliveryRuntime, validateDeliverySession } from '../../modules/delivery-core/index.mjs';
+import { startDeliverySession } from '../../modules/delivery-start/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
 
 const SESSION_BASE = '.ai-governance/state/delivery-sessions';
 const ACTIONS = new Set(['start', 'status', 'step', 'resume', 'cancel']);
 const PROFILES = new Set(['advisory', 'production']);
 const AGENT_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
-const DEFAULT_BUDGETS = Object.freeze({
-  maxAgentTurns: 12,
-  maxCommands: 32,
-  maxChangedFiles: 32,
-  maxChangedBytes: 4 * 1024 * 1024,
-  maxElapsedMs: 30 * 60 * 1000,
-  maxInputTokens: 200_000,
-  maxOutputTokens: 100_000,
-  maxCost: 100,
-});
 
 function snapshotRepository(root) {
   const walked = walkFilesDetailed(root, {
@@ -37,17 +21,6 @@ function snapshotRepository(root) {
   if (!walked.budget.complete) throw usageError('Repository snapshot is incomplete; reduce or explicitly exclude generated repository content before starting delivery.');
   const files = walked.files.map((file) => ({ path: file.relative, ...snapshotPath(file.absolute), ...(file.type === 'file' ? { bytes: file.size } : {}) }));
   return { files };
-}
-
-function readRequirement(root, relative) {
-  if (typeof relative !== 'string') throw usageError('delivery session start requires a safe repository-relative JSON requirement path.');
-  let bytes;
-  try { ({ bytes } = readBoundedRepositoryFile(root, relative, 2 * 1024 * 1024)); }
-  catch (error) { throw usageError(`Requirement must be a safe repository-relative bounded regular JSON file: ${error.message}`); }
-  let parsed;
-  try { parsed = JSON.parse(bytes.toString('utf8')); }
-  catch { throw usageError(`Requirement JSON is unreadable: ${relative}`); }
-  return validateRequirementIr(parsed);
 }
 
 function runtimeFor(store) {
@@ -88,30 +61,10 @@ export async function deliverySessionCommand(target, action, options = {}) {
     if (!PROFILES.has(profile)) throw usageError('delivery session --profile must be advisory or production.');
     if (Boolean(options.requirement) === Boolean(options.text)) throw usageError('delivery session start requires exactly one of --requirement <repository-relative-json> or --text <request>.');
     if (options.agent && !AGENT_ID.test(options.agent)) throw usageError('delivery session --agent requires a safe Agent id.');
-    const requirement = options.requirement ? readRequirement(root, options.requirement) : null;
-    const requestText = options.text ?? requirement?.summary ?? requirement?.title;
-    const repositorySnapshot = snapshotRepository(root);
-    const authority = normalizeDeliveryAuthority({
-      allowedPaths: [], allowedCommands: [], allowNetwork: false, allowExternalEffects: false,
-      maxChangedFiles: DEFAULT_BUDGETS.maxChangedFiles, maxChangedBytes: DEFAULT_BUDGETS.maxChangedBytes,
+    const { session } = startDeliverySession(root, {
+      source: 'cli', sessionId: id, profile, agent: options.agent,
+      ...(options.requirement ? { requirementPath: options.requirement } : { requestText: options.text }),
     });
-    const base = createDeliverySession({ id, requestText, requirement, authority, budgets: DEFAULT_BUDGETS, repositorySnapshot });
-    const compilation = requirement ? null : prepareRequirementCompilation({ requestText });
-    const session = validateDeliverySession({
-      ...base,
-      activeAgentId: null,
-      runtime: {
-        profile,
-        requestedAgentId: options.agent ?? null,
-        requestSource: options.requirement ? { kind: 'requirement-ir', path: options.requirement } : { kind: 'text' },
-        compilation,
-        startedAt: base.createdAt,
-        retries: 0,
-        maxRetries: 2,
-        effects: {},
-      },
-    });
-    store.create(session);
     const notice = options.agent
       ? `Agent ${options.agent} is recorded as requested but remains unverified; no executable runtime adapter was activated.`
       : 'No verified executable delivery Agent runtime adapter was activated.';

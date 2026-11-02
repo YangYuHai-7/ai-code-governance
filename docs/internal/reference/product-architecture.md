@@ -129,3 +129,31 @@ bin → cli → modules → kernel/shared
 产品 C 的首要 ICP 是使用 AI 编码助手、但缺少生产工程经验的单人构建者。首个成果指标不是“生成了多少文件”，而是用户能否在不理解 Git、SemVer、manifest 或 probe 术语的前提下，完成明确授权的治理初始化、一个可运行的业务主流程、成功与失败测试，并能依靠诊断提示恢复到门禁通过。试点至少记录安装清晰度、下一步清晰度、恢复能力、信心、人工干预和门禁耗时。
 
 本地 CLI、治理内核和基础能力包保持 Apache-2.0。组织控制面、集中审计、认证服务、企业 rollout/support 是否作为商业交付物仍是开放决策；在真实客户验证、责任边界和运营能力确认前，不承诺价格、SLA、真人认证或生产结果。
+
+## Generated application roots and verification scope
+
+For a new multi-stack frontend/backend project, the selected stack identifiers remain
+stable while application directories use `apps/web` and `apps/server`. Multiple stacks
+of the same kind receive distinct suffixes. Recorded development-unit paths take
+precedence on regeneration; changing naming defaults does not authorize moving an
+existing application. Single-stack layouts remain rooted at the project root.
+
+The generated layout and architecture placement decision resolve the same development
+units. Placement checks apply to each declared source root, including Java's
+`src/main/java`; Java package placement does not prove Java dependency correctness.
+Only conventional output directories directly beneath a declared application root are
+excluded. A business module named `build` or `dist` remains governed.
+
+The JS/TS dependency graph reports inspected and unsupported source files. Empty
+coverage is `uncovered`, unsupported source or imports remain `stated-only`, and a
+supported violation is `failed`. Vue SFC and Java dependency analysis still require
+stack-specific verification. Relative imports into another application's implementation
+are rejected; shared contracts need an explicit boundary. Existing monorepo and
+repository-family scopes remain advisory unless independently supported by their own
+configured checks.
+
+Generated testing profiles and governance-check reports are structural references,
+not product execution evidence. Post-generation scoring leaves the test-plan and
+product-result criteria unverified until suitable reviewed evidence is supplied.
+Building a project, checking its governance, and accepting product behavior are
+separate claims.

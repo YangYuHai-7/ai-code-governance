@@ -7,6 +7,7 @@ import { stableJson } from '../../shared/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import {
   defaultTestCaseManifest,
+  loadTestCaseManifest,
   recordTestCaseResults,
   renderTestReport,
   safeTestingPath,
@@ -67,7 +68,7 @@ function initCases(root, options, config) {
 function validateCases(root, options) {
   let result;
   try {
-    const manifest = jsonFile(root, options.manifest, '--manifest');
+    const manifest = loadTestCaseManifest(root, jsonFile(root, options.manifest, '--manifest'));
     validateTestCaseManifest(manifest);
     result = { ok: true, valid: true, schemaVersion: manifest.schemaVersion, scope: manifest.scope, caseCount: manifest.cases.length };
   } catch (error) {
@@ -79,7 +80,7 @@ function validateCases(root, options) {
 }
 
 function selectCases(root, options) {
-  const manifest = jsonFile(root, options.manifest, '--manifest');
+  const manifest = loadTestCaseManifest(root, jsonFile(root, options.manifest, '--manifest'));
   const packet = selectTestCasePacket(manifest, {
     cases: options.cases,
     priorities: options.priorities,
@@ -94,7 +95,7 @@ function selectCases(root, options) {
 }
 
 function recordCases(root, options, config) {
-  const manifest = jsonFile(root, options.manifest, '--manifest');
+  const manifest = loadTestCaseManifest(root, jsonFile(root, options.manifest, '--manifest'));
   const packet = jsonFile(root, options.packet, '--packet');
   const external = jsonFile(root, options.results, '--results');
   const ledgerPath = relativeOrDefault(options.ledger, `${config.testing.reportRoot}/${manifest.scope}-results.json`);

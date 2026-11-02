@@ -77,7 +77,7 @@ export const COMPACT_PATH_PAIRS = Object.freeze([]
   .concat(initialEvidence.map((name) => ['docs/ai/' + name, EVIDENCE_DIR + '/' + name]))
   .concat(initialIntegrations.map((name) => ['docs/ai/' + name, INTEGRATION_DIR + '/' + name]))
   // The greenfield single-unit development page belongs to the development topic directory.
-  .concat([['docs/ai/development.md', 'docs/ai/development/README.md']])
+  .concat([['docs/ai/development.md', 'docs/development/README.md']])
   // The root development rule belongs with the other generated rules in the compact layout;
   // leaving it under rules/ split the folder. Cursor's .cursor/rules adapter resolves the
   // canonical path, so it follows the same mapping.

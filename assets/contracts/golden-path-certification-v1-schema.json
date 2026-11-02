@@ -41,6 +41,12 @@
         "entries"
       ],
       "properties": {
+        "referenceRunId": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$" },
+            { "type": "null" }
+          ]
+        },
         "entries": {
           "type": "array",
           "maxItems": 512,

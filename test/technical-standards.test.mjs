@@ -101,6 +101,9 @@ test('detects a React + Mantine + NestJS technology set and generates traceable 
   assert.match(contextMap, /behavior_change:[\s\S]*conditional:[\s\S]*stack:/);
   assert.match(contextMap, /docs\/ai\/skills\/standards\/react-component-purity\/SKILL\.md/);
   assert.doesNotMatch(contextMap.slice(0, contextMap.indexOf('profiles:')), /technical-standards/);
+  const backend = artifacts.find((artifact) => artifact.path === 'docs/ai/skills/backend-node/SKILL.md')?.content;
+  assert.match(backend, /nestjs-module-boundaries\/SKILL\.md/);
+  assert.doesNotMatch(backend, /react-component-purity\/SKILL\.md/);
 
   applyArtifactPlan(root, planArtifacts(root, artifacts), {
     transactional: true,
@@ -125,14 +128,41 @@ test('a greenfield user-confirmed package selection produces the matching Skills
   assert.equal(summary.skills.find((skill) => skill.id === 'fastify-contracts-and-serialization').applicability.kind, 'declared-technology');
 });
 
-test('minimal governance does not route to technical standard artifacts it did not generate', (context) => {
+test('selected Vue framework emits a baseline before dependencies exist and keeps Java routing separate', (context) => {
+  const root = fixture('selected-vue-java');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), stacks: ['frontend-vue', 'backend-java'], governanceDepth: 'complete' };
+  const built = buildTechnicalStandardArtifacts(config, scan);
+  assert.ok(built.selection.selected.some((entry) => entry.standard.id === 'vue-component-composition' && entry.selection.kind === 'selected-framework'));
+  assert.equal(built.selection.selected.some((entry) => entry.standard.id.startsWith('spring-')), false);
+  const artifacts = buildArtifacts(config, scan);
+  const web = artifacts.find((artifact) => artifact.path === 'docs/ai/skills/frontend-vue/SKILL.md')?.content;
+  const server = artifacts.find((artifact) => artifact.path === 'docs/ai/skills/backend-java/SKILL.md')?.content;
+  assert.match(web, /vue-component-composition\/SKILL\.md/);
+  assert.doesNotMatch(server, /vue-component-composition\/SKILL\.md/);
+});
+
+test('explicit greenfield Spring MVC dependency selects HTTP guidance without assuming every Java project uses Spring', (context) => {
+  const root = fixture('selected-spring');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), stacks: ['backend-java'], technologyPackages: ['org.springframework.boot:spring-boot-starter-webmvc'], governanceDepth: 'complete' };
+  const selection = selectTechnicalStandards(scan, config);
+  assert.equal(selection.selected.find((entry) => entry.standard.id === 'spring-http-contracts')?.selection.kind, 'declared-framework-dependency');
+  const server = buildArtifacts(config, scan).find((artifact) => artifact.path === 'docs/ai/skills/backend-java/SKILL.md')?.content;
+  assert.match(server, /spring-http-contracts\/SKILL\.md/);
+  assert.doesNotMatch(server, /vue-component-composition\/SKILL\.md/);
+});
+
+test('legacy minimal includes and routes the complete technical standard baseline', (context) => {
   const root = fixture('minimal');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const scan = scanProject(root);
   const artifacts = buildArtifacts({ ...defaultConfig(scan), governanceDepth: 'minimal' }, scan);
-  assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/technical-standards.json'), false);
+  assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/technical-standards.json'), true);
   const contextMap = artifacts.find((artifact) => artifact.path === 'docs/ai/context-map.yaml').content;
-  assert.doesNotMatch(contextMap, /technical-standards/);
+  assert.match(contextMap, /technical-standards/);
   assert.equal([...contextMap.matchAll(/^profiles:$/gm)].length, 1);
   assert.doesNotMatch(artifacts.find((artifact) => artifact.path === 'docs/ai/policies/00_always.mdc').content, /technical-standards/);
 });
@@ -199,7 +229,7 @@ test('Maven dependency facts select Spring and MyBatis implementation Skills', (
   fs.mkdirSync(path.join(root, 'service'), { recursive: true });
   fs.writeFileSync(path.join(root, 'pom.xml'), '<project><modelVersion>4.0.0</modelVersion></project>');
   fs.writeFileSync(path.join(root, 'service/pom.xml'), `<project><dependencies>
-    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-webmvc</artifactId></dependency>
     <dependency><groupId>org.mybatis</groupId><artifactId>mybatis</artifactId><version>3.5.19</version></dependency>
   </dependencies></project>`);
   const scan = scanProject(root);

@@ -1,3 +1,4 @@
+import { liveFetch } from "../support/live-client";
 import { describe, expect, it } from "vitest";
 
 // A budget gate that compares a constant to itself proves nothing. This one measures the running
@@ -13,7 +14,7 @@ describe("performance budgets", () => {
     const target = `${API}/boards?organizationId=${ORGANIZATION}`;
     let reachable = true;
     try {
-      await fetch(target, { signal: AbortSignal.timeout(5000) });
+      await liveFetch(target, { signal: AbortSignal.timeout(5000) });
     } catch {
       reachable = false;
     }
@@ -24,7 +25,7 @@ describe("performance budgets", () => {
     for (let index = 0; index < SAMPLES; index += 1) {
       const started = performance.now();
       try {
-        const response = await fetch(target, {
+        const response = await liveFetch(target, {
           signal: AbortSignal.timeout(5000),
         });
         if (!response.ok) failures += 1;

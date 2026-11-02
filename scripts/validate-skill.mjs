@@ -174,6 +174,16 @@ function validateExternalValidationTemplates({ negativeProbe = false } = {}) {
   if (!matrixCaught) fail('Negative probe did not catch a fabricated blank client/OS result.');
 }
 
+// Discovery terms may live behind an explicit entrypoint pointer. Do not scan the
+// entire documentation tree: an unlinked document does not make guidance reachable.
+function entryPointDiscoveryText(skill, readReference = read) {
+  const entry = markdownOutsideFences(skill);
+  const references = new Set(markdownLinkTargets(entry)
+    .map((target) => target.split('#', 1)[0])
+    .filter((target) => /^docs\/internal\/reference\/[a-z0-9-]+\.md$/.test(target)));
+  return [entry, ...[...references].map((target) => markdownOutsideFences(readReference(target)))].join('\n');
+}
+
 function validateEntryPoint() {
   const skill = read('SKILL.md');
   const frontMatter = skill.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
@@ -184,6 +194,16 @@ function validateEntryPoint() {
   if (frontMatter[1].includes('\t')) fail('SKILL.md front matter contains a tab.');
   if (!/^name:\s*ai-code-governance\s*$/m.test(frontMatter[1])) {
     fail('SKILL.md name must be ai-code-governance.');
+  }
+  const description = frontMatter[1].match(/^description:\s*>-\r?\n((?: {2}.+(?:\r?\n|$))+)/m)?.[1]
+    ?.replace(/^ {2}/gm, ' ')
+    .replace(/\s+/g, ' ')
+    .trim() ?? '';
+  for (const trigger of ['AICG 更新治理框架', '用 AICG 更新治理框架', '更新 AICG 治理', '刷新治理框架']) {
+    if (!description.includes(trigger)) fail(`SKILL.md description is missing governance-refresh trigger: ${trigger}`);
+  }
+  if (!skill.includes('[governance-refresh.md](docs/internal/reference/governance-refresh.md)')) {
+    fail('SKILL.md must route governance refresh requests to governance-refresh.md.');
   }
 
   const requiredTerms = [
@@ -214,6 +234,9 @@ function validateEntryPoint() {
     'aicg init',
     'aicg check',
     'aicg sync',
+    'aicg handoff',
+    'AICG 更新治理框架',
+    'governance-refresh.md',
     'aicg harvest',
     'aicg promote',
     'aicg team',
@@ -226,8 +249,11 @@ function validateEntryPoint() {
     'release-acceptance.md',
     'release-acceptance-policy.json',
   ];
+  let discoveryText;
+  try { discoveryText = entryPointDiscoveryText(skill); }
+  catch (error) { fail(`SKILL.md has an unreadable discovery reference: ${error.message}`); return; }
   for (const term of requiredTerms) {
-    if (!skill.includes(term)) fail(`SKILL.md is missing required discovery term: ${term}`);
+    if (!discoveryText.includes(term)) fail(`SKILL.md routes are missing required discovery term: ${term}`);
   }
 }
 
@@ -327,6 +353,15 @@ function validateNoLinkAdapters() {
           && content.includes('Controlled rollback: restore only the user-owned link removed by this failed migration.')
           && content.includes('fs.symlinkSync(entry.target, absolute);'),
         'src/modules/governance/managed-files.mjs may restore exactly one user-owned link during transactional rollback and may not create adapters as links.',
+      );
+    } else if (file === 'adapters/filesystem/delivery-session-store.mjs') {
+      // A hard link publishes the already durable session marker atomically inside the store.
+      // It is not an adapter projection and must stay the sole link creation in this module.
+      check(
+        linkCreates.length === 1
+          && linkCreates[0].startsWith('linkSync')
+          && content.includes("fs.linkSync(stagedSession, path.join(targetDirectory, 'session.json'));"),
+        'src/adapters/filesystem/delivery-session-store.mjs may hard-link only its staged session marker for atomic publication.',
       );
     } else {
       check(linkCreates.length === 0, `src/${file} creates a filesystem link.`);
@@ -757,6 +792,30 @@ function runNegativeProbe(
   releasePolicy,
   surfaceVerificationContract,
 ) {
+  const reference = 'docs/internal/reference/sample-method.md';
+  const orphan = 'docs/internal/reference/orphan-method.md';
+  const reads = [];
+  const loadReference = (target) => {
+    reads.push(target);
+    if (target === reference) return 'linked-method';
+    if (target === orphan) return 'unreachable-method';
+    throw new Error('missing-method');
+  };
+  const routed = entryPointDiscoveryText(`[method](${reference}#steps)`, loadReference);
+  check(routed.includes('linked-method'), 'Discovery probe failed to follow an explicit reference.');
+  check(!routed.includes('unreachable-method') && reads.length === 1,
+    'Discovery probe counted an unlinked reference as reachable.');
+  const quoted = entryPointDiscoveryText('```md\n[method](' + reference + ')\n```', loadReference);
+  check(!quoted.includes('linked-method') && reads.length === 1,
+    'Discovery probe followed a reference inside a quoted code example.');
+  let missingReferenceCaught = false;
+  try { entryPointDiscoveryText('[missing](docs/internal/reference/missing-method.md)', loadReference); }
+  catch { missingReferenceCaught = true; }
+  check(missingReferenceCaught, 'Discovery probe accepted a missing referenced method.');
+  const entrypointRoutesCaught = routed.includes('linked-method')
+    && !routed.includes('unreachable-method') && !quoted.includes('linked-method')
+    && reads.length === 2 && missingReferenceCaught;
+
   const before = failures.length;
   const broken = structuredClone(registry);
   broken.packs.push(structuredClone(broken.packs[0]));
@@ -920,8 +979,8 @@ function runNegativeProbe(
   if (!teamRegistryCaught) fail('Negative probe did not catch an unsafe team role registry.');
   if (!releasePolicyCaught) fail('Negative probe did not catch an invalid release acceptance scorecard.');
   if (!surfaceVerificationContractCaught) fail('Negative probe did not catch an unsafe surface verification evidence level.');
-  if (duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught && releasePolicyCaught && surfaceVerificationContractCaught) {
-    console.log('negative_probe=pass duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught release_acceptance_policy=caught surface_verification_contract=caught');
+  if (entrypointRoutesCaught && duplicateCaught && brokenLinkCaught && agentRegistryCaught && workflowRegistryCaught && workflowSourceCaught && acceptanceCaught && failurePolicyCaught && resultManifestCaught && generationProtocolCaught && evolutionProtocolCaught && workflowProtocolCaught && technicalRegistryCaught && teamRegistryCaught && releasePolicyCaught && surfaceVerificationContractCaught) {
+    console.log('negative_probe=pass entrypoint_routes=caught duplicate_pack=caught agent_registry=caught duplicate_integration=caught workflow_source=caught broken_link=caught acceptance_contract=caught failure_policy=caught result_manifest=caught generation_protocol=caught evolution_protocol=caught workflow_protocol=caught technical_standard_source=caught team_role_registry=caught release_acceptance_policy=caught surface_verification_contract=caught');
   }
 }
 

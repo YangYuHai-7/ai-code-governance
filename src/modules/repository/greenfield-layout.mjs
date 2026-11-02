@@ -1,3 +1,6 @@
+import path from 'node:path';
+import { readText } from '../../adapters/filesystem/index.mjs';
+import { usageError } from '../../kernel/index.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { skillAdapterContent, stableJson } from '../../shared/index.mjs';
 
@@ -19,56 +22,36 @@ const STACK_SHAPES = {
   'platform-c-cpp': { area: 'services', runtime: 'C/C++', source: 'src', entry: 'app', modules: 'domain', contracts: 'header and ABI contract', coverage: 'roadmap-template' },
 };
 
+const SHARED_ARCHITECTURE = 'docs/development/shared-architecture.md';
+
 function architectureDoc(stack, shape, root, multi, language) {
   const zh = language === 'zh-CN';
-  const title = zh ? `${shape.runtime} 子工程开发与架构设计` : `${shape.runtime} development and architecture design`;
-  const boundary = multi ? `${root}/` : '';
-  return `# ${title}
+  const doc = root === '.' ? 'docs/development/README.md' : `docs/development/units/${stack}.md`;
+  const common = path.posix.relative(path.posix.dirname(doc), SHARED_ARCHITECTURE);
+  const java = stack === 'backend-java';
+  return `# ${shape.runtime} ${zh ? '开发设计' : 'development design'}
 
-> ${zh ? '状态：待实现的生产级目录设计；生成目录不证明实现质量。' : 'Status: production-oriented directory design awaiting implementation; generated paths do not prove implementation quality.'}
-
-## ${zh ? '工程边界' : 'Project boundary'}
+> ${zh ? '待采纳的目录方案；生成目录不证明生产质量。' : 'Layout proposal awaiting adoption; generated paths do not prove production quality.'}
 
 - ${zh ? '技术栈' : 'Stack'}: \`${stack}\`
-- ${zh ? '模板覆盖状态' : 'Template coverage'}: \`${shape.coverage}\`${shape.coverage === 'active-template' ? '' : zh ? '；需专业人员确认框架约定与目录可用性。' : '; framework conventions and production suitability require specialist review.'}
 - ${zh ? '工程根目录' : 'Project root'}: \`${root}\`
-- ${zh ? '依赖方向' : 'Dependency direction'}: \`entry → modules → shared\`; ${zh ? '插件通过显式接口接入，业务模块不得反向依赖入口层。' : 'plugins enter through explicit interfaces; domain modules do not depend on the entry layer.'}
-
-## ${zh ? '目录设计' : 'Directory design'}
+- ${zh ? '模板覆盖状态' : 'Template coverage'}: \`${shape.coverage}\`${shape.coverage === 'active-template' ? '' : zh ? '；需要专业人员确认' : '; specialist confirmation required'}
+- ${zh ? '实现前阅读' : 'Before implementation, read'} [${zh ? '共享架构指南' : 'shared architecture guidance'}](${common}).
 
 \`\`\`text
-${boundary}${shape.source}/
-  ${shape.entry}/       # composition root, routes, bootstrap
-  modules/       # one bounded ${shape.modules} per directory
-    <module>/
-      domain/    # business rules, independent of transport and framework
-      application/ # use cases and ports
-      infrastructure/ # adapters implementing ports
-      interface/ # ${shape.contracts}
-      tests/     # unit and contract tests near their owner
-  plugins/       # extension contracts, registry, isolated implementations
-  shared/        # cross-module primitives without business ownership
-${boundary}docs/ai/
-  development.md
-  rules/architecture.md
-  skills/${stack}-architecture/SKILL.md
+${shape.source}/${java ? '<base-package>/' : ''}
+  ${shape.entry}/  # ${zh ? '组合入口、路由与启动' : 'composition, routes, bootstrap'}
+  modules/        # ${zh ? '每个目录拥有明确的业务职责' : `one bounded ${shape.modules} per directory`}
+  shared/         # ${zh ? '稳定的跨模块基础类型' : 'stable cross-module primitives'}
 \`\`\`
 
-## ${zh ? '架构约束' : 'Architecture constraints'}
+${zh ? '模块内按实际职责组织文件；有明确需求时再拆分层级或新增插件。不要创建空层。' : 'Organize files by actual responsibilities within each module. Add layers or plugins only when a concrete use case needs them; do not create empty layers.'}
 
-1. ${zh ? '一个模块拥有自己的业务状态、接口与测试；跨模块通过公开端口或事件协作。' : 'A module owns its state, public interface, and tests; cross-module work uses public ports or events.'}
-2. ${zh ? '插件必须声明扩展点、版本兼容规则、初始化与卸载方式；插件不可直接访问别的模块内部文件。' : 'A plugin declares an extension point, compatibility version, lifecycle, and isolated dependency boundary; it never imports another module’s internals.'}
-3. ${zh ? '应用层编排用例，领域层表达规则，基础设施层负责外部依赖；一个文件只有一个主要职责。' : 'Application code orchestrates use cases, domain code owns rules, infrastructure code owns external effects; each file has one primary responsibility.'}
-4. ${zh ? '公共契约先定义输入、输出、错误和兼容策略；变更后执行本模块及调用方验证。' : 'Public contracts define input, output, errors, and compatibility before implementation; verify the owner and consumers after changes.'}
-${multi ? `5. ${zh ? '跨工程契约遵守根目录 `docs/ai/development/cross-project-contracts.md`，由服务或共享协议包唯一维护。' : 'Cross-project contracts follow root `docs/ai/development/cross-project-contracts.md` and have one owning service or shared protocol package.'}` : ''}
+${java ? (zh ? '基础包由项目根据命名空间约定选择；将包名转换成目录层级，不要创建字面 `<base-package>` 目录。' : 'The project selects its base package. Translate the package name into directory segments; do not create a literal `<base-package>` directory.') : ''}
 
-## ${zh ? '交付与验证' : 'Delivery and verification'}
+${multi ? `${zh ? '跨工程契约遵循' : 'Cross-project schemas follow'} [${zh ? '契约策略' : 'the contract policy'}](${path.posix.relative(path.posix.dirname(doc), 'docs/development/cross-project-contracts.md')}).` : ''}
 
-- ${zh ? '根据所选框架与包管理器建立真实构建清单；此设计不臆造尚未选定的运行命令。' : 'Create the real build manifest for the chosen framework and package manager; this design does not invent unselected commands.'}
-- ${zh ? '新增模块时补充契约测试、模块边界检查、运行命令和 README 入口。' : 'For a new module, add contract tests, boundary checks, executable commands, and a README entrypoint.'}
-- ${zh ? '新增插件时验证注册、失败隔离、卸载和版本不兼容情形。' : 'For a new plugin, verify registration, failure isolation, unloading, and incompatible versions.'}
-- ${zh ? '实现后的依赖图、职责划分和性能需由独立评审复核。' : 'An independent review must check the implemented dependency graph, responsibilities, and performance.'}
-- ${zh ? '此目录设计是待采纳方案；必须在实际框架版本、构建清单和代码边界确定后，由负责人批准并记录架构决策。' : 'This layout is a proposal awaiting adoption. Record owner approval after actual framework versions, build manifests, and code boundaries are known.'}
+${zh ? '从实际构建清单确认框架版本和可执行命令。记录负责人采纳决定和当前验证结果，之后才能认定方案已实现。' : 'Confirm framework versions and executable commands from real manifests. Record owner adoption and current verification before treating the proposal as implemented.'}
 `;
 }
 
@@ -91,22 +74,22 @@ description: ${zh ? `在 ${shape.runtime} 子工程新增模块、插件或修�
 
 ## Source of truth
 
-- Read \`${doc}\` and the local architecture rule before implementation.
+- Read \`${doc}\` and follow its shared architecture guidance before implementation.
 - Confirm actual framework versions and build commands from manifests once they exist.
 
 ## Required invariants
 
 - One business module owns one bounded responsibility and exposes a public contract.
-- Domain rules do not import framework bootstrap, adapters, or another module's internal files.
-- Plugins implement a versioned extension interface and can fail without corrupting the host module.
+- Business modules do not import the composition root or another module's internal files.
+- Add plugin interfaces only for an implemented extension use case.
 
 ## Decision flow
 
 1. Identify the owning module and its public port. Add a new module only for a distinct business responsibility.
 2. Define the contract and verification cases before changing implementation.
-3. Keep domain rules independent from ${shape.runtime} framework code and external adapters.
-4. Register plugins through the declared extension interface and test failure isolation.
-5. Run the project’s actual tests, record results, and obtain user confirmation before applying business-code changes.
+3. Keep business rules separate from transport and external effects when those responsibilities exist; do not require empty layer directories.
+4. If implementing a plugin, declare its interface and test failure isolation.
+5. Run the project’s actual tests and record results. Follow the root approval policy and existing user authorization.
 
 ## Exceptions and escalation
 
@@ -132,40 +115,120 @@ description: ${zh ? `在 ${shape.runtime} 子工程新增模块、插件或修�
 `;
 }
 
-export function buildGreenfieldLayoutArtifacts(config) {
-  if (config.initialization?.lifecycle !== 'greenfield' || config.governanceDepth === 'minimal') return { units: [], artifacts: [] };
-  const stacks = [...new Set(config.stacks)].filter((stack) => STACK_SHAPES[stack]);
-  const unresolvedStacks = [...new Set(config.stacks)].filter((stack) => !STACK_SHAPES[stack]);
-  if (stacks.length === 0) return { units: [], artifacts: [] };
-  const multi = stacks.length > 1;
-  const adapterDirs = selectedSkillDirectories(config.clients ?? []);
+function layoutKind(stack) {
+  if (stack.startsWith('frontend-')) return 'web';
+  if (stack.startsWith('backend-') || stack === 'platform-dotnet') return 'server';
+  return null;
+}
+
+function safeRoot(root) {
+  return typeof root === 'string' && path.posix.normalize(root) === root && (root === '.' || root.split('/').every((part) => /^[a-zA-Z0-9_.-]+$/.test(part) && part !== '.' && part !== '..'));
+}
+
+/** Pure layout calculation. Explicit roots preserve an adopted project boundary. */
+export function greenfieldDevelopmentUnits(config) {
+  const stacks = [...new Set(config.stacks ?? [])].filter((stack) => STACK_SHAPES[stack]);
+  const recorded = config.developmentUnits ?? [];
+  if (!Array.isArray(recorded)) throw usageError('Recorded layout units must be an array.');
+  const roots = new Map();
+  for (const unit of recorded) {
+    if (!unit || !stacks.includes(unit.stack)) continue;
+    const root = unit.root ?? unit.path;
+    if (!safeRoot(root) || roots.has(unit.stack)) throw usageError('Recorded layout has an unsafe path or duplicate stack root.');
+    roots.set(unit.stack, root);
+  }
   const units = stacks.map((stack) => {
     const shape = STACK_SHAPES[stack];
-    const root = multi ? `${shape.area}/${stack}` : '.';
-    return { stack, root, shape };
+    const kind = layoutKind(stack);
+    const sameKind = stacks.filter((candidate) => layoutKind(candidate) === kind).length;
+    const proposed = stacks.length === 1 ? '.' : kind
+      ? `apps/${kind}${sameKind > 1 ? `-${stack.replace(/^[^-]+-/, '')}` : ''}`
+      : `${shape.area}/${stack}`;
+    return {stack, root: roots.get(stack) ?? proposed, shape};
   });
+  for (let i = 0; i < units.length; i++) {
+    for (let j = i + 1; j < units.length; j++) {
+      const a = units[i].root; const b = units[j].root;
+      if (a === '.' || b === '.' || a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)) {
+        throw usageError('Layout roots overlap. Record an explicit project boundary decision before changing the layout.');
+      }
+    }
+  }
+  return units;
+}
+
+/** Reuse recorded roots on sync; malformed records must not trigger an implicit relocation. */
+export function resolveGreenfieldDevelopmentUnits(config, scan) {
+  const indexPath = 'docs/ai/development/index.json';
+  if ((scan?.files ?? []).some((file) => file.type === 'link' && (file.relative === indexPath || indexPath.startsWith(`${file.relative}/`)))) {
+    throw usageError('Recorded layout index must not traverse a symbolic link.');
+  }
+  const index = scan?.files?.find((file) => file.relative === indexPath);
+  if (!index) {
+    const proposed = greenfieldDevelopmentUnits(config);
+    const retained = proposed.map((unit) => {
+      const legacy = `${unit.shape.area}/${unit.stack}`;
+      const found = (scan?.files ?? []).some((file) => file.type === 'file' && file.relative.startsWith(`${legacy}/`));
+      if (!found || (config.developmentUnits ?? []).some((saved) => saved.stack === unit.stack)) return unit;
+      const newRootExists = unit.root !== legacy && unit.root !== '.'
+        && (scan?.files ?? []).some((file) => file.type === 'file' && file.relative.startsWith(`${unit.root}/`));
+      if (newRootExists) throw usageError('Multiple layout roots found for one stack. Record the intended boundary before regeneration.');
+      return {...unit, root: legacy};
+    });
+    return greenfieldDevelopmentUnits({...config, developmentUnits: retained});
+  }
+  if (index.type !== 'file' || index.contentScannable === false || !index.absolute) throw usageError('Recorded layout index must be a regular file.');
+  let document;
+  try { document = JSON.parse(readText(index.absolute)); }
+  catch { throw usageError('Recorded layout index cannot be read. Repair it before regenerating the layout.'); }
+  if (!Array.isArray(document.units)) throw usageError('Recorded layout index must contain units.');
+  return greenfieldDevelopmentUnits({...config, developmentUnits: document.units});
+}
+
+export function buildGreenfieldLayoutArtifacts(config, scan) {
+  if (config.initialization?.lifecycle !== 'greenfield') return { units: [], artifacts: [] };
+  const units = resolveGreenfieldDevelopmentUnits(config, scan);
+  const unresolvedStacks = [...new Set(config.stacks)].filter((stack) => !STACK_SHAPES[stack]);
+  if (units.length === 0) return { units: [], artifacts: [] };
+  const multi = units.length > 1;
+  const adapterDirs = selectedSkillDirectories(config.clients ?? []);
   const artifacts = [{
     path: 'docs/ai/development/index.json',
-    content: stableJson({ schemaVersion: 1, status: 'design-awaiting-implementation', unresolvedStacks, crossProjectContractPolicy: multi ? 'docs/ai/development/cross-project-contracts.md' : null, units: units.map(({ stack, root, shape }) => ({ stack, path: root, coverage: shape.coverage, documentation: root === '.' ? 'docs/ai/development.md' : `${root}/docs/ai/development.md` })) }),
+    content: stableJson({ schemaVersion: 1, status: 'design-awaiting-implementation', unresolvedStacks, crossProjectContractPolicy: multi ? 'docs/development/cross-project-contracts.md' : null, units: units.map(({ stack, root, shape }) => ({ stack, path: root, coverage: shape.coverage, documentation: root === '.' ? 'docs/development/README.md' : `docs/development/units/${stack}.md` })) }),
     ownership: 'full', kind: 'greenfield-development-index', source: 'selected-stacks',
   }];
+  artifacts.push({
+    path: SHARED_ARCHITECTURE,
+    content: config.artifactLanguage === 'zh-CN' ? '# 共享架构指南\n\n状态：待采纳的方案，尚需实现证据。\n\n- 业务模块拥有自己的状态、公共接口和测试；通过公共契约协作，模块不反向依赖组合入口。\n- 根据实际职责分离业务规则、用例编排、传输和外部副作用。小模块可以只有少量文件；不要生成空的 domain/application/infrastructure 目录。\n- 仅为实际扩展需求添加插件代码。定义兼容性和生命周期契约，验证注册、失败隔离、卸载及不兼容版本。\n- 实现前明确公共输入、输出、错误和兼容策略。验证生产者与消费者，包括非法输入和异步结果的身份一致性。\n- 从实际构建清单确认框架版本及构建、测试命令。记录负责人采纳决定、测试和独立评审，不把目录存在当作生产质量证据。\n' : '# Shared architecture guidance\n\nStatus: proposal awaiting adoption and implementation evidence.\n\n- A business module owns its state, public interface, and tests. Collaborate through public contracts; modules do not import the composition root.\n- Separate business rules, orchestration, transport, and external effects where those responsibilities exist. Small modules may use a few files; do not generate empty domain/application/infrastructure folders.\n- Add plugin code only for an implemented extension use case. Define compatibility and lifecycle contracts and test registration, failure isolation, unloading, and incompatible versions.\n- Define public inputs, outputs, errors, and compatibility before implementation. Verify both producer and consumer, including rejected inputs and asynchronous result identity.\n- Confirm real framework versions and build/test commands from manifests. Record owner adoption, tests, and independent review without treating directory presence as production evidence.\n',
+    ownership: 'seed', kind: 'greenfield-shared-architecture', source: 'selected-stacks',
+  });
   if (multi) artifacts.push({
-    path: 'docs/ai/development/cross-project-contracts.md',
+    path: 'docs/development/cross-project-contracts.md',
     content: `# Cross-project contract policy\n\nStatus: design proposal awaiting owner adoption and implementation evidence.\n\n- One owning service or shared protocol package owns each public schema. Consumers do not fork DTO definitions silently.\n- Record contract ID, owning project, version, compatibility decision, producer, consumers, and error semantics before implementation.\n- Keep schemas in a versioned contract directory selected by the owner; generated clients remain derived artifacts.\n- For every contract change, test producer conformance and each consumer against the same schema and include backward-compatibility cases.\n- A cross-project feature is one work unit with coordinated page, API, service, data, migration, and test evidence.\n- Changing the protocol requires a user-approved plan, relevant stack specialists, and an independent reviewer; record test results and unresolved gaps.\n`,
     ownership: 'seed', kind: 'greenfield-cross-project-contract-policy', source: 'selected-stacks',
   });
   for (const { stack, root, shape } of units) {
     const prefix = root === '.' ? '' : `${root}/`;
-    const doc = `${prefix}docs/ai/development.md`;
+    const doc = root === '.' ? 'docs/development/README.md' : `docs/development/units/${stack}.md`;
     const architecture = `${prefix}docs/ai/rules/architecture.md`;
     artifacts.push({ path: doc, content: architectureDoc(stack, shape, root, multi, config.artifactLanguage), ownership: 'seed', kind: 'greenfield-development-document', source: 'selected-stacks' });
-    artifacts.push({ path: architecture, content: `# ${shape.runtime} architecture rule\n\nRead [the development design](../development.md). Keep domain modules independent, keep composition in \`${shape.source}/${shape.entry}/\`, and use versioned plugin interfaces in \`${shape.source}/plugins/\`. Verify module and plugin boundaries before merging.\n`, ownership: 'seed', kind: 'greenfield-architecture-rule', source: 'selected-stacks' });
+    const compositionRoot = `${shape.source}/${stack === 'backend-java' ? '<base-package>/' : ''}${shape.entry}/`;
+    artifacts.push({ path: architecture, content: config.artifactLanguage === 'zh-CN'
+      ? `# ${shape.runtime} 架构规则\n\n按任务加载开发 Skills；人读设计集中在 docs/development。组合入口放在 \`${compositionRoot}\`；仅为实际职责添加层级或插件。\n`
+      : `# ${shape.runtime} architecture rule\n\nFollow task-selected implementation Skills. The human design is in the central docs/development guide. Keep composition in \`${compositionRoot}\`; add optional layers and plugins only for implemented responsibilities.\n`, ownership: 'seed', kind: 'greenfield-architecture-rule', source: 'selected-stacks' });
     const skillPath = `${prefix}docs/ai/skills/${stack}-architecture/SKILL.md`;
     const skill = stackSkill(stack, shape, doc, config.artifactLanguage);
     artifacts.push({ path: skillPath, content: skill, ownership: 'seed', kind: 'greenfield-stack-skill', source: 'selected-stacks' });
     for (const directory of adapterDirs) artifacts.push({ path: `${prefix}${directory}/${stack}-architecture/SKILL.md`, content: skillAdapterContent(skillPath, skill), ownership: 'seed', kind: 'greenfield-stack-adapter-skill', source: skillPath });
     if (multi) artifacts.push({ path: `${prefix}AGENTS.md`, content: `# ${shape.runtime} project\n\nRead \`${doc}\`, \`${architecture}\`, and \`${prefix}docs/ai/skills/${stack}-architecture/SKILL.md\` before changing this project. Treat the layout as a proposal until owner adoption and implementation evidence are recorded. Follow the root governance policy.\n`, ownership: 'seed', kind: 'greenfield-unit-entrypoint', source: 'selected-stacks' });
-    for (const section of [shape.entry, 'modules', 'plugins', 'shared']) artifacts.push({ path: `${prefix}${shape.source}/${section}/README.md`, content: `# ${section}\n\n${section === 'plugins' ? 'Declare versioned extension interfaces and isolated implementations here.' : section === 'modules' ? 'Create one bounded business module per directory; keep domain, application, infrastructure, interface, and tests separate.' : section === 'shared' ? 'Keep only stable cross-module primitives here; business rules belong to modules.' : 'Compose modules, adapters, routes, and plugin registrations here.'}\n`, ownership: 'seed', kind: 'greenfield-directory-design', source: 'selected-stacks' });
+    if (stack === 'backend-java') artifacts.push({
+      path: `${prefix}${shape.source}/README.md`,
+      content: config.artifactLanguage === 'zh-CN'
+        ? '# Java 源码\n\n由项目选择基础包并按包名建立目录层级。将 application、modules、shared 放在基础包下面，按实际职责添加内容；不要创建字面 `<base-package>` 目录或顶层包占位。\n'
+        : '# Java source\n\nChoose the project base package and map its name to directory segments. Place application, modules, and shared under that package as responsibilities are implemented. Do not create a literal `<base-package>` directory or top-level package placeholders.\n',
+      ownership: 'seed', kind: 'greenfield-directory-design', source: 'selected-stacks',
+    });
+    for (const section of stack === 'backend-java' ? [] : [shape.entry, 'modules', 'shared']) artifacts.push({ path: `${prefix}${shape.source}/${section}/README.md`, content: `# ${section}\n\n${section === 'modules' ? 'Create one bounded business module per directory. Add layers only when actual responsibilities need them; keep tests with their owner.' : section === 'shared' ? 'Keep only stable cross-module primitives here; business rules belong to modules.' : 'Compose implemented modules, adapters, and routes here.'}\n`, ownership: 'seed', kind: 'greenfield-directory-design', source: 'selected-stacks' });
   }
   return { units, artifacts };
 }

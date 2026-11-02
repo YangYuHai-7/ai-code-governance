@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="aicg-session" content="__AICG_SESSION__">
+  <title>AICG Studio · 本地规范会话</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>AICG Studio</h1>
+      <p>在本地输入业务目标，先预览，再创建规范交付会话。</p>
+      <p class="notice">创建不等于需求获批、代码生成、Agent 可执行或交付完成。本地界面没有可执行 Agent 集成。</p>
+      <p class="notice">本地服务空闲 60 分钟后自动停止。创建结果不明时，原请求不会随页面重开恢复；请先核对已有会话，不要创建新请求。</p>
+    </header>
+    <section aria-labelledby="start-title">
+      <h2 id="start-title">新建会话</h2>
+      <label for="request-text">业务目标</label>
+      <textarea id="request-text" rows="7" maxlength="8192" placeholder="例如：让客户能查看自己的订单状态"></textarea>
+      <label for="profile">风险档位</label>
+      <select id="profile"><option value="advisory">建议</option><option value="production">生产约束（不代表生产就绪）</option></select>
+      <div class="actions"><button id="preview-button" type="button">预览</button><button id="submit-button" type="button" disabled>确认并创建</button><button id="retry-button" type="button" hidden>用原请求重试</button><button id="new-intent-button" type="button" hidden>放弃待定请求，重新输入</button></div>
+      <p id="status" role="status" aria-live="polite"></p>
+      <div id="preview" hidden><h3>即将提交</h3><pre id="preview-text"></pre><dl id="preview-details"></dl><p class="notice">不会启动 Agent，也不会修改工作区。文件、命令、网络与外部操作默认禁止。</p></div>
+    </section>
+    <section aria-labelledby="sessions-title"><h2 id="sessions-title">已有会话</h2><button id="refresh-button" type="button">刷新</button><ul id="session-list"></ul><div id="session-detail"></div></section>
+  </main>
+</body>
+</html>

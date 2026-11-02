@@ -80,6 +80,1121 @@
           "purpose": "Author and evaluate project Skills as capability candidates for the L11 growth loop."
         }
       ]
+    },
+    {
+      "id": "phuryn-pm-skills",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "owner": "phuryn",
+      "repo": "pm-skills",
+      "ref": "c68487d721e419ec87af1ae6412a842978eab785",
+      "committedAt": "2026-10-10T10:56:23Z",
+      "license": "MIT",
+      "skills": [
+        {
+          "id": "code-review",
+          "path": "pm-ai-shipping/skills/code-review",
+          "capabilities": [
+            "pm-code-review",
+            "pm-ai-shipping",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-code-review",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Review code for actionable defects. Correctness is the core; performance and security are optional sub-cases of the same engine. Anchors on agreements between participants across a boundary, forces a violating execution, and refutes every candidate before reporting. Use when asked to review changes, find bugs, audit a codebase, or check whether a fix is safe."
+        },
+        {
+          "id": "intended-vs-implemented",
+          "path": "pm-ai-shipping/skills/intended-vs-implemented",
+          "capabilities": [
+            "pm-intended-vs-implemented",
+            "pm-ai-shipping",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-intended-vs-implemented",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "The method for finding the gap between what a system is supposed to do and what the code actually does — the class of bug generic scanners miss because they have no model of intent. Defines what counts as documented intent, what counts as implementation evidence, which mismatches matter, and how to avoid hand-wavy findings. Use when auditing AI-built code, reviewing access control against documented permissions, or checking whether a codebase mat"
+        },
+        {
+          "id": "shipping-artifacts",
+          "path": "pm-ai-shipping/skills/shipping-artifacts",
+          "capabilities": [
+            "pm-shipping-artifacts",
+            "pm-ai-shipping",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-shipping-artifacts",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "The durable documentation set that makes an AI-built (vibe-coded) app reviewable before shipping. A small core every app needs — architecture, user/permission flows, permissions, variables/secrets, and a test-coverage map — plus conditional docs added only when they apply: emails, scheduled work, SEO, and embedded agents/automation. Defines what each doc must capture and how a reviewer or auditor uses it. Use when documenting a codebase for hando"
+        },
+        {
+          "id": "ab-test-analysis",
+          "path": "pm-data-analytics/skills/ab-test-analysis",
+          "capabilities": [
+            "pm-ab-test-analysis",
+            "pm-data-analytics",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-ab-test-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Analyze A/B test results with statistical significance, sample size validation, confidence intervals, and ship/extend/stop recommendations. Use when evaluating experiment results, checking if a test reached significance, interpreting split test data, or deciding whether to ship a variant."
+        },
+        {
+          "id": "cohort-analysis",
+          "path": "pm-data-analytics/skills/cohort-analysis",
+          "capabilities": [
+            "pm-cohort-analysis",
+            "pm-data-analytics",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-cohort-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Perform cohort analysis on user engagement data — retention curves, feature adoption trends, and segment-level insights. Use when analyzing user retention by cohort, studying feature adoption over time, investigating churn patterns, or identifying engagement trends."
+        },
+        {
+          "id": "sql-queries",
+          "path": "pm-data-analytics/skills/sql-queries",
+          "capabilities": [
+            "pm-sql-queries",
+            "pm-data-analytics",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-sql-queries",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate SQL queries from natural language descriptions. Supports BigQuery, PostgreSQL, MySQL, and other dialects. Reads database schemas from uploaded diagrams or documentation. Use when writing SQL, building data reports, exploring databases, or translating business questions into queries."
+        },
+        {
+          "id": "brainstorm-okrs",
+          "path": "pm-execution/skills/brainstorm-okrs",
+          "capabilities": [
+            "pm-brainstorm-okrs",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-brainstorm-okrs",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm team-level OKRs aligned with company objectives — qualitative objectives with measurable key results. Use when setting quarterly OKRs, aligning team goals with company strategy, drafting objectives, or learning how to write effective OKRs."
+        },
+        {
+          "id": "create-prd",
+          "path": "pm-execution/skills/create-prd",
+          "capabilities": [
+            "pm-create-prd",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-create-prd",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create a lean, decision-ready Product Requirements Document with an 8-section template: summary, contacts, background, objective, market segments, value propositions (6-part JTBD template), solution, and release. Lean by default (about one to two pages), with a fuller spec on request. Use when writing a PRD, documenting product requirements, preparing a feature spec, or reviewing an existing PRD."
+        },
+        {
+          "id": "dummy-dataset",
+          "path": "pm-execution/skills/dummy-dataset",
+          "capabilities": [
+            "pm-dummy-dataset",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-dummy-dataset",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate realistic dummy datasets for testing with customizable columns, constraints, and output formats (CSV, JSON, SQL, Python script). Use when creating test data, building mock datasets, or generating sample data for development and demos."
+        },
+        {
+          "id": "job-stories",
+          "path": "pm-execution/skills/job-stories",
+          "capabilities": [
+            "pm-job-stories",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-job-stories",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create job stories using the 'When [situation], I want to [motivation], so I can [outcome]' format with detailed acceptance criteria. Use when writing job stories, creating JTBD-style backlog items, or expressing user situations and motivations."
+        },
+        {
+          "id": "outcome-roadmap",
+          "path": "pm-execution/skills/outcome-roadmap",
+          "capabilities": [
+            "pm-outcome-roadmap",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-outcome-roadmap",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Transform an output-focused roadmap into an outcome-focused one that communicates strategic intent. Rewrites initiatives as outcome statements reflecting user and business impacts. Use when shifting to outcome roadmaps, making a roadmap more strategic, or rewriting feature lists as outcomes."
+        },
+        {
+          "id": "pre-mortem",
+          "path": "pm-execution/skills/pre-mortem",
+          "capabilities": [
+            "pm-pre-mortem",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-pre-mortem",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Run a pre-mortem risk analysis on a PRD or launch plan. Categorizes risks as Tigers (real problems), Paper Tigers (overblown concerns), and Elephants (unspoken worries), then classifies as launch-blocking, fast-follow, or track. Use when preparing for launch, stress-testing a product plan, or identifying what could go wrong."
+        },
+        {
+          "id": "prioritization-frameworks",
+          "path": "pm-execution/skills/prioritization-frameworks",
+          "capabilities": [
+            "pm-prioritization-frameworks",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-prioritization-frameworks",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Reference guide to 9 prioritization frameworks with formulas, when-to-use guidance, and templates — RICE, ICE, Kano, MoSCoW, Opportunity Score, and more. Use when selecting a prioritization method, comparing frameworks like RICE vs ICE, or learning how different prioritization approaches work."
+        },
+        {
+          "id": "release-notes",
+          "path": "pm-execution/skills/release-notes",
+          "capabilities": [
+            "pm-release-notes",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-release-notes",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate user-facing release notes from tickets, PRDs, or changelogs. Creates clear, engaging summaries organized by category (new features, improvements, fixes). Use when writing release notes, creating changelogs, announcing product updates, or summarizing what shipped."
+        },
+        {
+          "id": "retro",
+          "path": "pm-execution/skills/retro",
+          "capabilities": [
+            "pm-retro",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-retro",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Facilitate a structured sprint retrospective — what went well, what didn't, and prioritized action items with owners and deadlines. Use when running a retrospective, reflecting on a sprint, creating action items from team feedback, or learning how to run effective retros."
+        },
+        {
+          "id": "sprint-plan",
+          "path": "pm-execution/skills/sprint-plan",
+          "capabilities": [
+            "pm-sprint-plan",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-sprint-plan",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Plan a sprint with capacity estimation, story selection, dependency mapping, and risk identification. Use when preparing for sprint planning, estimating team capacity, selecting stories, or balancing sprint scope against velocity."
+        },
+        {
+          "id": "stakeholder-map",
+          "path": "pm-execution/skills/stakeholder-map",
+          "capabilities": [
+            "pm-stakeholder-map",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-stakeholder-map",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Build a stakeholder map using a power/interest grid, identify communication strategies per quadrant, and generate a communication plan. Use when managing stakeholders, preparing for a launch, aligning cross-functional teams, or planning stakeholder engagement."
+        },
+        {
+          "id": "strategy-red-team",
+          "path": "pm-execution/skills/strategy-red-team",
+          "capabilities": [
+            "pm-strategy-red-team",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-strategy-red-team",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Red-team a PRD, roadmap, or strategy by attacking its load-bearing assumptions before reality does. Steelmans then attacks each claim, ranks failure modes by impact × likelihood × cheapness-to-test, and returns the cheapest test and kill criteria for each. Use when stress-testing a plan, pressure-testing a strategy, challenging assumptions, or preparing a doc for executive review."
+        },
+        {
+          "id": "summarize-meeting",
+          "path": "pm-execution/skills/summarize-meeting",
+          "capabilities": [
+            "pm-summarize-meeting",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-summarize-meeting",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Summarize a meeting transcript into structured notes with date, participants, topic, key decisions, summary points, and action items. Use when processing meeting recordings, creating meeting notes, writing meeting minutes, or recapping discussions."
+        },
+        {
+          "id": "test-scenarios",
+          "path": "pm-execution/skills/test-scenarios",
+          "capabilities": [
+            "pm-test-scenarios",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-test-scenarios",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create comprehensive test scenarios from user stories with test objectives, starting conditions, user roles, step-by-step actions, and expected outcomes. Use when writing QA test cases, creating test plans, defining acceptance tests, or preparing for feature validation."
+        },
+        {
+          "id": "user-stories",
+          "path": "pm-execution/skills/user-stories",
+          "capabilities": [
+            "pm-user-stories",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-user-stories",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create user stories following the 3 C's (Card, Conversation, Confirmation) and INVEST criteria with descriptions, design links, and acceptance criteria. Use when writing user stories, breaking down features into backlog items, or defining acceptance criteria."
+        },
+        {
+          "id": "wwas",
+          "path": "pm-execution/skills/wwas",
+          "capabilities": [
+            "pm-wwas",
+            "pm-execution",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-wwas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create product backlog items in Why-What-Acceptance format — independent, valuable, testable items with strategic context. Use when writing structured backlog items, breaking features into work items, or using the WWA format."
+        },
+        {
+          "id": "beachhead-segment",
+          "path": "pm-go-to-market/skills/beachhead-segment",
+          "capabilities": [
+            "pm-beachhead-segment",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-beachhead-segment",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify the first beachhead market segment for a product launch. Evaluates segments against burning pain, willingness to pay, winnable market share, and referral potential. Use when choosing a first market, targeting an initial customer segment, or planning market entry strategy."
+        },
+        {
+          "id": "competitive-battlecard",
+          "path": "pm-go-to-market/skills/competitive-battlecard",
+          "capabilities": [
+            "pm-competitive-battlecard",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-competitive-battlecard",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create sales-ready competitive battlecards comparing your product against a specific competitor — positioning, feature comparison, objection handling, and win/loss patterns. Use when preparing sales teams, creating competitive materials, or responding to 'why not competitor X?'"
+        },
+        {
+          "id": "growth-loops",
+          "path": "pm-go-to-market/skills/growth-loops",
+          "capabilities": [
+            "pm-growth-loops",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-growth-loops",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify growth loops (flywheels) for sustainable traction. Evaluates 5 loop types: Viral, Usage, Collaboration, User-Generated, and Referral. Use when designing growth mechanisms, building product-led traction, or understanding how growth loops work."
+        },
+        {
+          "id": "gtm-motions",
+          "path": "pm-go-to-market/skills/gtm-motions",
+          "capabilities": [
+            "pm-gtm-motions",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-gtm-motions",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify the best GTM motions and tools across 7 motion types: Inbound, Outbound, Paid Digital, Community, Partners, ABM, and PLG. Use when selecting marketing channels, choosing between inbound and outbound strategy, or planning cross-channel campaigns."
+        },
+        {
+          "id": "gtm-strategy",
+          "path": "pm-go-to-market/skills/gtm-strategy",
+          "capabilities": [
+            "pm-gtm-strategy",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-gtm-strategy",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create a go-to-market strategy covering marketing channels, messaging, success metrics, and launch timeline. Use when planning a product launch, creating a GTM plan from scratch, or defining a launch strategy for a new market."
+        },
+        {
+          "id": "ideal-customer-profile",
+          "path": "pm-go-to-market/skills/ideal-customer-profile",
+          "capabilities": [
+            "pm-ideal-customer-profile",
+            "pm-go-to-market",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-ideal-customer-profile",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify the Ideal Customer Profile (ICP) from research data with demographics, behaviors, JTBD, and needs. Use when defining your ICP, analyzing PMF survey data, or understanding who your best customers are."
+        },
+        {
+          "id": "competitor-analysis",
+          "path": "pm-market-research/skills/competitor-analysis",
+          "capabilities": [
+            "pm-competitor-analysis",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-competitor-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Analyze competitors with strengths, weaknesses, and differentiation opportunities. Identifies direct competitors and maps the competitive landscape. Use when doing competitive research, preparing a competitive brief, or finding differentiation opportunities."
+        },
+        {
+          "id": "customer-journey-map",
+          "path": "pm-market-research/skills/customer-journey-map",
+          "capabilities": [
+            "pm-customer-journey-map",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-customer-journey-map",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create an end-to-end customer journey map with stages, touchpoints, emotions, pain points, and opportunities. Use when mapping the customer experience, identifying friction points, improving onboarding, or visualizing the user journey."
+        },
+        {
+          "id": "market-segments",
+          "path": "pm-market-research/skills/market-segments",
+          "capabilities": [
+            "pm-market-segments",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-market-segments",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify 3-5 potential customer segments with demographics, JTBD, and product fit analysis. Use when exploring market segments, identifying target audiences, evaluating new markets, or learning how to segment a market."
+        },
+        {
+          "id": "market-sizing",
+          "path": "pm-market-research/skills/market-sizing",
+          "capabilities": [
+            "pm-market-sizing",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-market-sizing",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Estimate market size using TAM, SAM, and SOM with top-down and bottom-up approaches. Use when sizing a market opportunity, estimating addressable market, preparing for investor pitches, or evaluating market entry."
+        },
+        {
+          "id": "sentiment-analysis",
+          "path": "pm-market-research/skills/sentiment-analysis",
+          "capabilities": [
+            "pm-sentiment-analysis",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-sentiment-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Analyze user feedback data to identify segments with sentiment scores, JTBD, and product satisfaction insights. Use when analyzing user feedback at scale, running sentiment analysis on reviews or surveys, or identifying satisfaction patterns."
+        },
+        {
+          "id": "user-personas",
+          "path": "pm-market-research/skills/user-personas",
+          "capabilities": [
+            "pm-user-personas",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-user-personas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create refined user personas from research data — 3 personas with JTBD, pains, gains, and unexpected insights. Use when building personas from survey data, creating user profiles from research, or segmenting users for product decisions."
+        },
+        {
+          "id": "user-segmentation",
+          "path": "pm-market-research/skills/user-segmentation",
+          "capabilities": [
+            "pm-user-segmentation",
+            "pm-market-research",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-user-segmentation",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Segment users from feedback data based on behavior, JTBD, and needs. Identifies at least 3 distinct user segments. Use when segmenting a user base, analyzing diverse user feedback, or building a segmentation model."
+        },
+        {
+          "id": "marketing-ideas",
+          "path": "pm-marketing-growth/skills/marketing-ideas",
+          "capabilities": [
+            "pm-marketing-ideas",
+            "pm-marketing-growth",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-marketing-ideas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate 5 creative, cost-effective marketing ideas with channels, messaging, and engagement rationale. Use when brainstorming marketing campaigns, planning product promotion, or looking for creative marketing tactics."
+        },
+        {
+          "id": "north-star-metric",
+          "path": "pm-marketing-growth/skills/north-star-metric",
+          "capabilities": [
+            "pm-north-star-metric",
+            "pm-marketing-growth",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-north-star-metric",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Define a North Star Metric and 3-5 supporting input metrics that form a metrics constellation. Classify the business game (Attention, Transaction, Productivity) and validate against 7 criteria for an effective North Star. Use when choosing a North Star Metric, setting up a metrics framework, learning about the North Star Framework, or deciding what to measure."
+        },
+        {
+          "id": "positioning-ideas",
+          "path": "pm-marketing-growth/skills/positioning-ideas",
+          "capabilities": [
+            "pm-positioning-ideas",
+            "pm-marketing-growth",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-positioning-ideas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm product positioning ideas differentiated from competitors. Identifies top competitors and generates positioning statements with rationale. Use when developing product positioning, differentiating from competitors, or crafting brand positioning strategy."
+        },
+        {
+          "id": "product-name",
+          "path": "pm-marketing-growth/skills/product-name",
+          "capabilities": [
+            "pm-product-name",
+            "pm-marketing-growth",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-product-name",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm 5 unique, memorable product names with rationale aligned to brand values and target audience. Use when naming a new product, rebranding, or exploring product name ideas."
+        },
+        {
+          "id": "value-prop-statements",
+          "path": "pm-marketing-growth/skills/value-prop-statements",
+          "capabilities": [
+            "pm-value-prop-statements",
+            "pm-marketing-growth",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-value-prop-statements",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate value proposition statements for marketing, sales, and onboarding from existing value propositions. Use when writing marketing copy, creating sales messaging, or crafting onboarding messages."
+        },
+        {
+          "id": "analyze-feature-requests",
+          "path": "pm-product-discovery/skills/analyze-feature-requests",
+          "capabilities": [
+            "pm-analyze-feature-requests",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-analyze-feature-requests",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Analyze and prioritize a list of feature requests by theme, strategic alignment, impact, effort, and risk. Use when reviewing customer feature requests, triaging a backlog, or making prioritization decisions."
+        },
+        {
+          "id": "brainstorm-experiments-existing",
+          "path": "pm-product-discovery/skills/brainstorm-experiments-existing",
+          "capabilities": [
+            "pm-brainstorm-experiments-existing",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-brainstorm-experiments-existing",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Design experiments to test assumptions for an existing product — prototypes, A/B tests, spikes, and other low-effort validation methods. Use when validating assumptions, testing feature ideas cheaply, or planning product experiments."
+        },
+        {
+          "id": "brainstorm-experiments-new",
+          "path": "pm-product-discovery/skills/brainstorm-experiments-new",
+          "capabilities": [
+            "pm-brainstorm-experiments-new",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-brainstorm-experiments-new",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Design lean startup experiments (pretotypes) for a new product. Creates XYZ hypotheses and suggests low-effort validation methods like landing pages, explainer videos, and pre-orders. Use when validating a new product idea, creating pretotypes, or testing market demand."
+        },
+        {
+          "id": "brainstorm-ideas-existing",
+          "path": "pm-product-discovery/skills/brainstorm-ideas-existing",
+          "capabilities": [
+            "pm-brainstorm-ideas-existing",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-brainstorm-ideas-existing",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm product ideas for an existing product using multi-perspective ideation from PM, Designer, and Engineer viewpoints. Use when generating new feature ideas, brainstorming solutions for an identified opportunity, or ideating with a product trio."
+        },
+        {
+          "id": "brainstorm-ideas-new",
+          "path": "pm-product-discovery/skills/brainstorm-ideas-new",
+          "capabilities": [
+            "pm-brainstorm-ideas-new",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-brainstorm-ideas-new",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm feature ideas for a new product in initial discovery from PM, Designer, and Engineer perspectives. Use when starting product discovery for a new product, exploring features for a startup idea, or doing initial ideation."
+        },
+        {
+          "id": "identify-assumptions-existing",
+          "path": "pm-product-discovery/skills/identify-assumptions-existing",
+          "capabilities": [
+            "pm-identify-assumptions-existing",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-identify-assumptions-existing",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify risky assumptions for a feature idea in an existing product across Value, Usability, Viability, and Feasibility. Uses multi-perspective devil's advocate thinking. Use when stress-testing a feature idea, doing risk assessment, or preparing for assumption mapping."
+        },
+        {
+          "id": "identify-assumptions-new",
+          "path": "pm-product-discovery/skills/identify-assumptions-new",
+          "capabilities": [
+            "pm-identify-assumptions-new",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-identify-assumptions-new",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify risky assumptions for a new product idea across 8 risk categories including Go-to-Market, Strategy, and Team. Use when evaluating startup risks, assessing a new product concept, or mapping assumptions for a new venture."
+        },
+        {
+          "id": "interview-script",
+          "path": "pm-product-discovery/skills/interview-script",
+          "capabilities": [
+            "pm-interview-script",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-interview-script",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create a structured customer interview script with JTBD probing questions, warm-up, core exploration, and wrap-up sections. Follows The Mom Test principles — no leading questions, no pitching, focus on past behavior. Use when preparing for user interviews, creating interview guides, or planning discovery research."
+        },
+        {
+          "id": "metrics-dashboard",
+          "path": "pm-product-discovery/skills/metrics-dashboard",
+          "capabilities": [
+            "pm-metrics-dashboard",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-metrics-dashboard",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Define and design a product metrics dashboard with key metrics, data sources, visualization types, and alert thresholds. Use when creating a metrics dashboard, defining KPIs, setting up product analytics, or building a data monitoring plan."
+        },
+        {
+          "id": "opportunity-solution-tree",
+          "path": "pm-product-discovery/skills/opportunity-solution-tree",
+          "capabilities": [
+            "pm-opportunity-solution-tree",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-opportunity-solution-tree",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Build an Opportunity Solution Tree (OST) to structure product discovery — map a desired outcome to opportunities, solutions, and experiments. Based on Teresa Torres' Continuous Discovery Habits. Use when structuring discovery work, mapping opportunities to solutions, or deciding what to build next."
+        },
+        {
+          "id": "prioritize-assumptions",
+          "path": "pm-product-discovery/skills/prioritize-assumptions",
+          "capabilities": [
+            "pm-prioritize-assumptions",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-prioritize-assumptions",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Prioritize assumptions using an Impact × Risk matrix and suggest experiments for each. Use when triaging a list of assumptions, deciding what to test first, or applying the assumption prioritization canvas."
+        },
+        {
+          "id": "prioritize-features",
+          "path": "pm-product-discovery/skills/prioritize-features",
+          "capabilities": [
+            "pm-prioritize-features",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-prioritize-features",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Prioritize a backlog of feature ideas based on impact, effort, risk, and strategic alignment with top 5 recommendations. Use when prioritizing a feature backlog, making scope decisions, or ranking product ideas."
+        },
+        {
+          "id": "summarize-interview",
+          "path": "pm-product-discovery/skills/summarize-interview",
+          "capabilities": [
+            "pm-summarize-interview",
+            "pm-product-discovery",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-summarize-interview",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Summarize a customer interview transcript into a structured template with JTBD, satisfaction signals, and action items. Use when processing interview recordings or transcripts, synthesizing discovery interviews, or creating interview summaries."
+        },
+        {
+          "id": "ansoff-matrix",
+          "path": "pm-product-strategy/skills/ansoff-matrix",
+          "capabilities": [
+            "pm-ansoff-matrix",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-ansoff-matrix",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate an Ansoff Matrix analysis mapping growth strategies across market penetration, market development, product development, and diversification. Use when considering growth options, planning market expansion, or evaluating strategic growth paths."
+        },
+        {
+          "id": "business-model",
+          "path": "pm-product-strategy/skills/business-model",
+          "capabilities": [
+            "pm-business-model",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-business-model",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate a Business Model Canvas with all 9 building blocks. Use when creating a business model, documenting how a business creates value, or analyzing an existing business model."
+        },
+        {
+          "id": "lean-canvas",
+          "path": "pm-product-strategy/skills/lean-canvas",
+          "capabilities": [
+            "pm-lean-canvas",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-lean-canvas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate a Lean Canvas with problem, solution, metrics, cost structure, UVP, unfair advantage, channels, segments, and revenue. Use when exploring a lean startup canvas, testing a business hypothesis, or modeling a new venture."
+        },
+        {
+          "id": "monetization-strategy",
+          "path": "pm-product-strategy/skills/monetization-strategy",
+          "capabilities": [
+            "pm-monetization-strategy",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-monetization-strategy",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm 3-5 monetization strategies with audience fit, risks, and validation experiments. Use when exploring revenue models, evaluating pricing strategies, or deciding how to monetize a product."
+        },
+        {
+          "id": "pestle-analysis",
+          "path": "pm-product-strategy/skills/pestle-analysis",
+          "capabilities": [
+            "pm-pestle-analysis",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-pestle-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Perform a PESTLE analysis covering Political, Economic, Social, Technological, Legal, and Environmental factors. Use when assessing the macro environment, doing strategic planning, or evaluating external factors affecting your business."
+        },
+        {
+          "id": "porters-five-forces",
+          "path": "pm-product-strategy/skills/porters-five-forces",
+          "capabilities": [
+            "pm-porters-five-forces",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-porters-five-forces",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Perform Porter's Five Forces analysis — competitive rivalry, supplier power, buyer power, threat of substitutes, and threat of new entrants. Use when analyzing industry dynamics, assessing competitive forces, or evaluating market attractiveness."
+        },
+        {
+          "id": "pricing-strategy",
+          "path": "pm-product-strategy/skills/pricing-strategy",
+          "capabilities": [
+            "pm-pricing-strategy",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-pricing-strategy",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Analyze and design pricing strategies including pricing models, competitive pricing analysis, willingness-to-pay estimation, and price elasticity. Use when setting prices, evaluating pricing models, preparing for a pricing change, or comparing freemium vs paid approaches."
+        },
+        {
+          "id": "product-strategy",
+          "path": "pm-product-strategy/skills/product-strategy",
+          "capabilities": [
+            "pm-product-strategy",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-product-strategy",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Create a comprehensive product strategy using the 9-section Product Strategy Canvas — vision, segments, costs, value propositions, trade-offs, metrics, growth, capabilities, and defensibility. Use when building a product strategy, creating a strategic plan, or defining product direction."
+        },
+        {
+          "id": "product-vision",
+          "path": "pm-product-strategy/skills/product-vision",
+          "capabilities": [
+            "pm-product-vision",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-product-vision",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Brainstorm an inspiring, achievable, and emotional product vision that motivates teams and aligns stakeholders. Use when defining or refining a product vision, creating a vision statement, or aligning the team around a shared direction."
+        },
+        {
+          "id": "startup-canvas",
+          "path": "pm-product-strategy/skills/startup-canvas",
+          "capabilities": [
+            "pm-startup-canvas",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-startup-canvas",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Generate a Startup Canvas combining Product Strategy (9 sections) and Business Model (costs + revenue) for a new product. An alternative to BMC and Lean Canvas that separates strategy from business model. Use when launching a new product or evaluating a startup concept."
+        },
+        {
+          "id": "swot-analysis",
+          "path": "pm-product-strategy/skills/swot-analysis",
+          "capabilities": [
+            "pm-swot-analysis",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-swot-analysis",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Perform a detailed SWOT analysis — strengths, weaknesses, opportunities, and threats with actionable recommendations. Use when doing strategic assessment, competitive analysis, or evaluating a product or business position."
+        },
+        {
+          "id": "value-proposition",
+          "path": "pm-product-strategy/skills/value-proposition",
+          "capabilities": [
+            "pm-value-proposition",
+            "pm-product-strategy",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-value-proposition",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Design a detailed value proposition using a 6-part JTBD template — Who, Why, What before, How, What after, Alternatives. Use when creating a value proposition, analyzing customer value delivery, or articulating why customers should choose your product."
+        },
+        {
+          "id": "draft-nda",
+          "path": "pm-toolkit/skills/draft-nda",
+          "capabilities": [
+            "pm-draft-nda",
+            "pm-toolkit",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-draft-nda",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Draft a detailed Non-Disclosure Agreement between two parties covering information types, jurisdiction, and clauses needing legal review. Use when creating confidentiality agreements or preparing an NDA for a partnership."
+        },
+        {
+          "id": "grammar-check",
+          "path": "pm-toolkit/skills/grammar-check",
+          "capabilities": [
+            "pm-grammar-check",
+            "pm-toolkit",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-grammar-check",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Identify grammar, logical, and flow errors in text and suggest targeted fixes without rewriting the entire text. Use when proofreading content, checking writing quality, or reviewing a draft."
+        },
+        {
+          "id": "privacy-policy",
+          "path": "pm-toolkit/skills/privacy-policy",
+          "capabilities": [
+            "pm-privacy-policy",
+            "pm-toolkit",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-privacy-policy",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Draft a detailed privacy policy covering data types, jurisdiction, GDPR and compliance considerations, and clauses needing legal review. Use when creating a privacy policy, updating data protection documentation, or preparing for compliance."
+        },
+        {
+          "id": "review-resume",
+          "path": "pm-toolkit/skills/review-resume",
+          "capabilities": [
+            "pm-review-resume",
+            "pm-toolkit",
+            "product-management"
+          ],
+          "capabilityOwner": "pm-review-resume",
+          "permissions": [
+            "read-project",
+            "write-project",
+            "network-optional"
+          ],
+          "purpose": "Comprehensive PM resume review and tailoring against 10 best practices including XYZ+S formula, keyword optimization, job-specific tailoring, and structure. Use when reviewing a PM resume, preparing for job applications, or improving resume impact."
+        }
+      ]
     }
   ]
 }

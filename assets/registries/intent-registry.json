@@ -216,14 +216,19 @@
       "handler": "sync",
       "mode": "write",
       "aliases": [
+        "更新治理框架",
+        "更新项目治理框架",
+        "用aicg更新治理框架",
+        "刷新治理框架",
+        "update governance framework",
         "同步受管治理适配器",
         "同步治理适配器",
         "sync governance adapters",
         "sync managed governance"
       ],
       "match": {
-        "objects": ["受管治理适配器", "受管适配器", "治理适配器", "适配器", "adapters"],
-        "actions": ["同步", "sync"]
+        "objects": ["受管治理适配器", "受管适配器", "治理适配器", "适配器", "治理框架", "项目治理框架", "governance framework", "adapters"],
+        "actions": ["同步", "更新", "刷新", "sync", "update", "refresh"]
       }
     }
   ]

@@ -8,6 +8,284 @@
   },
   "standards": [
     {
+      "id": "proportionate-design",
+      "title": "Proportionate design and useful abstractions",
+      "profile": "implementation",
+      "appliesTo": {
+        "always": true
+      },
+      "sources": [
+        {
+          "id": "design-yagni",
+          "kind": "primary-source",
+          "title": "Yagni",
+          "url": "https://martinfowler.com/bliki/Yagni.html",
+          "retrievedAt": "2026-10-27"
+        }
+      ],
+      "practices": [
+        "Implement the smallest cohesive change that meets the current requirement; preserve a working modular monolith unless a demonstrated constraint requires more.",
+        "Before adding an interface, plugin, generic repository, event bus or dependency, name its current consumer, actual boundary and lifecycle or failure contract.",
+        "Use interfaces at real I/O, vendor, replaceable policy or testing boundaries; one implementation does not by itself make a useful boundary unnecessary.",
+        "Do not add empty interfaces, pass-through layers or configuration for hypothetical consumers. Do not split a cohesive algorithm to meet a line count.",
+        "Keep historical code intact unless the approved change requires migration; apply new-code guidance without forcing a repository rewrite."
+      ],
+      "decisionFlow": [
+        "Read the current requirement and existing entrypoint; search for an existing capability before introducing another.",
+        "Choose direct implementation, local extraction or a real boundary. State the current consumer and reason for any new abstraction in the existing plan or review.",
+        "Compare the simplest viable shape with the proposed shape; remove speculative extension points and unrelated cleanup.",
+        "Review the actual diff for unnecessary layers and run the affected behavior tests. Record unresolved design questions separately from passing automated checks."
+      ],
+      "verification": [
+        "Review each newly introduced abstraction against a current consumer or testability boundary.",
+        "Test the changed behavior and relevant failure path; a short file or passing linter does not establish good design."
+      ],
+      "boundaries": [
+        "These are review decisions, not a universal class-count, file-size or interface-count gate.",
+        "Use existing task artifacts; ordinary bounded changes do not require a separate architecture document."
+      ],
+      "translations": {
+        "zh-CN": {
+          "title": "适度设计与有效抽象",
+          "practices": [
+            "选择满足当前需求的最小内聚改动；只有已证明的约束才值得改变现有模块化单体。",
+            "新增接口、插件、通用仓储、事件总线或依赖前，说明当前消费者、真实边界及生命周期或失败契约。",
+            "真实 I/O、厂商、可替换策略和测试隔离边界可以使用接口；只有一个实现并不意味着该边界没有价值。",
+            "不要添加空接口、纯转发层或服务假想消费者的配置；不要为满足行数而拆散内聚算法。",
+            "保留历史代码，除非已批准范围需要迁移；新代码规范不授权整体重写。"
+          ],
+          "decisionFlow": [
+            "读取当前需求与入口，新增能力前搜索已有实现。",
+            "选择直接实现、局部提取或真实边界；在已有计划或评审中说明新抽象的消费者和理由。",
+            "比较最简单可行方案与当前方案，去掉假想扩展点和无关清理。",
+            "评审实际差异并运行受影响行为测试；自动化通过与未决设计问题分开记录。"
+          ],
+          "verification": [
+            "逐项评审新抽象是否服务真实消费者或测试边界。",
+            "验证变化行为和相关失败路径；文件短和静态检查通过不能证明设计合理。"
+          ],
+          "boundaries": [
+            "不得把类数量、文件行数或接口数量当成普遍质量门禁。",
+            "复用已有任务资料；普通有界修改不新增架构审批文档。"
+          ]
+        }
+      }
+    },
+    {
+      "id": "module-boundaries",
+      "title": "Cohesive modules and explicit dependencies",
+      "profile": "implementation",
+      "appliesTo": {
+        "always": true
+      },
+      "sources": [
+        {
+          "id": "design-module-dependencies",
+          "kind": "primary-source",
+          "title": "Common application architectures",
+          "url": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/common-web-application-architectures",
+          "retrievedAt": "2026-10-27"
+        }
+      ],
+      "practices": [
+        "Give each module one cohesive business responsibility, a small public contract and an explicit dependency direction.",
+        "Keep presentation, transport and persistence details outside reusable business policy; put composition and orchestration at the existing application boundary.",
+        "Expose public entrypoints instead of reaching into another module internals. Reject circular dependencies, including transitive project references.",
+        "Organize by current business capability and runtime responsibility; a module need not be a separate package, project, process or service.",
+        "Reuse actual project boundary checks. A checker for another language cannot prove the current stack dependency rules."
+      ],
+      "decisionFlow": [
+        "Read the owning module, its callers, public contract and existing dependency rules.",
+        "Identify which module owns each changed decision and which dependency edges change.",
+        "Keep a cohesive implementation together and extract only responsibilities with a separate reason to change.",
+        "Review public imports or project references, run applicable boundary checks and behavior tests, and record checker coverage limits."
+      ],
+      "verification": [
+        "Reject a deliberate forbidden dependency or cycle using the actual project checker.",
+        "Test the public module behavior, failure contract and affected consumers."
+      ],
+      "boundaries": [
+        "Static import or project-reference checks do not establish cohesion or all runtime dependencies.",
+        "Module boundaries do not authorize automatic migration or microservice extraction."
+      ],
+      "translations": {
+        "zh-CN": {
+          "title": "内聚模块与明确依赖",
+          "practices": [
+            "每个模块承担一个内聚业务职责，提供小而明确的公共契约并定义依赖方向。",
+            "把展示、传输和持久化细节留在可复用业务策略之外，在已有应用边界组装和编排。",
+            "通过公共入口访问模块，不穿透内部实现；检查直接和间接项目引用，拒绝循环依赖。",
+            "按当前业务能力和运行职责组织；模块不必等于独立包、项目、进程或服务。",
+            "复用项目实际边界检查；其他语言的检查器不能证明当前技术栈的依赖正确。"
+          ],
+          "decisionFlow": [
+            "读取模块、调用方、公共契约与已有依赖规则。",
+            "确定每个变化决策的归属及变化的依赖边。",
+            "保留内聚实现，仅提取具有独立变更原因的职责。",
+            "评审公共引用或项目依赖，运行适用边界和行为测试，并说明检查范围。"
+          ],
+          "verification": [
+            "让实际项目检查器拒绝一个明确的非法依赖或循环。",
+            "测试模块公共行为、失败契约及受影响消费者。"
+          ],
+          "boundaries": [
+            "静态引用检查不能证明内聚性或所有运行时依赖。",
+            "模块规范不授权自动迁移或拆微服务。"
+          ]
+        }
+      }
+    },
+    {
+      "id": "component-reuse",
+      "title": "Component composition and capability reuse",
+      "profile": "implementation",
+      "appliesTo": {
+        "always": true
+      },
+      "sources": [
+        {
+          "id": "design-component-separation",
+          "kind": "primary-source",
+          "title": "Separation of concerns",
+          "url": "https://learn.microsoft.com/en-us/dotnet/architecture/modern-web-apps-azure/architectural-principles",
+          "retrievedAt": "2026-10-27"
+        }
+      ],
+      "practices": [
+        "Search existing components and capabilities first; reuse the existing state, data-access and output owner instead of creating parallel behavior.",
+        "Extract a component for cohesive interaction, independent state, a reusable contract or a separate lifecycle; do not wrap every small function or visual element.",
+        "Use typed inputs, outputs and explicit loading, empty, error and pending states. Give each side effect and state transition one owner.",
+        "Keep reusable domain decisions independent of a UI framework. Do not reconstruct identifiers, specifications or units from display labels.",
+        "Compose small capabilities at an existing entrypoint; avoid duplicate state stores and giant components that own unrelated workflows."
+      ],
+      "decisionFlow": [
+        "Search existing components, services and consumers for the same responsibility.",
+        "Choose reuse, focused extension or a new cohesive component, and explain that choice in the existing implementation review.",
+        "Define inputs, outputs, state ownership, cancellation and resource lifetime where applicable.",
+        "Test the consumer interaction and loading, empty, failure and replacement paths; review duplicate implementations across entrypoints."
+      ],
+      "verification": [
+        "Exercise a component through its public consumer, including empty and failure states.",
+        "Check that different entrypoints reuse the same business decision or protected output capability."
+      ],
+      "boundaries": [
+        "Duplication hints and file size are review signals, not proof that extraction is correct.",
+        "A reusable component may have one current consumer; speculative future flexibility is insufficient justification."
+      ],
+      "translations": {
+        "zh-CN": {
+          "title": "组件组合与能力复用",
+          "practices": [
+            "先搜索已有组件和能力，复用状态、数据访问和输出的已有负责人，避免并行行为。",
+            "按内聚交互、独立状态、复用契约或独立生命周期提取组件，不为每个函数或视觉元素增加包装。",
+            "使用类型化输入输出，明确加载、空、错误和等待状态；每个副作用和状态转换只有一个负责人。",
+            "可复用业务决策不依赖 UI 框架，不从展示文本反推身份、规格或单位。",
+            "在已有入口组合能力，避免重复状态仓库或承担无关流程的巨型组件。"
+          ],
+          "decisionFlow": [
+            "搜索已有组件、服务和相同职责的消费者。",
+            "选择复用、局部扩展或新增内聚组件，在已有实施评审中说明理由。",
+            "定义输入输出、状态归属，以及适用的取消和资源生命周期。",
+            "通过消费者测试正常、空、失败和替换路径，检查跨入口重复实现。"
+          ],
+          "verification": [
+            "经公共消费者执行组件交互，覆盖空和失败状态。",
+            "检查不同入口是否复用同一业务判断或受保护输出能力。"
+          ],
+          "boundaries": [
+            "重复和文件大小只是评审信号，不能证明拆分合理。",
+            "组件允许只有一个当前消费者，但假想未来灵活性不足以支持设计。"
+          ]
+        }
+      }
+    },
+    {
+      "id": "dotnet-development",
+      "title": ".NET implementation and verification",
+      "profile": "implementation",
+      "appliesTo": {
+        "dependenciesAny": [
+          {
+            "ecosystem": "dotnet",
+            "name": "Microsoft.NET.Sdk"
+          },
+          {
+            "ecosystem": "dotnet",
+            "name": "Microsoft.NET.Sdk.Web"
+          },
+          {
+            "ecosystem": "dotnet",
+            "name": "Microsoft.NET.Test.Sdk"
+          }
+        ]
+      },
+      "sources": [
+        {
+          "id": "dotnet-test-command",
+          "kind": "primary-source",
+          "title": "dotnet test",
+          "url": "https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-test",
+          "retrievedAt": "2026-10-27"
+        },
+        {
+          "id": "dotnet-dispose-pattern",
+          "kind": "primary-source",
+          "title": "Implement a Dispose method",
+          "url": "https://learn.microsoft.com/en-us/dotnet/standard/garbage-collection/implementing-dispose",
+          "retrievedAt": "2026-10-27"
+        }
+      ],
+      "practices": [
+        "Confirm the SDK, target framework and packages from global.json and actual project files; keep Avalonia or ASP.NET assumptions conditional on installed dependencies.",
+        "Use explicit project references and existing composition roots. Keep domain and calculation policy free of UI, filesystem and transport dependencies where the project declares that boundary.",
+        "Propagate CancellationToken through cancellable async I/O, await tasks, and dispose streams, commands and connections with using or await using.",
+        "Keep UI state changes on the framework dispatcher; return typed success, empty and failure outcomes instead of overwriting failure with a success message.",
+        "Own multi-step persistence or update-and-publish operations within one transaction or synchronization boundary; return values from the effective saved snapshot.",
+        "Run the exact solution or test project command. Discovery is not execution or proof that tests exist; record test counts, skips and platform gaps."
+      ],
+      "decisionFlow": [
+        "Read actual SDK/project manifests, adjacent implementation and applicable project development Skills.",
+        "Map changed public contracts, project dependencies, resource lifetime and state ownership.",
+        "Implement the smallest cohesive change, reuse existing ports and add a behavior regression at the real caller.",
+        "Run the declared dotnet build/test entrypoints under existing authorization and report counts, skipped tests and unverified native behavior."
+      ],
+      "verification": [
+        "Build the actual solution and test the affected test project or solution; confirm nonzero relevant executed cases.",
+        "Test cancellation, resource release, transaction failure or dispatcher ownership when those surfaces change."
+      ],
+      "boundaries": [
+        "MSBuild targets, imported files and test initialization can execute project code; discovered commands remain declared until their build closure is reviewed.",
+        "A build or unit test does not prove native desktop loading, another operating system, real input data or human acceptance."
+      ],
+      "translations": {
+        "zh-CN": {
+          "title": ".NET 实现与验证",
+          "practices": [
+            "从 global.json 和实际项目文件确认 SDK、目标框架及包，仅在依赖匹配时使用 Avalonia 或 ASP.NET 规则。",
+            "使用明确项目引用和已有组装入口；在项目声明该边界时，领域和计算策略不依赖 UI、文件或传输细节。",
+            "可取消异步 I/O 传递 CancellationToken 并等待任务，使用 using 或 await using 释放流、命令和连接。",
+            "UI 状态在框架调度线程更新；返回明确的成功、空和失败结果，不能用成功提示覆盖失败。",
+            "多步持久化或更新并发布放在同一事务或同步边界，回传实际生效快照中的值。",
+            "运行准确的解决方案或测试项目命令；发现入口不代表执行或存在测试，记录数量、跳过和平台缺口。"
+          ],
+          "decisionFlow": [
+            "读取实际 SDK 和项目清单、相邻实现及适用项目开发 Skill。",
+            "明确公共契约、项目依赖、资源生命周期和状态归属。",
+            "实现最小内聚变更，复用已有端口，并在真实调用方补行为回归。",
+            "在已有授权内运行明确的 dotnet build/test 入口，报告数量、跳过及未验证原生行为。"
+          ],
+          "verification": [
+            "构建实际解决方案并执行受影响测试项目或解决方案，确认相关用例实际执行且不为零。",
+            "涉及相关表面时验证取消、资源释放、事务失败或调度线程归属。"
+          ],
+          "boundaries": [
+            "MSBuild 目标、导入文件与测试初始化可以执行项目代码；未审查构建闭包前，发现命令仅为声明入口。",
+            "构建或单测不证明原生桌面、其他操作系统、真实数据或人工验收。"
+          ]
+        }
+      }
+    },
+    {
       "id": "software-design-and-verification",
       "translations": { "zh-CN": {
         "title": "软件设计与变更验证",
@@ -484,24 +762,97 @@
     {
       "id": "standard-skill-authoring",
       "profile": "workflow",
-      "translations": { "zh-CN": {
-        "title": "标准 Skill 编写与审计",
-        "triggers": ["创建、更新、拆分或评审仓库 Skill。", "生成的 Skill 过于宽泛、只有文字描述、无法准确路由或缺少实施指导。"],
-        "nonTriggers": ["不要为一次性任务或尚未确认的业务偏好创建 Skill。", "没有证据绑定的负责人决定时，不得提升项目候选。"],
-        "decisionFlow": ["定义一个稳定的决策表面，并写出具体命中与不命中的任务。", "选择实现型或工作流型质量档案，补齐所有必需章节与证据来源。", "实现型 Skill 提供中性的正确与错误代码形状；工作流型 Skill 提供可执行流程。", "把场景验证绑定到已发现的仓库命令；没有可信命令时明确标记尚未验证。", "发布或采纳前运行质量审计与路由测试。"],
-        "practices": ["先声明明确触发条件与非触发条件，避免按技术名词无条件加载。", "实现型 Skill 必须给出不变量、决策流程、正确与错误代码形状、例外和项目证据边界。", "验证必须使用场景矩阵，绑定真实仓库命令；没有可信命令时明确标记尚未验证。", "通用标准使用中性示例，真实业务端点、类名、表名和事故细节只能留在项目证据中。", "一个 Skill 只负责一个稳定决策表面；路由 Skill 负责组合，不把整个技术栈塞进一个文件。"],
-        "verification": ["运行 Skill 质量审计，确认所有必需章节、决策步骤与验证矩阵存在。", "用命中和不命中任务各做一次路由测试。", "用正确、错误和例外案例验证 Skill 能指导实际实现与评审。"],
-        "boundaries": ["章节齐全不等于内容正确；仍需官方来源与项目证据。", "不得把未批准的项目候选直接提升为标准。"]
-      } },
+      "translations": {
+        "zh-CN": {
+          "title": "标准 Skill 编写与审计",
+          "triggers": [
+            "创建、更新、拆分或评审仓库 Skill。",
+            "生成的 Skill 过于宽泛、只有文字描述、无法准确路由或缺少实施指导。"
+          ],
+          "nonTriggers": [
+            "不要为一次性任务或尚未确认的业务偏好创建 Skill。",
+            "没有证据绑定的负责人决定时，不得提升项目候选。"
+          ],
+          "decisionFlow": [
+            "定义一个稳定的决策表面，并写出具体命中与不命中的任务。",
+            "选择实现型或工作流型质量档案，补齐所有必需章节与证据来源。",
+            "实现型 Skill 提供中性的正确与错误代码形状；工作流型 Skill 的每一步写明可执行动作、可观察输出与进入下一步的条件。",
+            "把场景验证绑定到已发现的仓库命令；没有可信命令时明确标记尚未验证。",
+            "发布或采纳前运行质量审计与路由测试。"
+          ],
+          "practices": [
+            "先声明明确触发条件与非触发条件，避免按技术名词无条件加载。",
+            "实现型 Skill 必须给出不变量、决策流程、正确与错误代码形状、例外和项目证据边界。",
+            "验证必须使用场景矩阵，绑定真实仓库命令；没有可信命令时明确标记尚未验证。",
+            "通用标准使用中性示例，真实业务端点、类名、表名和事故细节只能留在项目证据中。",
+            "一个 Skill 只负责一个稳定决策表面；路由 Skill 负责组合，不把整个技术栈塞进一个文件。",
+            "入口保留共用决策；较长的分支专用内容通过明确写出触发条件的引用按需加载。命中分支仍须包含完整规则和可执行示例。",
+            "每个工作流步骤写明可观察输出与进入下一步的条件。复用已有审批点，不增加重复确认。",
+            "先查询仓库事实，复用已确认选择；只询问前置条件已明确、且会影响结果的未决事项。",
+            "每条共用规则只有一个权威来源。复用项目术语表，只记录有实际取舍的重要设计决定；有内容需要沉淀时才创建记录。",
+            "除非用户要求，否则保留客户端调用策略；前置元数据的行为须按实际支持的客户端验证。",
+            "每次实现并验证一个完整行为，通过相关公共接口观察结果，预期结果来自需求或独立演算，避免照抄实现。"
+          ],
+          "verification": [
+            "运行 Skill 质量审计，确认所有必需章节、决策步骤与验证矩阵存在。",
+            "用命中和不命中任务各做一次路由测试。",
+            "用正确、错误和例外案例验证 Skill 能指导实际实现与评审。"
+          ],
+          "boundaries": [
+            "章节齐全不等于内容正确；仍需官方来源与项目证据。",
+            "不得把未批准的项目候选直接提升为标准。"
+          ]
+        }
+      },
       "title": "Standard Skill authoring and audit",
-      "appliesTo": { "always": true },
-      "sources": [{ "id": "governance-skill-quality-contract", "kind": "governance-principle", "title": "AI Code Governance Skill quality contract", "retrievedAt": "2026-09-17" }],
-      "triggers": ["Create, update, split, or review a repository Skill.", "A generated Skill is too broad, descriptive-only, unroutable, or lacks implementation guidance."],
-      "nonTriggers": ["Do not create a Skill for one transient task or an unconfirmed business preference.", "Do not promote a project candidate without an evidence-bound owner decision."],
-      "decisionFlow": ["Define one stable decision surface and write concrete trigger and non-trigger cases.", "Choose an implementation or workflow profile, then supply every required section and evidence source.", "For implementation Skills, add neutral correct and incorrect code shapes; for workflows, add an executable worked flow.", "Bind scenario-based verification to discovered repository commands or mark it not yet verified.", "Run the quality audit and route tests before publishing or adopting the Skill."],
-      "practices": ["State concrete trigger and non-trigger conditions instead of loading a Skill from a technology keyword alone.", "An implementation Skill must include invariants, a decision flow, correct and incorrect code shapes, exceptions, and a project evidence boundary.", "Use a scenario verification matrix bound to real repository commands; mark it not yet verified when no trusted command exists.", "Keep reusable standards neutral; real business endpoints, classes, tables, and incident details belong only in project evidence.", "Give one Skill one stable decision surface; compose them through a router instead of putting an entire stack in one file."],
-      "verification": ["Run the Skill quality audit and confirm all required sections, decisions, and matrix fields are present.", "Exercise one matching and one non-matching task to verify routing.", "Use correct, incorrect, and exception cases to confirm the Skill guides implementation and review."],
-      "boundaries": ["Complete sections do not prove technical correctness; official sources and project evidence are still required.", "Never promote an unapproved project candidate into a standard." ]
+      "appliesTo": {
+        "always": true
+      },
+      "sources": [
+        {
+          "id": "governance-skill-quality-contract",
+          "kind": "governance-principle",
+          "title": "AI Code Governance Skill quality contract",
+          "retrievedAt": "2026-09-17"
+        }
+      ],
+      "triggers": [
+        "Create, update, split, or review a repository Skill.",
+        "A generated Skill is too broad, descriptive-only, unroutable, or lacks implementation guidance."
+      ],
+      "nonTriggers": [
+        "Do not create a Skill for one transient task or an unconfirmed business preference.",
+        "Do not promote a project candidate without an evidence-bound owner decision."
+      ],
+      "decisionFlow": [
+        "Define one stable decision surface and write concrete trigger and non-trigger cases.",
+        "Choose an implementation or workflow profile, then supply every required section and evidence source.",
+        "For implementation Skills, add neutral correct and incorrect code shapes; for workflows, give each step an executable action, observable output and advance condition.",
+        "Bind scenario-based verification to discovered repository commands or mark it not yet verified.",
+        "Run the quality audit and route tests before publishing or adopting the Skill."
+      ],
+      "practices": [
+        "State concrete trigger and non-trigger conditions instead of loading a Skill from a technology keyword alone.",
+        "An implementation Skill must include invariants, a decision flow, correct and incorrect code shapes, exceptions, and a project evidence boundary.",
+        "Use a scenario verification matrix bound to real repository commands; mark it not yet verified when no trusted command exists.",
+        "Keep reusable standards neutral; real business endpoints, classes, tables, and incident details belong only in project evidence.",
+        "Give one Skill one stable decision surface; compose them through a router instead of putting an entire stack in one file.",
+        "Keep shared decisions in the entrypoint and load substantial branch-specific references only through a pointer that states its trigger. Preserve complete rules and worked examples on the selected branch.",
+        "Give every workflow step an observable output and an advance condition. Reuse existing approval points instead of creating another ceremony.",
+        "Look up repository facts before asking; reuse confirmed choices and ask only material decisions whose prerequisites are settled.",
+        "Keep each reusable rule in one authoritative source. Reuse the project glossary and record only consequential design trade-offs; create these records only when needed.",
+        "Preserve client invocation policy unless requested otherwise; frontmatter behavior needs verification in each supported client.",
+        "Build and verify one complete behavior at a time through the relevant public interface. Derive expected results independently of the implementation."
+      ],
+      "verification": [
+        "Run the Skill quality audit and confirm all required sections, decisions, and matrix fields are present.",
+        "Exercise one matching and one non-matching task to verify routing.",
+        "Use correct, incorrect, and exception cases to confirm the Skill guides implementation and review."
+      ],
+      "boundaries": [
+        "Complete sections do not prove technical correctness; official sources and project evidence are still required.",
+        "Never promote an unapproved project candidate into a standard."
+      ]
     },
     {
       "id": "professional-testing",
@@ -529,7 +880,7 @@
       "id": "spring-http-contracts",
       "translations": { "zh-CN": { "title": "Spring MVC HTTP 契约", "practices": ["普通 JSON 请求使用具名 DTO、@RequestBody 与 @Valid，并保持稳定的响应 DTO。", "控制器只处理传输映射；跨字段校验、授权、状态转换和事务在服务边界执行。", "显式定义错误语义，不向客户端泄露持久化对象或内部异常。"], "verification": ["测试有效、缺字段、非法字段和未授权请求。", "测试响应和错误契约不泄露内部字段。"], "boundaries": ["表单和 multipart 输入应根据 Servlet 语义单独建模。", "项目专属鉴权、租户和错误封装必须由仓库证据确认。"] } },
       "title": "Spring MVC HTTP contracts",
-      "appliesTo": { "dependenciesAny": [{ "ecosystem": "maven", "name": "org.springframework.boot:spring-boot-starter-web" }, { "ecosystem": "maven", "name": "org.springframework:spring-web" }] },
+      "appliesTo": { "dependenciesAny": [{ "ecosystem": "maven", "name": "org.springframework.boot:spring-boot-starter-web" }, { "ecosystem": "maven", "name": "org.springframework.boot:spring-boot-starter-webmvc" }, { "ecosystem": "maven", "name": "org.springframework:spring-web" }] },
       "sources": [{ "id": "spring-request-body", "kind": "official-documentation", "title": "Spring Framework: @RequestBody", "url": "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller/ann-methods/requestbody.html", "retrievedAt": "2026-09-17" }],
       "practices": ["Use named DTOs with @RequestBody and @Valid for ordinary JSON requests, and return stable response DTOs.", "Keep controllers at the transport boundary; perform cross-field validation, authorization, state transitions, and transactions in services.", "Define error semantics explicitly and never expose persistence records or internal exceptions directly."],
       "verification": ["Test valid, missing-field, invalid-field, and unauthorized requests.", "Test that response and error contracts do not expose internal fields."],

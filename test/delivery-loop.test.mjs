@@ -68,7 +68,7 @@ test('DeepSeek Harness adapters land in .dsh/skills and leave other client direc
   assert.equal(checkProject(scanProject(root)).ok, true);
 });
 
-test('the delivery loop ships as a runtime ledger and stays out of Minimal', (context) => {
+test('the delivery loop ships as a runtime ledger regardless of legacy depth', (context) => {
   const root = fixture(context, 'delivery-loop-flag');
   const scan = scanProject(root);
   const base = { ...defaultConfig(scan), clients: ['deepseek'], governanceDepth: 'standard' };
@@ -83,7 +83,7 @@ test('the delivery loop ships as a runtime ledger and stays out of Minimal', (co
   assert.equal(off.some((entry) => entry.includes('delivery-loop.json')), false);
 
   const minimal = { ...base, governanceDepth: 'minimal' };
-  assert.equal(buildArtifacts(minimal, scan).map((entry) => entry.path).some((entry) => entry.includes('delivery')), false);
+  assert.equal(buildArtifacts(minimal, scan).map((entry) => entry.path).some((entry) => entry.includes('delivery')), true);
 
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(base, scan)));
   assert.equal(checkProject(scanProject(root)).ok, true);

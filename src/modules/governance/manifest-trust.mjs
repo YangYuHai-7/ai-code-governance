@@ -7,6 +7,7 @@ import { declaredSkillDirectories, loadCapabilityRegistry } from '../../catalogs
 import { buildProjectConventionArtifacts, loadTechnicalStandardRegistry } from '../standards/index.mjs';
 import { buildCapabilityArtifacts } from '../capabilities/index.mjs';
 import { scanProject } from '../repository/index.mjs';
+import { buildProjectDocumentSkills } from '../skills/index.mjs';
 import { scanProjectMemoryFacts } from '../memory/index.mjs';
 import { BUSINESS_CONSTRAINT_SKILL_PATH } from './business-constraints.mjs';
 import { BROWNFIELD_ENRICHMENT_SKILL } from './brownfield-enrichment.mjs';
@@ -32,7 +33,7 @@ function escapePathSegment(value) {
 }
 
 // A unit's documentation page never repeats the unit's own path: the root unit writes
-// docs/ai/development/root.md and every other unit writes docs/ai/development/units/<id>.md
+// docs/development/README.md and every other unit writes docs/development/units/<id>.md
 // against the repository root. `source` alone therefore cannot carry the prefix back, and
 // the artifact path is the only place the unit path and unit id can be recovered from.
 function recoverDevelopmentUnit(entry) {
@@ -45,7 +46,7 @@ function recoverDevelopmentUnit(entry) {
       unitId,
       localRoot,
       adapterPrefix: unitPath === '' ? '' : `${unitPath}/`,
-      documentation: unitPath === '' ? 'docs/ai/development/root.md' : `docs/ai/development/units/${unitId}.md`,
+      documentation: unitPath === '' ? 'docs/development/README.md' : `docs/development/units/${unitId}.md`,
       canonicalSkill: unitId === null ? null : `${localRoot}/skills/development-${unitId}/SKILL.md`,
     };
   };
@@ -81,6 +82,7 @@ function citesItsOwnUnitDocumentation(entry, unit) {
   // shape is still accepted: otherwise an upgrade would reclassify an already installed
   // governance tree as unmanaged files this tool refuses to touch.
   if (entry.source === unit.documentation) return true;
+  if (entry.source === unit.documentation.replace('docs/development/README.md', 'docs/ai/development/root.md').replace('docs/development/units/', 'docs/ai/development/units/')) return true;
   return entry.kind === 'development-unit-adapter-skill' && entry.source === unit.canonicalSkill;
 }
 
@@ -148,7 +150,7 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([...[
   'full\0fixed-team-roster\0team-role-registry',
   'full\0brownfield-enrichment-skill\0brownfield-enrichment-decision',
   // development-unit-* kinds cannot be enumerated up front because each unit has its own
-  // source path (docs/ai/development/units/<id>.md). They are trusted only when the path
+  // source path (docs/development/units/<id>.md). They are trusted only when the path
   // rule below reconstructs an exact match from `source`; an entry that fails to derive a
   // descriptor stays untrusted so we cannot silently delete user-written content.
   'seed\0development-unit-rule\0<recovered-from-source>',
@@ -165,7 +167,7 @@ const KNOWN_MANAGED_RELATIONSHIPS = new Set([...[
   'full\0repository-family-index\0repository-family-scan',
 ].map(normalizeRelationship)]);
 
-const SKILL_KINDS = new Set(['adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
+const SKILL_KINDS = new Set(['development-skill-index', 'project-document-skill', 'project-document-adapter-skill', 'adapter-skill', 'project-capability-skill', 'project-capability-adapter-skill', 'project-convention-skill', 'technical-standard-skill', 'technical-standard-adapter-skill']);
 
 function isSameKnownPath(candidate, legacyPath) {
   return canonicalPath(candidate ?? '', 'compact') === canonicalPath(legacyPath, 'compact');
@@ -239,6 +241,7 @@ function supportedSkillDefinitions(root, manifest) {
     } catch { /* Invalid capability records cannot manufacture a supported definition. */ }
     try {
       const scan = scanProject(root);
+      for (const artifact of buildProjectDocumentSkills(config, scan).artifacts) add(artifact, sha256(remapContentPaths(artifact.content, footprint)));
       const memory = scanProjectMemoryFacts(scan);
       for (const artifact of buildProjectConventionArtifacts(config, scan, memory).artifacts.filter((item) => item.kind === 'project-convention-skill')) {
         add(artifact, sha256(remapContentPaths(artifact.content, footprint)));

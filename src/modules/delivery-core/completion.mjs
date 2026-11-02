@@ -2,8 +2,8 @@ import { usageError } from '../../kernel/index.mjs';
 import { canonicalValueDigest } from '../../shared/index.mjs';
 import { validateCompletionContract, validateDeliverySession, validateEvidenceIr } from './contracts.mjs';
 import { evaluateReviewFindings, evaluateReviewIndependence } from '../release/index.mjs';
-import { validateQualityMatrixRun } from './quality-matrix.mjs';
-import { riskProfileSetDigest, validateRiskProfileSet } from './risk-profiles.mjs';
+import { qualityMatrixState } from './quality-matrix-current.mjs';
+import { validateRiskProfileSet } from './risk-profiles.mjs';
 
 const STAGES = ['governance', 'requirements', 'architecture', 'implementation', 'automated-verification', 'independent-review', 'human-acceptance', 'deployability', 'deployment'];
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
@@ -51,28 +51,12 @@ export function normalizeArchitectureEvaluation(result) {
   });
 }
 
-// A quality matrix run is current only while every semantic, repository, Pack, risk, plan, and
-// environment digest it was produced under still matches the session.
-function qualityMatrixState(session, riskProfileSet) {
-  if (!session.runtime?.qualityMatrixRun) return null;
-  const run = validateQualityMatrixRun(session.runtime.qualityMatrixRun);
-  const stale = [];
-  if (run.digests.requirement !== session.requirementDigest) stale.push('requirement');
-  if (run.digests.repository !== session.repositoryDigest) stale.push('repository');
-  const packDigest = session.runtime?.pack?.digest ?? null;
-  if (packDigest && run.digests.pack !== packDigest) stale.push('pack');
-  if (riskProfileSet && run.digests.risk !== riskProfileSetDigest(riskProfileSet)) stale.push('risk');
-  const environmentDigest = session.runtime?.environmentDigest ?? null;
-  if (environmentDigest && run.digests.environment !== environmentDigest) stale.push('environment');
-  const planId = session.runtime?.qualityMatrixPlanId ?? null;
-  if (planId && run.planId !== planId) stale.push('plan');
-  const activated = riskProfileSet?.requiredGateIds ?? [];
-  const uncovered = activated.filter((gateId) => !run.requiredGateIds.includes(gateId));
-  return { run, stale, uncovered };
+function boundEvidence(items, session, source) {
+  return items.filter((entry) => entry.sessionId === session.id && entry.source === source && entry.semanticDigest === session.requirementDigest && entry.repositoryDigest === session.repositoryDigest);
 }
 
 function currentEvidence(items, session, source) {
-  return items.filter((entry) => entry.source === source && entry.status === 'passed' && entry.verificationLevel === 'verified' && entry.semanticDigest === session.requirementDigest && entry.repositoryDigest === session.repositoryDigest);
+  return boundEvidence(items, session, source).filter((entry) => entry.status === 'passed' && entry.verificationLevel === 'verified');
 }
 
 function applicability(session, stage) {
@@ -88,8 +72,11 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   if (!Array.isArray(evidence)) throw usageError('Delivery completion evidence must be an array.');
   const records = evidence.map(validateEvidenceIr);
   if (!['advisory', 'production'].includes(profile)) throw usageError('Delivery completion profile must be advisory or production.');
+  const packBound = Boolean(current.runtime?.pack);
   const riskProfileSet = current.runtime?.riskProfileSet ? validateRiskProfileSet(current.runtime.riskProfileSet) : null;
   const matrix = qualityMatrixState(current, riskProfileSet);
+  const matrixCurrent = Boolean(matrix && matrix.stale.length === 0 && matrix.uncovered.length === 0 && matrix.blockedProfiles.length === 0);
+  const matrixPassed = matrixCurrent && matrix.run.status === 'passed';
   const reviewSeparation = current.runtime?.reviewSessions
     ? evaluateReviewIndependence({ risk: current.runtime.reviewRisk ?? 'standard', sessions: current.runtime.reviewSessions })
     : null;
@@ -109,9 +96,9 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
     implementation: { passed: traceability.status === 'complete' && !(traceability.orphanChanges ?? []).length, evidence: [] },
     'automated-verification': {
       passed: matrix
-        ? matrix.stale.length === 0 && matrix.uncovered.length === 0 && matrix.run.status === 'passed'
-        : automated.length > 0,
-      evidence: matrix ? [] : automated.map((entry) => entry.id),
+        ? matrixPassed
+        : !packBound && automated.length > 0,
+      evidence: matrix || packBound ? [] : automated.map((entry) => entry.id),
     },
     'independent-review': {
       passed: reviews.length > 0
@@ -130,8 +117,9 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   if (matrix) {
     if (matrix.stale.length) gaps.push(`quality matrix run is stale for ${matrix.stale.join(', ')}.`);
     for (const gateId of matrix.uncovered) gaps.push(`quality gate ${gateId}: the current run does not cover an activated gate.`);
+    for (const profileId of matrix.blockedProfiles) gaps.push(`risk profile ${profileId} requires an owner decision before verification can complete.`);
     if (matrix.run.status !== 'passed') gaps.push(`quality matrix run status is ${matrix.run.status}.`);
-  }
+  } else if (packBound) gaps.push('quality matrix receipt is missing for the current Pack.');
   const gates = STAGES.map((stage) => {
     const reason = applicability(current, stage);
     if (reason) return { id: stage, applicability: 'not-applicable', status: 'not-applicable', evidenceIds: [], reason };
@@ -142,8 +130,10 @@ export function evaluateDeliveryCompletion({ session, traceability, evidence = [
   });
   const allRequired = requiredStages.every((stage) => ['passed', 'not-applicable'].includes(gates.find((gate) => gate.id === stage).status));
   const implementation = facts.implementation.passed ? 'complete' : current.state === 'requirements-pending' ? 'missing' : 'partial';
-  const verification = automated.length ? 'verified' : records.some((entry) => entry.source === 'automated-test' && entry.status === 'failed') ? 'failed' : 'unverified';
-  const acceptanceState = applicability(current, 'human-acceptance') ? 'not-applicable' : acceptance.length ? 'accepted' : records.some((entry) => entry.source === 'human-acceptance' && entry.status === 'failed') ? 'rejected' : 'unreviewed';
+  const verification = matrix
+    ? matrixPassed ? 'verified' : matrixCurrent && matrix.run.status === 'failed' ? 'failed' : 'unverified'
+    : packBound ? 'unverified' : automated.length ? 'verified' : boundEvidence(records, current, 'automated-test').some((entry) => entry.status === 'failed') ? 'failed' : 'unverified';
+  const acceptanceState = applicability(current, 'human-acceptance') ? 'not-applicable' : acceptance.length ? 'accepted' : boundEvidence(records, current, 'human-acceptance').some((entry) => entry.status === 'failed') ? 'rejected' : 'unreviewed';
   const deployability = deploymentEvidence.length ? 'ready' : profile === 'production' ? 'blocked' : 'unknown';
   const deployment = facts.deployment.passed ? 'deployed' : applicability(current, 'deployment') ? 'not-applicable' : 'not-deployed';
   return validateCompletionContract({

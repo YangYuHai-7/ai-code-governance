@@ -40,13 +40,12 @@ test('existing monorepos receive one evidence baseline and README entrypoint per
     assert.match(byPath.get(unit.documentation).content, /code-scan understanding baseline/);
     const localRoot = unit.path === '.' ? 'docs/ai' : `${unit.path}/docs/ai`;
     assert.ok(canonicalPathVariants(`${localRoot}/rules/development.md`).some((candidate) => byPath.has(candidate)), `${localRoot}/rules/development.md`);
-    const localSkill = byPath.get(`${localRoot}/skills/development-${unit.id}/SKILL.md`);
-    assert.ok(localSkill);
-    assert.match(localSkill.content, new RegExp(unit.documentation.replaceAll('/', '\\/')));
-    const adapterRoot = unit.path === '.' ? '' : `${unit.path}/`;
-    assert.ok(byPath.has(`${adapterRoot}.agents/skills/development-${unit.id}/SKILL.md`));
+    assert.ok(byPath.has('docs/ai/skills/standards/module-boundaries/SKILL.md'));
+    assert.ok(byPath.has('docs/development/standards/module-boundaries.md'));
     if (unit.path !== '.') assert.ok(byPath.has(`${unit.path}/AGENTS.md`));
   }
+  assert.match(byPath.get('apps/web/AGENTS.md').content, /vue-component-composition\/SKILL\.md/);
+  assert.doesNotMatch(byPath.get('services/api/AGENTS.md').content, /vue-component-composition\/SKILL\.md/);
   const skill = byPath.get('docs/ai/skills/brownfield-understanding/SKILL.md').content;
   assert.match(skill, /Implementation Skills require correct, incorrect, and exception code shapes/);
   assert.match(skill, /Unknown content remains `unverified`/);
@@ -83,7 +82,7 @@ test('a Maven aggregator is one development unit and its modules become inventor
     assert.equal(byPath.has(`${id}/AGENTS.md`), false, `${id}/AGENTS.md must not be generated`);
     assert.equal(byPath.has(`${id}/README.md`), false, `${id}/README.md must not be generated`);
   }
-  const document = byPath.get('docs/ai/development/root.md').content;
+  const document = byPath.get('docs/development/README.md').content;
   assert.match(document, /## Module inventory/);
   assert.match(document, /`svc-b`/);
   // Each test file is listed once, under test evidence only.

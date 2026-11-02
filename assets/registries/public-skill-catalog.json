@@ -33,9 +33,1095 @@
       "ref": "34040c9c568585f6929bedeaad110ad08f079624",
       "committedAt": "2026-09-10T19:44:08Z",
       "license": "Apache-2.0"
+    },
+    {
+      "id": "phuryn-pm-skills",
+      "repository": "https://github.com/phuryn/pm-skills",
+      "ref": "c68487d721e419ec87af1ae6412a842978eab785",
+      "committedAt": "2026-10-10T10:56:23Z",
+      "license": "MIT"
     }
   ],
   "catalog": [
+    {
+      "id": "ab-test-analysis",
+      "source": "official:phuryn/pm-skills/ab-test-analysis",
+      "name": "ab-test-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-ab-test-analysis",
+        "pm-data-analytics",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-ab-test-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "9956966671d6d19d42acb6150307fd7954d16d1d150e8fd8277f99eec9a949e0",
+      "contentBytes": 3587,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "analyze-feature-requests",
+      "source": "official:phuryn/pm-skills/analyze-feature-requests",
+      "name": "analyze-feature-requests",
+      "version": "unverified",
+      "capabilities": [
+        "pm-analyze-feature-requests",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-analyze-feature-requests",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "7615db7687a668a99e015664295f849bfab696a8dd7b3c02b0200a512c6ad3c2",
+      "contentBytes": 2274,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "ansoff-matrix",
+      "source": "official:phuryn/pm-skills/ansoff-matrix",
+      "name": "ansoff-matrix",
+      "version": "unverified",
+      "capabilities": [
+        "pm-ansoff-matrix",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-ansoff-matrix",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "2f2ffa5bc380d8df5d217334ef7b9f19941beaa2602fd2e7ac4f321f447a4153",
+      "contentBytes": 5684,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "beachhead-segment",
+      "source": "official:phuryn/pm-skills/beachhead-segment",
+      "name": "beachhead-segment",
+      "version": "unverified",
+      "capabilities": [
+        "pm-beachhead-segment",
+        "pm-go-to-market",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-beachhead-segment",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "a3f94e98c05315938ad80d5e2103eab70096abfa40881dfb2c22a731d923ea5f",
+      "contentBytes": 5876,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "brainstorm-experiments-existing",
+      "source": "official:phuryn/pm-skills/brainstorm-experiments-existing",
+      "name": "brainstorm-experiments-existing",
+      "version": "unverified",
+      "capabilities": [
+        "pm-brainstorm-experiments-existing",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-brainstorm-experiments-existing",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "d72da1f4f08d5514662d7bad37dfc3ed4ef11fcc5b5ddec6ca5a8ac0e47f45c5",
+      "contentBytes": 2408,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "brainstorm-experiments-new",
+      "source": "official:phuryn/pm-skills/brainstorm-experiments-new",
+      "name": "brainstorm-experiments-new",
+      "version": "unverified",
+      "capabilities": [
+        "pm-brainstorm-experiments-new",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-brainstorm-experiments-new",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "fe66d9ba76cf6b0e156298c88f752d8e1e62549fe77a7c01c0a74d8679da9334",
+      "contentBytes": 2538,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "brainstorm-ideas-existing",
+      "source": "official:phuryn/pm-skills/brainstorm-ideas-existing",
+      "name": "brainstorm-ideas-existing",
+      "version": "unverified",
+      "capabilities": [
+        "pm-brainstorm-ideas-existing",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-brainstorm-ideas-existing",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "cf950494541bd9b47e60054f1a917cef02094fe8c769d5feca86603282e2bd5b",
+      "contentBytes": 2951,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "brainstorm-ideas-new",
+      "source": "official:phuryn/pm-skills/brainstorm-ideas-new",
+      "name": "brainstorm-ideas-new",
+      "version": "unverified",
+      "capabilities": [
+        "pm-brainstorm-ideas-new",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-brainstorm-ideas-new",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "400e5e0760d6dc52bfe34953d90db6223df532ce720d7e85568696ab5c3d34d2",
+      "contentBytes": 2437,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "brainstorm-okrs",
+      "source": "official:phuryn/pm-skills/brainstorm-okrs",
+      "name": "brainstorm-okrs",
+      "version": "unverified",
+      "capabilities": [
+        "pm-brainstorm-okrs",
+        "pm-execution",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-brainstorm-okrs",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "9d4fcbc779aad7bcf4b4793148be31bec4bfe70e08f5885cf34635ecd08c47ee",
+      "contentBytes": 4341,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "business-model",
+      "source": "official:phuryn/pm-skills/business-model",
+      "name": "business-model",
+      "version": "unverified",
+      "capabilities": [
+        "pm-business-model",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-business-model",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "515621fd8a41ecba5b7234d0d9e1e50185ba33805c4dd170b66364281f84acc8",
+      "contentBytes": 5784,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "code-review",
+      "source": "official:phuryn/pm-skills/code-review",
+      "name": "code-review",
+      "version": "unverified",
+      "capabilities": [
+        "pm-ai-shipping",
+        "pm-code-review",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-code-review",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "d542b88452e311fabaa97e13f6f5bb6972efd63ad3c2afb6936baadfdf30c14b",
+      "contentBytes": 14467,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "cohort-analysis",
+      "source": "official:phuryn/pm-skills/cohort-analysis",
+      "name": "cohort-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-cohort-analysis",
+        "pm-data-analytics",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-cohort-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "bd721a429e58c71a1a488ac1e89ba2bcbb9e179cb9c0b5eac44a3c3b3e9fdb15",
+      "contentBytes": 5026,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "competitive-battlecard",
+      "source": "official:phuryn/pm-skills/competitive-battlecard",
+      "name": "competitive-battlecard",
+      "version": "unverified",
+      "capabilities": [
+        "pm-competitive-battlecard",
+        "pm-go-to-market",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-competitive-battlecard",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "89a82a58675d7c82f9d9d2efc7ab81ca0597264804d4ab722ae354d767ebac21",
+      "contentBytes": 2886,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "competitor-analysis",
+      "source": "official:phuryn/pm-skills/competitor-analysis",
+      "name": "competitor-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-competitor-analysis",
+        "pm-market-research",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-competitor-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "8e627fc7fba96f223ad9f8fd23c6033a429cc28f9e9ce2d672854c6851810c2b",
+      "contentBytes": 4814,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "create-prd",
+      "source": "official:phuryn/pm-skills/create-prd",
+      "name": "create-prd",
+      "version": "unverified",
+      "capabilities": [
+        "pm-create-prd",
+        "pm-execution",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-create-prd",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "e3aa10a437ed7f748a957bd5d1eb06d8fa3f56dc728dcb93ce484387ecc3fa13",
+      "contentBytes": 7301,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "customer-journey-map",
+      "source": "official:phuryn/pm-skills/customer-journey-map",
+      "name": "customer-journey-map",
+      "version": "unverified",
+      "capabilities": [
+        "pm-customer-journey-map",
+        "pm-market-research",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-customer-journey-map",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "656c0e16318b3b24870065a8eabb8a116b72e47c167472836ce76ea97ec5c75e",
+      "contentBytes": 3268,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "draft-nda",
+      "source": "official:phuryn/pm-skills/draft-nda",
+      "name": "draft-nda",
+      "version": "unverified",
+      "capabilities": [
+        "pm-draft-nda",
+        "pm-toolkit",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-draft-nda",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "e37a613bae8038220aac1e45f73596a419920015abe28d4a012d339a0e018247",
+      "contentBytes": 7484,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "dummy-dataset",
+      "source": "official:phuryn/pm-skills/dummy-dataset",
+      "name": "dummy-dataset",
+      "version": "unverified",
+      "capabilities": [
+        "pm-dummy-dataset",
+        "pm-execution",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-dummy-dataset",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "35ca70a479f3c9cbdbee2d59c56d777886a8788aa79bd4bf3258b2cf557937aa",
+      "contentBytes": 3930,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "grammar-check",
+      "source": "official:phuryn/pm-skills/grammar-check",
+      "name": "grammar-check",
+      "version": "unverified",
+      "capabilities": [
+        "pm-grammar-check",
+        "pm-toolkit",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-grammar-check",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "67e4721b25541cea2f2b72e27dca0099cad66ac9a1a6fdc49d63adbae6450e02",
+      "contentBytes": 9673,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "growth-loops",
+      "source": "official:phuryn/pm-skills/growth-loops",
+      "name": "growth-loops",
+      "version": "unverified",
+      "capabilities": [
+        "pm-go-to-market",
+        "pm-growth-loops",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-growth-loops",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "ce93f8c3f3a5db135aff02c5859bc153b9bd376b93f97a1c68e5ca498cf53557",
+      "contentBytes": 5788,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "gtm-motions",
+      "source": "official:phuryn/pm-skills/gtm-motions",
+      "name": "gtm-motions",
+      "version": "unverified",
+      "capabilities": [
+        "pm-go-to-market",
+        "pm-gtm-motions",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-gtm-motions",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "b26db17f9eee4f04aa3d53bf3c393da0574a3fa54d59eb7427e0cf5edf2377c3",
+      "contentBytes": 7556,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "gtm-strategy",
+      "source": "official:phuryn/pm-skills/gtm-strategy",
+      "name": "gtm-strategy",
+      "version": "unverified",
+      "capabilities": [
+        "pm-go-to-market",
+        "pm-gtm-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-gtm-strategy",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "fcc7c24dda6b4fec94d1d847e0ba2b42cff38b5ec6215bb1749a65d8b885f91e",
+      "contentBytes": 4047,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "ideal-customer-profile",
+      "source": "official:phuryn/pm-skills/ideal-customer-profile",
+      "name": "ideal-customer-profile",
+      "version": "unverified",
+      "capabilities": [
+        "pm-go-to-market",
+        "pm-ideal-customer-profile",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-ideal-customer-profile",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "8d434df786db2290efb575f1d219c7e19650e7a7e3df9a5f4b82b0bd0d2ce298",
+      "contentBytes": 6002,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "identify-assumptions-existing",
+      "source": "official:phuryn/pm-skills/identify-assumptions-existing",
+      "name": "identify-assumptions-existing",
+      "version": "unverified",
+      "capabilities": [
+        "pm-identify-assumptions-existing",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-identify-assumptions-existing",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "59d788213014552ac64f589c71ce82b135f9ef4b84fec457446ad90795fd439f",
+      "contentBytes": 2102,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "identify-assumptions-new",
+      "source": "official:phuryn/pm-skills/identify-assumptions-new",
+      "name": "identify-assumptions-new",
+      "version": "unverified",
+      "capabilities": [
+        "pm-identify-assumptions-new",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-identify-assumptions-new",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "962b1e0c01e45ceb930e4d806c0ffb05e36cf25dcfef5497e7828d89d6ae474b",
+      "contentBytes": 3227,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "intended-vs-implemented",
+      "source": "official:phuryn/pm-skills/intended-vs-implemented",
+      "name": "intended-vs-implemented",
+      "version": "unverified",
+      "capabilities": [
+        "pm-ai-shipping",
+        "pm-intended-vs-implemented",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-intended-vs-implemented",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "5d88977487be2b11e872deba524dbb0effe252b367d95ad9463f1058b8c50158",
+      "contentBytes": 3966,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "interview-script",
+      "source": "official:phuryn/pm-skills/interview-script",
+      "name": "interview-script",
+      "version": "unverified",
+      "capabilities": [
+        "pm-interview-script",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-interview-script",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "892ca53da9852d4e6516d2305f0c0eb2db370bf39693c6c6797154b44bec9b4c",
+      "contentBytes": 4817,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "job-stories",
+      "source": "official:phuryn/pm-skills/job-stories",
+      "name": "job-stories",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-job-stories",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-job-stories",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "69f75264b311418a1ebaf06c9872ed1271203cfc6316466fcb99cc948ade800b",
+      "contentBytes": 2969,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "lean-canvas",
+      "source": "official:phuryn/pm-skills/lean-canvas",
+      "name": "lean-canvas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-lean-canvas",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-lean-canvas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "5bafe7a33cf57631937fa863ebc6c3d3b0679808a6e5b5fa04b70be615fbc240",
+      "contentBytes": 4860,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "market-segments",
+      "source": "official:phuryn/pm-skills/market-segments",
+      "name": "market-segments",
+      "version": "unverified",
+      "capabilities": [
+        "pm-market-research",
+        "pm-market-segments",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-market-segments",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "f8425da0486d844a661fe18f809de1e055d7125c74ed423ee750cf2be74a2319",
+      "contentBytes": 3623,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "market-sizing",
+      "source": "official:phuryn/pm-skills/market-sizing",
+      "name": "market-sizing",
+      "version": "unverified",
+      "capabilities": [
+        "pm-market-research",
+        "pm-market-sizing",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-market-sizing",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "96d1250ba0ab7e5b64c9be8278f63f9661b510237e423b42ef70ab914184faf8",
+      "contentBytes": 4424,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "marketing-ideas",
+      "source": "official:phuryn/pm-skills/marketing-ideas",
+      "name": "marketing-ideas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-marketing-growth",
+        "pm-marketing-ideas",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-marketing-ideas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "83242a3a8f5feae768820fee5ae8f4b6b4f7eaf12c8a450c49b134995bd76a89",
+      "contentBytes": 2178,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "metrics-dashboard",
+      "source": "official:phuryn/pm-skills/metrics-dashboard",
+      "name": "metrics-dashboard",
+      "version": "unverified",
+      "capabilities": [
+        "pm-metrics-dashboard",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-metrics-dashboard",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "fa74abf49be9f034ae43110528028402e5e63809540302b95567018d478ef4e9",
+      "contentBytes": 5754,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "monetization-strategy",
+      "source": "official:phuryn/pm-skills/monetization-strategy",
+      "name": "monetization-strategy",
+      "version": "unverified",
+      "capabilities": [
+        "pm-monetization-strategy",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-monetization-strategy",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "2306d3c987e9572258fa1327a864049965dda3e4e873093482c6b671d686eea5",
+      "contentBytes": 6660,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "north-star-metric",
+      "source": "official:phuryn/pm-skills/north-star-metric",
+      "name": "north-star-metric",
+      "version": "unverified",
+      "capabilities": [
+        "pm-marketing-growth",
+        "pm-north-star-metric",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-north-star-metric",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "00242397486a88bb7e91a1d6c99e29fd51bdc9a1cd5def9771988fb40c195fb8",
+      "contentBytes": 4152,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "opportunity-solution-tree",
+      "source": "official:phuryn/pm-skills/opportunity-solution-tree",
+      "name": "opportunity-solution-tree",
+      "version": "unverified",
+      "capabilities": [
+        "pm-opportunity-solution-tree",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-opportunity-solution-tree",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "6b23e44a5ace86aa20d64cc130322265ace6a53a29831cc403b974098a379bcc",
+      "contentBytes": 4281,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "outcome-roadmap",
+      "source": "official:phuryn/pm-skills/outcome-roadmap",
+      "name": "outcome-roadmap",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-outcome-roadmap",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-outcome-roadmap",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "3d2da8f82f4cbe4c8d06593765e2fbb94913676e9a65663b7da9e53c9a0082c8",
+      "contentBytes": 3601,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "pestle-analysis",
+      "source": "official:phuryn/pm-skills/pestle-analysis",
+      "name": "pestle-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-pestle-analysis",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-pestle-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "6b264055b74a8632ad41edf51766a56c4f20c7e90a4d16603915f4e17194c857",
+      "contentBytes": 4647,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "porters-five-forces",
+      "source": "official:phuryn/pm-skills/porters-five-forces",
+      "name": "porters-five-forces",
+      "version": "unverified",
+      "capabilities": [
+        "pm-porters-five-forces",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-porters-five-forces",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "a010cd7e52e29456f5a11f1d40eb0342fde738e8cf685e81b4dd50a0ebb81309",
+      "contentBytes": 8185,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "positioning-ideas",
+      "source": "official:phuryn/pm-skills/positioning-ideas",
+      "name": "positioning-ideas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-marketing-growth",
+        "pm-positioning-ideas",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-positioning-ideas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "8864f284e66c8bb106c46dc5e51656a47ae4792e39091eb3a49f63cde00c3850",
+      "contentBytes": 3002,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "pre-mortem",
+      "source": "official:phuryn/pm-skills/pre-mortem",
+      "name": "pre-mortem",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-pre-mortem",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-pre-mortem",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "4e5cf10a46ac1d1cdde6aa009ba2b860c532f55c0c3d9ec53a82082cad073052",
+      "contentBytes": 4082,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "pricing-strategy",
+      "source": "official:phuryn/pm-skills/pricing-strategy",
+      "name": "pricing-strategy",
+      "version": "unverified",
+      "capabilities": [
+        "pm-pricing-strategy",
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-pricing-strategy",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "09321c5984f3654077bd58921ec4b7235f47e00caf44445bd2e5a5ed13bcb895",
+      "contentBytes": 3666,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "prioritization-frameworks",
+      "source": "official:phuryn/pm-skills/prioritization-frameworks",
+      "name": "prioritization-frameworks",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-prioritization-frameworks",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-prioritization-frameworks",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "5dab45be9e46397ec1c35a6a6aaa85233843184fd1e9d8e5f279dd02d6e4fc21",
+      "contentBytes": 4235,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "prioritize-assumptions",
+      "source": "official:phuryn/pm-skills/prioritize-assumptions",
+      "name": "prioritize-assumptions",
+      "version": "unverified",
+      "capabilities": [
+        "pm-prioritize-assumptions",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-prioritize-assumptions",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "18160a0138c788790c9dd22995ffdcfac485c1f0599c170d8668678e59766073",
+      "contentBytes": 2311,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "prioritize-features",
+      "source": "official:phuryn/pm-skills/prioritize-features",
+      "name": "prioritize-features",
+      "version": "unverified",
+      "capabilities": [
+        "pm-prioritize-features",
+        "pm-product-discovery",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-prioritize-features",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "d05c001ea9d71ccf6aca975e0530a2a85545192b1eec9e06cc6d1339156c0f87",
+      "contentBytes": 2497,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "privacy-policy",
+      "source": "official:phuryn/pm-skills/privacy-policy",
+      "name": "privacy-policy",
+      "version": "unverified",
+      "capabilities": [
+        "pm-privacy-policy",
+        "pm-toolkit",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-privacy-policy",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "4388e746dbde28b3eb04bbd88f8a8fe526545fce68a6e5a058d2f70ecadf364f",
+      "contentBytes": 10699,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "product-name",
+      "source": "official:phuryn/pm-skills/product-name",
+      "name": "product-name",
+      "version": "unverified",
+      "capabilities": [
+        "pm-marketing-growth",
+        "pm-product-name",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-product-name",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "16d715bbe6ab07b024a63a1a38f3616a3d9602bf4ca9425e1bb33496becce0b3",
+      "contentBytes": 2196,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "product-strategy",
+      "source": "official:phuryn/pm-skills/product-strategy",
+      "name": "product-strategy",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-strategy",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-product-strategy",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "50d4bfe62ae71a321271a491148e8dca4715a6a7550f82ffba2ded06f036d5b8",
+      "contentBytes": 4833,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "product-vision",
+      "source": "official:phuryn/pm-skills/product-vision",
+      "name": "product-vision",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-strategy",
+        "pm-product-vision",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-product-vision",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "1414332e0f7893963a3308b8bea0d3ac05f5d704ad344f1c0013f7d7804a12fe",
+      "contentBytes": 2518,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "release-notes",
+      "source": "official:phuryn/pm-skills/release-notes",
+      "name": "release-notes",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-release-notes",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-release-notes",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "b617edd39e721267c9726286b6304f086991f5e2215b848c952a8ad9e001a0d3",
+      "contentBytes": 2569,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "retro",
+      "source": "official:phuryn/pm-skills/retro",
+      "name": "retro",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-retro",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-retro",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "9ca1986756ce028a83314d49450ff390c00fce224099ff5678cdc83db0998b03",
+      "contentBytes": 2809,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "review-resume",
+      "source": "official:phuryn/pm-skills/review-resume",
+      "name": "review-resume",
+      "version": "unverified",
+      "capabilities": [
+        "pm-review-resume",
+        "pm-toolkit",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-review-resume",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "ec4f9a98f8cce8c7bcb9b23c12c0c4f124dc65e0d4224b2a19eccb04886dd3bf",
+      "contentBytes": 11307,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "sentiment-analysis",
+      "source": "official:phuryn/pm-skills/sentiment-analysis",
+      "name": "sentiment-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-market-research",
+        "pm-sentiment-analysis",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-sentiment-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "516357ba8366845d13c4ee17acf96884571ad0fc8d3d48a2809c5cb84c95a01c",
+      "contentBytes": 3500,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "shipping-artifacts",
+      "source": "official:phuryn/pm-skills/shipping-artifacts",
+      "name": "shipping-artifacts",
+      "version": "unverified",
+      "capabilities": [
+        "pm-ai-shipping",
+        "pm-shipping-artifacts",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-shipping-artifacts",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "ae08fe51dfc218cd0ab82c240bc5cb3604e3e86b383c4807b64dc20475666f4d",
+      "contentBytes": 11775,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
     {
       "id": "skill-creator",
       "source": "official:anthropics/skills/skill-creator",
@@ -52,6 +1138,166 @@
       "contentSha256": "dcd4803e61e913e6fc27294184cd3a71f09f5e924ff20c8a9a20173e7b3c2bcf",
       "contentBytes": 33168,
       "verifiedAt": "2026-09-10T19:44:08Z"
+    },
+    {
+      "id": "sprint-plan",
+      "source": "official:phuryn/pm-skills/sprint-plan",
+      "name": "sprint-plan",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-sprint-plan",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-sprint-plan",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "54ac27165fd7d57fe3f598f1ef66087d03fbf56d9f583adf7608ccaca9ce3382",
+      "contentBytes": 2365,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "sql-queries",
+      "source": "official:phuryn/pm-skills/sql-queries",
+      "name": "sql-queries",
+      "version": "unverified",
+      "capabilities": [
+        "pm-data-analytics",
+        "pm-sql-queries",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-sql-queries",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "18da062d5171607dcaa31eb277be420560e061bdcb0c960201e86c7067e2e59a",
+      "contentBytes": 3628,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "stakeholder-map",
+      "source": "official:phuryn/pm-skills/stakeholder-map",
+      "name": "stakeholder-map",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-stakeholder-map",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-stakeholder-map",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "0cc656200848c710e50a4240cfe9aee3bcd08ebc536a5b87b01d38a96ffe4174",
+      "contentBytes": 2510,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "startup-canvas",
+      "source": "official:phuryn/pm-skills/startup-canvas",
+      "name": "startup-canvas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-strategy",
+        "pm-startup-canvas",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-startup-canvas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "356f02faf7bc60a71de658dbb6469e1e10bc4a7907b34c2096dc617a99616495",
+      "contentBytes": 6346,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "strategy-red-team",
+      "source": "official:phuryn/pm-skills/strategy-red-team",
+      "name": "strategy-red-team",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-strategy-red-team",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-strategy-red-team",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "3758fcf6f2f2653721c9d58586f7816e17d47d4723b54a5d3457a6641d2663fc",
+      "contentBytes": 4515,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "summarize-interview",
+      "source": "official:phuryn/pm-skills/summarize-interview",
+      "name": "summarize-interview",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-discovery",
+        "pm-summarize-interview",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-summarize-interview",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "5a2a0c8257f5e2f7ef098d4531acbbcd3087bb07bb87d4cabfe1a97ef1ad037c",
+      "contentBytes": 2036,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "summarize-meeting",
+      "source": "official:phuryn/pm-skills/summarize-meeting",
+      "name": "summarize-meeting",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-summarize-meeting",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-summarize-meeting",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "4deabdd7f99c692ee800a80a4eaf6a688fb8873cdaaaea44b7f472499205f8e7",
+      "contentBytes": 2997,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "swot-analysis",
+      "source": "official:phuryn/pm-skills/swot-analysis",
+      "name": "swot-analysis",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-strategy",
+        "pm-swot-analysis",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-swot-analysis",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "ef5efbc2d4b84237469808cc9ce90016d926c0b3d65977f7edf21c60e3d5f85b",
+      "contentBytes": 3813,
+      "verifiedAt": "2026-10-10T10:56:23Z"
     },
     {
       "id": "test-driven-development",
@@ -71,6 +1317,126 @@
       "verifiedAt": "2026-09-19T00:31:35Z"
     },
     {
+      "id": "test-scenarios",
+      "source": "official:phuryn/pm-skills/test-scenarios",
+      "name": "test-scenarios",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-test-scenarios",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-test-scenarios",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "2dc10ebb6359604275f26234d3c66c9ccc952e501ad5b685c23a5c0f34f634d4",
+      "contentBytes": 3472,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "user-personas",
+      "source": "official:phuryn/pm-skills/user-personas",
+      "name": "user-personas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-market-research",
+        "pm-user-personas",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-user-personas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "012eb8ea4a6ec51bb72ddf41f48d8520f26c7f4e43ff82d69d1074e3503087ca",
+      "contentBytes": 3047,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "user-segmentation",
+      "source": "official:phuryn/pm-skills/user-segmentation",
+      "name": "user-segmentation",
+      "version": "unverified",
+      "capabilities": [
+        "pm-market-research",
+        "pm-user-segmentation",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-user-segmentation",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "d91f745c9520e6a31c07e37c14bfa01e7982570e30a398be71cf324ac93be9c8",
+      "contentBytes": 4102,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "user-stories",
+      "source": "official:phuryn/pm-skills/user-stories",
+      "name": "user-stories",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-user-stories",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-user-stories",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "8ce89cd81de5a3df7d504380d18c54cec6c59ccdb7fd18cbcb62b6b6183d0a55",
+      "contentBytes": 2991,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "value-prop-statements",
+      "source": "official:phuryn/pm-skills/value-prop-statements",
+      "name": "value-prop-statements",
+      "version": "unverified",
+      "capabilities": [
+        "pm-marketing-growth",
+        "pm-value-prop-statements",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-value-prop-statements",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "5f4e89542439b16d18af608d91d0a319c0e66a6d89257da38d6652a655aae5bc",
+      "contentBytes": 3032,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
+      "id": "value-proposition",
+      "source": "official:phuryn/pm-skills/value-proposition",
+      "name": "value-proposition",
+      "version": "unverified",
+      "capabilities": [
+        "pm-product-strategy",
+        "pm-value-proposition",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-value-proposition",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "b07cc0399582fc178be31b513b313d2420c7941dd568b52a0bf6cfb0ab6c4ec7",
+      "contentBytes": 5836,
+      "verifiedAt": "2026-10-10T10:56:23Z"
+    },
+    {
       "id": "verification-before-completion",
       "source": "official:obra/superpowers/verification-before-completion",
       "name": "verification-before-completion",
@@ -87,6 +1453,26 @@
       "contentSha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3",
       "contentBytes": 3646,
       "verifiedAt": "2026-09-19T00:31:35Z"
+    },
+    {
+      "id": "wwas",
+      "source": "official:phuryn/pm-skills/wwas",
+      "name": "wwas",
+      "version": "unverified",
+      "capabilities": [
+        "pm-execution",
+        "pm-wwas",
+        "product-management"
+      ],
+      "capabilityOwner": "pm-wwas",
+      "permissions": [
+        "network-optional",
+        "read-project",
+        "write-project"
+      ],
+      "contentSha256": "7fad2bed16046679a9eb2941573f978c692db425e5e5b7a7c31a8be2e4dd10a4",
+      "contentBytes": 3086,
+      "verifiedAt": "2026-10-10T10:56:23Z"
     }
   ]
 }

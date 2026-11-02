@@ -247,11 +247,6 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       initialization = { ...initialization, existingCodeStrategy };
     }
 
-    const governanceDepth = preserveDepth ? seed.governanceDepth : await guidedChoice(rl, interactionLanguage, zh ? '需要多少治理内容？' : 'How much governance do you need?', [
-      { label: zh ? '最小：先获得基本规则和检查（推荐）' : 'Minimal: start with core rules and checks (recommended)', value: 'minimal' },
-      { label: zh ? '标准：加入路由、项目规则和验证指引' : 'Standard: add routing, project rules, and verification guidance', value: 'standard' },
-      { label: zh ? '完整：适合长期、多人协作' : 'Complete: for long-running, multi-person work', value: 'complete' },
-    ]);
     let invocationMode = seed.invocationMode;
     if (!preserveInvocation) {
       const localAvailable = projectLocalAvailable(scan.root);
@@ -279,7 +274,6 @@ export async function promptGuidedConfig(scan, seed = defaultConfig(scan), {
       clients,
       clientSupport,
       stacks,
-      governanceDepth,
       invocationMode,
       initialization,
       features: {
@@ -359,23 +353,17 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
       initialization = { ...initialization, existingCodeStrategy: strategy };
     }
 
-    const governanceDepth = await chooseOne(rl, 'Governance depth', [
-      { label: 'Minimal', value: 'minimal' },
-      { label: 'Standard (recommended)', value: 'standard' },
-      { label: 'Complete', value: 'complete' },
-    ], ['minimal', 'standard', 'complete'].indexOf(seed.governanceDepth));
     const supportedOs = await chooseMany(rl, 'Supported operating systems', [
       { label: 'macOS', value: 'macos' },
       { label: 'Windows', value: 'windows' },
       { label: 'Linux', value: 'linux' },
     ], seed.supportedOs, { locale: interactionLanguage });
-    const knowledge = governanceDepth === 'complete' ? await yesNo(rl, 'Generate the knowledge-memory layer?', seed.features?.knowledge ?? true) : seed.features?.knowledge ?? true;
-    const taskRuntime = governanceDepth === 'complete' && await yesNo(rl, 'Generate the long-running task runtime?', true);
+    const knowledge = await yesNo(rl, 'Generate the knowledge-memory layer?', seed.features?.knowledge ?? true);
+    const taskRuntime = await yesNo(rl, 'Generate the long-running task runtime?', true);
     const hooks = await yesNo(rl, 'Prepare project hooks?', false);
     const externalWorkflows = await yesNo(rl, 'Enable an external workflow provider configuration?', false);
     const ciIntegration = await yesNo(rl, 'Prepare target-project CI integration?', false);
-    const deliveryLoop = governanceDepth !== 'minimal'
-      && await yesNo(rl, 'Generate the requirement-to-tested-change delivery loop (decomposition, assignment, development, test-authoring, local-test, report, fix-loop)?', seed.features?.deliveryLoop ?? true);
+    const deliveryLoop = await yesNo(rl, 'Generate the requirement-to-tested-change delivery loop (decomposition, assignment, development, test-authoring, local-test, report, fix-loop)?', seed.features?.deliveryLoop ?? true);
     const constraintAnswer = (await rl.question('Optional project constraints (semicolon separated): ')).trim();
     const confirmedRiskSignals = !constraintAnswer ? [] : await chooseMany(rl, zh ? '已由负责人确认的风险信号（不从约束文本推断）' : 'Owner-confirmed risk signals (not inferred from constraint text)', [
       { label: 'Authentication', value: 'authentication' },
@@ -399,7 +387,6 @@ export async function promptConfig(scan, seed = defaultConfig(scan), {
         source: 'interactive',
       },
       stacks,
-      governanceDepth,
       artifactLanguage,
       testing,
       codeDocumentationPolicy: preserveCodeDocumentationPolicy

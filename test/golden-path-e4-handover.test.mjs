@@ -10,13 +10,14 @@ const handover = fs.readFileSync(path.join(root, 'docs/internal/validation/golde
 // The handover is the actionable form of "what is missing": each external input, how to produce it,
 // and what must come back. It may not quietly drop an input or claim one is already satisfied.
 test('the E4 handover names every external input with its command and acceptance', () => {
-  for (const heading of ['1. Evaluation receipts for each claimed platform', '2. Evaluator-owned held-out cases', '3. A real supported Agent adapter', '4. Qualified human acceptance']) {
+  for (const heading of ['1. Evaluation receipts for each remaining claimed platform', '2. Evaluator-owned held-out cases', '3. Qualified human acceptance', 'Historical E3 evidence and current gap']) {
     assert.ok(handover.includes(heading), heading);
   }
-  for (const token of ['golden-path-live-evaluation.mjs', 'validateQualityMatrixRun', 'runHeldOutEvaluationSet', 'missing-e3', 'applyQualifiedUserEvidence', 'missing-qualified-human', 'golden-path-qualified-user-protocol.md']) {
+  for (const token of ['golden-path-live-evaluation.mjs', 'validateQualityMatrixRun', 'runHeldOutEvaluationSet', 'macos-codex-e3.json', 'applyQualifiedUserEvidence', 'missing-qualified-human', 'golden-path-qualified-user-protocol.md']) {
     assert.ok(handover.includes(token), token);
   }
+  assert.match(handover, /does not clear `missing-e3`/);
   assert.match(handover, /AI review is not qualified-human evidence/);
   assert.match(handover, /Do not author these cases inside this repository/);
-  assert.match(handover, /can never produce a certification verdict/);
+  assert.match(handover, /historical E3.*latest matrix/i);
 });

@@ -35,11 +35,11 @@ test('the delivery process ships as one workflow document plus a runtime ledger'
   const off = buildArtifacts(declined, scan).map((entry) => entry.path);
   assert.equal(off.some((entry) => entry.includes('flow-state')), false);
 
-  // Minimal stays a bootstrap-only kernel and never carries the flow.
+  // Legacy depth cannot suppress the complete workflow baseline.
   const minimal = { ...base, governanceDepth: 'minimal' };
   const minimalPaths = buildArtifacts(minimal, scan).map((entry) => entry.path);
-  assert.equal(minimalPaths.includes(WORKFLOW_DOC), false);
-  assert.equal(minimalPaths.some((entry) => entry.includes('flow-state')), false);
+  assert.equal(minimalPaths.includes(WORKFLOW_DOC), true);
+  assert.equal(minimalPaths.some((entry) => entry.includes('flow-state')), true);
 
   applyArtifactPlan(root, planArtifacts(root, buildArtifacts(base, scan)));
   assert.equal(checkProject(scanProject(root)).ok, true);

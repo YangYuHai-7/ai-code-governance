@@ -14,19 +14,24 @@ export const HELP = `AI Code Governance CLI
 Usage:
   aicg                       Open the visual configuration page for the current project (recommended).
   aicg config open [path]    Open the page for an explicit project path.
+  aicg studio [path]         Open the local delivery Studio; preview and create sessions without Agent execution.
   aicg check [path]          Read-only health check of the generated governance.
+  aicg handoff [path]        Print the project-specific prompt for an AI coding agent.
 
 For AI coding agents (drive these from the chat, not by hand):
   aicg init [path] [--guided | --config answers.json | --clients all|client,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist]
                   [--assist codex|claude-code|cursor|deepseek] [--review] [--migrate-links] [--force] [--adopt-foreign-governance]
   aicg check [path] [--json] [--enforce]
+  aicg handoff [path] [--config aicg.config.json] [--locale zh-CN|en] [--json]
+  aicg handoff [path] --text "task" --scope MODULE [--paths src/module.js] [--locale zh-CN|en] [--json]
+    Read-only next step: reuse authoritative documents and show scoped content gaps; no execution or approval.
   aicg sync [path] [--dry-run] [--force] [--migrate-links] [--prune] [--approve planHash]
   aicg doctor [path] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [path] --text <task> [--paths <relative-path,...>] [--json]
   aicg flow <start|status> [path] [--text <task>] [--paths <relative-path,...>] [--json]
   aicg telemetry <record|status> [path] [--task-level L0|L1|L2|L3] [--json]
-  aicg delivery <name> ...   Governed delivery loop; names: session, work-unit, test-case, complete, hook, release-check.
+  aicg delivery <name> ...   Governed delivery loop; names: session, inspect, work-unit, test-case, complete, hook, release-check.
   aicg --version
 
   init    Inspect a repository and initialize tailored AI governance.
@@ -41,18 +46,23 @@ For AI coding agents (drive these from the chat, not by hand):
 
 Advanced delivery (agent runtime, optional; each name keeps its full reference below):
   aicg delivery session <start|status|step|resume|cancel> [path] --session <id> [--agent <id>] [--profile advisory|production] [--requirement <relative-json> | --text <request>] [--json]
+  aicg delivery inspect [path] [--session <id>] [--json]
   aicg delivery work-unit <plan|status> [path] --work-unit <relative-json> [--json] [--enforce]
+  aicg delivery prepare [path] --text <task> --scope <MODULE> [--paths <csv>] [--yes]
+  aicg delivery assess [path] --text <task> --scope <MODULE> [--paths <csv>] [--enforce]
+          Read selected artifacts for placeholders, copied content, missing sections and case references; structural readiness is not acceptance.
   aicg delivery test-case <init|validate|select|record> [path] [--manifest <relative-json>] [--scope <id>] [--output <relative-path>]
   aicg delivery complete [path] [--task-level L0|L1|L2|L3] [--review-mode <mode>] [--approval-evidence <relative-json>] [--work-unit <relative-json>] [--approve <planHash>] [--verify <discovered-command>] [--json] [--enforce]
   aicg delivery hook <install|status> [path] [--yes] [--json]
   aicg delivery release-check [path] --type <bugfix|feature|major> [--evidence <repository-relative-json>] [--replay --approve planHash] [--json] [--enforce]
-  aicg evaluation golden-path <path> --requirement <relative-json> [--pack <id>] [--agent <id>] [--live-agent] [--output <relative-path>] [--json]
+  aicg evaluation golden-path <path> --requirement <relative-json> [--architecture <relative-json>] [--matrix <relative-json>] [--probes <relative-json>] [--pack <id>] [--agent <id>] [--live-agent] [--output <relative-path>] [--json]
   aicg evaluation held-out <provider-root> [--output <relative-path>] [--json]   Read-only held-out provider evaluation; live execution needs explicit authority.
   aicg candidate review [path] [--json]   Read-only view of candidate-rule state and the next legal action; it never approves or promotes.
   aicg candidate observe [path] --text <observation> [--project <id>] [--json]   Record one project observation as a candidate; recording never approves it.
   aicg review evidence [path] --session <id> --evidence <relative-json> [--json]   Record validated review evidence; it never approves or completes a session.
 
   session    Persist and inspect one recoverable delivery state machine. Current built-in Agent entries remain unverified and are never activated as executable adapters implicitly.
+  inspect    Read canonical delivery state without mutating it.
   work-unit  Preview or validate one bounded vertical feature document. Writes a local report and never launches Agents.
   test-case  Create and validate schema-v2 cases, emit minimal AI packets, and record evidence-bound results.
   complete  Report completion findings; a selected project verification command is explicit and never inferred.
@@ -80,13 +90,13 @@ Novice quick start:
 
 Chat start:
   Ask a shell-capable coding Agent to use the installed aicg CLI for the current project.
-  The Agent should scan first, ask only owner decisions, preview writes, and then request approval.
+  In an already governed project, say "update the governance framework". The Agent scans source and ownership, refreshes affected development guidance, previews and applies routine safe changes, then checks the result. It asks only about unresolved owner decisions or destructive/foreign-file conflicts.
 
 Bootstrap help (package resolution only at setup):
   ${governanceBootstrapCommand({})}
 Daily commands require an installed project-local or global AICG. If unavailable, stop and explicitly install it. Pinned bootstrap does not install a persistent CLI.
 
---guided asks for AI coding tools first, governance artifact language second, and test-case format/location third, followed by project stage, technology stack confirmation or selection, governance depth, and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
+--guided asks for AI coding tools first, governance artifact language second, and test-case format/location third, followed by project stage, technology stack confirmation or selection, the complete governance baseline and future AICG command style. It requires an interactive terminal and never turns --yes into implicit answers.
 
 --locale controls interaction language only. Governance artifacts default to English; choose config.artifactLanguage or answer the separate guided question to change them. Existing bilingual artifact configurations remain supported but are not offered for new guided choices.
 `;
@@ -96,18 +106,23 @@ export const HELP_ZH = `AI 代码治理 CLI
 用法：
   aicg                       打开当前项目可视化配置页（推荐入口）。
   aicg config open [路径]    对指定项目打开配置页。
+  aicg studio [路径]         打开本地交付 Studio；预览并创建会话，不执行 Agent。
   aicg check [路径]          只读检查已生成治理的健康状况。
+  aicg handoff [路径]        输出交给 AI 编码助手继续完善治理的项目提示词。
 
 给 AI 编码助手（由对话驱动，不建议手敲）：
   aicg init [路径] [--guided | --config answers.json | --clients all|客户端,...] [--locale zh-CN|en]
                   [--yes] [--approve planHash] [--dry-run] [--family|--no-family] [--no-assist] [--review] [--adopt-foreign-governance]
   aicg check [路径] [--json] [--enforce]
+  aicg handoff [路径] [--config aicg.config.json] [--locale zh-CN|en] [--json]
+  aicg handoff [路径] --text "任务" --scope MODULE [--paths src/module.js] [--locale zh-CN|en] [--json]
+    只读给出下一步，复用权威资料并指出模块内容缺口；不执行、不代替批准。
   aicg sync [路径] [--dry-run] [--prune] [--approve planHash]
   aicg doctor [路径] [--locale zh-CN|en] [--json] [--enforce]
   aicg route [路径] --text <任务> [--paths <相对路径,...>] [--json]
   aicg flow <start|status> [路径] [--text <任务>] [--paths <相对路径,...>] [--json]
   aicg telemetry <record|status> [路径] [--task-level L0|L1|L2|L3] [--json]
-  aicg delivery <任务> ...   受治理交付闭环；任务：session、work-unit、test-case、complete、hook、release-check。
+  aicg delivery <任务> ...   受治理交付闭环；任务：session、inspect、work-unit、test-case、complete、hook、release-check。
   aicg --version
 
   init          扫描仓库并初始化治理；客户端支持范围必须显式选择。--family 为编排仓及所有成员仓生成一个精确计划，全部成功才提交，任一失败则全部回滚。
@@ -120,18 +135,21 @@ export const HELP_ZH = `AI 代码治理 CLI
 
 高级交付（Agent 运行时，可选；每个任务保留下方完整说明）：
   aicg delivery session <start|status|step|resume|cancel> [路径] --session <标识> [--agent <标识>] [--profile advisory|production] [--requirement <相对路径.json> | --text <需求>] [--json]
+  aicg delivery inspect [路径] [--session <标识>] [--json]
   aicg delivery work-unit <plan|status> [路径] --work-unit <相对路径.json> [--json] [--enforce]
+  aicg delivery prepare [路径] --text <任务> --scope <模块标识> [--paths <csv>] [--yes]
   aicg delivery test-case <init|validate|select|record> [路径] [--manifest <相对路径.json>] [--scope <标识>] [--output <相对路径>]
   aicg delivery complete [路径] --work-unit <相对路径.json> --task-level L2 --approval-evidence <相对路径.json> --approve <planHash> [--verify <已发现命令>] [--json] [--enforce]
   aicg delivery hook <install|status> [路径] [--yes] [--json]
   aicg delivery release-check [路径] --type <bugfix|feature|major> [--evidence <相对路径.json>] [--json] [--enforce]
-  aicg evaluation golden-path <路径> --requirement <相对路径.json> [--pack <标识>] [--agent <标识>] [--live-agent] [--output <相对路径>] [--json]
+  aicg evaluation golden-path <路径> --requirement <相对路径.json> [--architecture <相对路径.json>] [--matrix <相对路径.json>] [--probes <相对路径.json>] [--pack <标识>] [--agent <标识>] [--live-agent] [--output <相对路径>] [--json]
   aicg evaluation held-out <提供方根目录> [--output <相对路径>] [--json]   只读的 held-out 提供方评估；实跑需要显式授权。
   aicg candidate review [路径] [--json]   只读查看候选规则状态与下一个合法动作；该命令不会批准或提升任何候选。
   aicg candidate observe [路径] --text <观测> [--project <标识>] [--json]   把一次项目观测记录为候选；记录不等于批准。
   aicg review evidence [路径] --session <标识> --evidence <相对路径.json> [--json]   记录经校验的评审证据；该命令不会批准或完成会话。
 
   session       持久化并检查可恢复的交付状态机。内置 Agent 条目仍为未验证状态，不会被隐式启用为可执行适配器。
+  inspect       只读查看规范交付状态，不修改会话。
   work-unit     预览或校验一个垂直功能工作单元，只写本地报告，不启动 Agent。
   test-case     创建和校验 schema v2 测试用例、生成最小 AI 执行包，并记录证据绑定结果。
   complete      报告交付收尾；所选项目验证命令必须显式给出，工具不会自动推断。
@@ -152,14 +170,14 @@ export const HELP_ZH = `AI 代码治理 CLI
 
 聊天开始：
   直接让能够操作终端的编码 Agent 使用已安装的 aicg 处理当前项目。
-  Agent 应先扫描，只询问负责人必须决定的事项，预览写入内容，再请求批准。
+  已接入治理的旧项目，直接对 AI 说“更新治理框架”。Agent 检查源码与归属，更新受影响的开发规范，预览并应用常规安全变更，再复查结果；只有负责人决策缺失或涉及删除、迁移、外来文件冲突时才询问。
 
 高级设置：
   固定版本启动帮助（仅在设置阶段解析包）：${governanceBootstrapCommand({})}
   日常命令要求已安装项目本地或全局 AICG；缺少时停止并显式安装。固定版本启动不会安装持久 CLI。
   中文交互可使用 aicg init . --guided --locale zh-CN
 
---guided 会先收集 AI 编码工具，再单独询问治理产物语言和测试用例格式/位置，然后确认项目阶段、检测到的技术栈或目标技术栈、治理强度和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
+--guided 会先收集 AI 编码工具，再单独询问治理产物语言和测试用例格式/位置，然后确认项目阶段、检测到的技术栈或目标技术栈、完整治理基线和以后的 AICG 运行方式；必须在交互终端中使用，--yes 不会代替你作出选择。
 
 --locale 只控制交互语言。治理产物默认使用英语；如需更改，请设置 config.artifactLanguage 或回答独立的引导问题。已有 bilingual 配置继续兼容，但新的引导选项不再推荐它。
 `;

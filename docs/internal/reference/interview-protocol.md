@@ -1,194 +1,46 @@
-# 多轮访谈与决策账本
+# Proportionate clarification and decision reuse
 
-目标不是一次问完，而是在不重复、不猜测的前提下，逐步把项目事实和人的选择收敛成可执行治理方案。
+Use this reference when material project decisions are still missing. For initialization input and exact CLI contracts, [initializer.md](initializer.md) is authoritative. For an authorized refresh, follow [governance-refresh.md](governance-refresh.md) and reuse existing choices.
 
-## 基本原则
+## Establish facts before questions
 
-1. **先侦察后提问**：能从仓库确定的事实不问用户。
-2. **一次处理一个高影响决策**：相关低风险问题可以成组，但每轮最多四问。
-3. **使用用户当前语言**：首次回复先镜像用户语言，再确认治理产物语言。
-4. **每个推荐都给理由**：写明它基于哪些仓库事实和约束。
-5. **允许“不知道”**：转为开放问题或可见默认值，不强迫伪精确选择。
-6. **选择可回退**：进入文件生成阶段前，用户可以修改任何未锁定决策。
-7. **不以“完美”为完成标准**：以决策可追溯、规则有证据、验证边界诚实为标准。
+Inspect the repository, saved configuration and current conversation first. Identify lifecycle, manifests, detected stacks, existing clients, scripts, design authority and terminology. Repository facts describe what exists; they do not select the clients or future stack the owner wants.
 
-## 访谈状态机
+Ask only decisions whose missing answers affect scope, observable behavior, compatibility, authority or verification. Questions that depend on an unresolved choice wait until that choice is settled. Group related questions to keep the round manageable, and give each recommendation its reason. The user may say they do not know; explain the available default and its practical consequence rather than demanding false precision.
 
-```text
-discovered
-  -> language_confirmed
-  -> topology_confirmed
-  -> platform_confirmed
-  -> stack_confirmed
-  -> governance_scope_confirmed
-  -> domain_seeds_confirmed
-  -> plan_approved
-  -> building
-  -> trial_validated
-  -> delivered
-```
+Completion of clarification means the next authorized action is clear and its material blockers have been resolved or explicitly retained. A read-only question or routine local change needs no full installation interview.
 
-任何阶段都可以回到前一阶段，但必须记录修改原因和受影响产物。`plan_approved` 之前不创建完整框架；只允许写用户同意的决策账本或设计稿。
+## Initialization decisions
 
-## 决策账本
+Follow **Agent-first, artifact-language-second** ordering; reuse any already confirmed decision instead of asking again:
 
-长任务经用户同意后，把账本放在目标项目既有计划目录；没有约定时使用：
+1. **Supported Agents.** Ask for the selected clients or an explicit all-built-in scope. Detection and the current chat client are evidence, not permission to select support.
+2. **Artifact language.** Use `artifactLanguage: en` by default or an explicit `zh-CN` choice, independently of interaction language. Keep IDs, keys and command syntax stable. Legacy `bilingual` remains readable; it is not the new default.
+3. **Testing format and location.** Confirm the supported case format and safe relative case root; keep report language and location separate.
+4. **Lifecycle and stack.** Existing projects confirm observed facts and preservation strategy. Greenfield projects select targets based on actual deployment, maintenance and delivery needs. Unknown files remain an evidence gap.
+5. **Optional capabilities and integrations.** Generate the complete governance baseline. Ask only about applicable optional decisions, including invocation, assistance, workflow authority and exact-approved adaptive additions. Legacy depth input cannot remove required guidance.
+6. **Concrete preview.** Show writes, keeps, conflicts, retained content and unresolved gaps. Apply within existing authorization and preserve the initializer's exact-plan requirements. Reuse the user's approval for the same scope; changes to that scope require a fresh decision.
 
-```text
-docs/plans/YYYY-MM-DD-ai-governance-profile.yaml
-```
+Only ask UI questions when a UI exists and current design authority does not settle the choice. Read [ui-selection.md](ui-selection.md) then; do not add a UI interview to unrelated work.
 
-推荐结构：
+For workflow integrations, load [workflow-integrations.md](workflow-integrations.md) only when requested or relevant evidence shows an actual overlap. Establish one authority for current product behavior, the active change, design, task list and delivery evidence. Detection does not authorize connecting or executing another provider.
 
-```yaml
-version: 1
-status: stack_confirmed
-interaction_language: zh-CN
-artifact_language: bilingual
-project_mode: brownfield
-topology: repository-family
+## Explain a decision concretely
 
-platform:
-  current_os: macos
-  supported_os: [macos, windows, linux]
-  verified_os: [macos]
-  adapter_mode: generated-files
+Use this shape, adapted to the user's language:
 
-facts:
-  - id: fact-001
-    value: Node.js service
-    evidence: package.json
-    confidence: high
+> The repository uses X, shown by this manifest and current entrypoint. Keeping X fits the requested scope. The unresolved choice is whether the new behavior must also support Y; choosing Y adds this specific compatibility work.
 
-decisions:
-  - id: decision-001
-    topic: canonical_root
-    value: docs/ai
-    source: user
-    status: confirmed
+For a decision round, state the question, recommended answer, reason and the consequence of the alternative. Avoid hypothetical risk checklists and questions whose answers the agent can retrieve itself.
 
-client_support:
-  mode: all_built_in # all_built_in | selected
-  selected_clients: [codex, claude-code, cursor]
-  source: user
-  status: confirmed
+## Shared terms and consequential decisions
 
-selected_packs:
-  - id: backend-node
-    version: v3.0
-    evidence_level: supported
+Use an existing glossary or knowledge location. When two terms imply different behavior, test a concrete scenario and settle the meaning. Check claims about current behavior against code. Capture the resolved term where the project already keeps it; create a glossary only when the first reusable term needs one.
 
-workflow_integrations:
-  mode: coordinated
-  selected:
-    - id: openspec-change-governance
-      status: confirmed
-      source: user
-  authority:
-    current_product_behavior: openspec/specs
-    active_change: openspec/changes/<change-id>
-    project_ai_governance: docs/ai
-    implementation_task_list: openspec/changes/<change-id>/tasks.md
+Use the existing ADR/design location for a hard-to-reverse choice involving real alternatives whose rationale would surprise a future maintainer. Ordinary implementation choices need no ADR. Terms define the domain; technical choices belong in the appropriate design record.
 
-assumptions: []
-open_questions: []
-rejected_options: []
-```
+## Continuation
 
-不要记录聊天逐字稿、密钥、客户数据或无助于恢复任务的内容。
+Use the current task, plan or decision record to retain confirmed choices, repository evidence, unresolved blockers and the next authorized action. A separate decision ledger is optional for long work, not a new prerequisite for every task. In the AICG repository, working notes belong under ignored `local/` paths.
 
-## 访谈轮次
-
-### Round 0：语言
-
-确认三个独立选择：
-
-| 选择 | 选项 |
-| --- | --- |
-| 交互语言 | 跟随用户 / 中文 / English |
-| 治理产物语言 | 中文 / English / 双语 |
-| 代码与标识符 | 沿用仓库（默认）/ 明确指定 |
-
-双语模式只保留一个正典文件。规则和决策使用稳定 ID，把中文与英文放在同一个记录里；禁止建立 `docs/ai-zh/` 与 `docs/ai-en/` 两套正典。
-
-### Round 1：项目模式与拓扑
-
-让用户确认侦察结论：`greenfield`、`brownfield`、`monorepo`、`repository-family`。如果仓库为空，询问产品形态、部署边界和团队能力；如果已有代码，默认保留现有栈。
-
-### Round 2：操作系统
-
-区分当前系统、团队必须支持的系统和实际验证过的系统。询问 macOS、Windows、Linux 的目标范围，以及 Windows PowerShell 版本、容器/WSL 是否属于正式支持路径。不要把 WSL 通过当成原生 Windows 通过。
-
-### Round 3：技术栈
-
-**遗留项目**：展示检测到的语言、框架、版本来源和置信度，只问冲突与遗漏。不要给换栈提案，除非用户显式选择 `modernization-assessment`。
-
-**新项目**：先问运行环境、团队经验、交付时间、长期维护、性能、合规和部署约束，再给 2–3 个栈组合。每个组合包含适配理由、代价、能力包证据等级和仍需验证的事项。
-
-### Round 4：UI 选择
-
-仅在项目有 UI 且尚未被现有设计系统决定时进入。采集产品类型、交互密度、品牌自由度、无障碍目标、SSR、主题需求、许可证政策和团队经验，然后按 [ui-selection.md](ui-selection.md) 给三个候选与“不采用 UI 框架”选项。
-
-### Round 5：治理范围
-
-沿用主 skill 的 A–C 组：深度、客户端、受众、正典位置、门禁、逃生舱、知识层。推荐项必须来自侦察，不是全局偏好。
-
-客户端范围是本轮唯一不能被“自动完整模式”或客户端检测替代的选择。用户必须二选一：
-
-- **全部内建客户端**：为 Codex、Claude Code、Cursor 与通用正典建立各自可达入口。
-- **仅指定客户端**：让用户列出客户端，只为这些客户端生成适配器；其余明确记为 `not selected`。
-
-检测到的配置、二进制或当前会话只用于说明“当前可验证什么”，不用于推断“团队未来要支持什么”。
-
-### Round 6：领域种子
-
-收集只有项目成员知道的内容：重复错误、任务档案、验证命令、硬边界、术语和完成定义。每条候选规则都要能追溯到一个回答或一个代码/事故证据。
-
-如果侦察发现或用户请求 OpenSpec、Spec Kit、BMAD 等相邻工作流，先插入 **Round 5B：工作流权威**，再进入领域种子：
-
-1. 展示检测到的 provider、观察版本、来源、客户端可达性和重叠能力；
-2. 让用户选择 `project-native`、`external-primary`、`coordinated` 或 `external-bridge`；
-3. 分别确认当前产品行为、active change、design、task list、runtime state 和 delivery evidence 的唯一 owner；
-4. 对执行 provider 按具体能力选择，不用笼统的“启用整个框架”；
-5. 无法证明选择性调用、第三方 bridge 来源或版本兼容时，保持 `unverified` 并停止冲突接线。
-
-完整规则见 [workflow-integrations.md](workflow-integrations.md)。检测到工具不能代替本轮用户决定；未检测到且用户未要求时不进入本轮。
-
-### Round 7：回读与批准
-
-按以下格式回读：
-
-```text
-已确认：...
-基于证据的默认值：...
-仍开放：...
-明确不做：...
-能力包等级：...
-外部工作流模式与唯一权威：...
-各操作系统验证状态：...
-生成阶段与每阶段验收：...
-```
-
-只有用户批准后进入构建。
-
-## 推荐表达
-
-不要问“你想用什么框架？”这种把侦察工作推给用户的问题。遗留项目使用：
-
-```text
-仓库证据显示当前使用 <X>（证据：<path>），没有发现 <Y>。
-推荐保留 <X>，因为 <项目约束>。
-选择：保留（推荐）/ 补充信息 / 单独做现代化评估。
-```
-
-新项目提案使用：
-
-```text
-首选：<组合> — 匹配 <约束>；代价 <代价>；证据等级 <等级>。
-备选：<组合> — 在 <条件> 下更合适。
-轻量：<组合或无框架> — 减少 <成本>，但放弃 <能力>。
-```
-
-## 中断与恢复
-
-恢复时先读决策账本，只回读从上次确认后新增或变化的部分。不要重问已确认问题。若代码在中断期间变化，更新相关 `facts`，标记受影响决策为 `needs-reconfirmation`，只重问这些决策。
+After an interruption, inspect changes since the last decision and reconfirm only choices affected by those changes. Keep user decisions, agent recommendations, implementation and observed verification distinct. A populated document is not product acceptance.

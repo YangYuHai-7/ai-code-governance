@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { compileDevelopmentDocument, humanDocumentFromSkill } from '../skills/index.mjs';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
@@ -28,6 +29,59 @@ function sourceSnapshot(source) {
 }
 
 const IMPLEMENTATION_EXAMPLES = {
+  'proportionate-design': {
+    language: 'typescript',
+    correct: `async function renameMember(members: MemberRepository, input: RenameMember) {
+  const name = input.name.trim();
+  if (!name) throw new Error('A member name is required');
+  return members.rename(input.id, name); // policy uses a real persistence boundary
+}`,
+    incorrect: `interface MemberMarker {} // no behavior or consumer contract
+class UniversalMemberPluginFactory {
+  // Hypothetical backends add layers to a single local operation.
+  create(kind: string) { return new MemberPlugin(new MemberFacade()); }
+}`,
+  },
+  'module-boundaries': {
+    language: 'typescript',
+    correct: `// application/member-service.ts: depend on a public boundary.
+import { MemberRepository } from '@sample/members';
+export function rename(repo: MemberRepository, id: string, name: string) {
+  return repo.rename(id, name);
+}`,
+    incorrect: `// A UI consumer bypasses the application boundary and owns SQL policy.
+import { connection } from '@sample/members/internal/database';
+export function onRename(id: string, name: string) {
+  return connection.query('update members set name = ? where id = ?', [name, id]);
+}`,
+  },
+  'component-reuse': {
+    language: 'typescript',
+    correct: `type SaveResult = { status: 'saved' } | { status: 'rejected'; reason: string };
+async function onSave(editor: MemberEditor, save: (value: MemberInput) => Promise<SaveResult>) {
+  const result = await save(editor.value);
+  editor.show(result); // one consumer renders the effective outcome
+}`,
+    incorrect: `async function onSave(editor: any) {
+  await database.write(editor.fields); // duplicated business policy and persistence
+  globalState.saved = true;
+  editor.show('Saved'); // an empty or rejected result becomes success
+}`,
+  },
+  'dotnet-development': {
+    language: 'csharp',
+    correct: `public async Task<SaveResult> SaveAsync(MemberInput input, CancellationToken cancellationToken)
+{
+    await using var connection = await store.OpenAsync(cancellationToken);
+    return await store.SaveAsync(connection, input, cancellationToken);
+}`,
+    incorrect: `public void Save(MemberInput input)
+{
+    var connection = store.OpenAsync(CancellationToken.None).Result;
+    _ = store.SaveAsync(connection, input, CancellationToken.None);
+    view.Status = "Saved"; // no awaited outcome or resource owner
+}`,
+  },
   'spring-http-contracts': {
     language: 'java',
     correct: `public record CreateItemRequest(@NotBlank String name) {}
@@ -203,16 +257,31 @@ function detectedDependencies(scan) {
   }));
 }
 
-function selectionReason(standard, installed, declared, dependencies) {
+const FRAMEWORK_STACK_PACKAGES = Object.freeze({
+  'frontend-react': ['react'],
+  'frontend-vue': ['vue'],
+  'frontend-angular': ['@angular/core'],
+});
+
+function selectionReason(standard, installed, declared, dependencies, stackIds) {
   if (standard.appliesTo.always) return { kind: 'always', evidence: ['governance-baseline'] };
   const installedMatches = asSortedStrings(standard.appliesTo.packagesAny).filter((name) => installed.includes(name));
   if (installedMatches.length > 0) return { kind: 'installed-package', evidence: installedMatches };
   const declaredMatches = asSortedStrings(standard.appliesTo.packagesAny).filter((name) => declared.includes(name));
   if (declaredMatches.length > 0) return { kind: 'declared-technology', evidence: declaredMatches };
+  const declaredDependencies = (standard.appliesTo.dependenciesAny ?? [])
+    .filter((selector) => declared.includes(selector.name))
+    .map((selector) => `${selector.ecosystem}:${selector.name}`);
+  if (declaredDependencies.length > 0) return { kind: 'declared-framework-dependency', evidence: asSortedStrings(declaredDependencies) };
   const dependencyMatches = (standard.appliesTo.dependenciesAny ?? []).flatMap((selector) => dependencies
     .filter((fact) => fact.ecosystem === selector.ecosystem && fact.name === selector.name)
     .map((fact) => `${fact.ecosystem}:${fact.name}@${fact.sourcePath}`));
   if (dependencyMatches.length > 0) return { kind: 'installed-dependency', evidence: asSortedStrings(dependencyMatches) };
+  // A selected frontend framework is an explicit greenfield decision even before
+  // its manifest exists. A language-only backend stack does not imply Spring.
+  const selectedFrameworks = stackIds.flatMap((id) => FRAMEWORK_STACK_PACKAGES[id] ?? []);
+  const frameworkMatches = asSortedStrings(standard.appliesTo.packagesAny).filter((name) => selectedFrameworks.includes(name));
+  if (frameworkMatches.length > 0) return { kind: 'selected-framework', evidence: frameworkMatches };
   return null;
 }
 
@@ -222,7 +291,7 @@ export function selectTechnicalStandards(scan, config, registry = loadTechnicalS
   const dependencies = detectedDependencies(scan);
   const stackIds = asSortedStrings(config?.stacks ?? scan.stacks?.map((stack) => stack.id));
   const selected = registry.standards
-    .map((standard) => ({ standard, selection: selectionReason(standard, installedPackages, configuredPackages, dependencies) }))
+    .map((standard) => ({ standard, selection: selectionReason(standard, installedPackages, configuredPackages, dependencies, stackIds) }))
     .filter((entry) => entry.selection)
     .sort((left, right) => left.standard.id.localeCompare(right.standard.id));
   return {
@@ -395,6 +464,7 @@ function technicalStandardsManifest(selection, config = {}) {
       boundaries: standard.boundaries,
       claimState: 'stated',
       quality: standard.quality,
+      ...(standard.documentation ? { documentation: standard.documentation } : {}),
     })),
     generationVerification: {
       requiredCommand: 'aicg check .',
@@ -427,7 +497,13 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
   }];
   for (const { standard, selection: reason } of selection.selected) {
     const canonicalPath = `docs/ai/skills/standards/${standard.id}/SKILL.md`;
-    const content = rendered.get(standard.id).content;
+    const renderedSkill = rendered.get(standard.id).content;
+    const { header, body } = humanDocumentFromSkill(renderedSkill);
+    const compiled = compileDevelopmentDocument(scan.root, `docs/development/standards/${standard.id}.md`, body, header);
+    artifacts.push(compiled.document);
+    standard.documentation = { path: compiled.document.path, sha256: compiled.sourceSha256 };
+    const content = compiled.content;
+    assertSkillQuality(content, { profile: rendered.get(standard.id).profile, id: standard.id, requireScope: true });
     artifacts.push({
       path: canonicalPath,
       content,
@@ -446,6 +522,8 @@ export function buildTechnicalStandardArtifacts(config, scan, registry = loadTec
       });
     }
   }
+  Object.assign(manifest, technicalStandardsManifest(selection, config));
+  artifacts[0].content = stableJson(manifest);
   return { selection, manifest, artifacts };
 }
 

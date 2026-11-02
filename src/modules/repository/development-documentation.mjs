@@ -1,9 +1,11 @@
+import { retainedHumanDocument } from '../skills/index.mjs';
 import path from 'node:path';
 import { GENERATED_MARKER } from '../../constants.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { normalizeRelative, sha256, skillAdapterContent, stableJson } from '../../shared/index.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
+import { isGovernanceArchivePath } from './production-scope.mjs';
 
 const MANIFEST_NAMES = new Set([
   'package.json', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'settings.gradle',
@@ -32,7 +34,7 @@ function unitId(unitPath) {
 }
 
 function docPath(unitPath, id) {
-  return unitPath === '.' ? 'docs/ai/development/root.md' : `docs/ai/development/units/${id}.md`;
+  return unitPath === '.' ? 'docs/development/README.md' : `docs/development/units/${id}.md`;
 }
 
 function readmePath(unitPath) {
@@ -50,7 +52,7 @@ function deepestOwner(relative, roots) {
  * placeholder pages that describe the absence of the code they are meant to explain.
  */
 export function hasDocumentableDevelopmentUnit(scan) {
-  return scan.files.some((file) => file.type === 'file' && file.contentScannable !== false
+  return scan.files.some((file) => file.type === 'file' && !isGovernanceArchivePath(file.relative) && file.contentScannable !== false
     && (CODE_EXTENSIONS.has(path.posix.extname(file.relative).toLowerCase()) || isManifest(file.relative)));
 }
 
@@ -81,9 +83,10 @@ function mavenAggregatorChildren(file) {
 }
 
 export function discoverDevelopmentUnits(scan) {
-  const manifestFiles = scan.files.filter((file) => file.type === 'file' && isManifest(file.relative));
+  const activeFiles = scan.files.filter(file => !isGovernanceArchivePath(file.relative));
+  const manifestFiles = activeFiles.filter((file) => file.type === 'file' && isManifest(file.relative));
   const manifests = manifestFiles.map((file) => normalizeRelative(file.relative));
-  const codeFiles = scan.files.filter((file) => file.type === 'file' && file.contentScannable !== false && CODE_EXTENSIONS.has(path.posix.extname(file.relative).toLowerCase())).map((file) => normalizeRelative(file.relative));
+  const codeFiles = activeFiles.filter((file) => file.type === 'file' && file.contentScannable !== false && CODE_EXTENSIONS.has(path.posix.extname(file.relative).toLowerCase())).map((file) => normalizeRelative(file.relative));
   const roots = new Set(manifests.map((relative) => path.posix.dirname(relative) || '.'));
   if (codeFiles.length && (!roots.size || codeFiles.some((relative) => deepestOwner(relative, [...roots]) === '.'))) roots.add('.');
   if (!roots.size) roots.add('.');
@@ -232,6 +235,10 @@ ${commandBullets(unit.commands, '当前扫描未发现属于本子工程的可�
 
 > Status: code-scan understanding baseline. Paths and manifests are observed facts. An AI must read code and tests before completing responsibilities, contracts, and business semantics, with evidence references retained.
 
+## Reading guide
+
+Human overview, diagrams and standards live together in \`docs/development/\`. Implementation uses the selected Skills under \`docs/ai/skills/\`; document navigation is not a substitute for those instructions.
+
 ## Development-unit boundary
 
 - ID: \`${unit.id}\`
@@ -300,70 +307,7 @@ profiles: [implementation]
 
 # ${label} development rule
 
-Read \`${unit.documentation}\` before changing this unit. Treat scanner facts as leads until the cited source and tests have been reviewed. Preserve existing code unless migration is separately approved. Give new or changed code one primary responsibility, keep related state, rules, and tests cohesive inside one owning module, and collaborate through a minimal public contract. Keep dependency wiring in a composition root and introduce a plugin only for a justified extension point with a versioned contract, lifecycle, and failure isolation. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
-`;
-}
-
-function unitSkill(unit) {
-  // The root unit's path is ".", which would render a trigger no agent can match
-  // ("the . development unit"). Use the unit id as a human-readable label instead.
-  const label = unit.path === '.' ? unit.id : unit.path;
-  return `---
-name: development-${unit.id}
-description: Use when changing the ${label} development unit or its public contract.
----
-
-# ${label} development
-
-## When to use
-
-- A task changes source, tests, contracts, or build behavior owned by this unit.
-
-## When not to use
-
-- Do not apply this unit's conventions to another unit or treat a scanner baseline as verified business knowledge.
-
-## Evidence and prerequisites
-
-- Read \`${unit.documentation}\`, its cited source and tests, and the owning records in \`docs/memory/INDEX.json\`.
-- Candidate stacks: ${unit.stacks.map((stack) => `\`${stack}\``).join(', ') || 'unidentified'}; confirm actual versions from the build manifests.
-
-## Required invariants
-
-- Attribute every project-specific conclusion to a concrete source, test, contract, or owner decision.
-- Keep one owning development unit and Memory page for each verified business behavior.
-- New stable Skill content remains a candidate until the user approves it.
-
-## Decision flow
-
-1. Confirm the unit boundary and entrypoints from code evidence.
-2. State the affected contract, behavior, and acceptance cases before implementation.
-3. Ask for user confirmation before applying business-code changes.
-4. Keep the implementation within one owner where possible; update the development document and Memory for verified behavior changes.
-5. Run a trusted unit command or record why execution is blocked, then write a test result report.
-6. Propose any new stable Skill content as a candidate; add it only after the user approves it.
-
-## Exceptions and escalation
-
-- If scanner coverage is incomplete or sources disagree, record a gap and ask for a decision before adding behavior claims.
-- Public contracts, migrations, security, external actions, and cross-unit changes follow the stronger L2/L3 plan and review route.
-
-## Verification matrix
-
-| Scenario | Expected result | Command or evidence status |
-| --- | --- | --- |
-| Unit understanding | Every claim cites inspected source or test paths | Manual evidence review; unverified until completed |
-| Behavior change | Development document and owning Memory remain aligned with current code | \`aicg check .\` plus project tests when discovered |
-| New reusable Skill | One stable decision surface, explicit trigger, counterexample, and owner approval | Skill quality audit; candidate until approved |
-
-## Project evidence boundary
-
-- Current project-specific behavior remains unverified until the development document cites reviewed code or tests. A process exit alone does not prove the business meaning.
-
-## Sources
-
-- \`${unit.documentation}\`, its indexed build manifests, source inventory, tests, and owner-confirmed decisions.
-- \`docs/memory/INDEX.json\` and each owning module page for verified business behavior.
+Use the development Skills selected for this task before changing this unit. Human-readable background is available in \`${unit.documentation}\`. Treat scanner facts as leads until the cited source and tests have been reviewed. Preserve existing code unless migration is separately approved. Give new or changed code one primary responsibility, keep related state, rules, and tests cohesive inside one owning module, and collaborate through a minimal public contract. Keep dependency wiring in a composition root and introduce a plugin only for a justified extension point with a versioned contract, lifecycle, and failure isolation. Keep changes inside the unit's public boundary, document contract and business behavior in the owning Memory page, run a relevant trusted verification command, and record the actual result. Do not promote inferred conventions or unverified behavior into a project Skill.
 `;
 }
 
@@ -443,7 +387,7 @@ description: ${zh ? '理解已有项目、补全各子工程开发文档、同�
   return content;
 }
 
-export function buildDevelopmentDocumentationArtifacts(config, scan) {
+export function buildDevelopmentDocumentationArtifacts(config, scan, { guidanceForUnit = () => [] } = {}) {
   const units = discoverDevelopmentUnits(scan);
   const adapterDirs = selectedSkillDirectories(config.clients ?? []);
   const index = {
@@ -460,20 +404,15 @@ export function buildDevelopmentDocumentationArtifacts(config, scan) {
     kind: 'development-documentation-index', source: 'repository-code-scan',
   }];
   for (const unit of units) {
-    artifacts.push({ path: unit.documentation, content: developmentDocument(unit, config), ownership: 'seed', kind: 'development-documentation', source: 'repository-code-scan' });
+    artifacts.push({ path: unit.documentation, content: retainedHumanDocument(scan.root, unit.documentation, unit.path === '.' ? 'docs/ai/development/root.md' : `docs/ai/development/units/${unit.id}.md`, developmentDocument(unit, config)), ownership: 'seed', kind: 'development-documentation', source: 'repository-code-scan' });
     artifacts.push({ path: unit.readme, content: readmeBlock(unit, config), ownership: 'managed-block', kind: 'development-readme', source: 'repository-code-scan' });
     const localRoot = unit.path === '.' ? 'docs/ai' : `${unit.path}/docs/ai`;
     artifacts.push({ path: `${localRoot}/rules/development.md`, content: unitRule(unit), ownership: 'seed', kind: 'development-unit-rule', source: unit.documentation });
-    const skillPath = `${localRoot}/skills/development-${unit.id}/SKILL.md`;
-    const skill = unitSkill(unit);
-    artifacts.push({ path: skillPath, content: skill, ownership: 'seed', kind: 'development-unit-skill', source: unit.documentation });
-    const prefix = unit.path === '.' ? '' : `${unit.path}/`;
-    // `source` names the artifact this one is derived from, so adapters mirror the unit's
-    // documentation page exactly like the rule, canonical Skill and entrypoint do. Recording
-    // the mirrored Skill path here instead made the manifest unresolvable for the adapter
-    // case in the trust table, which silently disabled `aicg sync --prune`.
-    for (const directory of adapterDirs) artifacts.push({ path: `${prefix}${directory}/development-${unit.id}/SKILL.md`, content: skillAdapterContent(skillPath, skill), ownership: 'full', kind: 'development-unit-adapter-skill', source: unit.documentation });
-    if (unit.path !== '.') artifacts.push({ path: `${unit.path}/AGENTS.md`, content: `# ${unit.path} development\n\nRead \`${unit.documentation}\`, \`${localRoot}/rules/development.md\`, and \`${localRoot}/skills/development-${unit.id}/SKILL.md\` before changes. Follow root governance and record verified business behavior in Memory.\n`, ownership: 'managed-block', kind: 'development-unit-entrypoint', source: unit.documentation });
+    if (unit.path !== '.') {
+      const guidance = [...new Set(guidanceForUnit(unit))].sort();
+      const additional = guidance.length ? `\nImplementation guidance for this unit:\n${guidance.map((relative) => `- \`${relative}\``).join('\n')}\n` : '';
+      artifacts.push({ path: `${unit.path}/AGENTS.md`, content: `# ${unit.path} development\n\nUse the task-selected development Skills for implementation and root governance for role assignment. Human project context is documented in \`${unit.documentation}\`. Record verified business behavior in Memory only when enabled.\n${additional}`, ownership: 'managed-block', kind: 'development-unit-entrypoint', source: unit.documentation });
+    }
   }
   const skill = understandingSkill(config);
   const canonical = 'docs/ai/skills/brownfield-understanding/SKILL.md';

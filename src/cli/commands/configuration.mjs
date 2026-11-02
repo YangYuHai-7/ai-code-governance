@@ -8,6 +8,7 @@ import { assertNoLinkAncestor } from '../../preconditions.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { clientSupportFromClients } from '../shared.mjs';
 import { prepareInit } from './init.mjs';
+import { buildGovernanceHandoff } from '../../modules/governance/handoff-prompt.mjs';
 
 const DEFAULT_OUTPUT = 'aicg.config.json';
 
@@ -39,7 +40,7 @@ export function buildTemplate(scan, locale) {
     clients,
     clientSupport: clientSupportFromClients(clients, 'config'),
     stacks: defaults.stacks,
-    governanceDepth: defaults.governanceDepth,
+
     governanceFootprint: defaults.governanceFootprint,
     artifactLanguage: defaults.artifactLanguage,
     interactionLanguage: locale === 'zh-CN' ? 'zh-CN' : 'en',
@@ -58,6 +59,7 @@ function print(payload, json) {
   else {
     console.log(`configuration=${payload.file ?? payload.config} status=${payload.status ?? (payload.valid ? 'valid' : 'invalid')}`);
     if (payload.next) console.log(`next=${payload.next}`);
+    if (payload.handoff) console.log(`handoff_status=${payload.handoff.status} framework_status=${payload.handoff.frameworkStatus}\n${payload.handoff.prompt}`);
     for (const error of payload.errors ?? []) console.warn(`WARN: ${error}`);
     if (payload.reportPath) console.log(`report=${payload.reportPath}`);
   }
@@ -93,12 +95,13 @@ async function validateConfiguration(root, options) {
     result = {
       ok: true, valid: true, config: options.config,
       lifecycle: prepared.config.initialization.lifecycle,
-      governanceDepth: prepared.config.governanceDepth,
+
       clients: prepared.config.clients,
       stacks: prepared.config.stacks,
       operationCount: prepared.plan.operations.length + (prepared.plan.manifest?.changed ? 1 : 0),
       requiresExactApproval: Boolean(prepared.plan.requireAdaptiveApproval || prepared.plan.requireTopologyApproval),
       next: `Preview with aicg init . --config ${options.config} --yes --dry-run.`,
+      handoff: buildGovernanceHandoff({ root: prepared.scan.root, config: prepared.config, scan: prepared.scan, phase: 'configured', configPath: options.config, locale: options.locale }),
     };
   } catch (error) {
     result = { ok: false, valid: false, config: options.config, errors: [error.message] };

@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { runReferenceEvaluation } from './golden-path-reference-evaluation.mjs';
+import { REFERENCE_PACK_ID, REFERENCE_ROOT, runReferenceEvaluation } from './golden-path-reference-evaluation.mjs';
 import { validateQualityMatrixRun } from '../src/modules/delivery-core/index.mjs';
+import { digestEvaluationRepository } from '../src/modules/evaluation/index.mjs';
+import { loadGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { executeBrowserGate, executeCommandGate, executeDatabaseGate } from '../src/adapters/process/golden-path-verification.mjs';
 import { executeHttpGate } from '../src/adapters/http/verification.mjs';
 
@@ -16,6 +18,7 @@ const WEB = process.env.AICG_LIVE_WEB ?? 'http://127.0.0.1:4173';
 const NPM = process.env.AICG_LIVE_NPM ?? (process.platform === 'win32' ? 'npm.cmd' : '/tmp/npm11/node_modules/.bin/npm');
 const PSQL = process.env.AICG_LIVE_PSQL ?? '/opt/homebrew/opt/postgresql@18/bin/psql';
 const DATABASE = process.env.AICG_LIVE_DATABASE ?? 'tracker';
+const SESSION_TOKEN = process.env.AICG_LIVE_SESSION_TOKEN ?? '';
 const ORGANIZATION = '11111111-1111-1111-1111-111111111111';
 const BOARD = 'aaaaaaaa-1111-1111-1111-111111111111';
 const ITEM = 'cccccccc-1111-1111-1111-111111111111';
@@ -33,11 +36,29 @@ const SCRIPTS = {
   'requirement-traceability': ['node', 'scripts/traceability-check.mjs'],
 };
 
+export function liveCommandEnvironment(source, { cwd, root, sessionToken, api }) {
+  return {
+    ...source,
+    AICG_TRACEABILITY_ROOT: source.AICG_LIVE_FIXTURE ?? cwd,
+    AICG_ROOT: root,
+    VITE_API_BASE_URL: api,
+    ...(sessionToken ? { VITE_SESSION_TOKEN: sessionToken } : {}),
+  };
+}
+
+export function assertLiveWorkloadBinding(fixtureRoot, workRoot, expectedDigest = null) {
+  const fixtureDigest = digestEvaluationRepository(path.join(fixtureRoot, 'project'));
+  if (expectedDigest !== null && fixtureDigest !== expectedDigest) throw new Error('the declared fixture changed during live evaluation');
+  const executedDigest = digestEvaluationRepository(workRoot);
+  if (executedDigest !== fixtureDigest) throw new Error('the live work tree does not match the declared fixture project');
+  return fixtureDigest;
+}
+
 function run(argv, cwd, timeoutMs = 240000) {
   return new Promise((resolve) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
-      env: { ...process.env, AICG_TRACEABILITY_ROOT: process.env.AICG_LIVE_FIXTURE ?? cwd, AICG_ROOT: process.env.AICG_ROOT ?? process.cwd() },
+      env: liveCommandEnvironment(process.env, { cwd, root: process.env.AICG_ROOT ?? process.cwd(), sessionToken: SESSION_TOKEN, api: API }),
     });
     let stdout = '';
     let stderr = '';
@@ -55,14 +76,14 @@ async function concurrencyProbe() {
   // evaluation API process; the multi-process variant lives in scripts/golden-path-live-concurrency.mjs
   // and is what proves the database-level guard rather than in-process serialization.
   const { randomUUID } = await import("node:crypto");
-  const tenant = randomUUID();
+  const tenant = SESSION_TOKEN ? ORGANIZATION : randomUUID();
   const board = randomUUID();
   const item = randomUUID();
   const seeded = await run([PSQL, "-d", DATABASE, "-v", "ON_ERROR_STOP=1", "-c",
-    `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Matrix tenant'); INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Matrix board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Matrix item', 'todo', 1)`], WORK, 30000);
+    `INSERT INTO organizations (id, name) VALUES ('${tenant}', 'Matrix tenant') ON CONFLICT (id) DO NOTHING; INSERT INTO boards (id, organization_id, title) VALUES ('${board}', '${tenant}', 'Matrix board'); INSERT INTO work_items (id, organization_id, board_id, title, state, version) VALUES ('${item}', '${tenant}', '${board}', 'Matrix item', 'todo', 1)`], WORK, 30000);
   if (seeded.exitCode !== 0) return { status: "blocked", detail: `the probe tenant could not be seeded: ${seeded.stderr.slice(0, 120)}` };
   const body = JSON.stringify({ organizationId: tenant, actorId: "member-synthetic-1", boardId: board, state: "in-progress", expectedVersion: 1 });
-  const statuses = await Promise.all(Array.from({ length: 5 }, () => fetch(`${API}/work-items/${item}`, { method: "PATCH", headers: { "content-type": "application/json" }, body }).then((response) => response.status).catch(() => 0)));
+  const statuses = await Promise.all(Array.from({ length: 5 }, () => fetch(`${API}/work-items/${item}`, { method: "PATCH", headers: { "content-type": "application/json", ...(SESSION_TOKEN ? { authorization: `Bearer ${SESSION_TOKEN}` } : {}) }, body }).then((response) => response.status).catch(() => 0)));
   const accepted = statuses.filter((status) => status === 200).length;
   const refused = statuses.filter((status) => status === 409).length;
   const version = await psql(`SELECT version FROM work_items WHERE id = '${item}'`);
@@ -108,7 +129,7 @@ async function browserScenario(scenario) {
   const result = await run([playwright, 'test', `e2e/${scenario}.e2e.ts`], WORK, 180000);
   return result.exitCode === 0
     ? { status: 'passed', detail: `${scenario} passed`, cleanup: { status: 'clean', reason: null } }
-    : { status: 'failed', detail: `${scenario} exited ${result.exitCode}: ${(result.stderr || result.stdout).slice(-400)}` };
+    : { status: 'failed', detail: `${scenario} exited ${result.exitCode}: ${`${result.stdout}\n${result.stderr}`.slice(-2000)}` };
 }
 
 const context = {
@@ -141,7 +162,7 @@ const context = {
     request: async ({ method = 'GET', path: target, baseUrl, body, timeoutMs = 10000 }) => {
       const response = await fetch(`${baseUrl ?? API}${target}`, {
         method,
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', ...(SESSION_TOKEN ? { authorization: `Bearer ${SESSION_TOKEN}` } : {}) },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -153,8 +174,12 @@ const context = {
 };
 
 async function main() {
+  const pack = loadGoldenPathPack(REFERENCE_PACK_ID);
+  const fixtureRoot = process.env.AICG_LIVE_FIXTURE ?? REFERENCE_ROOT;
+  const sourceDigest = assertLiveWorkloadBinding(fixtureRoot, WORK);
   const workRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-live-'));
   const run = await runReferenceEvaluation({
+    fixtureRoot,
     workRoot,
     environment: {
       runtime: { node: process.versions.node },
@@ -169,12 +194,14 @@ async function main() {
     context,
     policy: { sessionId: 'session.live-macos', keepWorkRoot: true },
   });
+  assertLiveWorkloadBinding(fixtureRoot, WORK, sourceDigest);
   const validated = validateQualityMatrixRun(run);
   const receipt = {
     schemaVersion: validated.schemaVersion,
     id: validated.id,
     status: run.status,
-    plan: { packId: validated.packId, matrixId: validated.matrixId, requiredGateIds: validated.requiredGateIds },
+    sourceDigest,
+    plan: { packId: pack.id, matrixId: pack.qualityMatrix.id, requiredGateIds: validated.requiredGateIds },
     digests: validated.digests,
     environment: {
       runtime: { node: process.versions.node },
@@ -183,12 +210,15 @@ async function main() {
       browser: { name: 'chromium' },
       platform: process.platform,
     },
-    gates: (run.results ?? []).map((entry) => ({ id: entry.gateId, status: entry.status, checks: entry.checks?.length ?? 0, artifacts: (entry.artifacts ?? []).map((artifact) => artifact.digest) })),
-    note: 'Executed on a single macOS host with local PostgreSQL 18.6 and the machine browser. This is not cross-platform, held-out, real-Agent, or qualified-human evidence.',
+    gates: validated.results.map((entry) => ({ id: entry.gateId, status: entry.status, cleanup: entry.cleanup ?? null, artifacts: validated.artifactDigests.filter((artifact) => artifact.gateId === entry.gateId).map((artifact) => artifact.digest) })),
+    note: 'Executed on a single macOS host with local PostgreSQL 18.6 and the machine browser. Per-check details are not recorded in this summary; the full matrix run is required for result and cleanup inspection. This is not cross-platform, held-out, real-Agent, or qualified-human evidence.',
   };
   const target = process.env.AICG_LIVE_RECEIPT;
   if (typeof target === 'string' && target.length > 0) fs.writeFileSync(target, `${JSON.stringify(receipt, null, 2)}\n`);
+  const runTarget = process.env.AICG_LIVE_RUN_RECEIPT;
+  if (typeof runTarget === 'string' && runTarget.length > 0) fs.writeFileSync(runTarget, `${JSON.stringify(validated, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify({ status: receipt.status, gates: receipt.gates, workRoot, receipt: target ?? null }, null, 2)}\n`);
+  if (receipt.status !== 'passed') process.exitCode = 1;
 }
 
 if (process.argv[1] && process.argv[1].endsWith('golden-path-live-evaluation.mjs')) main().catch((error) => { process.stderr.write(`${error.stack}\n`); process.exit(1); });

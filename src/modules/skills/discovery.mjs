@@ -117,7 +117,7 @@ function metadata(content) {
     } else throw new Error('Unsupported Skill metadata structure.');
   }
   finishBlock();
-  if (typeof values.name !== 'string' || !ID.test(values.name) || typeof values.description !== 'string' || !values.description.trim() || values.description.length > 500) throw new Error('Skill name and bounded description are required.');
+  if (typeof values.name !== 'string' || !ID.test(values.name) || typeof values.description !== 'string' || !values.description.trim() || values.description.length > 1024) throw new Error('Skill name and bounded description are required.');
   return values;
 }
 
@@ -193,8 +193,8 @@ export function assertSkillCandidateFresh(item, root = null) {
 export function serializeSkillDiscovery(discovery) {
   const candidates = Array.isArray(discovery) ? discovery : discovery?.candidates;
   const sourceStatus = Array.isArray(discovery) ? discovery.sourceStatus ?? [] : discovery?.sourceStatus;
-  if (!Array.isArray(candidates) || candidates.length > 5 || !Array.isArray(sourceStatus)
-    || sourceStatus.length > 8192) throw new Error('Skill discovery requires at most five candidates and bounded sourceStatus diagnostics.');
+  if (!Array.isArray(candidates) || candidates.length > 64 || !Array.isArray(sourceStatus)
+    || sourceStatus.length > 8192) throw new Error('Skill discovery requires at most 64 retained candidates and bounded sourceStatus diagnostics.');
   for (const item of sourceStatus) {
     if (!item || typeof item !== 'object' || Array.isArray(item)
       || typeof item.source !== 'string' || !item.source || item.source.length > 2048

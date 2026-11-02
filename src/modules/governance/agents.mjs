@@ -14,6 +14,8 @@
  * Owner-approved project roles from the adaptive team are emitted next to the base roles. An
  * unapproved proposal never becomes a loadable role; it stays in the team roster ledger.
  */
+import { isImplementationSourcePath } from '../repository/index.mjs';
+
 const NL = String.fromCharCode(10);
 const t = (zh, en) => ({ zh, en });
 const pick = (value, zh) => (zh ? value.zh : value.en);
@@ -275,11 +277,12 @@ export function proposedProjectRoles(config, scan, context) {
   if (config?.initialization?.lifecycle !== 'existing') return [];
   if (approvedProjectRoles(config).length > 0) return [];
   const files = (scan?.files ?? []).filter((file) => file.type === 'file' && typeof file.relative === 'string');
-  const paths = files.map((file) => file.relative);
+  const paths = files.map((file) => file.relative).filter((relative) => !/(?:^|\/)(?:docs\/ai|docs\/development|\.ai-governance|\.agents|\.claude|\.cursor)(?:\/|$)/.test(relative));
   const lowered = paths.map((relative) => relative.toLowerCase());
   const project = (context?.projectName ?? '').toLowerCase();
   const units = new Map();
   for (const relative of paths) {
+    if (!isImplementationSourcePath(relative)) continue;
     const unit = developmentUnit(relative);
     if (!unit) continue;
     if (!units.has(unit)) units.set(unit, []);
@@ -292,7 +295,10 @@ export function proposedProjectRoles(config, scan, context) {
     // A test or a document must corroborate the unit. The project name alone is too weak: a
     // fixture called "...-new-code-..." would otherwise turn a one-file unit into a "domain".
     const testMatches = lowered.filter((relative) => (TEST_FILE.test(relative) || /\.(?:test|spec)\./.test(relative)) && relative.includes(name));
-    const docMatches = lowered.filter((relative) => /\.(?:md|mdx)$/.test(relative) && relative.includes(name));
+    // Generated governance inventories and role prompts cannot corroborate their own
+    // business-domain proposals on the scan immediately following an application.
+    const docMatches = lowered.filter((relative) => !relative.startsWith('docs/ai/')
+      && !relative.startsWith('.ai-governance/') && /\.(?:md|mdx)$/.test(relative) && relative.includes(name));
     if (testMatches.length === 0 && docMatches.length === 0) continue;
     const evidence = [];
     if (testMatches.length) evidence.push('test coverage names ' + name + ': ' + testMatches.join(', '));

@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { CONFIG_PATH, MANIFEST_PATH, TOOL_NAME } from '../constants.mjs';
+import { CONFIG_PATH, MANIFEST_PATH, SUPPORTED_DEPTHS, TOOL_NAME } from '../constants.mjs';
 import { defaultConfig, validateConfig } from '../generator.mjs';
 import { loadManifest } from '../managed-files.mjs';
 import { allBuiltInClientIds } from '../catalogs/index.mjs';
@@ -35,13 +35,19 @@ export function normalizeClientSupport(config, { source = 'legacy-config' } = {}
 }
 
 export function mergeConfig(base, supplied) {
+  base = { ...base }; supplied = { ...supplied };
+  for (const config of [base, supplied]) {
+    if (config.governanceDepth !== undefined && !SUPPORTED_DEPTHS.includes(config.governanceDepth)) throw usageError(`Unsupported legacy governance depth: ${config.governanceDepth}`);
+  }
+  delete base.governanceDepth;
+  delete supplied.governanceDepth;
   const inferredTestingLanguage = supplied.testing?.reportLanguage === undefined && supplied.artifactLanguage !== undefined
     ? { reportLanguage: supplied.artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en' }
     : {};
   return {
     ...base,
     ...supplied,
-    features: { ...base.features, ...(supplied.features ?? {}) },
+    features: { ...base.features, ...(supplied.features ?? {}), architectureDocumentation: true },
     testing: { ...base.testing, ...inferredTestingLanguage, ...(supplied.testing ?? {}) },
   };
 }
@@ -53,6 +59,13 @@ export function loadExistingConfig(root) {
     if (error.code === 'ENOENT') return null;
     throw new Error(`Cannot read existing ${CONFIG_PATH}: ${error.message}`);
   }
+}
+
+export function isLegacyUnapprovedTeamConfig(config) {
+  const team = config?.agentTeam;
+  return Boolean(team && typeof team === 'object' && !Array.isArray(team)
+    && Object.keys(team).length === 1 && team.enabled === true
+    && config.skillDiscovery?.enabled !== true);
 }
 
 export function printScan(scan) {
@@ -99,7 +112,10 @@ export function inspectManagedConfigTrust(root) {
   const entry = entries?.length === 1 ? entries[0] : null;
   const actualSha = sha256(readText(file, ''));
   if (!entry || !/^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) return { state: 'unrecorded', path: CONFIG_PATH, actualSha };
-  if (entry.sha256 === actualSha) return { state: 'trusted', path: CONFIG_PATH, sha256: actualSha };
+  if (entry.sha256 === actualSha) return {
+    state: 'trusted', path: CONFIG_PATH, sha256: actualSha,
+    ...(isLegacyUnapprovedTeamConfig(loadExistingConfig(root)) ? { legacyUnapprovedTeam: true } : {}),
+  };
   return { state: 'drifted', path: CONFIG_PATH, expectedSha: entry.sha256, actualSha, manifestPath: MANIFEST_PATH };
 }
 

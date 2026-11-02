@@ -12,6 +12,7 @@ const LEGACY_GOVERNANCE_ROOTS = Object.freeze([
   '.claude/skills',
   '.agents/skills',
   'docs/ai',
+  'docs/development',
   // The single delivery workflow document sits at the docs root, next to the canonical AI
   // governance root. It is generated governance, so the scanner must never report it as
   // unowned production source and init must be allowed to write it.

@@ -22,6 +22,13 @@ function staticProof(root, relative) {
   return evidence ? { status: 'pass', evidence: [evidence] } : { status: 'unverified', evidence: [], reason: `${relative} is missing or unsafe.` };
 }
 
+function unverifiedTestingProof(root, relative, reason) {
+  const evidence = fileEvidence(root, relative);
+  // Preserve the existing hash-bound proof contract, but distinguish structural
+  // presence from reviewed applicability and actual product execution.
+  return { status: 'unverified', evidence: evidence ? [evidence] : [], reason };
+}
+
 /** Review occurs only after an exact approved application, never during preview. */
 export function reviewGeneratedGovernance(root, { lifecycle, selectedAgents, check, config = null, runReview = runIndependentReview } = {}) {
   const brief = createGovernanceReviewBrief({ lifecycle, generatorAgentId: 'aicg-deterministic-generator', projectRoot: root });
@@ -41,8 +48,10 @@ export function reviewGeneratedGovernance(root, { lifecycle, selectedAgents, che
     'project-layout': staticProof(root, developmentIndex),
     'development-docs': staticProof(root, developmentIndex),
     'process-scaling': staticProof(root, readCanonicalPath(root, 'docs/ai/task-routing-policy.json', footprint)),
-    'test-plan': staticProof(root, readCanonicalPath(root, 'docs/ai/verification-profiles.yaml', footprint)),
-    'test-result-report': staticProof(root, 'reports/aicg/latest-check.json'),
+    'test-plan': unverifiedTestingProof(root, readCanonicalPath(root, 'docs/ai/verification-profiles.yaml', footprint),
+      'A generated verification profile is structural evidence only. Review applicable product commands, working directories, environments, and test cases before claiming a verified test plan.'),
+    'test-result-report': unverifiedTestingProof(root, 'reports/aicg/latest-check.json',
+      'A governance check report does not prove product test execution. Attach reviewed product results with failures, skipped cases, scope, and current evidence bindings.'),
   };
   const score = scoreGovernanceFramework({ root, lifecycle, check, proofs, review, config });
   const report = {

@@ -17,12 +17,12 @@ test('executed probe detection is recorded, and its gaps are not smoothed over',
   assert.ok(receipt.every((probe) => probe.detected === (probe.detectedBy.length > 0)));
 });
 
-test('the roadmap states the probe coverage gap instead of claiming full coverage', () => {
-  assert.match(roadmap, /Negative probe coverage \(executed, incomplete\)/);
+test('the roadmap reports complete detection for the exact declared reference catalog', () => {
+  assert.match(roadmap, /Negative probe coverage \(executed, complete for the declared reference catalog\)/);
   assert.match(roadmap, /detects \*\*all fourteen\*\*/);
   assert.match(roadmap, /the workload's own architecture gate was a hand-written token list/i);
   assert.match(roadmap, /reports such a path as an authority violation/);
-  assert.match(roadmap, /declared negative-probe coverage is materially weaker than the Pack advertises/);
+  assert.doesNotMatch(roadmap, /declared negative-probe coverage is materially weaker than the Pack advertises/);
 });
 
 test('the probe receipt carries no host paths', () => {

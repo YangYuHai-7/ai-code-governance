@@ -9,6 +9,14 @@ function printCompletion(result, json) {
     console.log(JSON.stringify(result, null, 2));
     return;
   }
+  if (result.preflight?.status === 'blocked') {
+    console.log(`completion_gate=fail mode=${result.mode}`);
+    console.log(`preflight=blocked code=${result.preflight.code}`);
+    console.log(`PREFLIGHT_GAP: ${result.preflight.reason}`);
+    console.log(`NEXT_ACTION: ${result.preflight.remediation}`);
+    for (const boundary of result.boundaries) console.log(`BOUNDARY: ${boundary}`);
+    return;
+  }
   console.log(`PRODUCTION_READINESS=${result.productionReadiness.state} constraint_evidence=${result.productionReadiness.constraintEvidence.status}`);
   console.log(`CLAIM_BOUNDARY: ${result.claimBoundary}`);
   console.log(`completion_gate=${result.ok ? 'pass' : 'fail'} mode=${result.mode}`);

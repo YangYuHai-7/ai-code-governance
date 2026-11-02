@@ -133,7 +133,7 @@ test('receipt evaluation requires exactly one result per required gate', () => {
   assert.throws(() => evaluateQualityMatrixRun({ plan, results: missing, artifacts: [], environment: plan.digests.environment }), /missing required gate/i);
   const duplicate = [...passingResults(plan), passingResults(plan)[0]];
   assert.throws(() => evaluateQualityMatrixRun({ plan, results: duplicate, artifacts: [], environment: plan.digests.environment }), /duplicate/i);
-  const extra = [...passingResults(plan), { gateId: 'static-lint', status: 'passed' }];
+  const extra = [...passingResults(plan), { gateId: 'static-lint', status: 'passed', cleanup: { status: 'clean' } }];
   assert.throws(() => evaluateQualityMatrixRun({ plan, results: extra, artifacts: [], environment: plan.digests.environment }), /duplicate|not planned/i);
   assert.throws(() => evaluateQualityMatrixRun({ plan, results: passingResults(plan).map((result) => result.gateId === 'unit-tests' ? { ...result, status: 'failed' } : result), artifacts: [], environment: plan.digests.environment }), /failure classification/i);
   assert.throws(() => evaluateQualityMatrixRun({ plan, results: passingResults(plan).map((result) => result.gateId === 'unit-tests' ? { ...result, status: 'not-applicable' } : result), artifacts: [], environment: plan.digests.environment }), /reason/i);
@@ -178,6 +178,8 @@ test('the run receipt contract is closed, versioned, and digest-bound', () => {
   assert.throws(() => validateQualityMatrixRun({ ...run, status: 'passed', results: run.results.map((result) => result.gateId === 'unit-tests' ? { ...result, status: 'blocked' } : result) }), /status/);
   assert.throws(() => validateQualityMatrixRun({ ...run, artifactBytes: run.artifactBytes + 1 }), /artifactBytes/);
   assert.throws(() => validateQualityMatrixRun({ ...run, results: run.results.slice(1) }), /required gate/i);
+  assert.throws(() => validateQualityMatrixRun({ ...run, results: run.results.map((result) => result.gateId === 'unit-tests' ? { ...result, cleanup: { status: 'failed', reason: 'child survived' } } : result) }), /cleanup/i);
+  assert.throws(() => validateQualityMatrixRun({ ...run, results: run.results.map((result) => result.gateId === 'unit-tests' ? { ...result, cleanup: undefined } : result) }), /cleanup/i);
   const schema = JSON.parse(fs.readFileSync(path.join(root, 'assets/contracts/quality-matrix-run-v1-schema.json'), 'utf8'));
   assert.equal(schema.$schema, 'https://json-schema.org/draft/2020-12/schema');
   assert.equal(schema.additionalProperties, false);
@@ -267,4 +269,40 @@ test('a throwing or missing driver stays blocked instead of passing', async () =
   assert.equal(missing.run.status, 'blocked');
   assert.equal(missing.run.results[0].gateId, 'migration-safety');
   assert.equal(missing.run.results[0].failureClassification, 'capability');
+});
+
+test('failed gate cleanup cannot be reported as a passing matrix', async () => {
+  const plan = miniPlan(['unit-tests']);
+  const drivers = { command: async (context, gate) => driverResult(gate, { cleanup: { status: 'failed', reason: 'child process survived' } }) };
+  const result = await executeQualityMatrix({ root: process.cwd(), plan, drivers, context: executionContext().value, policy: { sessionId: 'session.quality' } });
+  assert.equal(result.run.status, 'blocked');
+  assert.equal(result.run.results[0].status, 'blocked');
+  assert.equal(result.run.results[0].failureClassification, 'cleanup');
+  assert.equal(result.evidence[0].status, 'blocked');
+});
+
+test('a gate response without clean cleanup proof or with the wrong gate ID is blocked', async () => {
+  const plan = miniPlan(['unit-tests']);
+  for (const overrides of [{ cleanup: undefined }, { gateId: 'other-gate' }]) {
+    const drivers = { command: async (context, gate) => driverResult(gate, overrides) };
+    const result = await executeQualityMatrix({ root: process.cwd(), plan, drivers, context: executionContext().value, policy: { sessionId: 'session.quality' } });
+    assert.equal(result.run.status, 'blocked');
+    assert.equal(result.evidence[0].status, 'blocked');
+  }
+});
+
+test('failed final process cleanup cannot be reported as a passing matrix', async () => {
+  const plan = miniPlan(['unit-tests']);
+  const { value } = executionContext({ process: { async cleanupAll() { return { state: 'failed', failures: ['child-1'], reason: 'child process survived' }; } } });
+  const result = await executeQualityMatrix({ root: process.cwd(), plan, drivers: passingDrivers, context: value, policy: { sessionId: 'session.quality' } });
+  assert.equal(result.run.status, 'blocked');
+  assert.equal(result.run.results[0].status, 'blocked');
+  assert.equal(result.run.results[0].failureClassification, 'cleanup');
+  assert.equal(result.evidence[0].status, 'blocked');
+  assert.equal(result.cleanup.status, 'failed');
+  assert.match(result.cleanup.reason, /child-1/);
+  const invalidContext = executionContext({ process: { async cleanupAll() { return { state: 'unknown' }; } } });
+  const invalid = await executeQualityMatrix({ root: process.cwd(), plan, drivers: passingDrivers, context: invalidContext.value, policy: { sessionId: 'session.quality' } });
+  assert.equal(invalid.run.status, 'blocked');
+  assert.match(invalid.run.results[0].reason, /invalid result/);
 });

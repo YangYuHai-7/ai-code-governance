@@ -21,7 +21,6 @@ const clientHints = {
   'github-copilot': '生成 .github 下的说明与技能入口',
 };
 const osLabels = { macos: 'macOS', windows: 'Windows', linux: 'Linux' };
-const depthLabels = { minimal: '简单', standard: '标准', complete: '完整' };
 const strategyLabels = { 'keep-existing': '保持不动', 'new-code-standard': '只约束新代码', 'staged-migration': '分阶段改造' };
 const familyLabels = {
   'web-frontend': '浏览器前端技术栈', 'web-backend': '服务端 Web 技术栈', dotnet: '.NET 平台',
@@ -54,6 +53,24 @@ let applyControls = [];
 let agentRegistry = [];
 let builtInClients = [];
 let nativePickerAvailable = false;
+let routeStage = 'select';
+let currentHandoff = null;
+
+function updateRouteGuide(stage = routeStage) {
+  routeStage = stage;
+  const lifecycle = $('lifecycle')?.value;
+  $('route-new')?.classList.toggle('current', lifecycle === 'greenfield' && stage !== 'select');
+  $('route-existing')?.classList.toggle('current', lifecycle === 'existing' && stage !== 'select');
+  const status = $('route-status');
+  if (!status) return;
+  if (stage === 'select') status.textContent = '先选择项目文件夹；选择和扫描不会修改项目文件。';
+  else if (stage === 'applied') status.textContent = '治理文件已应用。下一步运行项目检查，并根据代码和测试证据补齐未验证的内容；应用不等于业务验收。';
+  else if (stage === 'preview-blocked') status.textContent = '已预览，但有冲突或待处理项。先解决页面列出的问题，再重新预览；治理文件尚未应用。';
+  else if (stage === 'preview') status.textContent = '配置已保存，变更计划已预览。核对新增、更新和覆盖的文件后再点“应用到项目”；治理文件尚未应用。';
+  else if (lifecycle === 'greenfield') status.textContent = '这是新项目：确认 AI 工具和目标技术后保存并预览；应用后还需要检查，不能把未建立的架构当作已有事实。';
+  else if (lifecycle === 'existing') status.textContent = '这是现有项目：先核对扫描结果和旧规则。默认保留业务代码；预览差异后应用，再检查哪些业务内容仍缺证据。';
+  else status.textContent = '项目状态还不能确定。请先选“全新项目”或“已有业务代码”，再保存并预览。';
+}
 
 // Feedback must be visible wherever the owner is looking. The page action bar is sticky at the
 // bottom, so every message also appears as a floating toast above it instead of only in the
@@ -86,6 +103,7 @@ function invalidate() {
   controller?.abort();
   controller = null;
   previewHash = null;
+  currentHandoff = null;
   $('apply').disabled = true;
   $('apply').hidden = true;
   // Any configuration change invalidates the preview, so the preview action becomes available
@@ -94,6 +112,7 @@ function invalidate() {
   if (preview) preview.hidden = false;
   $('preview-result').replaceChildren();
   hideHandoff();
+  if (currentRoot) updateRouteGuide('configure');
 }
 
 async function api(route, body) {
@@ -106,7 +125,9 @@ async function api(route, body) {
   if (!response.ok) {
     const details = Array.isArray(result.verificationErrors) ? result.verificationErrors : [];
     const raw = result.error || ('HTTP ' + response.status);
-    const error = /managed architecture configuration drifted|adaptive decision receipts drifted/.test(raw)
+    const error = /approved project team is missing a required field/.test(raw)
+      ? '旧版项目 Agent 团队只有启用标记，没有批准记录。请点页面上方的「备份并重建基线」，原配置会先备份。'
+      : /managed architecture configuration drifted|adaptive decision receipts drifted/.test(raw)
       ? '治理配置与账本不一致（漂移），AICG 拒绝在漂移的基线上预览或改写。请点页面上方的「备份并重建基线」。'
       : raw;
     throw new Error([error].concat(details).join('\n'));
@@ -120,7 +141,7 @@ function renderTrustWarning(trust) {
   const box = $('trust-warning');
   if (!box) return;
   box.replaceChildren();
-  if (!trust || trust.state === 'none' || trust.state === 'trusted') { box.hidden = true; return; }
+  if (!trust || trust.state === 'none' || (trust.state === 'trusted' && !trust.legacyUnapprovedTeam)) { box.hidden = true; return; }
   const short = (value) => (value ? value.slice(0, 12) + '…' : '（缺失）');
   const title = document.createElement('strong');
   const line = document.createElement('p');
@@ -128,7 +149,10 @@ function renderTrustWarning(trust) {
   button.type = 'button';
   button.className = 'primary';
   button.textContent = '备份并重建基线';
-  if (trust.state === 'unrecorded') {
+  if (trust.legacyUnapprovedTeam) {
+    title.textContent = '旧版项目 Agent 团队缺少批准记录，暂时无法预览。';
+    line.textContent = '重建前会备份原配置；未批准的技能管理会停用，原文件保留。';
+  } else if (trust.state === 'unrecorded') {
     title.textContent = '治理配置没有可信账本记录，AICG 不会直接改写它。';
     line.textContent = '当前文件 ' + short(trust.actualSha);
   } else {
@@ -213,7 +237,6 @@ function syncSummaries() {
   const lifecycle = $('lifecycle').value;
   const lifecycleText = lifecycle === 'greenfield' ? '全新项目' : lifecycle === 'existing' ? (strategyLabels[$('strategy').value] || '保持不动') : '待确认';
   renderAns('ans-lifecycle', [ansChip(lifecycleText, lifecycle !== '')]);
-  renderAns('ans-depth', [ansChip(depthLabels[$('depth').value] || '标准')]);
   const constraints = $('constraints').value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   renderAns('ans-constraints', [ansChip(constraints.length ? '已填 ' + constraints.length + ' 条' : '跳过', constraints.length > 0)]);
 }
@@ -223,12 +246,12 @@ function fill(config) {
   const clients = config.clientSupport?.selectedClients ?? config.clients ?? [];
   document.querySelectorAll('input[name="clients"]').forEach((input) => { input.checked = clients.includes(input.value); });
   document.querySelectorAll('input[name="stacks"]').forEach((input) => { input.checked = (config.stacks ?? []).includes(input.value); });
+  document.querySelectorAll('input[name="java-frameworks"]').forEach((input) => { input.checked = (config.technologyPackages ?? []).includes(input.value); });
   document.querySelectorAll('input[name="oses"]').forEach((input) => { input.checked = (config.supportedOs ?? []).includes(input.value); });
   document.querySelectorAll('input[name="features"]').forEach((input) => { input.checked = Boolean(config.features?.[input.value]); });
   $('brownfield-enrichment').value = config.features?.brownfieldEnrichment ?? 'ask';
   $('lifecycle').value = config.initialization?.lifecycle ?? (projectAssessment?.codebase.lifecycle.value === 'ambiguous' ? '' : projectAssessment?.codebase.lifecycle.value === 'greenfield' ? 'greenfield' : 'existing');
   $('strategy').value = config.initialization?.existingCodeStrategy ?? 'keep-existing';
-  $('depth').value = config.governanceDepth ?? 'standard';
   $('artifact-language').value = config.artifactLanguage ?? 'en';
   $('interaction-language').value = config.interactionLanguage ?? 'zh-CN';
   $('code-language').value = config.codeDocumentationPolicy ?? 'inherit-existing';
@@ -253,36 +276,12 @@ function lifecycleChanged() {
     : '已按扫描结果预选，只留真实用到的。';
 }
 
-// Governance scale and additional capabilities are related but distinct: the scale picks the
-// base artifact set, while each capability is its own switch on top. The delivery loop cannot
-// exist at the smallest scale, so disable it there instead of accepting a choice the generator
-// would silently ignore, and remember it for when the scale grows again.
-const minimalBlockedFeatures = {
-  deliveryLoop: '「简单」规模不生成需求到测试闭环，选择「标准」或「完整」后可用。',
-};
-
-function syncFeatureAvailability() {
-  const minimal = $('depth').value === 'minimal';
-  for (const [id, note] of Object.entries(minimalBlockedFeatures)) {
-    const input = document.querySelector('input[name="features"][value="' + id + '"]');
-    if (!input) continue;
-    const wrapper = input.closest('.choice');
-    const detail = wrapper ? wrapper.querySelector('small') : null;
-    if (minimal) {
-      if (!input.disabled) { input.dataset.wanted = input.checked ? '1' : ''; input.checked = false; }
-      input.disabled = true;
-      wrapper?.classList.add('disabled');
-      if (detail && !detail.dataset.original) { detail.dataset.original = detail.textContent; detail.textContent = note; }
-    } else {
-      if (input.disabled) { input.disabled = false; if (input.dataset.wanted === '1') input.checked = true; }
-      wrapper?.classList.remove('disabled');
-      if (detail?.dataset.original) { detail.textContent = detail.dataset.original; delete detail.dataset.original; }
-    }
-  }
-}
+// The complete baseline is fixed; integration switches retain their own authority.
+function syncFeatureAvailability() {}
 
 function collect() {
   const config = structuredClone(base);
+  delete config.governanceDepth;
   // adaptiveDecisions is managed state, not an owner decision: it lives in
   // .ai-governance/config.json and a draft that carries it is rejected by aicg init --config.
   delete config.adaptiveDecisions;
@@ -301,11 +300,14 @@ function collect() {
     source: emitted.length === recordedClients.length && emitted.every((id, index) => id === recordedClients[index]) ? (base.clientSupport?.source ?? 'config') : 'config' };
   config.stacks = checked('stacks');
   if (!config.stacks.length) throw new Error('请至少选择一个项目用到的技术。');
+  const javaFrameworks = [...document.querySelectorAll('input[name="java-frameworks"]')];
+  const knownFrameworks = new Set(javaFrameworks.map((input) => input.value));
+  config.technologyPackages = [...(config.technologyPackages ?? []).filter((name) => !knownFrameworks.has(name)), ...checked('java-frameworks')];
+  if (!config.stacks.includes('backend-java') && checked('java-frameworks').length) throw new Error('选择 Java 框架前，请先选择 Java 后端。');
   config.supportedOs = checked('oses');
   config.features = { ...(config.features ?? {}) };
   for (const key of Object.keys(featureLabels)) config.features[key] = checked('features').includes(key);
   config.features.brownfieldEnrichment = $('brownfield-enrichment').value;
-  config.governanceDepth = $('depth').value;
   config.artifactLanguage = $('artifact-language').value;
   config.interactionLanguage = $('interaction-language').value;
   config.codeDocumentationPolicy = $('code-language').value;
@@ -437,6 +439,7 @@ function showSelector() {
   $('browse-toggle').hidden = nativePickerAvailable;
   if (nativePickerAvailable) $('browser-box').hidden = true;
   syncProjectPathControls();
+  updateRouteGuide('select');
 }
 
 function showProject(data) {
@@ -485,6 +488,11 @@ function showProject(data) {
   choices('features', 'features', Object.entries(featureLabels).map(([id, values]) => ({ id, label: values[0] })), Object.entries(selected.features ?? {}).filter(([, enabled]) => enabled).map(([id]) => id),
     (id) => featureLabels[id]?.[1] ?? '');
   fill(selected);
+  updateRouteGuide('configure');
+  if (data.handoff) {
+    showHandoff(data.handoff);
+    updateRouteGuide('applied');
+  }
   if (data.configSource === 'managed') message(data.config
     ? '已还原项目里已应用的治理框架；项目里的 aicg.config.json 草稿仍然保留，可用下面的「导入 / 导出配置」载入。改完点最下面的按钮。'
     : '已还原项目里已应用的治理框架。改完点最下面的按钮。');
@@ -730,6 +738,7 @@ async function previewConfiguration() {
     return true;
   }
   previewHash = result.planHash;
+  currentHandoff = result.handoff ?? null;
   const blocked = result.conflicts.length > 0 || result.linksToMigrate.length > 0;
   $('apply').hidden = false;
   $('apply').disabled = blocked;
@@ -739,6 +748,7 @@ async function previewConfiguration() {
   const previewButton = $('save-preview');
   if (previewButton) previewButton.hidden = !blocked;
   renderPreview(result);
+  updateRouteGuide(blocked ? 'preview-blocked' : 'preview');
   message(blocked ? '预览完成，但有需要先处理的问题，暂时不能应用。' : '预览完成。确认文件列表后即可应用到项目。', blocked);
   return blocked;
 }
@@ -767,7 +777,7 @@ async function saveAndPreview() {
   } finally { setPreviewing(false); }
   // A blocked preview must not hand off a prompt that tells an agent to generate: the owner has
   // to resolve the reported conflict first.
-  if (blocked) hideHandoff(); else showHandoff();
+  if (blocked) hideHandoff(); else showHandoff(currentHandoff);
 }
 
 // Preview re-scans the whole repository and plans every artifact, which on a large or
@@ -802,6 +812,7 @@ function renderPreviewError(text) {
   box.className = 'preview-counts';
   box.textContent = text;
   target.append(box);
+  updateRouteGuide('configure');
 }
 
 function renderPreviewPending() {
@@ -813,55 +824,30 @@ function renderPreviewPending() {
   box.textContent = '正在预览…（大型或仓库族项目可能需要几十秒）';
   target.append(box);
 }
-// The page owns the owner decisions; the coding agent owns the semantic completion.
-function handoffPrompt(applied = false) {
-  const target = currentRoot || '<项目路径>';
-  const pinned = toolVersion ? 'ai-code-governance@' + toolVersion : 'ai-code-governance';
-  // Before apply the agent previews and applies the saved plan. After apply that step is done, so
-  // the prompt must not send it back through init or the owner loops on the preview button.
-  const next = applied
-    ? ['治理框架已应用。先运行 aicg check . --enforce 确认现状；需要增量更新治理文件时运行 aicg sync .（不要重新 init）。']
-    : [
-        '按项目里的 aicg.config.json 预览再应用：',
-        '  aicg init . --config aicg.config.json --dry-run',
-        '  确认后用同一个精确 planHash 应用（内部用哈希审批即可，不要贴哈希给我）',
-        '若 aicg 不在 PATH，先用固定版本引导：npm exec --yes --package=' + pinned + ' -- aicg ...',
-      ];
-  return [
-    '用 aicg 在这个项目完成 AI 治理框架（工作目录：' + target + '）。',
-    '先读 AGENTS.md 和 docs/WORKFLOW.md，按项目自己的规则执行。',
-    '只动治理层：AGENTS.md、docs/ai/**、.ai-governance/**；客户端适配器只能由 aicg sync 生成。不要修改业务代码，不要删除历史种子或用户文件。',
-    ...next,
-    '生成器只给骨架，请用代码与测试证据补成真实内容：',
-    '  - 必须问我确认业务不变式（domainConstraints）；不要从代码结构推断业务规则',
-    '  - 补全每个开发单元的开发文档与 Memory，逐条引用源码或测试路径；无法证明的标 unverified 或记为 gap',
-    '  - 项目 Skill 只作为候选提出，只有我明确 add 才采纳',
-    '只在这四件事上问我：业务不变式、技术栈取舍、候选 Skill 的 add/defer/reject、是否清理历史文件。',
-    '完成前运行 aicg check . --enforce 并如实报告；没有真正执行或验证的项不要写成通过。',
-    '问我时用业务语言：说清「要改什么、对我有什么影响、有什么风险」，给 2-3 个选项。',
-  ].join('\n');
-}
-function showHandoff(applied = false) {
+// The server owns the canonical handoff contract so page and CLI output cannot drift.
+function showHandoff(handoff) {
   const box = $('handoff'); const text = $('handoff-text');
-  if (!box || !text) return;
+  if (!box || !text || !handoff?.prompt) { hideHandoff(); return; }
+  currentHandoff = handoff;
   const note = box.querySelector('p');
-  if (note) note.textContent = applied
-    ? '治理框架已应用。把下面这句发给你的 AI 编程助手，让它按代码与测试证据补全业务不变式、开发文档和项目 Skill：'
-    : '配置已保存。把下面这句发给你的 AI 编程助手，让它预览、应用并完善治理框架：';
-  text.value = handoffPrompt(applied);
+  if (note) note.textContent = handoff.phase === 'applied'
+    ? '基础治理骨架已应用。复制下面的完整任务给 AI 助手，让它继续理解当前代码、整理项目知识、同步并验证；它应每轮首行说明实际角色及原因，不能停在初始化。'
+    : '配置已保存。复制下面的完整任务给 AI 助手，让它连续完成预览、应用、当前代码理解、项目知识整理和验证；它应每轮首行说明实际角色及原因。';
+  text.value = handoff.prompt;
   box.hidden = false;
 }
 function hideHandoff() { const box = $('handoff'); if (box) box.hidden = true; }
 
 // The plan is applied, so the preview/apply loop is over. Hide those controls and offer the next
 // step: hand the applied framework to an AI to complete with code-backed evidence.
-function markApplied() {
+function markApplied(handoff) {
   previewHash = null;
   $('apply').hidden = true;
   $('apply').disabled = true;
   const previewButton = $('save-preview');
   if (previewButton) previewButton.hidden = true;
-  showHandoff(true);
+  showHandoff(handoff);
+  updateRouteGuide('applied');
 }
 
 $('family-scope')?.addEventListener('change', invalidate);
@@ -871,15 +857,17 @@ $('apply').addEventListener('click', () => action(async () => {
   const hash = previewHash; invalidate();
   setApplying(true);
   let applied = false;
+  let appliedHandoff = null;
   try {
     const result = await api('apply', { planHash: hash, members: familyMembers() ?? undefined });
+    appliedHandoff = result.handoff ?? null;
     const review = result.governanceReview;
     message(review
       ? '治理文件已应用并通过结构校验。独立复核：' + review.status + '；证据评分：' + review.score + '/100。报告：' + review.reportPath + '。'
       : '治理文件已应用，项目校验通过。');
     applied = true;
   } finally { setApplying(false); }
-  if (applied) markApplied();
+  if (applied) markApplied(appliedHandoff);
 }));
 $('download').addEventListener('click', () => action(async () => {
   const config = collect();

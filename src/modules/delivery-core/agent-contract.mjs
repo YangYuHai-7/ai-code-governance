@@ -42,7 +42,7 @@ function usageValue(value, name) {
 }
 
 function result(status, base, overrides = {}) {
-  return Object.freeze({ turnId: base.turnId, requestDigest: base.requestDigest, status, proposal: null, findings: Object.freeze([]), usage: Object.freeze({ inputTokens: 'unverified', outputTokens: 'unverified', cost: 'unverified' }), processEvidence: Object.freeze({ agentId: base.adapter.id, exitCode: null, durationMs: null, cancelled: false }), ...overrides });
+  return Object.freeze({ turnId: base.turnId, requestDigest: base.requestDigest, status, proposal: null, findings: Object.freeze([]), changedPaths: Object.freeze([]), usage: Object.freeze({ inputTokens: 'unverified', outputTokens: 'unverified', cost: 'unverified' }), processEvidence: Object.freeze({ agentId: base.adapter.id, exitCode: null, durationMs: null, cancelled: false }), ...overrides });
 }
 
 export async function runAgentTurn(adapter, request, limits = {}) {
@@ -96,5 +96,6 @@ export async function runAgentTurn(adapter, request, limits = {}) {
     ['inputTokens', limits.maxInputTokens], ['outputTokens', limits.maxOutputTokens], ['cost', limits.maxCost],
   ].find(([name, limit]) => Number.isFinite(limit) && usage[name] !== 'unverified' && usage[name] > limit);
   if (exceeded) return result('budget-exceeded', base, { findings: Object.freeze([`Agent usage ${exceeded[0]} exceeds budget ${exceeded[1]}.`]), usage, processEvidence });
-  return result('succeeded', base, { proposal: Object.freeze({ ...parsed.proposal }), findings: Object.freeze([...parsed.findings]), usage, processEvidence });
+  const changedPaths = Object.freeze(Array.isArray(processResult.changedPaths) ? processResult.changedPaths.map(String) : []);
+  return result('succeeded', base, { proposal: Object.freeze({ ...parsed.proposal }), findings: Object.freeze([...parsed.findings]), changedPaths, usage, processEvidence });
 }

@@ -18,7 +18,7 @@ One canonical rule source · Small context by default · Evidence before claims 
 </div>
 
 > [!IMPORTANT]
-> This checkout is the `0.6.1` source candidate. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
+> This checkout is the `0.7.0` source version. Source version, npm publication, platform certification, and real-client execution are separate evidence states.
 
 <!-- sync:quick-start -->
 ## Quick start
@@ -76,7 +76,8 @@ aicg init . --yes
 | Is this a new project or an existing one with code? | Detected from the scan |
 | Which technology stacks apply? | Detected from `package.json`, manifests, and source files |
 | What should new governance do with existing code? | Keep existing code unchanged |
-| Anything else (skills, hooks, CI, depth) | Off unless explicitly turned on |
+| Complete governance framework | Development Skills, roles and routing always generated; no depth choice |
+| Optional integrations (hooks, CI, runtime) | Off unless explicitly turned on |
 
 Everything not on that list stays at a safe default. The exact plan, with every file the run would write, is shown before anything touches disk.
 
@@ -149,7 +150,7 @@ Classification combines mutation, scope, risk, and clarity; sentence length does
 3. **Test-case output** — choose compact `aicg-json-v2` (recommended) or a readable Markdown baseline plus schema-v2 JSON, and choose its repository-relative directory.
 4. **Project lifecycle** — existing repositories confirm detected stacks; greenfield repositories select target stacks without pretending architecture already exists.
 5. **Existing-code policy** — choose `keep-existing`, `new-code-standard`, or `staged-migration`. Initialization never silently modernizes product code.
-6. **Preset** — start with Minimal or Standard from evidence. Complete is opt-in, never the default consequence of a vague request.
+6. **Complete framework** — always generate development Skills, role definitions and task routing. There is no preset/depth selection; legacy values cannot reduce the baseline.
 7. **Optional capabilities** — memory, hooks, CI, workflows, Skills, and specialist roles remain separate choices.
 
 For repeatable setup, open the local visual editor from any directory and select a project on the page. Recent projects, an absolute-path field, and a folder browser are available; passing a path opens that project directly. It uses the same `aicg.config.json` as the CLI, offers explained choices, and can import or download JSON for sharing. An interactive npm installation (project-local or global) attempts to open the project picker automatically; if npm skips installation scripts or a browser is unavailable, open it manually. The page listens only on `127.0.0.1`. Uploaded JSON stays in the form until validated and saved; applying governance requires a fresh exact-plan preview and explicit confirmation.
@@ -184,7 +185,7 @@ Existing projects receive `docs/ai/development/index.json`, one evidence baselin
 
 AICG checks default to advisory exit code 0 and write JSON findings under `reports/aicg/`. Pass `--enforce` to opt into a nonzero exit code for failed findings. The installed pre-commit hook uses the advisory default.
 
-Standard and Complete governance also generate an expanded `professional-testing` Skill. It uses stable Case IDs, shared context, minimal AI execution packets, evidence-bound PASS/FAIL, an idempotent result ledger, automatic `NOT_RUN`, and ledger-derived reports. Automated, AI-simulated-human, and real-user evidence remain separate.
+Every framework generates an expanded `professional-testing` Skill. It uses stable Case IDs, shared context, minimal AI execution packets, evidence-bound PASS/FAIL, an idempotent result ledger, automatic `NOT_RUN`, and ledger-derived reports. Automated, AI-simulated-human, and real-user evidence remain separate.
 
 ```bash
 aicg test-case init . --scope ACCOUNT --format aicg-json-v2 --output docs/ai/testing --yes
@@ -193,11 +194,7 @@ aicg test-case select . --manifest docs/ai/testing/ACCOUNT-test-cases.json --cas
 aicg test-case record . --manifest docs/ai/testing/ACCOUNT-test-cases.json --packet reports/testing/ACCOUNT-packet.json --results reports/testing/ACCOUNT-external-results.json
 ```
 
-| Preset | Fresh default selection |
-| --- | --- |
-| **Minimal** | Config, shared entry, canonical overview, context map, always rules, manifest, and selected Agent adapters |
-| **Standard** | Minimal plus routing, verification guidance, decision ledger, local report paths, and relevant policy/standard Skills |
-| **Complete** | Standard plus selected stack Skills; task runtime, hooks, CI, workflow bridges, and other integrations remain optional |
+Every project receives the complete framework. Human development documentation and architecture diagrams live together under `docs/development/`; complete implementation Skills are compiled from its action-specific guides. Role definitions and task routing are always present. External integrations remain explicit.
 
 <!-- sync:clients-and-footprint -->
 ## Clients, canonical layout, and evidence states
@@ -260,7 +257,7 @@ aicg init . --yes --config decisions.json --approve <planHash>
 
 Every recommendation carries source status, permissions, cost, and an explicit `add`, `defer`, or `reject` decision. No candidate is preselected. Agent roles contribute competing professional views, but role IDs do not prove participation and AI never replaces a qualified human professional.
 
-Minimal emits no management artifacts. Approved Standard/Complete selections stay within file, byte, and manager-context budgets. Historical or edited artifacts are retained by ordinary sync; deletion requires a separate exact-plan approval.
+Optional approved adaptive selections stay within file, byte, and manager-context budgets. Historical or edited artifacts are retained by ordinary sync; deletion requires a separate exact-plan approval.
 
 <!-- sync:vertical-delivery -->
 ## One feature, one delivery boundary
@@ -279,7 +276,7 @@ Unsupported languages or configuration formats do not bypass the gate. When stat
 <!-- sync:safe-maintenance -->
 ## Safe maintenance and explicit release
 
-Ordinary sync is zero-delete. It keeps historical seeds, unknown files, edited artifacts, dormant evidence, and content omitted by a newer preset. Physical pruning is a distinct reviewed transaction:
+Ordinary sync is zero-delete. It keeps historical seeds, unknown files, edited artifacts, dormant evidence, and content omitted by current selection. Physical pruning is a distinct reviewed transaction:
 
 ```bash
 aicg sync . --prune --dry-run

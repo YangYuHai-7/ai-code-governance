@@ -50,7 +50,7 @@ function parseUsage(stdout) {
     if (line.length > MAX_JSONL_LINE_CHARS) { malformed += 1; continue; }
     let event;
     try { event = JSON.parse(line); } catch { malformed += 1; continue; }
-    if (event?.type !== 'token_count' || !event.usage || typeof event.usage !== 'object') continue;
+    if (!['token_count', 'turn.completed'].includes(event?.type) || !event.usage || typeof event.usage !== 'object') continue;
     const input = Number.isFinite(event.usage.input_tokens) ? event.usage.input_tokens : null;
     const output = Number.isFinite(event.usage.output_tokens) ? event.usage.output_tokens : null;
     const cost = Number.isFinite(event.usage.total_cost_usd) ? event.usage.total_cost_usd : null;
@@ -84,9 +84,11 @@ export function createCodexCliAdapter({ command = 'codex', detectedVersion = nul
     const base = `agent-turns/${key}`;
     const artifactPaths = Object.freeze({ schema: `${base}/response-schema.json`, lastMessage: `${base}/last-message.json` });
     artifactStore.write(artifactPaths.schema, request.responseSchema);
+    const schemaPath = typeof artifactStore.resolve === 'function' ? artifactStore.resolve(artifactPaths.schema) : artifactPaths.schema;
+    const lastMessagePath = typeof artifactStore.resolve === 'function' ? artifactStore.resolve(artifactPaths.lastMessage) : artifactPaths.lastMessage;
     const argv = Object.freeze([
       executable, 'exec', '--json', '--ignore-user-config', '--strict-config',
-      '--output-schema', artifactPaths.schema, '--output-last-message', artifactPaths.lastMessage,
+      '--output-schema', schemaPath, '--output-last-message', lastMessagePath,
       '-C', request?.root ?? root, '--sandbox', sandbox, ...extraArgs.map(String),
     ]);
     return Object.freeze({
@@ -114,6 +116,7 @@ export function createCodexCliAdapter({ command = 'codex', detectedVersion = nul
     const base = {
       exitCode: result?.exitCode, stderr, durationMs: result?.durationMs, usage: Object.freeze(usage), digests,
       jsonl: Object.freeze({ lines: parsed.lines, malformed: parsed.malformed }),
+      changedPaths: Object.freeze(Array.isArray(result?.changedPaths) ? result.changedPaths.map(String) : []),
     };
     if (unauthorized.length) return Object.freeze({ ...base, authorityViolation: true, unauthorizedPaths: Object.freeze(unauthorized), findings: Object.freeze([`Agent changed paths outside its authority: ${unauthorized.join(', ')}`]) });
     let response;

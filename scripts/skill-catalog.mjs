@@ -2,8 +2,9 @@
 /**
  * Maintainer tooling for the packaged public-Skill catalog.
  *
- * AICG itself stays offline: it reads the committed catalog snapshot and never clones,
- * installs or executes a third-party Skill. This script is the operator-side bridge:
+ * AICG itself stays offline: it reads the committed catalog snapshot and never clones
+ * or executes a third-party Skill. Exact-approved packaged copies are handled by the
+ * artifact compiler. This script is the operator-side bridge:
  *
  *   node scripts/skill-catalog.mjs vendor   # fetch each pinned ref and cache its Skill folders
  *   node scripts/skill-catalog.mjs build    # regenerate assets/registries/public-skill-catalog.json
@@ -118,15 +119,27 @@ function frontmatter(text) {
 }
 
 /** One catalog record in the exact adaptiveGovernance.curatedCatalog wire shape. */
+export function normalizeSkillText(source, skill, text) {
+  // This known upstream example uses consumer email domains. Publish demonstrative,
+  // reserved addresses instead; leave the upstream cache, pin and license unchanged.
+  if (source.owner !== 'phuryn' || source.repo !== 'pm-skills' || skill.id !== 'review-resume') return text;
+  for (const [name, domain] of [['firstname.lastname', 'gmail.com'], ['randomnickname123', 'gmail.com'], ['cutesurfer', 'yahoo.com']]) {
+    text = text.replaceAll([name, domain].join('@'), `${name}@example.com`);
+  }
+  return text;
+}
+
 export function buildRecord(source, skill) {
   const file = path.join(skillDirectory(source, skill), 'SKILL.md');
   if (!fs.existsSync(file)) fail(`vendored Skill is missing: ${path.relative(PACKAGE_ROOT, file)} (run: npm run catalog:vendor)`);
-  const bytes = fs.readFileSync(file);
-  const text = bytes.toString('utf8');
-  if (!Buffer.from(text, 'utf8').equals(bytes)) fail(`${skill.id} SKILL.md is not valid UTF-8.`);
+  const upstreamBytes = fs.readFileSync(file);
+  const upstreamText = upstreamBytes.toString('utf8');
+  if (!Buffer.from(upstreamText, 'utf8').equals(upstreamBytes)) fail(`${skill.id} SKILL.md is not valid UTF-8.`);
+  const text = normalizeSkillText(source, skill, upstreamText);
+  const bytes = Buffer.from(text, 'utf8');
   const meta = frontmatter(text);
   if (meta.name !== skill.id) fail(`${skill.id} SKILL.md declares name ${meta.name ?? '(none)'}.`);
-  if (typeof meta.description !== 'string' || !meta.description.trim() || meta.description.length > 500) {
+  if (typeof meta.description !== 'string' || !meta.description.trim() || meta.description.length > 1024) {
     fail(`${skill.id} SKILL.md needs a bounded description.`);
   }
   const version = typeof meta.version === 'string' && meta.version.trim() && !/[\r\n\0]/.test(meta.version) ? meta.version.trim() : 'unverified';

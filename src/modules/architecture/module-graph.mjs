@@ -1,4 +1,6 @@
 import path from 'node:path';
+import { projectSourcePaths } from '../repository/index.mjs';
+import { isArchitectureNonSourcePath } from './source-classification.mjs';
 import { GENERATED_MARKER } from '../../constants.mjs';
 import { readText } from '../../adapters/filesystem/index.mjs';
 import { isSafeRelative } from '../../shared/index.mjs';
@@ -8,19 +10,21 @@ const JS_TS_EXTENSIONS = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', 
 
 export function moduleGraphDeclaration(config) {
   if (config?.architecture?.status !== 'active' || config.architecture.verification?.dependencyDirection !== 'aicg-check-js-ts-module-graph') return null;
+  const roots = config.architecture.scope?.roots ?? ['src'];
   return {
     schemaVersion: 1,
     generatedMarker: GENERATED_MARKER,
     status: 'active',
     language: 'js-ts',
     scope: {
+      roots: [...roots],
       appliesTo: config.architecture.scope?.appliesTo ?? 'future-code',
       baselineSourcePaths: [...(config.architecture.scope?.baselineSourcePaths ?? [])],
     },
     layers: [
-      { id: 'app', roots: ['src/app'], allowedDependencies: ['modules', 'shared'] },
-      { id: 'modules', roots: ['src/modules'], allowedDependencies: ['shared'], publicEntrypoints: ['index'] },
-      { id: 'shared', roots: ['src/shared'], allowedDependencies: [] },
+      { id: 'app', roots: roots.map((root) => `${root}/app`), allowedDependencies: ['modules', 'shared'] },
+      { id: 'modules', roots: roots.map((root) => `${root}/modules`), allowedDependencies: ['shared'], publicEntrypoints: ['index'] },
+      { id: 'shared', roots: roots.map((root) => `${root}/shared`), allowedDependencies: [] },
     ],
     crossModulePrivateImports: 'forbidden',
     internalPathAllowlist: [],
@@ -39,13 +43,15 @@ export function validateModuleGraphDeclaration(declaration) {
   if (declaration.scope.baselineSourcePaths.some((relative) => !isSafeRelative(relative)) || new Set(declaration.scope.baselineSourcePaths).size !== declaration.scope.baselineSourcePaths.length) {
     throw new Error('Module graph baselineSourcePaths must be unique safe repository-relative paths.');
   }
+  const sourceRoots = declaration.scope.roots ?? ['src'];
+  if (!Array.isArray(sourceRoots) || !sourceRoots.length || sourceRoots.some(root => !isSafeRelative(root) || path.posix.normalize(root) !== root || root === '.' || root.includes('\\')) || new Set(sourceRoots).size !== sourceRoots.length || sourceRoots.some((root, i) => sourceRoots.some((other, j) => i !== j && root.startsWith(`${other}/`)))) throw new Error('Module graph requires safe, non-overlapping source roots.');
   for (const id of ['app', 'modules', 'shared']) {
     const layer = layers.get(id);
     if (!layer || !Array.isArray(layer.roots) || layer.roots.length === 0 || !Array.isArray(layer.allowedDependencies)) {
       throw new Error(`Module graph declaration is missing the ${id} layer contract.`);
     }
     for (const root of layer.roots) {
-      if (!isSafeRelative(root) || !root.startsWith('src/')) throw new Error(`Module graph root is unsafe: ${root}.`);
+      if (!isSafeRelative(root) || !sourceRoots.some(sourceRoot => root === `${sourceRoot}/${id}`)) throw new Error(`Module graph root is unsafe: ${root}.`);
     }
   }
   if (declaration.crossModulePrivateImports !== 'forbidden') throw new Error('Cross-module private imports must remain forbidden.');
@@ -53,12 +59,14 @@ export function validateModuleGraphDeclaration(declaration) {
   return declaration;
 }
 
-function boundary(relative) {
-  const parts = relative.split('/');
-  if (parts[0] !== 'src') return null;
-  if (parts[1] === 'app') return { layer: 'app', module: null };
-  if (parts[1] === 'shared') return { layer: 'shared', module: null };
-  if (parts[1] === 'modules' && parts[2]) return { layer: 'modules', module: parts[2] };
+function boundary(relative, declaration) {
+  const root = (declaration.scope.roots ?? ['src']).find(candidate => relative.startsWith(`${candidate}/`));
+  if (!root) return null;
+  const parts = relative.slice(root.length + 1).split('/');
+  if (parts.length === 1 && /^(main|index|app|bootstrap)\./i.test(parts[0])) return { layer: 'app', module: null, root };
+  if (parts[0] === 'app') return { layer: 'app', module: null, root };
+  if (parts[0] === 'shared') return { layer: 'shared', module: null, root };
+  if (parts[0] === 'modules' && parts[1]) return { layer: 'modules', module: parts[1], root };
   return null;
 }
 
@@ -75,12 +83,17 @@ export function evaluateModuleGraph(scan, declaration) {
   const baseline = declaration.scope.appliesTo === 'new-modules-only'
     ? new Set(declaration.scope.baselineSourcePaths)
     : new Set();
-  const sourceFiles = scan.files
-    .filter((file) => file.type === 'file' && JS_TS_EXTENSIONS.includes(path.extname(file.relative).toLowerCase()) && boundary(file.relative) && !baseline.has(file.relative))
+  const implementation = new Set(projectSourcePaths(scan));
+  const candidates = scan.files.filter(file => file.type === 'file' && implementation.has(file.relative)
+    && !baseline.has(file.relative) && !isArchitectureNonSourcePath(file.relative, declaration.scope.roots ?? ['src'])
+    && !/(^|\/)(test|tests|__tests__)\/|\.(test|spec)\.[^/]+$/i.test(file.relative));
+  const sourceFiles = candidates
+    .filter(file => JS_TS_EXTENSIONS.includes(path.extname(file.relative).toLowerCase()) && boundary(file.relative, declaration))
     .sort((left, right) => left.relative.localeCompare(right.relative));
   const layers = new Map(declaration.layers.map((layer) => [layer.id, layer]));
   const issues = [];
-  const unsupportedFiles = [];
+  const inspected = new Set(sourceFiles.map(file => file.relative));
+  const unsupportedFiles = candidates.filter(file => !inspected.has(file.relative)).map(file => file.relative);
   for (const source of sourceFiles) {
     let content;
     try {
@@ -99,9 +112,16 @@ export function evaluateModuleGraph(scan, declaration) {
       }
       const target = resolved.target;
       if (!target || allowlisted(declaration, source.relative, target)) continue;
-      const sourceBoundary = boundary(source.relative);
-      const targetBoundary = boundary(target);
-      if (!targetBoundary) continue;
+      const sourceBoundary = boundary(source.relative, declaration);
+      const targetBoundary = boundary(target, declaration);
+      if (!targetBoundary) {
+        if (target && implementation.has(target)) unsupportedFiles.push(source.relative);
+        continue;
+      }
+      if (sourceBoundary.root !== targetBoundary.root) {
+        issues.push({ source: source.relative, target, rule: 'cross-unit: application source must use an explicit shared contract instead of another unit implementation' });
+        continue;
+      }
       const allowed = layers.get(sourceBoundary.layer)?.allowedDependencies ?? [];
       if (sourceBoundary.layer !== targetBoundary.layer && !allowed.includes(targetBoundary.layer)) {
         issues.push({
@@ -131,9 +151,10 @@ export function evaluateModuleGraph(scan, declaration) {
   }
   issues.sort((left, right) => `${left.source}\0${left.target}\0${left.rule}`.localeCompare(`${right.source}\0${right.target}\0${right.rule}`));
   return {
-    status: issues.length > 0 ? 'failed' : unsupportedFiles.length > 0 ? 'stated-only' : 'passed',
+    status: issues.length > 0 ? 'failed' : unsupportedFiles.length > 0 ? 'stated-only' : sourceFiles.length === 0 ? 'uncovered' : 'passed',
     issues,
     inspectedFiles: sourceFiles.map((file) => file.relative),
+    coverage: { candidateFiles: candidates.length, inspectedFiles: sourceFiles.length, unsupportedFiles: new Set(unsupportedFiles).size },
     unsupportedFiles: [...new Set(unsupportedFiles)].sort((left, right) => left.localeCompare(right)),
   };
 }

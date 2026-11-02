@@ -35,6 +35,6 @@ test('the enrichment Skill ships for existing-code repositories and stops on off
   assert.match(on[0].content, /## Required invariants/);
   assert.match(on[0].content, /brownfieldEnrichmentDecision/);
   assert.deepEqual(buildBrownfieldEnrichmentArtifacts({ ...base, features: { ...base.features, brownfieldEnrichment: 'off' } }).artifacts, []);
-  assert.deepEqual(buildBrownfieldEnrichmentArtifacts({ ...base, governanceDepth: 'minimal' }).artifacts, []);
+  assert.equal(buildBrownfieldEnrichmentArtifacts({ ...base, governanceDepth: 'minimal' }).artifacts.length, 1);
   assert.deepEqual(buildBrownfieldEnrichmentArtifacts({ ...base, initialization: { lifecycle: 'greenfield', source: 'config' }, projectMode: 'greenfield' }).artifacts, []);
 });

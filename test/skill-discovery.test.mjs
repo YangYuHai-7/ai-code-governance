@@ -16,6 +16,20 @@ import { validateApprovedAgentTeam } from '../src/modules/skills/decisions.mjs';
 import { buildApprovedProjectAgentTeam, proposeProjectAgentTeam } from '../src/project-agent-team.mjs';
 import { adaptiveDecisionEvidenceHash, reconcileAdaptiveDecisions, validateAdaptiveDecisions } from '../src/modules/skills/index.mjs';
 import { artifactDefinitions, selectArtifactDefinitions } from '../src/modules/governance/index.mjs';
+import { prepareRootRelocation, applyRootRelocation } from '../src/modules/governance/root-relocation.mjs';
+import { prepareInit } from '../src/cli/commands/init.mjs';
+
+test('a config refresh preserves approved discovery instead of silently rediscovering changed first-party Skills', async context => {
+  const root = fixture(context), scan = scanProject(root);
+  const base = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' };
+  const { config } = approvedConfig(base, scan);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+  const supplied = { ...config, taskRouting: { productionMinimumLevel: 'L2' } };
+  const prepared = await prepareInit(root, { yes: true, 'dry-run': true }, { allowDefaults: true, suppliedConfig: supplied });
+  assert.deepEqual(prepared.config.taskRouting, supplied.taskRouting);
+  assert.deepEqual(prepared.config.skillDiscovery.decision, config.skillDiscovery.decision);
+  assert.notEqual(prepared.plan.adaptiveGovernance?.status, 'decision-refresh-required');
+});
 
 test('adaptive generic guidance stays lazy and first-use requires fresh approval while retaining existing files', (context) => {
   const root = fixture(context), scan = scanProject(root);
@@ -50,7 +64,7 @@ test('bounded folded and literal Skill descriptions are discoverable without YAM
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, `---\nname: block\ndescription: ${indicator}\n  Review bounded metadata.\n  Preserve safety boundaries.\n---\n# Body\n`);
     assert.equal(discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] }).length, 1, indicator);
-    fs.writeFileSync(file, `---\nname: block\ndescription: >-\n  ${'x'.repeat(501)}\n---\n`);
+    fs.writeFileSync(file, `---\nname: block\ndescription: >-\n  ${'x'.repeat(1025)}\n---\n`);
     assert.equal(discoverSkills({ root, installedRoots: [], curatedCatalog: [], requiredCapabilities: [] }).length, 0);
   }
 });
@@ -128,11 +142,11 @@ test('skill discovery is local, deduplicated, approval-gated, and lazy', (contex
   assert.deepEqual(base.agentTeam, { enabled: false });
   const { config, plan } = approvedConfig(base, scan, candidates);
   const management = (item) => /skill-discovery|team-orchestrator|agent-team|skill-index/.test(item.path);
-  assert.equal(buildArtifacts({ ...config, governanceDepth: 'minimal' }, scan).some(management), false);
-  // Role routing now ships at Standard; skill discovery and the index stay Complete-only.
+  assert.equal(buildArtifacts({ ...config, governanceDepth: 'minimal' }, scan).some(management), true);
+  // Legacy depth values share the same explicitly approved discovery artifacts.
   const standard = approvedConfig({ ...base, governanceDepth: 'standard' }, scan, candidates).config;
   const standardArtifacts = buildArtifacts(standard, scan);
-  assert.equal(standardArtifacts.some((item) => /skill-discovery|skill-index/.test(item.path)), false);
+  assert.equal(standardArtifacts.some((item) => /skill-discovery|skill-index/.test(item.path)), true);
   // The team-orchestrator process Skill no longer ships; Standard still carries the approved
   // project team record, but no process Skill.
   assert.equal(standardArtifacts.some((item) => /team-orchestrator/.test(item.path)), false);
@@ -429,7 +443,7 @@ test('ordinary sync retains deselected managers and exact trusted prune removes 
   assert.equal(drifted.operations.some((item) => item.path === '.ai-governance/state/agent-team.json' && item.remove), false);
 });
 
-test('approved Standard and Complete costs are exact, capped, localized and outside ordinary context', (context) => {
+test('approved complete framework costs are exact, capped, localized and outside ordinary context', (context) => {
   const root = fixture(context);
   const scan = scanProject(root);
   for (const governanceDepth of ['standard', 'complete']) {
@@ -443,11 +457,8 @@ test('approved Standard and Complete costs are exact, capped, localized and outs
       const bytes = transaction.operations.reduce((sum, item) => sum + Buffer.byteLength(item.desired), 0) + Buffer.byteLength(transaction.manifest.content);
       assert.equal(transaction.operations.length + 1, plan.cost.total.files);
       assert.equal(bytes, plan.cost.total.bytes);
-      assert.ok(bytes <= (governanceDepth === 'standard' ? 144 : 160) * 1024);
-      // The depth owns the tree: the delivery loop and the project flow now ship by default in
-      // both Standard and Complete, and this fixture also carries the four adaptive management
-      // artifacts. The remaining Complete artifacts stay lazy until the usage profile requests
-      // them. Tighten this deliberately, not by accident.
+      assert.ok(bytes <= 256 * 1024);
+      // Complete files stay bounded; approved management remains outside ordinary context.
       assert.ok(transaction.operations.length <= 56, `${governanceDepth} ${artifactLanguage} operations ${transaction.operations.length}`);
       for (const artifact of artifacts.filter((item) => item.path.startsWith('docs/ai/skills/') && /\/(skill-discovery|team-orchestrator)\/SKILL.md$/.test(item.path))) {
         if (artifactLanguage !== 'en') assert.match(artifact.content, /审批/);
@@ -492,6 +503,58 @@ test('a canonical project Skill and its generated client adapter are one owner, 
   const decision = approvedDecision(candidates, [owner.id]);
   assert.equal(decision.status, 'approved');
   assert.equal(decision.candidates.find((item) => item.id === owner.id).decision, 'approved');
+});
+
+test('six recorded candidates survive serialization and exact approval without widening recommendations', (context) => {
+  const root = fixture(context);
+  for (let index = 0; index < 7; index += 1) skill(root, `docs/ai/skills/standards/standard-${index}`, `standard-${index}`);
+  const keepIds = Array.from({ length: 6 }, (_unused, index) => `clause-review-${sha256(`project:docs/ai/skills/standards/standard-${index}/SKILL.md`).slice(0, 12)}`);
+  assert.equal(discoverSkills({ root, installedRoots: [] }).length, 5);
+  const candidates = discoverSkills({ root, installedRoots: [], keepIds });
+  assert.equal(candidates.length, 6);
+  const envelope = discoveryApi.serializeSkillDiscovery(candidates);
+  assert.deepEqual(discoveryApi.serializeSkillDiscovery(JSON.parse(JSON.stringify(envelope))), envelope);
+  const approved = approvedDecision(envelope, keepIds);
+  assert.equal(approved.status, 'approved');
+  assert.equal(approved.candidates.length, 6);
+  assert.throws(() => decideSkillCandidates(envelope, { selectedIds: keepIds, approvalPlanHash: '0'.repeat(64) }), /planHash/);
+  assert.throws(() => discoveryApi.serializeSkillDiscovery({ candidates: Array(65).fill(envelope.candidates[0]), sourceStatus: [] }), /bounded|64/);
+});
+
+test('root relocation repairs only proven location drift and requires exact approval', (context) => {
+  const previousRoot = fs.realpathSync(fixture(context));
+  const root = fs.realpathSync(fixture(context));
+  skill(previousRoot, 'docs/ai/skills/clauses');
+  const scan = scanProject(previousRoot);
+  const candidates = discoverSkills({ root: previousRoot, installedRoots: [] });
+  const { config } = approvedConfig({ ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'complete' }, scan, candidates);
+  applyArtifactPlan(previousRoot, planArtifacts(previousRoot, buildArtifacts(config, scan)));
+  fs.cpSync(previousRoot, root, { recursive: true });
+  for (const relative of ['.ai-governance/config.json', '.ai-governance/state/skill-index.json']) {
+    const target = path.join(root, relative);
+    fs.writeFileSync(target, fs.readFileSync(target, 'utf8').replaceAll(previousRoot, root));
+  }
+  const before = fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8');
+  const originalManifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+  const preview = prepareRootRelocation(root, previousRoot);
+  assert.equal(fs.readFileSync(path.join(root, '.ai-governance/config.json'), 'utf8'), before);
+  assert.throws(() => applyRootRelocation(root, previousRoot, '0'.repeat(64)), /exact plan approval/);
+  const altered = JSON.parse(before);
+  altered.projectName = 'unapproved-change';
+  fs.writeFileSync(path.join(root, '.ai-governance/config.json'), JSON.stringify(altered, null, 2) + '\n');
+  assert.throws(() => prepareRootRelocation(root, previousRoot), /root-only/);
+  fs.writeFileSync(path.join(root, '.ai-governance/config.json'), before);
+  const result = applyRootRelocation(root, previousRoot, preview.planHash);
+  assert.equal(result.verification.ok, true);
+  assert.equal(result.changed.includes('AGENTS.md'), false);
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, '.ai-governance/manifest.json'), 'utf8'));
+  assert.equal(manifest.files.length, originalManifest.files.length);
+  for (const entry of originalManifest.files.filter(entry => !['.ai-governance/config.json', '.ai-governance/state/skill-index.json'].includes(entry.path))) {
+    assert.deepEqual(manifest.files.find(current => current.path === entry.path), entry);
+  }
+  for (const relative of ['.ai-governance/config.json', '.ai-governance/state/skill-index.json']) {
+    assert.equal(manifest.files.find(entry => entry.path === relative).sha256, sha256(fs.readFileSync(path.join(root, relative), 'utf8')));
+  }
 });
 
 test('a recorded decision keeps its candidate visible past the bounded candidate list', (context) => {

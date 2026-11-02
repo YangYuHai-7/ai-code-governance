@@ -14,12 +14,26 @@
   <header class="topbar"><div class="brand">AICG <span>配置</span></div><button id="close" class="quiet" type="button">关闭服务</button></header>
   <main>
     <section class="hero">
-      <h1>确认一下，就能生成治理框架</h1>
+      <h1>选项目，预览并应用治理框架</h1>
       <p id="hero-note">选一个项目，我按它的实际情况生成治理框架。全部在本机完成，不会上传。</p>
       <div class="project" id="project-line" hidden>当前项目 <strong id="project">读取中…</strong><button id="switch-project" type="button" class="quiet" hidden>换一个</button></div>
     </section>
     <div id="notice" role="status" aria-live="polite"></div>
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <section id="route-guide" class="card route-guide" aria-labelledby="route-guide-title">
+      <h2 id="route-guide-title">先看你要完成哪件事</h2>
+      <div class="route-options">
+        <article id="route-new" class="route-option">
+          <h3>给新项目建立治理框架</h3>
+          <p>选择项目文件夹，确认 AI 工具和计划采用的技术，预览将生成的文件，再应用并检查。</p>
+        </article>
+        <article id="route-existing" class="route-option">
+          <h3>给现有项目完善治理框架</h3>
+          <p>选择已有代码的项目，核对扫描和现有规则，选择保留旧代码的方式，预览差异，再应用并检查未补齐的证据。</p>
+        </article>
+      </div>
+      <p id="route-status" class="route-status" role="status">先选择项目文件夹；选择和扫描不会修改项目文件。</p>
+    </section>
     <div id="scanning" class="card scanning">
       <span class="scan-spinner" aria-hidden="true"></span>
       <div><b id="scanning-title">正在扫描仓库…</b><p id="scanning-note">读取技术栈、开发单元和验证命令，首次打开大项目可能需要几十秒。</p></div>
@@ -84,19 +98,7 @@
             </div>
           </div>
 
-          <div class="qrow">
-            <div class="qline">
-              <span class="qno">3</span>
-              <div class="qq"><b>治理规模（生成多少基础文件）</b><small>决定基础治理文件的多少，和下面的「附加能力」是两件事。</small></div>
-              <div class="ans" id="ans-depth"></div>
-              <button class="edit" type="button" data-toggle="depth" data-closed="改">改</button>
-            </div>
-            <div class="qedit" id="edit-depth" hidden>
-              <div class="fields">
-                <label>治理规模<select id="depth"><option value="minimal">简单：只生成基本规则</option><option value="standard">标准：日常够用</option><option value="complete">完整（默认）：更多流程和证据</option></select><small>规模决定基础文件；要额外生成某类文件，用下面的「附加能力」。</small></label>
-              </div>
-            </div>
-          </div>
+          <p class="hint">统一生成完整治理框架：开发文档、架构与流程图、开发 Skills、角色职责和任务路由；执行时按需加载。</p>
 
           <div class="qrow">
             <div class="qline">
@@ -116,6 +118,11 @@
               <h3>项目用到的技术</h3>
               <p class="sub" id="stacks-hint">已按扫描结果预选，只留真实用到的。</p>
               <div id="stacks" class="choice-grid"></div>
+              <p class="sub">Java 后端使用的框架（只有选中才生成对应规范；仅选 Java 不代表使用 Spring）</p>
+              <div class="choice-grid compact">
+                <label><input type="checkbox" name="java-frameworks" value="org.springframework.boot:spring-boot-starter-webmvc">Spring Boot MVC</label>
+                <label><input type="checkbox" name="java-frameworks" value="org.mybatis:mybatis">MyBatis</label>
+              </div>
 
               <h3>语言</h3>
               <div class="fields">
@@ -137,6 +144,7 @@
               <div id="oses" class="choice-grid compact"></div>
 
               <h3>附加能力</h3>
+              <p class="sub">工程架构、业务流程与开发规范共用分析入口。已有项目依据代码梳理现状；新项目先按需求形成具体方案，客户确认后再开发。</p>
               <p class="sub" id="features-hint">这是在治理规模之上单独开启的可选能力，不是同一件事：规模决定基础文件，这里决定额外生成哪些。</p>
               <div id="features" class="choice-grid"></div>
               <div class="fields">
@@ -168,7 +176,7 @@
 
       <div id="handoff" class="card" hidden>
         <h2>交给 AI 助手继续</h2>
-        <p>配置已保存。把下面这句发给你的 AI 编程助手，让它预览、应用并完善治理框架：</p>
+        <p>配置已保存。把下面的完整任务交给 AI 助手，让它连续完成治理生成、当前代码理解、项目知识整理和验证：</p>
         <textarea id="handoff-text" rows="10" readonly></textarea>
         <button id="handoff-copy" type="button" class="secondary">复制提示词</button>
       </div>

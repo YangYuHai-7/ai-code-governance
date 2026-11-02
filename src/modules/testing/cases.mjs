@@ -57,6 +57,58 @@ function stableKey(value, label) {
   return value;
 }
 
+function validateImports(imports) {
+  if (imports === undefined) return;
+  list(imports, 'manifest.imports', { maximum: 32 });
+  const paths = new Set();
+  for (const entry of imports) {
+    exactFields(entry, ['path', 'sha256'], 'context import');
+    safeRelative(entry.path, 'context import path');
+    if (!/^[a-f0-9]{64}$/.test(entry.sha256 ?? '')) fail('Context import sha256 must be a SHA-256 digest.');
+    if (paths.has(entry.path)) fail('Duplicate context import path.');
+    paths.add(entry.path);
+  }
+}
+
+// Imported contexts are resolved explicitly, never through network or implicit discovery.
+export function loadTestCaseManifest(root, manifest, options = {}) {
+  object(manifest, 'manifest');
+  validateImports(manifest.imports);
+  if (!manifest.imports?.length) return validateTestCaseManifest(manifest, options);
+  const resolved = structuredClone(manifest);
+  validateShared(resolved);
+  list(resolved.cases, 'manifest.cases', { maximum: 1000 });
+  const needed = { actors: new Set(), environments: new Set(), data: new Set() };
+  for (const testCase of resolved.cases) {
+    object(testCase.ctx, 'case context');
+    needed.actors.add(testCase.ctx.actor);
+    needed.environments.add(testCase.ctx.environment);
+    for (const id of stringList(testCase.ctx.data, 'case context data', { maximum: 32 })) needed.data.add(id);
+  }
+  let totalBytes = 0;
+  for (const entry of resolved.imports) {
+    const { bytes } = readBoundedRepositoryFile(root, entry.path, TEST_CASE_LIMIT);
+    totalBytes += bytes.length;
+    if (totalBytes > TEST_CASE_LIMIT) fail('Imported test contexts exceed the aggregate byte limit.');
+    if (sha256(bytes) !== entry.sha256) fail(`Context import digest is stale: ${entry.path}.`);
+    let imported;
+    try { imported = JSON.parse(bytes.toString('utf8')); }
+    catch { fail(`Context import is not valid JSON: ${entry.path}.`); }
+    exactFields(imported, ['schemaVersion', 'shared'], 'context library');
+    if (imported.schemaVersion !== 1) fail('Context library must use schemaVersion 1.');
+    validateShared(imported);
+    for (const section of ['actors', 'environments', 'data']) {
+      for (const id of needed[section]) {
+        if (!Object.hasOwn(imported.shared[section], id)) continue;
+        const value = imported.shared[section][id];
+        if (Object.hasOwn(resolved.shared[section], id) && stableJson(resolved.shared[section][id]) !== stableJson(value)) fail(`Imported context conflict: ${section}.${id}.`);
+        Object.defineProperty(resolved.shared[section], id, { value, enumerable: true, configurable: true, writable: true });
+      }
+    }
+  }
+  return validateTestCaseManifest(resolved, options);
+}
+
 function validateShared(manifest) {
   exactFields(manifest.shared, ['actors', 'environments', 'data'], 'manifest.shared');
   for (const section of ['actors', 'environments', 'data']) object(manifest.shared[section], `manifest.shared.${section}`);
@@ -113,7 +165,8 @@ function validateAutomation(automation, caseId) {
 }
 
 export function validateTestCaseManifest(value, { executable = true } = {}) {
-  exactFields(value, ['schemaVersion', 'scope', 'baselineVersion', 'locale', 'repositories', 'evidenceDir', 'shared', 'coverageDimensions', 'cases'], 'manifest');
+  exactFields(value, ['schemaVersion', 'scope', 'baselineVersion', 'locale', 'repositories', 'evidenceDir', 'shared', 'coverageDimensions', 'cases', 'imports'], 'manifest');
+  validateImports(value.imports);
   if (Buffer.byteLength(stableJson(value)) > TEST_CASE_LIMIT || value.schemaVersion !== TEST_CASE_SCHEMA_VERSION) fail(`Test-case manifest must use schemaVersion ${TEST_CASE_SCHEMA_VERSION} and stay within ${TEST_CASE_LIMIT} bytes.`);
   stableKey(value.scope, 'manifest.scope');
   nonempty(value.baselineVersion, 'manifest.baselineVersion', 128);
@@ -243,7 +296,7 @@ function releaseLock(descriptor, lockPath) {
 }
 
 export function recordTestCaseResults(root, { manifest, packet, external, ledgerPath }) {
-  validateTestCaseManifest(manifest);
+  manifest = loadTestCaseManifest(root, manifest);
   exactFields(packet, ['packetSchemaVersion', 'scope', 'baselineVersion', 'manifestSha256', 'selectedCount', 'shared', 'cases', 'packetDigest'], 'packet');
   const { packetDigest, ...packetBase } = packet;
   if (packet.packetSchemaVersion !== 1 || packetDigest !== sha256(stableJson(packetBase)) || packet.manifestSha256 !== sha256(stableJson(manifest)) || packet.scope !== manifest.scope || packet.baselineVersion !== manifest.baselineVersion) fail('Test execution packet is stale or does not match the manifest.');

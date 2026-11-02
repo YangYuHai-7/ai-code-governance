@@ -66,7 +66,7 @@ function fixtureReport(parent, name, totalFiles, limitMs = null) {
   fs.mkdirSync(path.join(root, 'src'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src/main.mjs'), 'export const ready = true;\n');
   const initialScan = scanProject(root);
-  const config = { ...defaultConfig(initialScan), clients: ['codex'], governanceDepth: 'minimal', invocationMode: 'project-local' };
+  const config = { ...defaultConfig(initialScan), clients: ['codex'], invocationMode: 'project-local' };
   const artifacts = buildArtifacts(config, initialScan);
   applyArtifactPlan(root, planArtifacts(root, artifacts));
   const initialCount = scanProject(root).files.length;
@@ -113,7 +113,7 @@ export function budgetViolations(report, baseline = null) {
 export function runBaseline({ baseline = null, checksOnly = false } = {}) {
   const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-perf-'));
   try {
-    const fixtures = [fixtureReport(parent, 'small', 32, 250), fixtureReport(parent, '10k', 10000, 1400), fixtureReport(parent, '50k', 50000)];
+    const fixtures = [fixtureReport(parent, 'small', 64, 250), fixtureReport(parent, '10k', 10000, 1400), fixtureReport(parent, '50k', 50000)];
     const routing = sample(() => minimumTaskLevelFromPaths(['src/modules/billing/service.mjs', 'test/billing.test.mjs']));
     const { scripts } = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'));
     const fastArgs = scripts['test:fast'].split(/\s+/);

@@ -3,10 +3,11 @@ import { governanceCommand } from '../generator.mjs';
 import { classifyProject, detectSurfaceSignals, projectSourcePaths, verificationNpmCommands } from '../modules/repository/index.mjs';
 import { usageError } from '../kernel/index.mjs';
 import { clientGovernanceMatchers } from '../catalogs/index.mjs';
+import { localizePrerequisites } from '../modules/diagnostics/preflight.mjs';
 
 const CLIENT_GOVERNANCE = clientGovernanceMatchers();
 
-function resolveLocale(requestedLocale, config) {
+export function resolveLocale(requestedLocale, config) {
   const locale = requestedLocale ?? config?.interactionLanguage ?? 'en';
   if (!SUPPORTED_INTERACTION_LANGUAGES.includes(locale)) {
     throw usageError(`--locale must be one of: ${SUPPORTED_INTERACTION_LANGUAGES.join(', ')}.`);
@@ -149,6 +150,8 @@ function postInitRescan(scan, config) {
 
 export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocale, config = null } = {}) {
   const locale = resolveLocale(requestedLocale, config);
+  const preflight = kind === 'doctor' && result.preflight
+    ? localizePrerequisites(result.preflight, { locale }) : null;
   const classification = kind === 'assess' ? result.classification : classifyProject(scan);
   const confirmedLifecycle = config?.initialization?.lifecycle ?? null;
   const prefix = invocationPrefix(config);
@@ -303,11 +306,12 @@ export function addReadOnlyGuidance(kind, result, scan, { locale: requestedLocal
 
   return {
     ...result,
+    ...(preflight ? { preflight } : {}),
     actionGuide: {
       locale,
       readOnly: true,
       recommendedAction,
-      reason: guidanceReason(locale, recommendedAction),
+      reason: [guidanceReason(locale, recommendedAction), ...(preflight?.diagnostics ?? []).map((entry) => `${entry.cause} ${entry.affectedCapability} ${entry.nextSafeAction}`)].join(' '),
       claimBoundary: claimBoundary(locale),
       warnings,
       repositoryScan: {

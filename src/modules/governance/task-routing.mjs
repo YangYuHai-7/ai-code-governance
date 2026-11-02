@@ -1,7 +1,7 @@
 import { usageError } from '../../kernel/index.mjs';
 import { SUPPORTED_CONFIRMED_RISK_SIGNALS } from '../../constants.mjs';
 import { isSafeRelative, matchSimpleGlob, normalizeRelative } from '../../shared/index.mjs';
-import { BUILD_CONFIGURATION_NAMES, IMPLEMENTATION_EXTENSIONS, NON_IMPLEMENTATION_PREFIXES } from '../repository/index.mjs';
+import { BUILD_CONFIGURATION_NAMES, IMPLEMENTATION_EXTENSIONS, NON_IMPLEMENTATION_PREFIXES, isProductionScopePath } from '../repository/index.mjs';
 import { validateApprovedProjectAgentTeam } from '../agent-team/index.mjs';
 
 const ORDER = ['L0', 'L1', 'L1.5', 'L2', 'L3'];
@@ -416,6 +416,7 @@ export function minimumTaskLevelFromPaths(paths, config = {}, { trustedBehaviorC
       : matchingRules).map((rule) => (bugfixCandidate && rule.id === 'production-source' ? { ...rule, level: 'L1.5' } : rule));
     levels.push(maxLevel('L1', ...effectiveRules.map((rule) => rule.level)));
     surfaceCandidates.push(relative);
+    if (isProductionScopePath(relative) && config.taskRouting?.productionMinimumLevel) levels.push(config.taskRouting.productionMinimumLevel);
   }
   if (changedSurfaces(surfaceCandidates).size > 1) levels.push('L3');
   if (bugfixCandidate && changedModules(surfaceCandidates).size > 1) levels.push('L2');
@@ -540,6 +541,7 @@ export function taskRoutingPolicy(config) {
       multiSurfaceExamples: [['apps/frontend-react/src/modules/orders/view.tsx', 'services/backend-node/src/modules/orders/interface/handler.ts']],
       description: localized(config, 'New evidence may only raise the route; it never grants an external action.', '新证据只能升级任务等级，且永不自动授权外部操作。'),
     },
+    ...(config.taskRouting ? { projectProductionMinimumLevel: config.taskRouting.productionMinimumLevel } : {}),
     pathRules: PATH_RULES.map(({ id, level, patterns = [], tokens = [], excludePatterns = [], examples }) => ({
       id,
       level,
@@ -554,13 +556,6 @@ export function taskRoutingPolicy(config) {
 }
 
 export function taskRoutingSummary(config) {
-  if (config.governanceDepth === 'minimal') {
-    return localized(
-      config,
-      'Task routing: L0 is read-only and performs no writes. L1 may execute a small low-risk change without plan approval. Escalate product behavior, public contracts, dependencies, migrations, security-sensitive, multi-surface, or external actions to L2/L3 before editing.',
-      '任务路由：L0 仅限只读且不写入。L1 可直接执行小型低风险修改，无需批准计划。涉及产品行为、公共契约、依赖、迁移、安全敏感、跨端或外部操作时，编辑前升级至 L2/L3。',
-    );
-  }
   return localized(
     config,
     'Classify the task with `docs/ai/task-routing-policy.json` before editing and upgrade when new evidence crosses a stronger boundary.',

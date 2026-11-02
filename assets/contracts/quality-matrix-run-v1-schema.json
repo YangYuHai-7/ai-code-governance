@@ -115,7 +115,26 @@
             "type": "integer",
             "minimum": 0
           }
-        }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": { "const": "passed" }
+              }
+            },
+            "then": {
+              "required": ["cleanup"],
+              "properties": {
+                "cleanup": {
+                  "properties": {
+                    "status": { "const": "clean" }
+                  }
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "status": {

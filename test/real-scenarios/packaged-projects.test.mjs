@@ -13,7 +13,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const gitExecutable = process.platform === 'win32' ? 'git.exe' : 'git';
 const governanceFiles = new Set(['.gitignore', 'AGENTS.md', 'CLAUDE.md', 'docs/WORKFLOW.md', 'reports/.gitkeep', 'reviews/.gitkeep']);
-const governancePrefixes = ['.ai-governance/', '.agents/', '.claude/', '.cursor/', '.github/', 'docs/ai/', 'docs/memory/', 'harness/', 'tools/hooks/'];
+const governancePrefixes = ['.ai-governance/', '.agents/', '.claude/', '.cursor/', '.github/', 'docs/ai/', 'docs/development/', 'docs/memory/', 'harness/', 'tools/hooks/'];
 
 function run(command, args, options = {}) {
   return runCommand(command, args, {

@@ -237,3 +237,13 @@ test('the risk profile set validator rejects unknown fields, duplicates, and unj
   assert.throws(() => validateRiskProfileSet({ ...result, ownerQuestions: [{ id: 'question.risk.x', profileId: required.id, question: 'Why?', material: false }] }), /material/);
   assert.throws(() => validateRiskProfileSet({ ...result, requirementDigest: 'not-a-digest' }), /requirementDigest/);
 });
+
+test('a required risk profile cannot omit its owned gate from the required gate set', () => {
+  const result = activate().result;
+  const profile = result.profiles.find((entry) => entry.applicability === 'required');
+  const omitted = profile.gateIds[0];
+  assert.throws(
+    () => validateRiskProfileSet({ ...result, requiredGateIds: result.requiredGateIds.filter((gateId) => gateId !== omitted) }),
+    /requiredGateIds.*required profile.*gate/i,
+  );
+});

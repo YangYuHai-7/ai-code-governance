@@ -2,6 +2,19 @@
   white-space: pre-line;
 }
 
+.route-guide { margin-top: 18px; }
+.route-guide h2 { margin-bottom: 14px; }
+.route-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.route-option { padding: 16px; border: 1px solid #dce8e8; border-radius: 12px; background: #fcfdfd; }
+.route-option.current { border-color: #16836d; background: #effaf5; }
+.route-option h3 { margin: 0 0 7px; font-size: 15px; }
+.route-option p { margin: 0; color: #526a74; font-size: 13px; line-height: 1.6; }
+.route-status { margin: 14px 0 0; padding: 12px 14px; border-radius: 10px; background: #e7f3f1; color: #215c55; font-size: 13px; line-height: 1.6; }
+
+@media (max-width: 600px) {
+  .route-options { grid-template-columns: 1fr; }
+}
+
 #notice.busy::before {
   content: "";
   display: inline-block;

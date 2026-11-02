@@ -1,5 +1,5 @@
 import {
-  auditEntry,
+  NotFoundError,
   paginate,
   requireOwnedBoard,
   transitionItem,
@@ -40,10 +40,9 @@ export function createBoardService(store: BoardStore) {
       const item = store
         .items(organizationId, boardId)
         .find((entry) => entry.id === itemId);
-      if (!item) throw new Error("work item not found");
+      if (!item) throw new NotFoundError("work item not found");
       const updated = transitionItem(item, next, expectedVersion);
       store.save(updated, `move:${next}`, actorId);
-      void auditEntry(organizationId, actorId, itemId, `move:${next}`);
       return updated;
     },
   };

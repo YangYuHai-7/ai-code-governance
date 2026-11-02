@@ -1,10 +1,11 @@
 import fs from 'node:fs';
+import { changedFileDigest } from './file-digest.mjs';
 import { memoryIssues } from '../memory/index.mjs';
 import { readWorkUnit, workUnitPath, workUnitPlanDigest, workUnitPlanProjection, checkWorkUnit, parseWorkUnitResults, workUnitVerificationBinding, recordWorkUnitVerification, replayWorkUnitVerification, changedWorkUnitBehaviorPaths } from '../work-units/index.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { applicableRiskSignals, checkProject, evaluateCompletionTaskRoute, evaluateTaskApproval, readBoundedTaskFile, readCanonicalPath, trustedProfessionalTaskContext, validateConfig, validateReviewMode, validateTaskLevel } from '../governance/index.mjs';
-import { runGit, runNpmScript } from '../../adapters/process/index.mjs';
+import { executeVerificationProcess, runGit, runNpmScript } from '../../adapters/process/index.mjs';
 import { assertNoLinkAncestor, readJson, sameSnapshot, snapshotPath } from '../../adapters/filesystem/index.mjs';
 import { CONFIG_PATH, PACKAGE_ROOT, TOOL_VERSION } from '../../constants.mjs';
 import { clientGovernanceMatchers } from '../../catalogs/index.mjs';
@@ -20,7 +21,7 @@ import { evaluateDeliveryCompletion, validateDeliverySession } from '../delivery
 export const PRE_COMMIT_HOOK_MARKER = 'ai-code-governance:pre-commit-v1';
 
 function git(root, args) {
-  const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+  const result = runGit(root, args, { timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
   if (result.error || result.status !== 0) {
     throw usageError(`Git command failed while preparing the completion gate: git ${args.join(' ')}.`);
   }
@@ -31,6 +32,76 @@ function resolveGitRepository(target) {
   const root = path.resolve(target);
   const gitRoot = git(root, ['rev-parse', '--show-toplevel']);
   return path.resolve(gitRoot);
+}
+
+function completionPreflight(target) {
+  const targetRoot = path.resolve(target);
+  const repository = runGit(targetRoot, ['rev-parse', '--show-toplevel'], { timeout: 5000, maxBuffer: 256 * 1024 });
+  if (repository.error?.code === 'ENOENT') {
+    return {
+      status: 'blocked',
+      code: 'git-command-required',
+      reason: 'A formal completion receipt requires Git, but the Git executable is unavailable.',
+      remediation: 'Install Git, then rerun aicg complete. AICG will not treat a non-Git result as formal completion.',
+      targetRoot,
+      gitRoot: null,
+    };
+  }
+  if (repository.error || repository.status !== 0 || !repository.stdout.trim()) {
+    return {
+      status: 'blocked',
+      code: 'git-repository-required',
+      reason: 'A formal completion receipt requires a Git repository so the checked change set can be identified.',
+      remediation: 'Run git init in the intended project, review the files, create an initial commit, then rerun aicg complete.',
+      targetRoot,
+      gitRoot: null,
+    };
+  }
+  const gitRoot = path.resolve(repository.stdout.trim());
+  // Extracted projects under ignored local directories must not borrow their host's baseline.
+  // Tracked workspace members retain the existing ancestor-repository support.
+  const memberPath = normalizeRelative(path.relative(fs.realpathSync(gitRoot), fs.realpathSync(targetRoot)));
+  if (memberPath && memberPath !== '.') {
+    const ignored = runGit(gitRoot, ['check-ignore', '--', memberPath], { timeout: 5000, maxBuffer: 256 * 1024 });
+    if (ignored.status === 0) {
+      const tracked = runGit(gitRoot, ['ls-files', '-z', '--', memberPath], { timeout: 5000, maxBuffer: 256 * 1024 });
+      if (tracked.error || tracked.status !== 0 || !tracked.stdout.trim()) return {
+        status: 'blocked', code: 'git-project-boundary-required',
+        reason: 'The target is an ignored project outside the ancestor repository tracked files; its change set has no project Git baseline.',
+        remediation: 'Use a checkout with its own Git history, or explicitly initialize and baseline this project after reviewing its files. Ancestor changes cannot verify this project.',
+        targetRoot, gitRoot,
+      };
+    }
+  }
+  const head = runGit(gitRoot, ['rev-parse', '--verify', 'HEAD^{commit}'], { timeout: 5000, maxBuffer: 256 * 1024 });
+  if (head.error || head.status !== 0 || !head.stdout.trim()) {
+    return {
+      status: 'blocked',
+      code: 'git-initial-commit-required',
+      reason: 'The Git repository has no readable initial commit, so AICG cannot bind completion to a baseline.',
+      remediation: 'Review and create the initial commit, then rerun aicg complete. Staged files are left unchanged.',
+      targetRoot,
+      gitRoot,
+    };
+  }
+  return { status: 'ready', code: 'ready', reason: null, remediation: null, targetRoot, gitRoot, head: head.stdout.trim() };
+}
+
+function blockedCompletion(preflight, { mode, verificationCommand }) {
+  const claimBoundary = 'Formal completion requires a readable Git baseline; this preflight result is diagnostic only.';
+  return {
+    schemaVersion: 1,
+    status: 'blocked',
+    mode,
+    target: preflight.targetRoot,
+    stagedFiles: [],
+    ok: false,
+    preflight,
+    projectVerification: { status: 'blocked-by-preflight', command: verificationCommand },
+    claimBoundary,
+    boundaries: [claimBoundary, 'No project verification command was executed after the Git preflight failed.'],
+    generation: { status: 'not-run', boundary: 'The preflight itself never initializes Git, creates commits, stages files, or runs project commands; the CLI may still save this diagnostic under reports/aicg.' },
+  };
 }
 
 const FLOW_HASH = /^[a-f0-9]{64}$/;
@@ -72,11 +143,17 @@ function flowDocument(root, label, entry) {
  * approval id stand alone. L2 keeps the design slot optional, and a repository with no frontend
  * page records the explicit `not-needed` decision rather than being forced into a design.
  */
-function flowDesign(required, state) {
+function flowDesign(required, state, root) {
   if (!required) return { decision: null, gaps: [] };
   const design = state?.design;
   if (!design || typeof design !== 'object') {
     return { decision: null, gaps: ['L3 delivery requires a recorded design decision in the flow ledger (design.status).'] };
+  }
+  if (design.status === 'approved') {
+    if (!Array.isArray(design.proposals) || !design.proposals.length) return { decision: null, gaps: ['Legacy approved design requires current proposal document bindings.'] };
+    const proposals = design.proposals.map(entry => flowDocument(root, 'design proposal', entry));
+    const gaps = proposals.filter(entry => entry.gap).map(entry => entry.gap);
+    return { decision: gaps.length ? null : { status: 'chosen', sourceStatus: 'approved', approvalStatus: 'declared-approved', proposals: design.proposals }, gaps };
   }
   const allowed = ['not-needed', 'default', 'chosen'];
   if (!allowed.includes(design.status)) {
@@ -104,7 +181,7 @@ function evaluateFlowEvidence(root, { required, taskLevel = null }) {
   if (plan.gap) gaps.push(plan.gap); else evidence.plan = plan.record;
   if (report.gap) gaps.push(report.gap); else evidence.report = report.record;
   if (!plan.gap && !FLOW_HASH.test(state.plan.planHash ?? '')) gaps.push('flow plan.planHash must be the approved SHA-256.');
-  const design = flowDesign(taskLevel === 'L3', state);
+  const design = flowDesign(taskLevel === 'L3', state, root);
   if (design.gaps.length) gaps.push(...design.gaps); else evidence.design = design.decision;
   evidence.gaps = gaps;
   evidence.status = gaps.length === 0 ? 'satisfied' : 'blocked';
@@ -213,7 +290,7 @@ function changedPaths(root) {
     ['diff', '--name-only', '-z', '--no-renames', '--ignore-submodules=all'],
     ['ls-files', '--others', '--exclude-standard', '-z'],
   ]) {
-    const result = runGit(root, args, { timeout: 15000, maxBuffer: 2 * 1024 * 1024 });
+    const result = runGit(root, args, { timeout: 15000, maxBuffer: 16 * 1024 * 1024 });
     if (result.error || result.status !== 0) throw usageError('Cannot read changed paths for the completion gate.');
     paths.push(...result.stdout.split('\0').filter(Boolean));
   }
@@ -235,7 +312,7 @@ function completionTaskRoute(scan, paths, taskLevel, gitRoot = scan.root) {
 }
 
 function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvidence, workUnitRelative = null) {
-  if (paths.length > 10000) throw usageError('Cannot bind more than 10000 changed paths.');
+  if (paths.length > 50000) throw usageError('Cannot bind more than 50000 changed paths; use an explicitly scoped worktree for a larger change.');
   const approvalPath = typeof approvalEvidence === 'string' && isSafeRelative(approvalEvidence) ? normalizeRelative(approvalEvidence) : null;
   const records = (args) => {
     const map = new Map();
@@ -250,10 +327,10 @@ function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvid
   };
   const head = records(['ls-tree', '-r', '-z', 'HEAD']);
   const index = records(['ls-files', '--stage', '-z']);
-  let totalBytes = 0;
+  const budget = { bytes: 0 };
   const contentHash = (bytes, relative) => {
-    totalBytes += bytes.length;
-    if (totalBytes > 32 * 1024 * 1024) throw usageError('Changed content exceeds the 32 MiB approval budget.');
+    budget.bytes += bytes.length;
+    if (budget.bytes > 2 * 1024 * 1024 * 1024) throw usageError('Changed content exceeds the 2 GiB streaming approval budget.');
     if (relative === workUnitRelative) return sha256(stableJson(workUnitPlanProjection(JSON.parse(bytes.toString('utf8')))));
     if (relative !== approvalPath) return sha256(bytes);
     // The receipt cannot hash its own planHash. Every other field is bound;
@@ -274,7 +351,10 @@ function completionChangeDigest(gitRoot, snapshotRoot, paths, mode, approvalEvid
     try { stat = fs.lstatSync(absolute); } catch (error) { if (error.code === 'ENOENT') return { kind: 'missing' }; throw error; }
     if (stat.isSymbolicLink()) return { kind: 'link', sha256: sha256(fs.readlinkSync(absolute)) };
     if (!stat.isFile()) throw usageError('Approval changed paths must be files or links, not directories or devices.');
-    return { kind: 'file', executable: (stat.mode & 0o111) !== 0, sha256: contentHash(readBoundedTaskFile(snapshotRoot, relative, 2 * 1024 * 1024), relative) };
+    const special = relative === approvalPath || relative === workUnitRelative;
+    return { kind: 'file', executable: (stat.mode & 0o111) !== 0,
+      sha256: special ? contentHash(readBoundedTaskFile(snapshotRoot, relative, 2 * 1024 * 1024), relative)
+        : changedFileDigest(snapshotRoot, relative, budget) };
   };
   const changes = [...new Set(paths)].sort().map((relative) => {
     if (typeof relative !== 'string' || relative.length > 4096 || !isSafeRelative(relative)) throw usageError('Cannot bind unsafe changed paths.');
@@ -360,19 +440,24 @@ const NPM_SHORTHANDS = new Map([
   ['npm test', 'test'],
 ]);
 
-function safeNpmVerifications(scan) {
-  return verificationNpmCommands(scan.commands)
+function safeVerifications(scan) {
+  const safeNpmIds = new Set(verificationNpmCommands(scan.commands).map((candidate) => candidate.verification.id));
+  return scan.commands.filter((candidate) => (
+    candidate.verification?.purpose?.includes('verification')
+    && candidate.verification?.trust?.level === 'structurally-trusted'
+    && (candidate.source !== 'package.json' || safeNpmIds.has(candidate.verification.id))
+  ))
     .sort((left, right) => left.command.localeCompare(right.command));
 }
 
 function discoveredVerification(scan, requestedCommand) {
-  const allowed = safeNpmVerifications(scan);
+  const allowed = safeVerifications(scan);
   const shorthandName = NPM_SHORTHANDS.get(requestedCommand);
   const canonicalCommand = shorthandName ? `npm run ${shorthandName}` : requestedCommand;
   const selected = allowed.find((candidate) => candidate.command === canonicalCommand);
   if (!selected) {
     const choices = allowed.length > 0 ? allowed.map((candidate) => candidate.command).join(', ') : '(none discovered)';
-    throw usageError(`Completion verification must match a safely named npm script discovered from package.json. Allowed commands: ${choices}.`);
+    throw usageError(`Completion verification must exactly match a structurally trusted command discovered from the project. Allowed commands: ${choices}.`);
   }
   return selected;
 }
@@ -405,12 +490,22 @@ function surfaceMarkers(stdout) {
 }
 
 function runVerification(scan, selected) {
-  const result = runNpmScript(scan.root, selected.name);
+  const npm = selected.source === 'package.json';
+  const result = npm
+    ? runNpmScript(scan.root, selected.name)
+    : executeVerificationProcess(scan.root, selected.verification, { timeoutMs: 300000, maxOutputBytes: 4 * 1024 * 1024 });
   const qa = parseWorkUnitResults(result.stdout);
+  const exitCode = npm ? (result.status ?? 1) : (result.exitCode ?? 1);
+  const failed = npm
+    ? Boolean(result.error || result.status !== 0)
+    : Boolean(result.missingExecutable || result.timedOut || result.outputOverflow || result.exitCode !== 0);
   return {
     command: selected.command,
-    status: result.error || result.status !== 0 ? 'failed' : 'passed',
-    exitCode: result.status ?? 1,
+    status: failed ? 'failed' : 'passed',
+    exitCode,
+    ...(result.missingExecutable ? { failureReason: 'missing-executable' } : {}),
+    ...(result.timedOut ? { failureReason: 'timeout' } : {}),
+    ...(result.outputOverflow ? { failureReason: 'output-limit' } : {}),
     markers: surfaceMarkers(result.stdout),
     outputDigest: sha256(`${result.stdout ?? ''}\0${result.stderr ?? ''}`),
     qaResults: qa.results,
@@ -438,7 +533,7 @@ function deliverySessionProjection(scan, reference) {
   return { id: session.id, state: session.state, completion, gaps: completion.residualGaps };
 }
 
-function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null, deliverySession = null }) {
+function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, verificationCommand = null, reviewMode = null, approvalEvidence = null, approve = null, gitRoot = scan.root, workUnit: workUnitRelative = null, deliverySession = null, preflight = null }) {
   let { config, taskRoute, behaviorPaths, trustedBehaviorChange } = completionTaskRoute(scan, paths, taskLevel, gitRoot);
   let unit = workUnitRelative ? readWorkUnit(scan.root, workUnitRelative) : null;
   const unitEvidencePaths = unit ? [workUnitRelative, ...scan.files.filter((entry) => entry.type === 'file' && !nonUnitEvidencePath(entry.relative)).map((entry) => entry.relative), ...unit.scope.flatMap((group) => group.paths), ...unit.testCases.map((entry) => entry.testPath), ...unit.references.map((entry) => entry.path)] : [];
@@ -539,6 +634,7 @@ function completionResult(scan, { mode, stagedFiles = [], paths, taskLevel, veri
     target: scan.root,
     stagedFiles,
     ok,
+    preflight: preflight ?? { status: 'ready', code: 'ready', targetRoot: scan.root, gitRoot },
     taskRoute,
     taskApproval,
     flow,
@@ -576,15 +672,16 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
   validateTaskLevel(taskLevel);
   validateReviewMode(reviewMode);
   if (workUnit !== null) workUnitPath(workUnit);
+  const preflight = completionPreflight(target);
+  if (preflight.status !== 'ready') return blockedCompletion(preflight, { mode: fromGitHook ? 'git-pre-commit' : 'manual', verificationCommand });
   if (!fromGitHook) {
-    const root = resolveGitRepository(target);
+    const root = preflight.gitRoot;
     const paths = changedPaths(root);
     const scan = scanProject(target, { probeEnvironment: false });
-    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve, workUnit, deliverySession });
+    return completionResult(scan, { mode: 'manual', paths, taskLevel, verificationCommand, reviewMode, approvalEvidence, approve, workUnit, deliverySession, gitRoot: root, preflight });
   }
   if (verificationCommand) throw usageError('--from-git-hook cannot run a project verification command. Run aicg complete manually with --verify instead.');
-  const root = resolveGitRepository(target);
-  git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);
+  const root = preflight.gitRoot;
   const paths = stagedPaths(root);
   return withIndexSnapshot(root, (snapshot) => completionResult(scanProject(snapshot, { probeEnvironment: false }), {
     mode: 'git-pre-commit',
@@ -595,6 +692,7 @@ export function runCompletion(target, { fromGitHook = false, verificationCommand
     approvalEvidence,
     approve,
     gitRoot: root,
+    preflight,
     workUnit,
     deliverySession,
   }));

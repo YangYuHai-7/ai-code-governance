@@ -125,8 +125,8 @@
         "detail": "apps/api/src/application/board-service.ts: direct-database-access drizzle-orm | "
       },
       "api-integration": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 0,
+        "detail": "> reference-work-tracker@0.0.0 test:integration | > vitest run tests/integration"
       }
     },
     "detectedBy": [
@@ -149,8 +149,8 @@
         "detail": "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | "
       },
       "api-integration": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 0,
+        "detail": "> reference-work-tracker@0.0.0 test:integration | > vitest run tests/integration"
       }
     },
     "detectedBy": [
@@ -169,16 +169,16 @@
     "baselineArchitecture": 0,
     "results": {
       "api-integration": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 1,
+        "detail": "⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯ | "
       },
       "migration-safety": {
-        "exit": 1,
-        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables | "
+        "exit": 0,
+        "detail": "> reference-work-tracker@0.0.0 test:migration | > node scripts/migration-check.mjs"
       }
     },
     "detectedBy": [
-      "migration-safety"
+      "api-integration"
     ],
     "detected": true
   },
@@ -193,7 +193,7 @@
     "results": {
       "migration-safety": {
         "exit": 1,
-        "detail": "this gate requires PostgreSQL: set PSQL_BIN or the PG* variables | "
+        "detail": "the migration could not be applied: psql:migrations/0001_init.sql:6: ERROR:  syntax error at or near \"CREATE\" | LINE 2: CREATE TABLE IF NOT EXISTS organizations ("
       }
     },
     "detectedBy": [
@@ -297,8 +297,8 @@
         "detail": "delivery session probe is executing without a resumable checkpoint"
       },
       "api-integration": {
-        "exit": null,
-        "detail": "no live tool mapped"
+        "exit": 0,
+        "detail": "> reference-work-tracker@0.0.0 test:integration | > vitest run tests/integration"
       }
     },
     "detectedBy": [

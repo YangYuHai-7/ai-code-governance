@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { evaluateGoldenPathArchitecture } from '../src/modules/architecture/index.mjs';
 import { canonicalContractDigest, validateArchitectureIr, validateRequirementIr } from '../src/modules/delivery-core/index.mjs';
 import { activateRiskProfiles, planQualityMatrix, executeQualityMatrix, riskProfileSetDigest } from '../src/modules/delivery-core/index.mjs';
+import { digestEvaluationRepository } from '../src/modules/evaluation/index.mjs';
 import { loadGoldenPathPack, resolvePackCompatibility } from '../src/modules/stack-packs/index.mjs';
 
 export const REFERENCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'test-support/evaluations/golden-path/reference-work-tracker');
@@ -49,15 +50,7 @@ function treeMap(root) {
 }
 
 export function digestReferenceTree(root) {
-  return canonicalContractDigest('evidence', {
-    schemaVersion: 1, id: 'evidence.reference-tree', sessionId: 'session.reference',
-    source: 'repository', verificationLevel: 'enforced',
-    semanticDigest: createHash('sha256').update([...treeMap(root)].map(([relative, value]) => `${relative}:${value}`).join('\n')).digest('hex'),
-    repositoryDigest: createHash('sha256').update(root.split(path.sep).join('/')).digest('hex'),
-    commandDigest: null,
-    resultDigest: createHash('sha256').update(String(treeMap(root).size)).digest('hex'),
-    artifactDigests: [], status: 'passed',
-  });
+  return digestEvaluationRepository(root);
 }
 
 function copyTree(source, destination) {

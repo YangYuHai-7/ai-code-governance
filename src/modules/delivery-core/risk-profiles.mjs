@@ -364,7 +364,12 @@ export function validateRiskProfileSet(value) {
   });
   uniqueIds(value.profiles, 'riskProfileSet.profiles');
   list(value.requiredGateIds, 'riskProfileSet.requiredGateIds', { min: 1, max: 256 }).forEach((gate, index) => id(gate, `riskProfileSet.requiredGateIds[${index}]`));
-  if (new Set(value.requiredGateIds).size !== value.requiredGateIds.length) fail('riskProfileSet.requiredGateIds', 'duplicate gate');
+  const requiredGateIds = new Set(value.requiredGateIds);
+  if (requiredGateIds.size !== value.requiredGateIds.length) fail('riskProfileSet.requiredGateIds', 'duplicate gate');
+  for (const profile of value.profiles) {
+    if (profile.applicability !== 'required') continue;
+    for (const gateId of profile.gateIds) if (!requiredGateIds.has(gateId)) fail('riskProfileSet.requiredGateIds', `required profile ${profile.id} omits gate ${gateId}`);
+  }
   list(value.ownerQuestions, 'riskProfileSet.ownerQuestions', { max: 64 }).forEach((question, index) => {
     const path = `riskProfileSet.ownerQuestions[${index}]`;
     fields(question, ['id', 'profileId', 'question', 'material'], ['id', 'profileId', 'question', 'material'], path);

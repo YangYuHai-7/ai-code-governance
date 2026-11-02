@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { runCommand } from './commands.mjs';
 
 function environment() {
   const keys = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'WINDIR', 'TEMP', 'TMP'];
@@ -9,7 +9,7 @@ export function executeVerificationProcess(root, command, policy) {
   const separator = process.platform === 'win32' ? '\\' : '/';
   const cwd = command.cwd === '.' ? root : `${root.replace(/[\\/]$/, '')}${separator}${command.cwd.replaceAll('/', separator)}`;
   const started = Date.now();
-  const result = spawnSync(command.argv[0], command.argv.slice(1), {
+  const result = runCommand(command.argv[0], command.argv.slice(1), {
     cwd,
     env: environment(),
     encoding: 'utf8',

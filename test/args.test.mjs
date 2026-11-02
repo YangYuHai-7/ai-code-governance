@@ -16,6 +16,13 @@ test('starts guided initialization in the current directory when no arguments ar
   });
 });
 
+test('parses live golden-path evidence inputs', () => {
+  assert.deepEqual(parseArgs(['evaluation', 'golden-path', 'fixture', '--requirement', 'requirement.json', '--architecture', 'architecture.json', '--matrix', 'matrix.json', '--live-agent']), {
+    command: 'evaluation', action: 'golden-path', target: 'fixture',
+    options: { requirement: 'requirement.json', architecture: 'architecture.json', matrix: 'matrix.json', 'live-agent': true },
+  });
+});
+
 test('an interactive bare aicg opens the page while headless keeps guided init', () => {
   assert.deepEqual(parseArgs([], { interactive: true }), { command: 'config', action: 'open', target: '.', options: {} });
   const headless = parseArgs([], { environment: {}, runtimeLocale: 'en-US', interactive: false });
@@ -39,6 +46,15 @@ test('the delivery namespace parses governed delivery actions and rejects unknow
   assert.throws(() => parseArgs(['delivery', 'nope']), (error) => error.exitCode === 2);
 });
 
+test('parses additive read-only delivery inspection without a nested action', () => {
+  assert.deepEqual(parseArgs(['delivery', 'inspect', 'project', '--session', 'session.alpha', '--json']), {
+    command: 'delivery', action: 'inspect', target: 'project', options: { session: 'session.alpha', json: true },
+  });
+  assert.deepEqual(parseArgs(['delivery', 'inspect', '--json']), {
+    command: 'delivery', action: 'inspect', target: '.', options: { json: true },
+  });
+});
+
 test('parses init flags and a target with spaces', () => {
   const parsed = parseArgs(['init', 'project with spaces', '--yes', '--config=answers.json', '--migrate-links']);
   assert.deepEqual(parsed, {
@@ -46,6 +62,15 @@ test('parses init flags and a target with spaces', () => {
     target: 'project with spaces',
     options: { yes: true, config: 'answers.json', 'migrate-links': true },
   });
+});
+
+test('parses the read-only governance handoff command', () => {
+  assert.deepEqual(parseArgs(['handoff', 'project', '--config', 'aicg.config.json', '--locale', 'zh-CN', '--json']), {
+    command: 'handoff',
+    target: 'project',
+    options: { config: 'aicg.config.json', locale: 'zh-CN', json: true },
+  });
+  assert.throws(() => parseArgs(['handoff', '.', '--yes']), (error) => error.exitCode === 2);
 });
 
 test('parses configuration-file lifecycle actions', () => {

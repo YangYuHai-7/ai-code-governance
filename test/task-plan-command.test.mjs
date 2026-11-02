@@ -29,6 +29,71 @@ test('task planner scales a question and frontend source bug differently and ret
   assert.deepEqual(crossStack.route.requiredApprovals, ['requirements', 'design', 'plan']);
   assert.equal(crossStack.route.verificationClass, 'integrated');
 });
+
+test('explicit Chinese and English read-only requests stay L0 without path evidence', (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-plan-read-only-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+
+  for (const text of [
+    '仅评估，不要修改文件',
+    'review only, do not change files',
+    '仅评估现有开发规范，不要修改或新增文件',
+    'review only the proposed changes; do not change or modify files',
+  ]) {
+    const result = planTask(root, { text });
+    assert.equal(result.route.level, 'L0', text);
+    assert.equal(result.process.implementationConsent, 'not-applicable', text);
+    assert.ok(result.route.reasonCodes.includes('text-intent:read-only-explicit'), text);
+    assert.equal(result.route.intentEvidence.classification, 'read-only', text);
+    assert.equal(result.route.intentEvidence.positiveWriteSignals.length, 0, text);
+    assert.ok(result.route.intentEvidence.negatedWriteSignals.length > 0, text);
+  }
+});
+
+test('unnegated writes and conflicting read-only wording fail closed to a write route', (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-plan-write-intent-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+
+  const write = planTask(root, { text: '请修改这个文件' });
+  assert.equal(write.route.level, 'L2');
+  assert.equal(write.route.intentEvidence.classification, 'write');
+  assert.ok(write.route.reasonCodes.includes('text-intent:write'));
+
+  const conflicting = planTask(root, { text: '只评估现状，但也修复这个 bug' });
+  assert.equal(conflicting.route.level, 'L2');
+  assert.equal(conflicting.route.intentEvidence.classification, 'ambiguous-write');
+  assert.ok(conflicting.route.reasonCodes.includes('text-intent:ambiguous-write-conservative'));
+
+  const explicitWrite = planTask(root, { text: 'do not only modify the file; add the missing test' });
+  assert.equal(explicitWrite.route.level, 'L2');
+  assert.ok(explicitWrite.route.intentEvidence.positiveWriteSignals.includes('modify'));
+  assert.ok(explicitWrite.route.intentEvidence.positiveWriteSignals.includes('add'));
+});
+
+test('changed path evidence overrides read-only text while retaining the conflict evidence', (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-plan-path-priority-'));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const scan = scanProject(root);
+  const config = { ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'standard' };
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(config, scan)));
+
+  const result = planTask(root, {
+    text: 'review only, do not change files',
+    paths: ['src/widget.mjs'],
+  });
+  assert.equal(result.route.level, 'L2');
+  assert.equal(result.process.implementationConsent, 'required-before-business-code-change');
+  assert.ok(result.route.reasonCodes.includes('path-evidence:changed-paths-priority'));
+  assert.equal(result.route.intentEvidence.classification, 'read-only');
+  assert.equal(result.route.intentEvidence.effectiveIntent, 'write');
+});
+
 test('the bugfix fast track routes L1.5 and escalates without reproduction or a bounded fix', (context) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-task-plan-bugfix-'));
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));

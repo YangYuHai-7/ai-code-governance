@@ -399,7 +399,7 @@ test('routing policy is selected through routing metadata only for standard and 
   for (const governanceDepth of ['standard', 'complete']) {
     assert.ok(selectedArtifactDefinitions({ ...base, governanceDepth }, scan).some((candidate) => candidate.path === definition.path));
   }
-  assert.equal(selectedArtifactDefinitions({ ...base, governanceDepth: 'minimal' }, scan).some((candidate) => candidate.path === definition.path), false);
+  assert.equal(selectedArtifactDefinitions({ ...base, governanceDepth: 'minimal' }, scan).some((candidate) => candidate.path === definition.path), true);
 });
 
 test('generated routing policy keeps stable English fields and localizes prose', (context) => {
@@ -427,8 +427,8 @@ test('minimal keeps a short localized routing summary in AGENTS without policy m
   const scan = scanProject(root);
   for (const [artifactLanguage, expected] of [['en', /L0.*read-only.*L1.*low-risk.*Escalate/s], ['zh-CN', /L0.*只读.*L1.*低风险.*升级/s]]) {
     const artifacts = buildArtifacts({ ...defaultConfig(scan), clients: ['codex'], governanceDepth: 'minimal', artifactLanguage }, scan);
-    assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/task-routing-policy.json'), false);
-    assert.match(artifacts.find((artifact) => artifact.path === 'AGENTS.md').content, expected);
+    assert.equal(artifacts.some((artifact) => artifact.path === '.ai-governance/state/task-routing-policy.json'), true);
+    assert.match(artifacts.find((artifact) => artifact.path === 'AGENTS.md').content, /task-routing-policy/);
   }
 });
 

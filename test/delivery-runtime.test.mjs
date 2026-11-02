@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { createAgentRuntimeAdapter } from '../src/adapters/agents/index.mjs';
+import { openDeliverySessionStore } from '../src/adapters/filesystem/index.mjs';
 import {
   canonicalContractDigest,
   classifyDeliveryFailure,
@@ -8,6 +12,7 @@ import {
   createSessionCheckpoint,
   evaluateDeliveryCompletion,
   evaluateQualityMatrixRun,
+  riskProfileSetDigest,
 } from '../src/modules/delivery-core/index.mjs';
 import { loadGoldenPathPack, validateGoldenPathPack } from '../src/modules/stack-packs/index.mjs';
 import { architectureFixture, authorityFixture, budgetsFixture, repositoryFixture, requirementFixture } from './support/delivery-core-fixtures.mjs';
@@ -166,6 +171,45 @@ test('a checkpointed transition survives interruption and a repeated step does n
   assert.equal((await runtime.step(started.id)).state, 'executing');
 });
 
+test('runtime refuses an invalid persisted session before any Agent or workspace effect', async () => {
+  const store = memoryStore();
+  let effects = 0;
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => { effects += 1; return { files: [] }; })],
+    workspace: { async apply() { effects += 1; return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { effects += 1; return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.invalid-persisted' });
+  const approved = await runtime.step(started.id);
+  assert.equal(approved.state, 'plan-approved');
+  store.compareAndSwap(started.id, canonicalContractDigest('session', approved), { ...approved, unexpectedField: true });
+  assert.throws(() => runtime.status(started.id), /unknown field/i);
+  await assert.rejects(runtime.step(started.id), /unknown field/i);
+  assert.equal(effects, 0);
+});
+
+test('runtime rejects a tampered published session on disk before Agent execution', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-runtime-invalid-session-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const store = openDeliverySessionStore(root);
+  let effects = 0;
+  const runtime = createDeliveryRuntime({
+    store,
+    agents: [runtimeAgent('agent-one', async () => { effects += 1; return { files: [] }; })],
+    workspace: { async apply() { effects += 1; return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { effects += 1; return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.invalid-on-disk' });
+  const approved = await runtime.step(started.id);
+  assert.equal(approved.state, 'plan-approved');
+  const file = path.join(root, '.ai-governance/state/delivery-sessions', started.id, 'session.json');
+  fs.writeFileSync(file, JSON.stringify({ ...approved, unexpectedField: true }));
+  assert.throws(() => runtime.status(started.id), /unknown field/i);
+  await assert.rejects(runtime.step(started.id), /unknown field/i);
+  assert.equal(effects, 0);
+});
+
 test('failure classification is explicit and unknown errors stop as internal', () => {
   for (const category of ['business-decision', 'agent-unavailable', 'policy', 'patch-conflict', 'verification', 'infrastructure', 'budget', 'stale-input', 'internal']) {
     const error = category === 'internal' ? new Error('unknown') : Object.assign(new Error(category), { category });
@@ -193,6 +237,31 @@ test('Pack and risk bindings persist across a checkpoint and resume', async () =
   const resumed = runtime.resume(started.id, { requirementDigest: checkpointed.requirementDigest, architectureDigest: checkpointed.architectureDigest, authorityDigest: checkpointed.authorityDigest, repositoryDigest: checkpointed.repositoryDigest });
   assert.equal(resumed.runtime.pack.digest, approved.runtime.pack.digest);
   assert.deepEqual(resumed.runtime.riskProfileSet, approved.runtime.riskProfileSet);
+});
+
+test('an owner-dependent risk blocks the golden path before Agent or workspace effects', async () => {
+  const requirement = { ...requirementFixture(), summary: 'Handle personal data with explicit privacy controls.' };
+  const architecture = architectureFixture(canonicalContractDigest('requirement', requirement));
+  let effects = 0;
+  const runtime = createDeliveryRuntime({
+    store: memoryStore(), pack: goldenPathPack,
+    agents: [runtimeAgent('agent-one', async () => { effects += 1; return { files: [] }; })],
+    workspace: { async apply() { effects += 1; return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { effects += 1; return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.owner-risk', requirement, architecture });
+  const blocked = await runtime.step(started.id);
+  assert.equal(blocked.state, 'blocked');
+  assert.equal(blocked.lastFailure.category, 'business-decision');
+  assert.ok(blocked.runtime.riskProfileSet.ownerQuestions.some((question) => question.profileId === 'privacy'));
+  assert.equal(effects, 0);
+  assert.throws(() => runtime.resume(started.id, {
+    requirementDigest: blocked.requirementDigest,
+    architectureDigest: blocked.architectureDigest,
+    authorityDigest: blocked.authorityDigest,
+    repositoryDigest: blocked.repositoryDigest,
+  }), /owner decision.*risk profile/i);
+  assert.equal(runtime.status(started.id).state, 'blocked');
 });
 
 test('a changed Pack digest blocks resume instead of discarding approvals', async () => {
@@ -248,12 +317,12 @@ test('a passing architecture evaluation is recorded before the plan is approved'
   assert.equal(approved.runtime.architectureEvaluation.status, 'passed');
   assert.match(approved.runtime.architectureEvaluation.digest, /^[a-f0-9]{64}$/);
 });
-function qualityRunFor(session) {
+function qualityRunFor(session, digestOverrides = {}) {
   const plan = {
     schemaVersion: 1, id: 'quality-run.runtime', packId: 'pack.runtime', matrixId: 'quality.runtime',
     requiredGateIds: ['unit-tests'],
     gates: [{ id: 'unit-tests', owner: 'functional', purpose: 'unit', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' }],
-    digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: 'c'.repeat(64), risk: 'd'.repeat(64), environment: 'e'.repeat(64) },
+    digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: 'c'.repeat(64), risk: 'd'.repeat(64), environment: 'e'.repeat(64), ...digestOverrides },
   };
   return evaluateQualityMatrixRun({ plan, results: [{ gateId: 'unit-tests', status: 'passed', cleanup: { status: 'clean' } }], artifacts: [], environment: plan.digests.environment });
 }
@@ -272,6 +341,119 @@ test('a quality matrix receipt is persisted before the session reaches review', 
   assert.equal(ready.runtime.qualityMatrixRun.planId, run.planId);
   assert.equal(ready.runtime.qualityMatrixPlanId, run.planId);
   assert.equal(ready.runtime.environmentDigest, run.digests.environment);
+});
+
+test('a failed data gate cannot reach review when the verifier summary claims passed', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run(session) {
+      const plan = {
+        schemaVersion: 1, id: 'quality-run.data-failure', packId: 'pack.runtime', matrixId: 'quality.runtime',
+        requiredGateIds: ['migration-safety'],
+        gates: [{ id: 'migration-safety', owner: 'data', purpose: 'migration', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' }],
+        digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: 'c'.repeat(64), risk: 'd'.repeat(64), environment: 'e'.repeat(64) },
+      };
+      const qualityMatrixRun = evaluateQualityMatrixRun({
+        plan, results: [{ gateId: 'migration-safety', status: 'failed', failureClassification: 'migration-failed', cleanup: { status: 'clean' } }],
+        artifacts: [], environment: plan.digests.environment,
+      });
+      return { status: 'passed', commands: 1, evidence: [], qualityMatrixRun };
+    } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.data-gate-failure' });
+  const result = await advance(runtime, started.id, 3);
+  assert.equal(result.state, 'repairing');
+  assert.equal(result.runtime.qualityMatrixRun, null);
+  assert.equal(result.lastFailure.category, 'verification');
+  assert.match(result.lastFailure.message, /migration-safety.*rerun/i);
+  assert.ok(store.eventList(started.id).some((event) => event.effect === 'verification' && event.phase === 'after' && event.status === 'failed'));
+});
+
+test('a golden path cannot reach review without its required quality matrix receipt', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.missing-matrix' });
+  const result = await advance(runtime, started.id, 3);
+  assert.equal(result.state, 'repairing');
+  assert.equal(result.runtime.qualityMatrixRun, null);
+  assert.match(result.lastFailure.message, /quality matrix receipt.*rerun/i);
+});
+
+test('a passed matrix bound to stale requirements cannot reach review', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run(session) {
+      return { status: 'passed', commands: 1, evidence: [], qualityMatrixRun: qualityRunFor(session, { requirement: 'f'.repeat(64) }) };
+    } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.stale-matrix' });
+  const result = await advance(runtime, started.id, 3);
+  assert.equal(result.state, 'repairing');
+  assert.equal(result.runtime.qualityMatrixRun, null);
+  assert.match(result.lastFailure.message, /stale.*requirement.*rerun/i);
+});
+
+test('a passed matrix missing activated golden-path gates cannot reach review', async () => {
+  const store = memoryStore();
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    agents: [runtimeAgent('agent-one', async () => ({ files: [] }))],
+    workspace: { async apply() { return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run(session) {
+      const risk = session.runtime.riskProfileSet;
+      assert.ok(risk.requiredGateIds.length > 1);
+      const gateId = risk.requiredGateIds[0];
+      const plan = {
+        schemaVersion: 1, id: 'quality-run.partial', packId: goldenPathPack.id, matrixId: goldenPathPack.qualityMatrix.id,
+        requiredGateIds: [gateId],
+        gates: [{ id: gateId, owner: 'functional', purpose: 'unit', applicability: 'required', reason: null, timeoutMs: 1000, maxOutputBytes: 512, artifactBudgetBytes: 256, evidence: 'captured output' }],
+        digests: { requirement: session.requirementDigest, architecture: session.architectureDigest, repository: session.repositoryDigest, pack: session.runtime.pack.digest, risk: riskProfileSetDigest(risk), environment: 'e'.repeat(64) },
+      };
+      const qualityMatrixRun = evaluateQualityMatrixRun({ plan, results: [{ gateId, status: 'passed', cleanup: { status: 'clean' } }], artifacts: [], environment: plan.digests.environment });
+      return { status: 'passed', commands: 1, evidence: [], qualityMatrixRun };
+    } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.partial-matrix' });
+  const result = await advance(runtime, started.id, 3);
+  assert.equal(result.state, 'repairing');
+  assert.equal(result.runtime.qualityMatrixRun, null);
+  assert.match(result.lastFailure.message, /activated gates.*rerun/i);
+});
+
+test('a retained owner-blocked risk cannot bypass its decision gate on a later step', async () => {
+  const store = memoryStore();
+  let effects = 0;
+  const runtime = createDeliveryRuntime({
+    store, pack: goldenPathPack,
+    agents: [runtimeAgent('agent-one', async () => { effects += 1; return { files: [] }; })],
+    workspace: { async apply() { effects += 1; return { status: 'committed', changedFiles: 0, changedBytes: 0 }; } },
+    verifier: { async run() { effects += 1; return { status: 'passed', commands: 1, evidence: [] }; } },
+  });
+  const started = runtime.start({ ...approvedInput(), id: 'session.retained-owner-risk' });
+  const approved = await runtime.step(started.id);
+  const set = approved.runtime.riskProfileSet;
+  const blockedSet = {
+    ...set,
+    profiles: set.profiles.map((entry) => entry.id === 'privacy'
+      ? { ...entry, applicability: 'blocked', triggerEvidence: [{ source: 'requirement', detail: 'requirement.summary: personal data' }], reason: 'Owner decision required.' }
+      : entry),
+    ownerQuestions: [{ id: 'question.risk.privacy', profileId: 'privacy', question: 'Confirm privacy evidence provider.', material: true }],
+  };
+  store.compareAndSwap(approved.id, canonicalContractDigest('session', approved), { ...approved, runtime: { ...approved.runtime, riskProfileSet: blockedSet } });
+  const result = await advance(runtime, started.id, 2);
+  assert.equal(result.state, 'blocked');
+  assert.equal(result.lastFailure.category, 'business-decision');
+  assert.match(result.lastFailure.message, /owner decision.*risk profile.*privacy/i);
+  assert.equal(effects, 0);
 });
 
 test('entering repair invalidates the prior quality matrix receipt', async () => {

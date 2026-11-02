@@ -1,11 +1,15 @@
 /**
  * The project delivery workflow is one human-readable document, not a family of phase Skills.
  *
- * The owner's process is fixed: requirement analysis, optional page design, architect PK and
- * plan, task decomposition and development, testing, and repair. Every stage stays in this one
+ * Task evidence selects requirement analysis, page design, technical decisions, planning,
+ * development, testing and repair. The sections are capabilities rather than a fixed sequence.
  * file so an agent can read the whole path once instead of loading a Skill per phase. Runtime
  * progress lives in the machine state under `.ai-governance/state/`; the document never stores it.
  */
+import { readBoundedRepositoryFile } from '../../adapters/filesystem/repository-state.mjs';
+import { PACKAGE_ROOT } from '../../constants.mjs';
+import { isSafeRelative, normalizeRelative, sha256 } from '../../shared/index.mjs';
+
 export const WORKFLOW_DOC = 'docs/WORKFLOW.md';
 export const WORKFLOW_KIND = 'project-workflow';
 
@@ -15,7 +19,12 @@ function zh() {
   return [
     '# 项目交付治理工作流',
     '',
-    '> 本文件是本项目唯一的交付流程文档。需求从分析到收敛只走这一条路径，流程不再拆分到多个 Skill。',
+    '> 本文件是本项目唯一的交付流程文档。先运行动态路由，只加载本次需要的能力；以下章节不是必经流水线。',
+    '',
+    '先使用 `aicg route . --text "任务"` 查看条件能力。L0 无产物；L1 定向验证；L1.5 复现、根因与回归；L2 默认 BA、plan 和模块用例；页面增加产品设计；L3 或新项目增加技术设计。执行方使用 `aicg delivery prepare . --text "任务" --scope MODULE --yes` 创建缺失草稿，然后依据证据补全。',
+    '不默认创建 worktree、提交、并发 Agent 或逐任务双评审；TDD 和评审深度按改动风险选择。已有 OpenSpec/原生规格、计划和设计只引用唯一权威。',
+    '',
+    '草稿补全后，用相同 text、scope 和 paths 执行 `aicg delivery assess` 只读检查占位符、重复正文、关键章节和用例引用。结构就绪不代表业务正确、测试已执行或负责人已验收。',
     '',
     '## 角色模型',
     '',
@@ -31,26 +40,28 @@ function zh() {
     '',
     '按需求内容组织或添加角色到团队，然后分两种情况：',
     '',
-    '- **一句话需求**：根据需求内容分析出完整需求，产出详细需求文档。',
+    '- **业务行为需求**：默认产出轻量 BA，包含目标、角色、现状/目标流程、业务规则、范围、验收标准和待确认事项；老项目只补本次增量。',
     '- **完整需求**：分析需求内容并逐项检查需求细节。',
     '',
-    '两种情况下，发现问题随时提问并让用户确认；未确认的问题保留在需求文档的 `openQuestions`。',
+    '只询问会改变范围、业务、权限或重大成本的问题；已确认信息直接引用，常规实现细节由执行方处理。未确认问题保留在 `openQuestions`。',
     '',
     '### 2. 页面设计（可选）',
     '',
     '- 需求不涉及前端页面：跳过本步骤。',
-    '- 需要前端页面设计：询问用户选择「默认」还是「给出三版设计」。',
-    '  - 默认：按项目现有设计系统直接设计，不产出 HTML 稿。',
-    '  - 三版设计：产出 3 版展示大概样式的预览稿，供用户选择；选中版本写入流程状态。',
+    '- 需要前端页面设计：先查已有设计规范、Storybook、主题 token、组件和截图。规范存在时直接继承并引用，冲突请求负责人决定。',
+    '  - 新项目：建立设计原则、导航、字体/颜色/间距、组件、响应式和无障碍规范，并提供关键流程的样式图或 HTML 预览。',
+    '  - 老项目缺规范：从实际页面和代码提取现状基线，标明证据与缺口；不借整理规范自动重设计。仅需要比较视觉方向时给出多个方案。',
     '- 预览稿只是提案，不进入生产构建。',
     '',
     '### 3. 架构师 PK 与开发 plan',
     '',
-    'PM 分配架构师等角色互相 PK：结合实际代码与当前需求、设计，检查是否存在遗漏问题、不确定项和未闭环逻辑。',
+    'PM 按任务风险选择架构评审深度。L3、新项目或新增架构决定需要技术设计，覆盖模块、接口、数据、工程规范、兼容与回滚。常规 L2 沿用已有设计。',
+    '架构文档与开发规范共用分析入口。老项目根据源码与现有权威设计整理系统总览图、模块架构图、核心业务流程图和证据引用；新项目先根据用户需求形成这三类图、开发规范及实施计划。Markdown/Mermaid 是默认来源，时序、数据和部署视图按需增加。',
+    '新项目必须将具体方案交由客户确认，确认前只做分析与方案文档，不创建应用骨架、不安装依赖、不改产品或构建部署配置、不写实现代码。结构就绪仍是 awaiting-customer-confirmation；客户确认后通过现有 approval-evidence 与 approve 绑定当前方案继续，同版本同范围不重复询问，重大变更重新确认。批准记录为 operator-declared，不证明真人身份或交付验收。',
     '',
-    '- 整理出问题清单，连同根据 PK 结果给出的推荐答案一起询问用户。',
+    '- 只把会改变需求、方案或任务划分的问题交给负责人；常规细节在计划中记录决定。',
     '- 保证需求与设计最终处于可实施状态，并产出开发 plan。',
-    '- plan 摘要绑定进 `planHash`；plan 变更使旧批准失效。',
+    '- plan 明确模块与文件职责、依赖顺序、验证命令和完成条件；引用既有正式计划。plan 摘要绑定进 `planHash`；plan 变更使旧批准失效。',
     '',
     '### 4. 任务拆分与开发',
     '',
@@ -63,6 +74,7 @@ function zh() {
     '',
     '### 5. 测试',
     '',
+    '开发前按模块维护稳定 Case ID，并引用 BA requirement/scenario。公共角色、环境、数据通过 schema-v2 `imports: [{path, sha256}]` 复用；选取用例后共享文件变化必须重选。覆盖成功、失败、边界、异常、权限和相关风险。',
     'PM 分配专业测试或真实用户进行功能测试，给出最终测试报告。',
     '',
     '- 自动化、AI 模拟真人与真实用户的结果必须分开记录。',
@@ -102,7 +114,12 @@ function en() {
   return [
     '# Project Delivery Workflow',
     '',
-    '> This is the only delivery workflow document in this repository. A requirement moves from analysis to convergence along this single path; the process is never split across phase Skills.',
+    '> This is the only delivery workflow document. Route the task first and load only selected capabilities; the sections below are not a mandatory pipeline.',
+    '',
+    'Use `aicg route . --text "task"` to inspect conditional capabilities. L0 creates no artifacts; L1 uses targeted verification; L1.5 uses reproduction, root cause and regression; L2 defaults to BA, plan and module cases; UI adds product design; L3 or greenfield adds technical design. Use `aicg delivery prepare . --text "task" --scope MODULE --yes` to create missing drafts, then complete them from evidence.',
+    'Worktrees, commits, concurrent Agents and per-task double reviews are not defaults. Choose TDD and review depth from risk. Reference the single existing OpenSpec/native specification, plan and design authority.',
+    '',
+    'After completing drafts, run `aicg delivery assess` with the same text, scope and paths to inspect placeholders, duplicate bodies, key sections and case references. Structural readiness does not prove business accuracy, executed tests or owner acceptance.',
     '',
     '## Role model',
     '',
@@ -118,26 +135,28 @@ function en() {
     '',
     'Organise or add roles to the team from the requirement content, then branch:',
     '',
-    '- **One-line requirement**: analyse it into a complete requirement and produce a detailed requirement document.',
+    '- **Business behavior**: default to a lean BA covering outcome, actors, current/target flow, rules, scope, acceptance and owner questions. Existing projects document only the change delta.',
     '- **Complete requirement**: analyse the content and check the requirement details item by item.',
     '',
-    'In both branches, ask the user whenever a question appears and get confirmation; unresolved points stay in the requirement document `openQuestions`.',
+    'Ask only material scope, business, authority or cost questions; reuse confirmed information and settle routine implementation details. Keep unresolved decisions in `openQuestions`.',
     '',
     '### 2. Page design (optional)',
     '',
     '- The requirement has no frontend page: skip this step.',
-    '- It needs frontend design: ask the user to choose default or three designs.',
-    '  - Default: design directly from the existing design system; no HTML draft.',
-    '  - Three designs: produce three rough-style preview drafts for the user to choose; record the chosen one in the flow state.',
+    '- For frontend design, inspect existing guidelines, Storybook, tokens, components and screenshots; inherit existing specifications by reference and expose conflicts.',
+    '  - Greenfield: establish navigation, color/type/spacing tokens, components, responsive and accessibility rules; supply a key-flow wireframe or HTML preview.',
+    '  - Existing project without specifications: extract an evidence-backed current baseline with gaps. Design modernization needs its own decision. Produce multiple options only when the visual direction needs comparison.',
     '- A preview draft is a proposal and never enters the production build.',
     '',
     '### 3. Architect PK and development plan',
     '',
-    'The PM assigns architects and peer roles to run a PK against the actual code and the current requirement and design, checking for omissions, uncertainties and unclosed logic.',
+    'The PM selects architecture review depth from task risk. L3, greenfield and new architecture decisions need technical design covering modules, interfaces, data, programming conventions, compatibility and rollback. Routine L2 work inherits existing design.',
+    'Architecture documentation and development standards share analysis. Existing projects use source and authoritative designs for system overview, module architecture and core business flow diagrams with evidence references. New projects derive these views, conventions and an implementation plan from user requirements. Markdown/Mermaid is the default source; add sequence, data and deployment views only when justified.',
+    'New projects present the concrete design for customer confirmation before application scaffolds, dependency installation, product/build/deployment configuration or implementation code. Structural readiness remains awaiting-customer-confirmation. Reuse existing approval-evidence and approve bindings to continue the current design; do not repeat approval for the same revision and scope, and reconfirm material changes. Records are operator-declared, not authenticated human identity or product acceptance.',
     '',
-    '- Collect the questions and ask the user together with the recommended answers from the PK result.',
+    '- Bring only decisions that change requirements, approach or task boundaries to the owner; record routine decisions in the plan.',
     '- Ensure the requirement and design are implementable, and produce the development plan.',
-    '- Bind the plan summary into `planHash`; a plan change invalidates a prior approval.',
+    '- State module/file responsibilities, dependencies, commands and completion criteria in the single authoritative plan. Bind its summary into `planHash`; a plan change invalidates prior approval.',
     '',
     '### 4. Task decomposition and development',
     '',
@@ -150,6 +169,7 @@ function en() {
     '',
     '### 5. Testing',
     '',
+    'Before implementation, maintain stable module Case IDs with BA requirement/scenario references. Reuse actors, environments and data through schema-v2 `imports: [{path, sha256}]`. Shared-context changes require fresh case selection. Cover success, failure, boundary, abnormal, permission and applicable risk cases.',
     'The PM assigns professional testers or real users to run functional testing and produces the final test report.',
     '',
     '- Record automated, AI-simulated-human and real-user results separately.',
@@ -189,12 +209,64 @@ export function workflowDocument(config) {
   return config?.artifactLanguage === 'zh-CN' ? zh() : en();
 }
 
-export function buildWorkflowArtifacts(config) {
+export function validateWorkflowPreservation(config) {
+  const binding = config.workflowPreservation;
+  if (binding === undefined) return;
+  if (!binding || typeof binding !== 'object' || Array.isArray(binding)
+    || Object.keys(binding).some(key => !['contentSha256', 'approvalPath', 'approvalSha256'].includes(key))
+    || !/^[a-f0-9]{64}$/.test(binding.contentSha256 ?? '')
+    || !/^[a-f0-9]{64}$/.test(binding.approvalSha256 ?? '')
+    || typeof binding.approvalPath !== 'string' || !isSafeRelative(binding.approvalPath)
+    || normalizeRelative(binding.approvalPath) !== binding.approvalPath) {
+    throw new Error('Invalid workflow preservation binding.');
+  }
+}
+
+function containsTemplate(content, template) {
+  const lines = content.split('\n');
+  let position = 0;
+  for (const line of template.split('\n')) {
+    const found = lines.indexOf(line, position);
+    if (found < 0) return false;
+    position = found + 1;
+  }
+  return true;
+}
+
+function preservedWorkflow(config, root) {
+  validateWorkflowPreservation(config);
+  const binding = config.workflowPreservation;
+  if (!root) throw new Error('Workflow preservation requires a repository root.');
+  const approvalBytes = readBoundedRepositoryFile(root, binding.approvalPath, 64 * 1024).bytes;
+  if (sha256(approvalBytes) !== binding.approvalSha256) throw new Error('Workflow approval digest mismatch.');
+  const receipt = JSON.parse(approvalBytes.toString('utf8'));
+  if (receipt.kind !== 'workflow-content-preservation' || receipt.status !== 'APPROVED'
+    || receipt.source !== 'owner-message' || receipt.path !== WORKFLOW_DOC || receipt.sha256 !== binding.contentSha256) {
+    throw new Error('Workflow approval does not bind the preserved content.');
+  }
+  const bytes = readBoundedRepositoryFile(root, WORKFLOW_DOC).bytes;
+  if (sha256(bytes) !== binding.contentSha256) throw new Error('Workflow content digest mismatch.');
+  const content = bytes.toString('utf8');
+  const current = workflowDocument(config);
+  if (containsTemplate(content, current)) return { content, status: 'current', templateVersion: 2 };
+  // This immutable historical baseline is independent of future generator edits.
+  // Receipt integrity remains mandatory; arbitrary removed or reordered gates fail.
+  const language = config.artifactLanguage === 'zh-CN' ? 'zh-CN' : 'en';
+  const baseline = readBoundedRepositoryFile(PACKAGE_ROOT, `assets/workflows/v1/${language}.md`, 64 * 1024).bytes.toString('utf8');
+  if (!containsTemplate(content, baseline)) throw new Error('Workflow preservation cannot remove or reorder template rules from a supported baseline.');
+  return { content, status: 'preserved-legacy', templateVersion: 1,
+    pendingTemplateLines: current.split('\n').filter(line => line && !content.split('\n').includes(line)) };
+}
+
+export function buildWorkflowArtifacts(config, root = null) {
+  const preserved = config.workflowPreservation ? preservedWorkflow(config, root) : null;
   return {
+    compatibility: preserved ? { status: preserved.status, templateVersion: preserved.templateVersion,
+      pendingTemplateLines: preserved.pendingTemplateLines ?? [] } : { status: 'current', templateVersion: 2 },
     artifacts: [{
       path: WORKFLOW_DOC,
-      content: workflowDocument(config),
-      ownership: 'full',
+      content: preserved ? preserved.content : workflowDocument(config),
+      ownership: config.workflowPreservation ? 'seed' : 'full',
       kind: WORKFLOW_KIND,
       source: 'template:project-workflow',
     }],

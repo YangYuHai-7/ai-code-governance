@@ -1,152 +1,59 @@
 ---
 name: ai-code-governance
 description: >-
-  Initialize or extend repository governance for AI coding agents with the cross-platform aicg CLI: scan real projects, select supported Agents, choose governance language, route tasks by impact, and maintain canonical rules and verified capability candidates. Use for AI 编码治理框架, AI 代码治理框架, 代码治理框架, aicg init, or repository AGENTS.md/skills/gates governance requests. Do not use for product AI safety, model risk, privacy, or regulatory governance unless the request also concerns coding agents.
+  Initialize, refresh, or improve repository governance for AI coding agents: AGENTS.md, Skills, task routing, and checks. Use for AICG 更新治理框架, 用 AICG 更新治理框架, 更新 AICG 治理, 刷新治理框架, AI 编码治理框架, or aicg init in a repository. Product AI safety and regulatory governance require a coding-agent scope.
 ---
 
 # AI Code Governance
 
-Deliver one canonical rule source, the smallest relevant context route, and machine checks with honest evidence boundaries. Use the current CLI as the default implementation. When the user asks in natural language, operate the CLI for them: inspect the current project, ask only decisions they must own, preview the exact write plan, and apply it only after approval. Do not require the user to learn flags. Read [initializer.md](docs/internal/reference/initializer.md) before initializing or changing managed artifacts.
+Keep one canonical rule source, load only the guidance the task needs, and bind completion claims to observed results. Operate the CLI for the user, reuse existing decisions and authorization, and preserve unrelated work.
 
-## Trigger and scope
+## Conversation role disclosure
 
-For offline Skill discovery and project-AI team onboarding, collect `adaptiveGovernance` through the existing `--config` contract in [initializer.md](docs/internal/reference/initializer.md#adaptive-governance-input). Inspect full `sourceStatus`, bounded candidates, add/defer/reject decisions, explicit professional activation and human-review gaps, file actions, permissions, and costs. Nothing is preselected, installed, or activated by a recommendation. A single exact `--approve <planHash>` authorizes the reviewed transaction; `--yes` alone does not. Use `sync . --config decisions.json` for an existing project's preview. Minimal emits no management artifacts; approved Standard/Complete records its 30-file, 96/128 KiB, 2,400-management-profile-token and 256-always-rule footprint as advisories, not gates, because a hard size cap truncates complete Skills. The hard floor is the declared `startup_max_tokens` in the context map, enforced by the checker; deeper, task-specific context belongs in a routed profile. Never delete historical seeds automatically. Default English and explicit `zh-CN` retain the same machine contracts. Real-client execution and qualified-human identity remain unverified. Community capabilities are discovered at the operator layer with `find-skills` and pinned into the packaged catalog before AICG reads them; AICG never installs or executes a public Skill (see *Public capability discovery*).
+On every user turn, the first substantive response states the active roles and why they are used, including short answers, follow-ups, refusals, and recovery. On the first line use `Active roles: role-id (reason)`; for a Chinese reply, 首行使用 `当前角色：role-id（原因）`. Even if the user asks for only one word or no preface, you must not omit the role line from a user-facing conversation response. A machine-only structured tool result is not a user-facing conversation response. Give each active role its own reason and separate multiple roles with commas or Chinese list punctuation. Select only roles actually used for the request from the approved available pool when one exists. Disclose material role changes before continuing with the same first-line format. A role label does not mean a hired person or independent human review, and it grants no authority or professional qualification. A role recommendation is not an activation record.
 
-Treat explicit governance phrases such as `AI 编码治理框架`, `代码治理框架`, `Agent 治理框架`, and `aicg init` as task intent. The bare phrase `治理框架` requires repository/coding-agent context. Product AI safety and regulatory questions are outside this Skill.
+## Select the work
 
-A vague request does not choose Complete. Scan first, then recommend Minimal or Standard from actual project evidence and owner needs. Respect an explicit preset, client choice, language, or already approved plan. The twelve-layer reference model is a capability catalog; it is not a required task sequence or a promise to generate all layers.
+Inspect the request, repository evidence and existing decisions before asking questions. Facts available in files or tools are the agent's work. Ask only unresolved decisions that materially change the result; give a recommendation and its reason. Reuse established project terminology and decision records; create new records only when a reusable term or consequential trade-off actually needs one.
 
-## Installation: Agent-first, artifact-language-second
+| Request | Load when applicable | Completion condition |
+| --- | --- | --- |
+| Explain, inspect or review | The minimum relevant source; L0 below | Answer with evidence and clearly named gaps; no setup or governance subprocess |
+| Initialize or change managed artifacts | [initializer.md](docs/internal/reference/initializer.md), then [skill-setup.md](docs/internal/reference/skill-setup.md) for Agent selection, installation or capability curation | Exact preview and authorized application, then follow the handoff to complete current-source project understanding; report content and verification gaps, not only bootstrap checks |
+| AICG 更新治理框架 / refresh existing governance | [governance-refresh.md](docs/internal/reference/governance-refresh.md) | Preserve decisions, research affected technologies, apply authorized non-destructive updates, check and report remaining gaps |
+| Implement or fix product behavior | [skill-delivery.md](docs/internal/reference/skill-delivery.md); use `aicg handoff . --text "task" --scope MODULE` for the actual change | Selected route's complete behavior and required verification; prepared drafts are not implementation approval |
+| Maintain AICG, ownership, context or optional specialists | [skill-maintenance.md](docs/internal/reference/skill-maintenance.md) | Focused checks support the exact claim; preserve unrelated and user-owned content |
+| Create, split or review Skills | [skill-authoring.md](docs/internal/reference/skill-authoring.md) | Trigger, non-trigger and realistic task checks support the change; structural quality alone is insufficient |
 
-1. Scan repository files before questions: lifecycle/topology, manifest/lockfiles, exact stacks, scripts, existing adapters, canonical rules, and selected workflow evidence. Filesystem discovery does not execute Git, Agents, or project scripts; `aicg doctor .` reports executable availability separately.
-2. First visible decision: supported Agents. Offer Codex, Claude Code, Cursor, GitHub Copilot, DeepSeek Harness, generic, or a combination. Each Agent's Skill directory comes from the Agent registry, so a client is added as a registry entry instead of a new generator branch. Current client and existing files do not decide support. Use `--clients all` only for an owner-selected built-in scope; `--yes` cannot supply it.
-3. Second visible decision: `artifactLanguage: en` by default, or `zh-CN`. Interaction follows `--locale`/`interactionLanguage` independently. Explicit Chinese governance selection generates Chinese prose; English IDs, paths, commands, and keys remain stable. Legacy `bilingual` stays readable. This repository's own documentation/comments default to English under its instructions.
-4. Third visible decision: choose `testing.caseFormat` (`aicg-json-v2` recommended or `markdown-plus-json`) and a safe repository-relative `testing.caseRoot`. Store report location/language separately.
-5. Confirm lifecycle. Existing projects confirm or correct detected stacks; greenfield selects target stacks. Treat manifest-only or unknown product files as potentially ambiguous. Record greenfield architecture as `not-established`, with an evidence gap; do not invent a proven module pattern.
-6. Existing projects choose `keep-existing`, `new-code-standard`, or `staged-migration`. Preserve current code. Modernization requires a separate plan. `codeDocumentationPolicy` defaults to `inherit-existing` for existing projects and `en` for greenfield.
-7. Recommend the smallest justified preset. Guided onboarding defaults to Minimal; advanced/config defaults retain Standard. Memory ownership/index foundations default on at every depth and do not invent module facts. Task runtime, hooks, CI, external workflows, and AI assistance remain explicit choices.
-8. Choose invocation, preview writes/keeps/conflicts/retained artifacts, and apply the user's authorization. Recommend project-local only with a usable package executable. Generated daily local invocation is `npm exec -- aicg check .` with that installation; daily global invocation needs an installed `aicg`. Pinned npm bootstrap can resolve a package and does not install the daily CLI.
+Read the selected branch, not every linked reference. A reference carries reusable method; a route carries task sequencing. Composition grants no additional permissions or independent-review status. Keep client invocation policy unchanged unless requested; client-specific metadata needs client-specific verification.
 
-```bash
-aicg init . --guided
-aicg config init . --output aicg.config.json --yes
-aicg config validate . --config aicg.config.json --json
-aicg config open
-aicg init . --config aicg.config.json --yes --dry-run
-aicg check .
-aicg sync .
-```
-
-Page-first handoff: the owner may have already saved `aicg.config.json` from `aicg config open`. Reuse those decisions instead of asking again. Run `aicg init . --config aicg.config.json --yes --dry-run`, show the exact plan, apply only on approval, then complete the brownfield gaps (`aicg check . --json` -> `brownfield.gaps`). If the preview reports existing executable governance, stop and let the owner choose `--adopt-foreign-governance` (keep and register the files as user-owned) or cancel; never overwrite or delete foreign governance.
-
-Configuration carries decisions. `config init` creates an editable, scan-backed `aicg.config.json` without overwriting different content; an identical retry is unchanged. `config validate` exercises the same effective plan preparation as `init` and writes a local report. `config open` starts a loopback-only visual editor for the same file, with explained choices, JSON upload/download, validation, save, exact-plan preview, and explicit apply. Without a path it opens a project picker with recent projects, an absolute-path field, and folder browsing; an explicit path opens that project directly. Interactive npm installation (project-local or global) attempts to open the picker. Noninteractive writes require `--yes`; request-based writes require the exact current `--approve <planHash>`. Reuse existing authorized decisions rather than asking them again. Optional AI assistance supports high-confidence greenfield and existing projects with a selected available Agent; failure leaves that phase unverified without rolling back valid deterministic initialization.
-
-For an existing project, initialization generates `docs/ai/development/index.json`, one scan-backed development document and README entrypoint per detected development unit, plus the `brownfield-understanding` Skill at Standard/Complete depth. Run `aicg init ... --assist <selected-agent>` to have the selected Agent process each unit, record existing business behavior in `docs/memory/INDEX.json` and owning pages, complete code-backed development docs, and propose project Skills through approval. Inspect `aicg check --json` and its `brownfield.gaps`; a successful scan is only a baseline. Never convert filenames or an unexecuted command into behavioral fact.
-
-## Public capability discovery: `find-skills` at the operator layer
-
-Community Skills extend what AICG generates. Discovery happens in the operator/agent session, not inside AICG, which stays offline: no network discovery, installation, execution or home traversal at governance time. Use `find-skills` ([vercel-labs/skills](https://github.com/vercel-labs/skills), MIT) with the open ecosystem CLI and registry:
-
-```bash
-npx skills find "test driven development" --owner obra
-npx skills add obra/superpowers@test-driven-development
-npx skills update
-```
-
-Browse and rank candidates at [skills.sh](https://skills.sh/) before installing; the leaderboard surfaces install volume, not suitability. Discovery output is unverified input, never a governance decision.
-
-To make a candidate available to AICG, pin it instead of installing it into the governed tree:
-
-1. Add the source to [public-skill-sources.json](assets/registries/public-skill-sources.json) with the repository, a full 40-hex commit `ref`, `committedAt`, license, and one entry per Skill carrying `capabilities`, `capabilityOwner`, `permissions` and a bounded `purpose`.
-2. `npm run catalog:vendor` fetches each pinned ref into the gitignored `vendor/` cache. `npm run catalog:build` regenerates [public-skill-catalog.json](assets/registries/public-skill-catalog.json); `npm run catalog:check` validates it offline and re-hashes vendored bytes when they exist.
-3. Set `adaptiveGovernance.publicSkillCatalog: true` (or pass explicit `curatedCatalog` records). The packaged snapshot is opt-in; without it the candidate set and recorded approval are unchanged.
-
-Every packaged record is candidate-only: default `defer`, then an explicit `add` decision and the exact `--approve <planHash>`. AICG never installs, executes, upgrades or adopts a third-party Skill. `verifiedAt` is the pinned commit date, so a snapshot older than 90 days becomes `refresh-due` and approval fails until the pin is refreshed.
-
-Boundaries when curating:
-
-- Accept only permissive licenses (`MIT`, `Apache-2.0`, `BSD-*`, `ISC`, `0BSD`); the document-format Skills in `anthropics/skills` are source-available, not open source, and stay out of the catalog.
-- One capability keeps one owner. Do not let a public Skill claim the capabilities AICG already generates (`skill-discovery`, `team-orchestrator`, `brownfield-understanding`, `professional-testing`, stack standards); use public Skills to fill gaps such as TDD, completion evidence and skill authoring.
-- Public Skills never populate `projectTeam` roles, `activation` or professional conclusions. Those require owner-confirmed evidence and qualified-human review regardless of what a public Skill claims.
-
-## Runtime routing: L0, L1, L2, L3
-
-For L2/L3 production delivery, keep one vertical feature work unit across UI, API, service, data and tests. Read the bounded [work-unit schema](assets/contracts/work-unit-schema.json) only on that route. Preview with `aicg work-unit plan . --work-unit <relative-json>` and validate with `status`; neither command launches Agents. Both write local JSON reports. Bind initial success/failure cases, QA abnormal/boundary/extreme/risk applicability, canonical Memory API/public-method unit-test coverage, exact references and memory impact to the existing approval hash. A missing testability mapping, required failed/blocked/missing result, stale input or unsynchronized behavior Memory is reported as incomplete. Missing approved roles remain recommendations; role IDs do not prove participation.
-
-Execute one selected `complete --verify` command at the work-unit boundary, with per-case `AICG_QA_RESULT` markers. Store returned `workUnit.recordedEvidence` in `verification.evidence` and `recordedResults` in `qa.results` in that same document. Hook `AICG_WORK_UNIT` points to its staged path; the hook checks stored evidence against current inputs without rerunning tests. Replay is operator-declared structural evidence, never authenticated execution. The immutable plan excludes runtime results/status to avoid a circular hash; changing requirements, cases, scope or command invalidates approval. L0/L1 and docs/test/format-only paths stay lightweight. Do not turn endpoints or individual tests into separate tasks.
-
-When implementation enters formal testing, use the generated `professional-testing` Skill and the configured case location. Initialize schema-v2 cases with `aicg test-case init`, validate them, select the smallest packet for the current cases, then record digest-bound results. Stable Case IDs, shared actor/environment/data context, coverage decisions, and browser/API/device/terminal/mixed drivers are required. PASS/FAIL needs an existing evidence file; recording hashes evidence, fills omitted cases as `NOT_RUN`, writes an idempotent session ledger, and renders the configured-language report. Automated, AI-simulated-human, and real-user results remain distinct.
+## Match process to impact
 
 | Level | Required flow |
 | --- | --- |
 | L0 | Read-only explanation/review/status: inspect minimum evidence and answer, zero governance subprocesses, no harvest |
-| L1 | Local low-risk non-production/governance change: locate, clarify material ambiguity, edit, target verification, one completion check; no formal plan approval |
-| L2 | Product behavior/business/public contract or multi-module scope: approve requirements and plan, implement, verify behavior |
-| L3 | Multi-surface/architecture/migration/external action/high-consequence risk: approve requirements, design, and plan, then integrated implementation and verification |
+| L1 | Local low-risk non-production/governance change: locate, clarify material ambiguity, edit, targeted verification, one completion check; no formal plan approval |
+| L1.5 | Bounded production bug fix: reproduce, fix and verify under the existing bounded-fix evidence contract |
+| L2 | Product behavior/business/public contract or multi-module scope: confirm requirements and plan, implement, verify the complete behavior |
+| L3 | Multi-surface/architecture/migration/external action/high-consequence risk: confirm requirements, design and plan, then integrated implementation and verification |
 
-Combine mutation, scope, risk, and clarity; do not infer impact from sentence length. Explore only missing material decisions. Stronger evidence raises the route and cannot be silently downgraded. A generic production-source diff conservatively requires L2; sensitive sources can require L3. An explicit release intent adds release checks; mention of release is not authorization.
+Use mutation, scope, risk and clarity together; sentence length does not set the level. Preserve stronger project floors and the selected workflow's single design/plan/task owner. A feature is one vertical work unit across its necessary UI, API, service, data and tests. Each implementation slice should deliver independently verifiable behavior with explicit blockers and expected results; mechanical migrations may need expand/migrate/contract instead. Keep tests at the relevant public interface, using expectations from requirements or worked examples rather than duplicating the implementation.
 
-Use the selected workflow's existing design/plan/task owner. Do not create a second plan, require subagents for every task, or turn all work into a full lifecycle. Approval needed for external actions is distinct from implementation approval.
+For L2/L3, present requirements, design when applicable, and plan in sequence for confirmation; skip a named confirmation only when explicitly waived. Existing authorization covers routine work within its scope. Dependencies, foreign-governance adoption, external writes and publication retain their separate authority boundaries. Plain `aicg handoff` is governance-completion guidance; a task handoff does not run implementation or tests.
 
-```bash
-aicg complete . --task-level L2 --verify "npm run test" --json
-```
+## Canonical ownership and context
 
-The command checks Git evidence against the declared level and writes `reports/aicg/latest-complete.json`. All AICG checks default to report-only and exit 0 even when findings fail; `--enforce` opts into exit 1. Under-declaration remains a failed finding. Missing declaration remains `unverified-declaration`. Omit `--verify` when no product script was requested; only a discovered safe npm script is accepted. Completion itself writes no Skill, manifest, registry, or memory beyond the local report; the explicitly selected project script can have effects. Installed pre-commit hooks check only an isolated staged snapshot, without product scripts or harvest writes.
+Installation is **Agent-first**, **artifact-language-second**: supported clients are an owner decision. Use `artifactLanguage: en` by default or explicit `zh-CN`, independently of conversation language. Generate the complete baseline and load task-specific depth conditionally; legacy presets cannot omit required Skills or roles.
 
-## Canonical ownership and small context
-
-Keep `docs/ai` as the canonical source and `.ai-governance/manifest.json` as ownership/hash evidence. Use native imports or generated ordinary files; never create symlink/junction adapters. Agent details belong to [agent-registry.json](assets/registries/agent-registry.json).
-
-Minimal selects the kernel and memory foundation; Standard adds routing/policy and exact-approved adaptive team/Skill metadata; Complete adds selected stack Skills and conditional specialist routes. Lifecycle/integrations remain optional. Release/acceptance/surface policies activate on first use and results require actual evidence. Ordinary startup loads only `AGENTS.md`, the selected `context-map.yaml` slice, and `00_always.mdc`. Memory, architecture, business, standards, harvest, hooks, reports, and release material stay outside this closure. Resolve adapters to canonical paths and hashes before counting context.
-
-Ordinary sync is zero-delete, even when a newer preset omits legacy artifacts. Keep seed, unknown, edited, drifted, historical, and dormant evidence content. Physical removal is a separate exact-plan action:
+Keep `docs/ai` canonical and `.ai-governance/manifest.json` as ownership/hash evidence. Ordinary startup is limited to `AGENTS.md`, the selected context-map slice and always rules. Read specialist guidance only on its trigger. Ordinary sync is zero-delete. Physical cleanup is a separate exact-plan action:
 
 ```bash
 aicg sync . --prune --dry-run
 aicg sync . --prune --approve <planHash>
 ```
 
-Prune requires trusted, unchanged, fully managed current/historical relationships and current tree state. Any changed input invalidates approval. `--force` cannot bypass approval or adopt unknown files. Application/check failure must restore preimages transactionally.
+Inspect retained seeds, edited files and unknown content; a newer template never authorizes their deletion. Read the maintenance branch before applying cleanup. Discover client directories through [agent-registry.json](assets/registries/agent-registry.json).
 
-## Evidence-based capability growth
+## Finish with evidence
 
-Read [continuous-skill-evolution.md](docs/internal/reference/continuous-skill-evolution.md) for capability work. Verified eligible L2/L3 product changes may produce a candidate-only completion summary. Public implementation must change semantically and verification must bind unchanged input before/after the command. Prose, formatting, fixtures, temporary scripts, read-only work, and non-reusable changes skip harvesting. No automatic promotion occurs.
-
-Capability harvesting has no surviving command: `aicg harvest` is retired and prints a deprecation notice. Candidate Skills and `docs/ai/capability-evolution.json` remain valid governance artifacts, but no supported command creates them. When judging candidates, prefer `update-existing`, then `extend-existing`, then `create-new`, otherwise `no-skill-with-reason`. Candidate does not mean adopted or enforced.
-
-Capability promotion (`aicg promote`) is likewise retired with no surviving command. The adoption contract still governs any manually recorded adoption. It accepts a currently detected candidate, current implementation entrypoint, and a discovered command that actually passes. Consumer paths remain declared/unverified; adoption does not establish real-client loading or bypass enforcement. Drift leaves a review item rather than silently upgrading an adopted Skill.
-
-## Conditional specialist work
-
-- **Technical standards:** read [stack-skill-generation.md](docs/internal/reference/stack-skill-generation.md) only for the requested/confirmed stack. The `aicg standards` command that previewed the packaged source snapshot is retired and prints a deprecation notice; no surviving command exposes that snapshot, so use the packaged reference documents as the source. Live official-source research is distinct from offline generation. Separate `industry-standard`, `project-decision`, `business-invariant`, and `unverified`. `stack-standard-source-coverage`, `stack-skill-coverage`, and `business-pattern-routing` are scoped evidence/probe obligations, not claims that every project enforces them.
-- **Workflow integration:** read [workflow-integrations.md](docs/internal/reference/workflow-integrations.md), using [workflow-integration-registry.json](assets/registries/workflow-integration-registry.json). OpenSpec and explicitly selected project providers are optional. Preserve `change-authority-single-source`; claim `selective-execution-capability` only with actual runtime evidence.
-- **Release:** read [release-acceptance.md](docs/internal/reference/release-acceptance.md) for explicit release work. Routine engineering publication proves the configured local suite, clean Git candidate, and npm package shape without claiming organizational certification. `aicg release-check` remains the explicit independent-review certification path, uses [release-acceptance-policy.json](assets/policies/release-acceptance-policy.json) on first use, and replay requires exact approval. No routine startup release or automatic publishing.
-- **Team advice:** `aicg team` is retired and prints a deprecation notice; no surviving command emits human-role advice. [team-role-registry.json](assets/registries/team-role-registry.json) remains the reference for reading roles by hand. Any such advice stays read-only with explicit `teamScope: "human"` and business context; it does not create people, tasks, permissions, or messages.
-- **Capability/platform coverage:** [capability-pack-registry.json](assets/registries/capability-pack-registry.json) distinguishes detection from certification for React, Vue, Angular, Node.js, Java, and later Android/iOS and other families. Scope macOS, Windows, and Linux evidence separately.
-
-The evolution probe names `feature-skill-harvest-freshness`, `capability-promotion-evidence`, `skill-implementation-drift`, and `canonical-capability-reuse` identify separate obligations. Do not claim they are enforced in a target repository merely because these names exist.
-
-## Repository self-governance
-
-This repository is public and ships as an npm package. Working notes (plans, reviews, reports, pilots, design drafts) belong under `local/`, which is git-ignored and excluded from the package. Never commit or pack absolute home paths, private project codenames, internal organization or repository names, or private contact details; describe design generically in code comments, tests, fixtures, and docs. The npm `files` field is an explicit allow list — a broad directory there cannot be narrowed again by `.npmignore`. `scripts/public-surface-check.mjs` enforces this over both the Git tracked set and the npm pack set and runs inside `npm run validate`. Read [public-surface-hygiene.md](docs/internal/reference/public-surface-hygiene.md).
-
-## Verification and handoff
-
-Use TDD for machine behavior; preserve unrelated work. Run focused checks after edits and full candidate checks when integrating:
-
-```bash
-npm run test:fast
-npm run test:full
-npm run validate
-npm run smoke
-npm run smoke:package
-node scripts/prepublish-check.mjs
-npm pack --dry-run
-```
-
-Report command exits/timings, exact artifact files/bytes, ordinary context closure, launched CLI process count and p95 samples. `test:full` includes `test:perf`; retain absolute caps even when comparing a relative baseline. Prepublish checking needs actual release evidence and approval; its refusal without them is not a reason to weaken it.
-
-Separate `stated`, `reachable`, `enforced`, and `verified`. Structural tests prove file/routing contracts; negative probes prove only their named machine checks. Real-client loading and Windows execution remain `not yet verified` without current runs; Linux is covered by the manual full CI matrix. Do not convert a macOS result or synthetic project into production readiness.
-
-The [reference map](docs/internal/reference/README.md) links the principles, historical layers, optional memory/task runtime, cross-platform and specialist protocols. Load only what the chosen capability needs; historical capability descriptions do not override this adaptive runtime contract.
+Use `aicg check . --json` for the relevant structural check; inspect findings, since report-only exit 0 is not a pass. Use `--enforce` where failure must affect exit status. Run only verification appropriate to the changed surface. Separate changed files, observed results, remaining gaps and the next necessary action. A documentation change proves updated guidance; generated-fixture checks prove their named structural contracts. Real-client loading, product behavior and human acceptance each need their own evidence.

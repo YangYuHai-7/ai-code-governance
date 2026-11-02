@@ -17,6 +17,43 @@ import { prepareCompletionUnit } from './helpers/work-unit-fixture.mjs';
 import { satisfyFlow } from './helpers/flow-fixture.mjs';
 
 const cli = path.resolve('bin/aicg.js');
+
+test('completion does not inherit ancestor Git changes for an ignored extracted project', (context) => {
+  const root = fixture('archive-boundary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(root, '.gitignore', 'local/\n');
+  write(root, 'src/parent.mjs');
+  const scan = scanProject(root);
+  applyArtifactPlan(root, planArtifacts(root, buildArtifacts(defaultConfig(scan), scan)));
+  baseline(root);
+  write(root, 'src/parent.mjs', 'export const parentChange = true;\n');
+  const nested = path.join(root, 'local/projects/member-app');
+  write(nested, 'package.json', JSON.stringify({ name: 'member-app', scripts: { test: 'node --test' } }));
+  const nestedScan = scanProject(nested);
+  applyArtifactPlan(nested, planArtifacts(nested, buildArtifacts(defaultConfig(nestedScan), nestedScan)));
+  const result = runCompletion(nested, { taskLevel: 'L2' });
+  assert.equal(result.preflight.status, 'blocked');
+  assert.equal(result.preflight.code, 'git-project-boundary-required');
+  assert.equal(fs.realpathSync(result.preflight.gitRoot), fs.realpathSync(root));
+  assert.equal(result.projectVerification.status, 'blocked-by-preflight');
+  assert.equal(result.taskRoute, undefined);
+  assert.equal(fs.existsSync(path.join(nested, '.git')), false);
+});
+
+test('completion still recognizes a tracked monorepo member inside ancestor Git', (context) => {
+  const root = fixture('tracked-member-boundary');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const nested = path.join(root, 'packages/member-app');
+  write(nested, 'package.json', JSON.stringify({ name: 'member-app' }));
+  for (const target of [root, nested]) {
+    const scan = scanProject(target);
+    applyArtifactPlan(target, planArtifacts(target, buildArtifacts(defaultConfig(scan), scan)));
+  }
+  baseline(root);
+  const result = runCompletion(nested, { taskLevel: 'L1' });
+  assert.equal(result.preflight.status, 'ready');
+  assert.equal(fs.realpathSync(result.preflight.gitRoot), fs.realpathSync(root));
+});
 // Verification fixtures intentionally start nested `node --test` processes.
 // The parent harness marker would otherwise make Node skip those child files.
 delete process.env.NODE_TEST_CONTEXT;
@@ -676,7 +713,9 @@ test('completion fails closed on missing HEAD corrupt index and invalid routing 
   const root = fixture('missing-evidence');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.equal(git(root, ['init']).status, 0);
-  assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /changed paths/.test(error.message));
+  const missingHead = runCompletion(root);
+  assert.equal(missingHead.ok, false);
+  assert.equal(missingHead.preflight.code, 'git-initial-commit-required');
   initialize(root);
   const indexPath = path.join(root, '.git/index');
   const indexBefore = fs.readFileSync(indexPath);
@@ -698,7 +737,23 @@ test('completion fails closed on missing HEAD corrupt index and invalid routing 
   assert.throws(() => runCompletion(root), (error) => error.code === 'AICG_USAGE' && /symbolic link/.test(error.message));
 });
 
-test('manual and hook completion require a commit HEAD on initial and orphan branches', (context) => {
+test('completion returns actionable preflight blocks when Git or an initial commit is missing', (context) => {
+  const noRepository = fixture('no-repository-preflight');
+  context.after(() => fs.rmSync(noRepository, { recursive: true, force: true }));
+  const absent = runCompletion(noRepository, { verificationCommand: 'npm run test' });
+  assert.equal(absent.ok, false);
+  assert.equal(absent.status, 'blocked');
+  assert.equal(absent.preflight.status, 'blocked');
+  assert.equal(absent.preflight.code, 'git-repository-required');
+  assert.match(absent.preflight.remediation, /git init/i);
+  assert.equal(absent.projectVerification.status, 'blocked-by-preflight');
+
+  const cliResult = run(['complete', noRepository, '--verify', 'npm run test', '--json']);
+  assert.equal(cliResult.status, 0, `${cliResult.stderr}\n${cliResult.stdout}`);
+  const cliPayload = JSON.parse(cliResult.stdout);
+  assert.equal(cliPayload.preflight.code, 'git-repository-required');
+  assert.match(cliPayload.preflight.remediation, /git init/i);
+
   const root = fixture('unborn-hook-head');
   context.after(() => fs.rmSync(root, { recursive: true, force: true }));
   assert.equal(git(root, ['init']).status, 0);
@@ -706,16 +761,22 @@ test('manual and hook completion require a commit HEAD on initial and orphan bra
   assert.equal(initialized.status, 0, initialized.stderr);
   assert.equal(git(root, ['add', '--all']).status, 0);
 
-  const assertMissingCommitFails = () => {
+  const assertMissingCommitBlocks = () => {
     const indexBefore = fs.readFileSync(path.join(root, '.git/index'));
     const configBefore = fs.readFileSync(path.join(root, '.ai-governance/config.json'));
     const manifestBefore = fs.readFileSync(path.join(root, '.ai-governance/manifest.json'));
     const statusBefore = git(root, ['status', '--porcelain=v1', '-z']).stdout;
     for (const fromGitHook of [true, false]) {
-      assert.throws(() => runCompletion(root, { fromGitHook, taskLevel: 'L3' }), (error) => error.code === 'AICG_USAGE');
+      const direct = runCompletion(root, { fromGitHook, taskLevel: 'L3' });
+      assert.equal(direct.ok, false);
+      assert.equal(direct.status, 'blocked');
+      assert.equal(direct.preflight.code, 'git-initial-commit-required');
+      assert.match(direct.preflight.remediation, /initial commit/i);
       const result = run(['complete', root, '--task-level', 'L3', '--json', ...(fromGitHook ? ['--from-git-hook'] : [])]);
       assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
-      assert.equal(JSON.parse(result.stdout).ok, false);
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.ok, false);
+      assert.equal(payload.preflight.code, 'git-initial-commit-required');
     }
     assert.deepEqual(fs.readFileSync(path.join(root, '.git/index')), indexBefore);
     assert.deepEqual(fs.readFileSync(path.join(root, '.ai-governance/config.json')), configBefore);
@@ -723,16 +784,16 @@ test('manual and hook completion require a commit HEAD on initial and orphan bra
     assert.equal(git(root, ['status', '--porcelain=v1', '-z']).stdout, statusBefore);
   };
 
-  assertMissingCommitFails();
+  assertMissingCommitBlocks();
   baseline(root);
   const valid = runCompletion(root, approvalOptions(root, { fromGitHook: true, taskLevel: 'L3' }));
   assert.equal(valid.ok, true);
   assert.equal(valid.taskRoute.status, 'verified');
   const tree = git(root, ['rev-parse', 'HEAD^{tree}']).stdout.trim();
   assert.equal(git(root, ['checkout', '--orphan', 'orphan-completion']).status, 0);
-  assertMissingCommitFails();
+  assertMissingCommitBlocks();
   write(root, '.git/HEAD', `${tree}\n`);
-  assert.throws(() => runCompletion(root, { fromGitHook: true, taskLevel: 'L3' }), (error) => error.code === 'AICG_USAGE');
+  assert.equal(runCompletion(root, { fromGitHook: true, taskLevel: 'L3' }).preflight.code, 'git-initial-commit-required');
 });
 
 test('completion rejects invalid declarations and unreadable repository evidence fail closed', (context) => {
@@ -746,7 +807,9 @@ test('completion rejects invalid declarations and unreadable repository evidence
   assert.equal(invalid.status, 0);
   assert.match(invalid.stdout, /task.level/);
   write(root, '.git/HEAD', 'invalid head\n');
-  assert.throws(() => runCompletion(root, { taskLevel: 'L1' }), (error) => error.code === 'AICG_USAGE');
+  const unreadable = runCompletion(root, { taskLevel: 'L1' });
+  assert.equal(unreadable.ok, false);
+  assert.equal(unreadable.preflight.status, 'blocked');
   const noRepo = fixture('no-repository');
   context.after(() => fs.rmSync(noRepo, { recursive: true, force: true }));
   assert.equal(run(['complete', noRepo, '--json']).status, 0);
@@ -816,6 +879,55 @@ test('manual completion is read-only and runs only an explicitly discovered npm 
   assert.equal(failed.status, 0, failed.stderr);
   assert.equal(JSON.parse(failed.stdout).projectVerification.status, 'failed');
   assert.equal(fs.readFileSync(configPath, 'utf8'), before);
+});
+
+test('manual completion runs only a structurally trusted discovered Maven command', (context) => {
+  const root = fixture('manual-maven');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const executableDirectory = path.join(root, '.test-bin');
+  const executableName = process.platform === 'win32' ? 'mvn.cmd' : 'mvn';
+  write(root, 'pom.xml', '<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>sample</artifactId><version>1</version></project>\n');
+  write(root, `.test-bin/${executableName}`, process.platform === 'win32' ? '@echo maven verification passed\r\n' : '#!/bin/sh\nprintf "maven verification passed\\n"\n');
+  fs.chmodSync(path.join(executableDirectory, executableName), 0o755);
+  initialize(root);
+
+  const discovered = scanProject(root).commands.find((command) => command.source === 'pom.xml');
+  const expectedCommand = `${executableName} test`;
+  assert.equal(discovered.command, expectedCommand);
+  assert.equal(discovered.verification.trust.level, 'structurally-trusted');
+
+  const beforePath = process.env.PATH;
+  process.env.PATH = `${executableDirectory}${path.delimiter}${beforePath ?? ''}`;
+  try {
+    const result = runCompletion(root, { taskLevel: 'L0', verificationCommand: expectedCommand });
+    assert.equal(result.projectVerification.command, expectedCommand);
+    assert.equal(result.projectVerification.status, 'passed');
+  } finally {
+    if (beforePath === undefined) delete process.env.PATH;
+    else process.env.PATH = beforePath;
+  }
+
+  assert.throws(
+    () => runCompletion(root, { taskLevel: 'L0', verificationCommand: `${expectedCommand} -DskipTests` }),
+    (error) => error.code === 'AICG_USAGE' && error.message.includes(`Allowed commands: ${expectedCommand}`),
+  );
+});
+
+for (const unsafeSetting of [
+  '<skipTests>true</skipTests>',
+  '<maven.test.skip>true</maven.test.skip>',
+  '<testFailureIgnore>true</testFailureIgnore>',
+]) test(`completion rejects Maven verification with ${unsafeSetting}`, (context) => {
+  const root = fixture('unsafe-maven');
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write(root, 'pom.xml', `<project><modelVersion>4.0.0</modelVersion><groupId>example</groupId><artifactId>sample</artifactId><version>1</version><properties>${unsafeSetting}</properties></project>\n`);
+  initialize(root);
+  const command = scanProject(root).commands.find((candidate) => candidate.source === 'pom.xml');
+  assert.equal(command.verification.trust.level, 'untrusted');
+  assert.throws(
+    () => runCompletion(root, { taskLevel: 'L0', verificationCommand: `${process.platform === 'win32' ? 'mvn.cmd' : 'mvn'} test` }),
+    (error) => error.code === 'AICG_USAGE' && /Allowed commands: \(none discovered\)/.test(error.message),
+  );
 });
 
 test('completion exposes only verification scripts and never runs implicit npm lifecycle hooks', (context) => {

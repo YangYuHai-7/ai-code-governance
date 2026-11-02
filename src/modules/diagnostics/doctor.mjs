@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import { clientGovernanceMatchers } from '../../catalogs/index.mjs';
+import { diagnosePrerequisites } from './preflight.mjs';
 
 const CLIENT_GOVERNANCE = clientGovernanceMatchers();
 
-export function doctor(scan) {
+export function doctor(scan, { locale = 'en' } = {}) {
   const nodeMajor = Number.parseInt(process.versions.node.split('.')[0], 10);
   const agents = scan.agents.map((agent) => ({
     id: agent.id,
@@ -37,6 +38,7 @@ export function doctor(scan) {
     git: scan.git,
     scanBudget: scan.scanBudget,
     checks,
+    preflight: diagnosePrerequisites(scan, { locale }),
     agents,
     managedLinksDetected: scan.links.filter((relative) => (CLIENT_GOVERNANCE.touches(relative) || /(^|\/)docs\/ai(\/|$)/.test(relative))),
     // `doctor` is the surviving read-only diagnostics entry point, but it reports

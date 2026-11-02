@@ -41,5 +41,8 @@ test('brownfield assist asks the selected Agent for source-backed Memory, docume
   assert.match(invocation, /docs\/memory\/INDEX\.json/);
   assert.match(invocation, /Evidence-reviewed behavior/);
   assert.match(invocation, /project Skills/);
+  assert.match(invocation, /docs\/development\/skills/);
+  assert.match(invocation, /Correct implementation shape/);
+  assert.match(invocation, /no source-code hyperlinks/);
   assert.match(invocation, /Preserve all product code/);
 });

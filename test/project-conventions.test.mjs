@@ -118,7 +118,7 @@ test('repeated project layout becomes an evidence-backed project Skill candidate
   const candidate = discoverProjectConventionCandidates(scan, memory).candidates.find((entry) => entry.kind === 'project-layout');
   assert.ok(candidate);
   assert.ok(candidate.observations.some((entry) => entry.id === 'http-entrypoints' && entry.count === 3));
-  assert.equal(candidate.verificationCommands[0].trust.level, 'declared');
+  assert.equal(candidate.verificationCommands[0].trust.level, 'structurally-trusted');
   assert.equal(candidate.verificationCommands[0].source.path, 'pom.xml');
   assert.match(candidate.verificationCommands[0].source.sha256, /^[a-f0-9]{64}$/);
   const config = {
@@ -128,7 +128,7 @@ test('repeated project layout becomes an evidence-backed project Skill candidate
   const skill = buildProjectConventionArtifacts(config, scan, memory).artifacts.find((entry) => entry.path === candidate.skill).content;
   for (const heading of ['When to use', 'When not to use', 'Required invariants', 'Decision flow', 'Correct implementation shape', 'Incorrect implementation shape', 'Exceptions and escalation', 'Verification matrix', 'Project evidence boundary', 'Sources']) assert.match(skill, new RegExp(`## ${heading}`));
   assert.match(skill, /owner-approved for new code/);
-  assert.match(skill, /mvn test.*declared/s);
+  assert.match(skill, /mvn test.*\| `\.`/s);
   write(root, '.ai-governance/state/project-conventions.json', JSON.stringify({ schemaVersion: 1, candidates: [candidate], gaps: [] }));
   write(root, 'src/main/java/example/controller/DeltaController.java', 'class DeltaController {}\n');
   assert.ok(projectConventionIssues(root, scanProject(root)).some((entry) => entry.status === 'stale' && entry.reason.includes('observed project convention evidence changed')));

@@ -3,6 +3,7 @@ import { readJson, writeText } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { loadHeldOutEvaluationSet, runGoldenPathEvaluation, runHeldOutEvaluationSet } from '../../modules/evaluation/index.mjs';
 import { GOLDEN_PATH_PACK_ID, listGoldenPathPacks, loadGoldenPathPack } from '../../modules/stack-packs/index.mjs';
+import { buildLiveGoldenPathDependencies } from '../evaluation-runtime.mjs';
 
 function preflight(environment) {
   const checks = [
@@ -36,7 +37,7 @@ async function heldOutCommand(target, options = {}) {
 
 // The default surface is a preflight/dry evaluation. Live Agent execution requires --live-agent and
 // an authorized environment; the command never fabricates a level it cannot evidence.
-export async function evaluationCommand(target, action, options = {}) {
+export async function evaluationCommand(target, action, options = {}, runtime = {}) {
   if (action === 'held-out') return heldOutCommand(target, options);
   if (action !== 'golden-path') throw usageError('evaluation requires an action: golden-path or held-out.');
   const root = path.resolve(target ?? '.');
@@ -49,9 +50,10 @@ export async function evaluationCommand(target, action, options = {}) {
   if (relative.startsWith('..') || path.isAbsolute(relative)) throw usageError('--requirement must stay inside the target repository.');
   let document = {};
   try { document = readJson(absolute); } catch { document = {}; }
-  const receipt = await runGoldenPathEvaluation({
+  const input = {
     packId, requirement: relative, agent: options.agent ?? 'codex', liveAgent: options['live-agent'] === true, output: options.output ?? null,
-  }, {
+  };
+  const defaultDependencies = {
     packs: { ids: listGoldenPathPacks().map((entry) => entry.id), loadPack: loadGoldenPathPack },
     agents: { ids: ['codex'] },
     agent: { id: options.agent ?? 'codex', version: null, real: false },
@@ -65,9 +67,16 @@ export async function evaluationCommand(target, action, options = {}) {
       patch: async () => ({ status: 'blocked', unauthorizedPaths: [] }),
       review: async (context) => ({ status: 'blocked', findings: [], authority: context.authority }),
     },
-  });
+  };
+  const dependencies = options['live-agent'] === true
+    ? await (runtime.buildLiveDependencies ?? buildLiveGoldenPathDependencies)({ root, pack, document, requirementPath: relative, options })
+    : defaultDependencies;
+  let receipt;
+  try { receipt = await runGoldenPathEvaluation(input, dependencies); }
+  finally { if (typeof dependencies.dispose === 'function') dependencies.dispose(); }
   const report = `${JSON.stringify(receipt, null, 2)}\n`;
-  if (options.output) {
+  if (typeof runtime.writeReport === 'function') runtime.writeReport(report, receipt);
+  else if (options.output) {
     const outputFile = path.resolve(root, options.output);
     writeText(outputFile, report);
   } else process.stdout.write(report);

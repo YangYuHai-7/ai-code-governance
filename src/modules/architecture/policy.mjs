@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { GENERATED_MARKER, PACKAGE_ROOT } from '../../constants.mjs';
 import { clientGovernanceHomeDirectories } from '../../catalogs/index.mjs';
-import { classifyProject, isImplementationSourcePath, projectSourcePaths } from '../repository/index.mjs';
+import { classifyProject, discoverDevelopmentUnits, resolveGreenfieldDevelopmentUnits, isImplementationSourcePath, projectSourcePaths } from '../repository/index.mjs';
 import { readJson } from '../../adapters/filesystem/index.mjs';
 import { usageError } from '../../kernel/index.mjs';
 import { isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
@@ -72,8 +72,11 @@ function scopeFor(scan, config, mode) {
     return { roots: [], appliesTo: 'none', baselineSourcePaths: [] };
   }
   const baselineSourcePaths = config.initialization?.lifecycle === 'existing' ? sourceBaseline(scan) : [];
+  const unitRoots = config.initialization?.lifecycle === 'greenfield'
+    ? resolveGreenfieldDevelopmentUnits(config, scan).map(({ root, shape }) => root === '.' ? shape.source : `${root}/${shape.source}`)
+    : [];
   return {
-    roots: ['src'],
+    roots: unitRoots.length ? unitRoots : ['src'],
     appliesTo: config.initialization?.lifecycle === 'existing' ? 'new-modules-only' : 'future-code',
     baselineSourcePaths,
   };
@@ -82,7 +85,7 @@ function scopeFor(scan, config, mode) {
 function statusFor(mode, scope) {
   if (mode === 'legacy-unconfigured') return 'legacy-unconfigured';
   if (mode !== 'module-first-new-code') return 'advisory';
-  return scope.roots.length === 1 ? 'active' : 'advisory';
+  return scope.roots.length > 0 ? 'active' : 'advisory';
 }
 
 function verificationFor(status) {
@@ -108,6 +111,7 @@ export function deriveArchitectureDecision(scan, config, previous = null, { lega
     && previous.initializationBinding === currentBinding
     && sameStringArray(previous.stackCandidates, stacks)
     && previous.topologyBinding === currentTopology
+    && (config.initialization?.lifecycle !== 'greenfield' || sameStringArray(previous.scope?.roots, scopeFor(scan, config, mode).roots))
   ) {
     return previous;
   }
@@ -174,7 +178,8 @@ export function validateArchitectureDecision(architecture, initialization = null
   assertStringArray(architecture.scope.roots, 'architecture.scope.roots');
   assertStringArray(architecture.scope.baselineSourcePaths, 'architecture.scope.baselineSourcePaths');
   if (!['future-code', 'new-modules-only', 'none'].includes(architecture.scope.appliesTo)) throw usageError('architecture.scope.appliesTo is invalid.');
-  if (architecture.scope.roots.some((root) => root !== 'src')) throw usageError('architecture.scope.roots may only contain the registry-defined src root.');
+  if (architecture.scope.roots.some((root) => !isSafeRelative(root) || path.posix.normalize(root) !== root || root === '.' || root.includes('\\')) || new Set(architecture.scope.roots).size !== architecture.scope.roots.length) throw usageError('architecture.scope.roots must be unique safe source roots.');
+  if (architecture.scope.roots.some((root, i, roots) => roots.some((other, j) => i !== j && root.startsWith(`${other}/`)))) throw usageError('architecture.scope.roots must not overlap.');
   if (architecture.scope.baselineSourcePaths.some((relative) => !isSafeRelative(relative))) {
     throw usageError('architecture.scope.baselineSourcePaths must contain safe repository-relative source paths.');
   }
@@ -214,8 +219,8 @@ export function validateArchitectureDecision(architecture, initialization = null
   }
   if (architecture.mode === 'module-first-new-code') {
     if (architecture.source !== 'initialization-decision') throw usageError('active architecture must originate from an initialization decision.');
-    if (architecture.status === 'active' && (architecture.scope.roots.join(',') !== 'src' || architecture.scope.appliesTo === 'none')) {
-      throw usageError('active architecture requires the registry-defined src scope and a future-code boundary.');
+    if (architecture.status === 'active' && (architecture.scope.roots.length === 0 || architecture.scope.appliesTo === 'none')) {
+      throw usageError('active architecture requires declared source roots and a future-code boundary.');
     }
     if (initialization?.lifecycle === 'existing' && architecture.status === 'active' && architecture.scope.appliesTo !== 'new-modules-only') {
       throw usageError('existing new-code architecture must apply to new modules only.');
@@ -345,6 +350,16 @@ function modulePathAllowed(relative, placement) {
   return Boolean(second && third);
 }
 
+function manifestBackedDevelopmentUnitRoots(scan) {
+  return discoverDevelopmentUnits(scan).flatMap((unit) => [unit, ...(unit.children ?? [])])
+    .filter((unit) => unit.path.startsWith('src/') && unit.manifests.length > 0)
+    .map((unit) => unit.path);
+}
+
+function developmentUnitPathAllowed(relative, manifestBackedRoots) {
+  return manifestBackedRoots.some((root) => relative.startsWith(`${root}/`));
+}
+
 function isTestPath(relative) {
   return /(^|\/)(?:test|tests|__tests__)\/|\.(?:test|spec)\.[^/]+$/i.test(relative);
 }
@@ -377,11 +392,28 @@ export function architecturePlacementIssues(scan, config) {
   }
   const { profile } = registry();
   const baseline = new Set(decision.scope.baselineSourcePaths);
+  const developmentUnitRoots = manifestBackedDevelopmentUnitRoots(scan);
   const sourceIssues = projectSourcePaths(scan)
-    .filter((relative) => !isTestPath(relative) && !baseline.has(relative) && !isArchitectureNonSourcePath(relative))
-    .filter((relative) => !relative.startsWith('src/') || (!entryFileAllowed(relative, profile.placement) && !modulePathAllowed(relative, profile.placement)))
+    .filter((relative) => !isTestPath(relative) && !baseline.has(relative) && !isArchitectureNonSourcePath(relative, decision.scope.roots))
+    .filter((relative) => {
+      const root = decision.scope.roots.find((candidate) => relative.startsWith(`${candidate}/`));
+      if (!root) return true;
+      const normalized = `src/${relative.slice(root.length + 1)}`;
+      if (root.endsWith('src/main/java')) {
+        // Java package prefixes precede the owning module; placement is not a dependency check.
+        const segments = relative.slice(root.length + 1).split('/');
+        return !segments.slice(0, -1).some((part, i) =>
+          ['modules', 'application', 'config', 'shared'].includes(part)
+          && (part !== 'modules' || segments.length > i + 2))
+          && !/^[A-Za-z_$][\w$]*Application\.java$/.test(segments.at(-1))
+          && segments.at(-1) !== 'Application.java';
+      }
+      return !entryFileAllowed(normalized, profile.placement)
+        && !modulePathAllowed(normalized, profile.placement)
+        && !developmentUnitPathAllowed(relative, developmentUnitRoots);
+    })
     .sort((left, right) => left.localeCompare(right))
-    .map((relative) => `${relative}: new implementation source is outside the active ${decision.profileId} src placement policy; place it in a named module directory or an approved entrypoint.`);
+    .map((relative) => `${relative}: new implementation source is outside the active ${decision.profileId} ${decision.scope.roots.join(',') === 'src' ? 'src' : 'declared-source'} placement policy; place it in a named module directory or an approved entrypoint.`);
   const linkIssues = scan.files
     .filter((file) => file.type === 'link')
     .map((file) => file.relative)

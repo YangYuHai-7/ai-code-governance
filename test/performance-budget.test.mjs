@@ -25,8 +25,8 @@ test('nearest-rank p95 and relative regression checks retain independent absolut
 
 test('fast full and performance entrypoints preserve the full npm test contract', () => {
   const { scripts } = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  assert.equal(scripts.test, 'node --test');
-  assert.equal(scripts['test:full'], 'node --test --test-skip-pattern="repeated CLI check" && node --test test/performance-budget.test.mjs');
+  assert.equal(scripts.test, 'node --test test/*.test.mjs test/real-scenarios/*.test.mjs');
+  assert.equal(scripts['test:full'], 'node --test --test-skip-pattern="repeated CLI check" test/*.test.mjs test/real-scenarios/*.test.mjs && node --test test/performance-budget.test.mjs');
   assert.equal(scripts['test:perf'], 'node --test test/performance-budget.test.mjs');
   for (const file of ['args', 'onboarding-product-flow', 'sync-prune', 'context-budget', 'artifact-selection', 'task-routing', 'execution-plan', 'generation', 'technical-standards', 'architecture-boundaries']) {
     assert.ok(scripts['test:fast']?.includes(`test/${file}.test.mjs`), `fast coverage missing ${file}`);
@@ -46,6 +46,7 @@ test('repeated CLI check and fast-suite samples stay inside absolute performance
   const result = spawnSync(process.execPath, [runner], { cwd: root, encoding: 'utf8', timeout: 290_000, maxBuffer: 5 * 1024 * 1024 });
   assert.equal(result.status, 0, `${result.error ?? ''}\n${result.stderr}\n${result.stdout}`);
   const report = JSON.parse(result.stdout);
+  console.log(JSON.stringify(report));
   assert.equal(report.warmups, 3);
   assert.equal(report.samples, 20);
   assert.equal(report.fastWarmups, 1);
@@ -55,7 +56,7 @@ test('repeated CLI check and fast-suite samples stay inside absolute performance
   assert.deepEqual(report.violations, []);
   assert.ok(report.routing.p95Ms <= 20);
   assert.equal(report.routing.samplesMs.length, 20);
-  assert.deepEqual(report.fixtures.map(({ name, files }) => [name, files]), [['small', 32], ['10k', 10000], ['50k', 50000]]);
+  assert.deepEqual(report.fixtures.map(({ name, files }) => [name, files]), [['small', 64], ['10k', 10000], ['50k', 50000]]);
   for (const fixture of report.fixtures) {
     assert.equal(fixture.check.processesPerSample, 1);
     assert.equal(fixture.context.files, 3);
@@ -86,5 +87,4 @@ test('repeated CLI check and fast-suite samples stay inside absolute performance
   // with `npm run test:perf` before landing.
   assert.ok(report.fast.p95Ms <= 11200, `fast: ${report.fast.p95Ms}ms > 11200ms`);
   assert.equal(report.fast.samplesMs.length, 10);
-  console.log(JSON.stringify(report));
 });

@@ -71,6 +71,30 @@ test('production fails closed for stale, failed, missing, unsupported, or unrun 
   }
 });
 
+test('completion refuses evidence owned by another delivery session', () => {
+  const current = session();
+  const foreign = currentEvidence(current).map((entry) => ({ ...entry, sessionId: 'session.other' }));
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: foreign, profile: 'production' });
+  assert.notEqual(contract.overall, 'complete');
+  assert.equal(contract.verification, 'unverified');
+  assert.equal(contract.acceptance, 'unreviewed');
+  for (const stage of ['automated-verification', 'independent-review', 'human-acceptance', 'deployability']) {
+    assert.notEqual(contract.gates.find((gate) => gate.id === stage).status, 'passed');
+  }
+});
+
+test('foreign or stale failures do not classify the current session as failed or rejected', () => {
+  const current = session();
+  const foreignFailure = { sessionId: 'session.other', semanticDigest: current.requirementDigest, repositoryDigest: current.repositoryDigest, status: 'failed' };
+  const staleFailure = { sessionId: current.id, semanticDigest: current.requirementDigest, repositoryDigest: 'f'.repeat(64), status: 'failed' };
+  for (const overrides of [foreignFailure, staleFailure]) {
+    const records = [evidence('automated-test', 'evidence.failed', overrides), evidence('human-acceptance', 'evidence.rejected', overrides)];
+    const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: records, profile: 'production' });
+    assert.equal(contract.verification, 'unverified');
+    assert.equal(contract.acceptance, 'unreviewed');
+  }
+});
+
 test('explicit not-applicable decisions require reasons and advisory remains compatible', () => {
   const current = session({ runtime: { applicability: { 'human-acceptance': { applicability: 'not-applicable', reason: 'No user-facing behavior changes.' } } } });
   const withoutHuman = currentEvidence(current).filter((item) => item.source !== 'human-acceptance');
@@ -129,6 +153,14 @@ test('a current quality matrix run covering every activated gate satisfies produ
   const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
   assert.equal(contract.gates.find((gate) => gate.id === 'automated-verification').status, 'passed');
   assert.equal(contract.overall, 'complete');
+  const withoutLegacyAutomatedRecord = evaluateDeliveryCompletion({
+    session: current, traceability: traceability(),
+    evidence: currentEvidence(current).filter((entry) => entry.source !== 'automated-test'),
+    profile: 'production',
+  });
+  assert.equal(withoutLegacyAutomatedRecord.verification, 'verified');
+  assert.equal(withoutLegacyAutomatedRecord.gates.find((gate) => gate.id === 'automated-verification').status, 'passed');
+  assert.equal(withoutLegacyAutomatedRecord.overall, 'complete');
 });
 
 test('a failed, incomplete, or stale quality matrix run keeps production blocked', () => {
@@ -137,20 +169,117 @@ test('a failed, incomplete, or stale quality matrix run keeps production blocked
   const failedSession = withRun(base, set, runFor(base, set, { status: 'failed' }));
   const failed = evaluateDeliveryCompletion({ session: failedSession, traceability: traceability(), evidence: currentEvidence(failedSession), profile: 'production' });
   assert.notEqual(failed.overall, 'complete');
+  assert.equal(failed.verification, 'failed');
   assert.ok(failed.residualGaps.some((gap) => gap.includes('quality matrix run')));
 
   const partialSession = withRun(base, set, runFor(base, set, { ids: set.requiredGateIds.slice(1) }));
   const uncovered = evaluateDeliveryCompletion({ session: partialSession, traceability: traceability(), evidence: currentEvidence(partialSession), profile: 'production' });
+  assert.equal(uncovered.verification, 'unverified');
   assert.ok(uncovered.residualGaps.some((gap) => gap.includes('does not cover')));
 
   const staleRun = runFor(base, set);
   const staleSession = { ...withRun(base, set, staleRun), repositoryDigest: 'f'.repeat(64) };
   const stale = evaluateDeliveryCompletion({ session: staleSession, traceability: traceability(), evidence: currentEvidence(staleSession), profile: 'production' });
+  assert.equal(stale.verification, 'unverified');
   assert.ok(stale.residualGaps.some((gap) => gap.includes('stale') && gap.includes('repository')));
+
+  const architectureRun = runFor(base, set);
+  const staleArchitectureSession = withRun(base, set, {
+    ...architectureRun, digests: { ...architectureRun.digests, architecture: 'f'.repeat(64) },
+  });
+  const staleArchitecture = evaluateDeliveryCompletion({ session: staleArchitectureSession, traceability: traceability(), evidence: currentEvidence(staleArchitectureSession), profile: 'production' });
+  assert.ok(staleArchitecture.residualGaps.some((gap) => gap.includes('stale') && gap.includes('architecture')));
 
   const movedPlan = withRun(base, set, runFor(base, set), { qualityMatrixPlanId: 'quality-run.other' });
   const moved = evaluateDeliveryCompletion({ session: movedPlan, traceability: traceability(), evidence: currentEvidence(movedPlan), profile: 'production' });
   assert.ok(moved.residualGaps.some((gap) => gap.includes('stale') && gap.includes('plan')));
+});
+
+test('a matrix cannot verify a session when its risk profile set belongs to another requirement', () => {
+  const base = session();
+  const staleSet = { ...riskProfileSet(), requirementDigest: 'f'.repeat(64) };
+  const current = withRun(base, staleSet, runFor(base, staleSet));
+  const contract = evaluateDeliveryCompletion({
+    session: current,
+    traceability: traceability(),
+    evidence: currentEvidence(current).filter((entry) => entry.source !== 'automated-test'),
+    profile: 'production',
+  });
+  assert.equal(contract.verification, 'unverified');
+  assert.equal(contract.gates.find((gate) => gate.id === 'automated-verification').status, 'blocked');
+  assert.ok(contract.residualGaps.some((gap) => /risk.*requirement/.test(gap)));
+});
+
+test('a matrix cannot verify a session when its risk profile set belongs to another Pack', () => {
+  const base = session();
+  const set = riskProfileSet();
+  const staleSet = { ...set, packDigest: 'f'.repeat(64) };
+  const run = runFor(base, set);
+  const current = withRun(base, staleSet, {
+    ...run,
+    digests: { ...run.digests, risk: riskProfileSetDigest(staleSet) },
+  }, { pack: { id: 'pack.completion', digest: set.packDigest } });
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.ok(contract.residualGaps.some((gap) => /risk.*pack/i.test(gap)));
+});
+
+test('a Pack-bound matrix cannot verify a session without its risk profile set', () => {
+  const base = session();
+  const set = riskProfileSet();
+  const withRisk = withRun(base, set, runFor(base, set));
+  const runtime = { ...withRisk.runtime };
+  delete runtime.riskProfileSet;
+  const current = { ...withRisk, runtime };
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.ok(contract.residualGaps.some((gap) => /risk.*missing/i.test(gap)));
+});
+
+test('a Pack-bound matrix cannot verify a session without its plan binding', () => {
+  const base = session();
+  const set = riskProfileSet();
+  const bound = withRun(base, set, runFor(base, set));
+  const runtime = { ...bound.runtime };
+  delete runtime.qualityMatrixPlanId;
+  const current = { ...bound, runtime };
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.ok(contract.residualGaps.some((gap) => /plan.*missing/i.test(gap)));
+});
+
+test('a Pack-bound matrix cannot verify a session without its environment binding', () => {
+  const base = session();
+  const set = riskProfileSet();
+  const bound = withRun(base, set, runFor(base, set));
+  const runtime = { ...bound.runtime };
+  delete runtime.environmentDigest;
+  const current = { ...bound, runtime };
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.ok(contract.residualGaps.some((gap) => /environment.*missing/i.test(gap)));
+});
+
+test('legacy automated evidence cannot replace a missing Pack quality matrix', () => {
+  const current = session({ runtime: { pack: { id: 'pack.completion', digest: riskProfileSet().packDigest } } });
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.equal(contract.gates.find((gate) => gate.id === 'automated-verification').status, 'blocked');
+  assert.ok(contract.residualGaps.some((gap) => /quality matrix.*missing/i.test(gap)));
+});
+
+test('a passed matrix cannot clear a risk profile that still needs an owner decision', () => {
+  const base = session();
+  const set = riskProfileSet();
+  const profiles = set.profiles.map((entry) => entry.id === 'privacy'
+    ? { ...entry, applicability: 'blocked', triggerEvidence: [{ source: 'requirement', detail: 'requirement.summary: personal data' }], reason: 'Owner decision required.' }
+    : entry);
+  const blockedSet = { ...set, profiles, ownerQuestions: [{ id: 'question.risk.privacy', profileId: 'privacy', question: 'Confirm privacy evidence provider.', material: true }] };
+  const current = withRun(base, blockedSet, runFor(base, blockedSet));
+  const contract = evaluateDeliveryCompletion({ session: current, traceability: traceability(), evidence: currentEvidence(current), profile: 'production' });
+  assert.equal(contract.verification, 'unverified');
+  assert.equal(contract.gates.find((gate) => gate.id === 'automated-verification').status, 'blocked');
+  assert.ok(contract.residualGaps.some((gap) => /risk profile privacy.*owner decision/i.test(gap)));
 });
 
 test('a failed golden path architecture evaluation blocks production completion', () => {
