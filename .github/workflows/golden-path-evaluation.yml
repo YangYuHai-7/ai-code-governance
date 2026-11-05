@@ -32,6 +32,9 @@ on:
         required: true
         default: '14'
 
+permissions:
+  contents: read
+
 jobs:
   evaluate:
     strategy:

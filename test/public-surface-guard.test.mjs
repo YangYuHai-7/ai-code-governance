@@ -35,3 +35,11 @@ test('deny tokens match case-insensitively and the policy files are skipped', ()
 test('escapeRegExp escapes regular-expression metacharacters', () => {
   assert.equal(escapeRegExp('a.b'), 'a\\.b');
 });
+
+test('report path detection stays bounded on repeated report markers', () => {
+  const basename = '报告'.repeat(50_000);
+  assert.ok(pathViolation(`docs/${basename}.md`));
+  assert.equal(pathViolation(`docs/${basename}.txt`), null);
+  assert.equal(pathViolation(`docs/${basename}/guide.md`), null);
+  assert.ok(pathViolation('docs\\团队报告.md'));
+});

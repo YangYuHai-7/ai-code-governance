@@ -1,6 +1,8 @@
+import { maskMarkupComments } from '../../shared/index.mjs';
+
 // Bounded callers supply text. These helpers recognize literals, never evaluate code.
 export function withoutComments(text, { hash = false, slash = false, xml = false } = {}) {
-  if (xml) return text.replace(/<!--[\s\S]*?-->/g, '');
+  if (xml) return maskMarkupComments(text);
   let output = '', quote = null;
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i];

@@ -41,7 +41,7 @@ test('each selected technical standard routes on its own condition and states a 
     const id = standard.path.split('/')[4];
     // The description must carry the backticked id, which is what makes the trigger concrete.
     assert.match(standard.content, new RegExp('\`' + id + '\`'), standard.path);
-    assert.doesNotMatch(stack, new RegExp(standard.path.replace(/[/.]/g, '\\$&')), 'a standard must not share the stack condition');
+    assert.equal(stack.includes(standard.path), false, 'a standard must not share the stack condition');
   }
 });
 

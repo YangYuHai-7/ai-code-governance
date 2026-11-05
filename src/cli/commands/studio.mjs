@@ -24,7 +24,9 @@ function headers(contentType, extra = {}) {
 
 function json(response, status, value, extra = {}, head = false) {
   response.writeHead(status, headers('application/json; charset=utf-8', extra));
-  response.end(head ? undefined : JSON.stringify(value));
+  // Keep JSON values intact while making the wire representation inert in an HTML context.
+  const body = head ? undefined : JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+  response.end(body);
 }
 
 function error(response, status, code, message, extra = {}) {

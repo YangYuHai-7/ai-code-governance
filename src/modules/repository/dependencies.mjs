@@ -80,7 +80,7 @@ export function dependencyFacts(root, files, limit) {
         }
         for (const [name, item] of Object.entries(manifest.dependencies ?? {})) lock('npm', name, item.version);
       } else if (base === 'pom.xml') {
-        const xml = text.replace(/<!--[\s\S]*?-->/g, '');
+        const xml = withoutComments(text, { xml: true });
         const properties = new Map([...((xml.match(/<properties>([\s\S]*?)<\/properties>/)?.[1] ?? '').matchAll(/<([\w.-]+)>\s*([^<]+)\s*<\/\1>/g))].map((m) => [m[1], m[2].trim()]));
         for (const [, body] of xml.matchAll(/<dependency\b[^>]*>([\s\S]*?)<\/dependency>/g)) {
           const group = tag(body, 'groupId'), artifact = tag(body, 'artifactId'), version = tag(body, 'version');

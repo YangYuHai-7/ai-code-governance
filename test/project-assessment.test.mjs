@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { dependencyFacts } from '../src/modules/repository/dependencies.mjs';
 import { checkProject } from '../src/checker.mjs';
 import { buildArtifacts, defaultConfig, validateConfig } from '../src/generator.mjs';
 import { applyArtifactPlan, planArtifacts } from '../src/managed-files.mjs';
@@ -437,4 +438,19 @@ test('assess and its exact chat intent are read-only', (context) => {
   assert.equal(chat.status, 0, chat.stderr);
   assert.equal(JSON.parse(chat.stdout).intent.id, 'project.assess');
   assert.equal(fs.existsSync(path.join(root, '.ai-governance')), false);
+});
+
+test('XML dependency analysis does not invent declarations by joining comment boundaries', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-xml-comments-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const declarations = {
+    'pom.xml': '<project><!-- <dependency><groupId>hidden</groupId><artifactId>hidden</artifactId></dependency> --!><de<!-- gap -->pendency><groupId>phantom</groupId><artifactId>phantom</artifactId></dependency><dependency><groupId>sample</groupId><artifactId>visible</artifactId></dependency></project>',
+    'sample.csproj': '<Project><!-- <PackageReference Include="Hidden" /> --!><Package<!-- gap -->Reference Include="Phantom" /><PackageReference Include="Visible" /></Project>',
+  };
+  const files = Object.entries(declarations).map(([relative, source]) => {
+    const absolute = path.join(root, relative);
+    fs.writeFileSync(absolute, source);
+    return { relative, absolute, type: 'file' };
+  });
+  assert.deepEqual(dependencyFacts(root, files, 64 * 1024).map((fact) => fact.name).sort(), ['Visible', 'sample:visible']);
 });

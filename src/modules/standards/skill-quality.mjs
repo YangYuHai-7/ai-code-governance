@@ -1,4 +1,5 @@
 import { usageError } from '../../kernel/index.mjs';
+import { maskMarkupComments } from '../../shared/index.mjs';
 
 export const SKILL_QUALITY_CONTRACT_VERSION = 1;
 
@@ -41,7 +42,7 @@ const LINE_NUMBER_REFERENCE = /[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|mjs|cjs|java|k
 // Machine comments carry the receiving tool its own metadata (evidenceHash, generated
 // markers). They are not prose a reader follows, so they are exempt from the style rules.
 function proseBody(markdown) {
-  return markdown.replace(/<!--[\s\S]*?-->/g, '');
+  return maskMarkupComments(markdown);
 }
 
 function sectionBody(markdown, heading) {

@@ -103,7 +103,7 @@ export function assessDeliveryArtifacts(root, options) {
   if (architecture) {
     const views = [/system overview|系统总览/i, /module architecture|模块架构/i, /(?:core )?business flow|核心业务流程|业务流程/i];
     const diagrams = views.map((view) => section(architecture.source, view).match(/```mermaid\s*\n([\s\S]*?)```/)?.[1]?.trim());
-    if (diagrams.some((diagram) => !diagram || !/^(?:flowchart|graph|sequenceDiagram)\b/m.test(diagram) || !/(?:-->|->>|==>|---)/.test(diagram))) {
+    if (diagrams.some((diagram) => !diagram || !/^(?:flowchart|graph|sequenceDiagram)\b/m.test(diagram) || !['-->', '->>', '==>', '---'].some((edge) => diagram.includes(edge)))) {
       issue(architecture, 'missing-architecture-views', 'Provide distinct system overview, module architecture and core business flow Mermaid views with relationships and explanatory prose.');
     }
     const distinct = diagrams.filter(Boolean).map((diagram) => diagram.replace(/\s+/g, ' '));

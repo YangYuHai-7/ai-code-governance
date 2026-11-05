@@ -1,13 +1,27 @@
 import { spawn, spawnSync } from 'node:child_process';
 
+export function windowsBatchCommandLine(command, args) {
+  const words = [command, ...args];
+  // cmd.exe expands percent/exclamation references even in quotes. Accept only literal words;
+  // callers needing shell syntax must use a separately reviewed execution path.
+  const quoted = words.map((word) => {
+    if (typeof word !== 'string' || !/^[\p{L}\p{N} ._:/\\@=,+-]*$/u.test(word)) {
+      throw Object.assign(new Error('Windows batch commands require literal arguments without shell metacharacters.'), { code: 'EINVAL' });
+    }
+    return `"${word}"`;
+  });
+  return `"${quoted.join(' ')}"`;
+}
+
 export function runCommand(command, args = [], options = {}) {
-  // Node refuses to spawn .cmd/.bat directly on Windows since the CVE-2024-27980 fix, so route
-  // them through the command interpreter. Real executables keep the direct spawn path.
+  // Node requires an interpreter for batch files. Validate before constructing its command line.
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
-    const interpreter = process.env.ComSpec || 'cmd.exe';
-    return spawnSync(interpreter, ['/d', '/s', '/c', command, ...args], options);
+    let commandLine;
+    try { commandLine = windowsBatchCommandLine(command, args); }
+    catch (error) { return { error, status: null, signal: null, stdout: null, stderr: null }; }
+    return spawnSync('cmd.exe', ['/d', '/v:off', '/s', '/c', commandLine], { ...options, shell: false, windowsVerbatimArguments: true });
   }
-  return spawnSync(command, args, options);
+  return spawnSync(command, args, { ...options, shell: false });
 }
 
 export function runGit(root, args, options = {}) {

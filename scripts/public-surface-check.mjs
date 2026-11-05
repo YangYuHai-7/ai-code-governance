@@ -35,7 +35,6 @@ const NOTE_PATH_PATTERNS = [
   /^docs\/评测-/u,
   /^docs\/整改-/u,
   /^docs\/优化方案-/u,
-  /^docs\/[^/]*报告[^/]*\.md$/u,
   /^docs\/pilots\//u,
   /^docs\/reports\//u,
   /^docs\/superpowers\//u,
@@ -87,6 +86,10 @@ export function isLocalPath(relative) {
 export function pathViolation(relative) {
   if (isLocalPath(relative)) return null;
   const normalized = relative.replace(/\\/g, '/');
+  const document = normalized.startsWith('docs/') ? normalized.slice(5) : '';
+  if (!document.includes('/') && document.endsWith('.md') && document.includes('报告')) {
+    return { rule: 'working-note-path', file: relative };
+  }
   for (const pattern of NOTE_PATH_PATTERNS) {
     if (pattern.test(normalized)) return { rule: 'working-note-path', file: relative };
   }

@@ -20,7 +20,7 @@ import {
 import { validateManifestRemovalAuthority } from './manifest-trust.mjs';
 import { isFirstPartyGeneratedSkill } from './retired.mjs';
 import { assertNoLinkAncestor, lstatSafe, readJson, readText } from '../../adapters/filesystem/index.mjs';
-import { adapterSkillSuffix, isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
+import { adapterSkillSuffix, escapeRegExp, isSafeRelative, sha256, stableJson } from '../../shared/index.mjs';
 import { declaredSkillDirectories, selectedSkillDirectories } from '../../catalogs/index.mjs';
 import { brownfieldProgress, isRepositoryFamilyBoundary, repositoryTopologyMigrationRequired } from '../repository/index.mjs';
 
@@ -39,7 +39,7 @@ const BASELINE_APPLICABLE_PROBES = new Set([
   'unmanaged-file-preservation',
   'noninteractive-required-input',
 ]);
-const EXECUTABLE_GOVERNANCE_SKILL = new RegExp(`^(?:docs\\/ai\\/skills|${declaredSkillDirectories().map((directory) => directory.replace(/\//g, '\\/')).join('|')})\\/(?:[^/]+\\/)*SKILL\\.md$`);
+const EXECUTABLE_GOVERNANCE_SKILL = new RegExp(`^(?:docs/ai/skills|${declaredSkillDirectories().map(escapeRegExp).join('|')})/(?:[^/]+/)*SKILL\\.md$`);
 
 // Executable governance files AICG did not generate are "foreign". They become orphans the
 // moment an AICG manifest exists, which is why a brownfield repository that already carries

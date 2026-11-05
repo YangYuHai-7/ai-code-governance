@@ -161,6 +161,32 @@ test('loopback Studio preview and create preserve the canonical HTTP contract', 
   assert.equal(damaged.body.error.code, 'persistence-failed');
 });
 
+test('Studio JSON preserves hostile stored text without emitting markup characters', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-studio-encoding-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const studio = await openStudioPage(root);
+  t.after(() => studio.close());
+  const token = (await (await fetch(studio.url)).text()).match(/name="aicg-session" content="([a-f0-9]+)"/)?.[1];
+  const headers = { 'x-aicg-session': token, origin: studio.url.slice(0, -1), 'content-type': 'application/json' };
+  const requestText = 'Build <script>alert("stored")</script> & <img src=x onerror=alert(1)>';
+  const preview = await fetch(new URL('api/v1/delivery-sessions/preview', studio.url), { method: 'POST', headers, body: JSON.stringify({ requestText }) });
+  const previewRaw = await preview.text();
+  assert.doesNotMatch(previewRaw, /[<>&]/);
+  const previewData = JSON.parse(previewRaw);
+  assert.equal(previewData.data.requestText, requestText);
+  const created = await fetch(new URL('api/v1/delivery-sessions', studio.url), { method: 'POST', headers, body: JSON.stringify({ requestText, previewDigest: previewData.data.previewDigest, idempotencyKey: '0123456789abcdef' }) });
+  assert.equal(created.status, 201);
+  const { data } = await created.json();
+  const store = openDeliverySessionStore(root);
+  store.create({ ...store.read(data.sessionId), id: 'session.hostile', lastFailure: { category: 'budget', message: requestText } });
+  const response = await fetch(new URL('api/v1/delivery-sessions/session.hostile', studio.url), { headers });
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  const raw = await response.text();
+  assert.doesNotMatch(raw, /[<>&]/);
+  assert.equal(JSON.parse(raw).data.expert.lastFailure.message, requestText);
+});
+
 test('Studio rejects unauthorized, oversized, and malformed writes before persistence', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-studio-http-deny-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
