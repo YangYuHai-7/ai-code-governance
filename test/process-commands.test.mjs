@@ -16,7 +16,8 @@ test('direct commands keep shell syntax literal even when options request a shel
 });
 
 test('Windows batch command lines quote literal words and reject shell expansion', () => {
-  assert.equal(windowsBatchCommandLine('C:\\Program Files\\nodejs\\npm.cmd', ['run', 'verify', '--prefix', 'C:\\sample 项目', '']), '""C:\\Program Files\\nodejs\\npm.cmd" "run" "verify" "--prefix" "C:\\sample 项目" """');
+  assert.equal(windowsBatchCommandLine('C:\\Program Files\\nodejs\\npm.cmd', ['run', 'verify', '--prefix', 'C:\\sample 项目', '']), '"C:\\Program Files\\nodejs\\npm.cmd" "run" "verify" "--prefix" "C:\\sample 项目" ""');
+  assert.equal(windowsBatchCommandLine('C:\\Users\\RUNNER~1\\sample.cmd', ['value']), '"C:\\Users\\RUNNER~1\\sample.cmd" "value"');
   for (const word of ['a&b', 'a|b', 'a>b', 'a<b', 'a^b', '%PATH%', '!PATH!', 'a"b', 'a(b)', 'a\nb', 'a\0b']) {
     assert.throws(() => windowsBatchCommandLine('npm.cmd', [word]), { code: 'EINVAL' });
     assert.throws(() => windowsBatchCommandLine(`${word}.cmd`, []), { code: 'EINVAL' });
@@ -29,7 +30,7 @@ test('Windows runs batch files with spaces and rejects injection before spawning
   const batch = path.join(root, 'literal command.cmd');
   fs.writeFileSync(batch, '@echo off\r\necho [%~1]\r\n');
   const result = runCommand(batch, ['literal with spaces'], { encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.status, 0, result.error?.message ?? result.stderr);
   assert.equal(result.stdout.trim(), '[literal with spaces]');
   assert.equal(runCommand(batch, ['ok & echo injected']).error.code, 'EINVAL');
   const npm = runNpm(['--version'], { encoding: 'utf8' });

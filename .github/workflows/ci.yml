@@ -54,6 +54,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+      - name: Verify command execution boundaries
+        run: node --test test/process-commands.test.mjs
       - run: npm run test:full
       - run: npm run validate:skill
       - run: npm run smoke

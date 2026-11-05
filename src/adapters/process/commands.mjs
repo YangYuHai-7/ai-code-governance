@@ -6,13 +6,13 @@ export function windowsBatchCommandLine(command, args) {
   // callers needing shell syntax must use a separately reviewed execution path.
   let commandLine = '';
   for (const word of words) {
-    if (typeof word !== 'string' || !/^[\p{L}\p{N} ._:/\\@=,+-]*$/u.test(word)) {
+    if (typeof word !== 'string' || !/^[\p{L}\p{N} ._:/\\@=,+~\-]*$/u.test(word)) {
       throw Object.assign(new Error('Windows batch commands require literal arguments without shell metacharacters.'), { code: 'EINVAL' });
     }
     if (commandLine) commandLine += ' ';
     commandLine += '"' + word + '"';
   }
-  return '"' + commandLine + '"';
+  return commandLine;
 }
 
 export function runCommand(command, args = [], options = {}) {
@@ -21,7 +21,7 @@ export function runCommand(command, args = [], options = {}) {
     let commandLine;
     try { commandLine = windowsBatchCommandLine(command, args); }
     catch (error) { return { error, status: null, signal: null, stdout: null, stderr: null }; }
-    return spawnSync('cmd.exe', ['/d', '/v:off', '/s', '/c', commandLine], { ...options, shell: false, windowsVerbatimArguments: true });
+    return spawnSync('cmd.exe', ['/d', '/v:off', '/s', '/c', '"' + commandLine + '"'], { ...options, shell: false, windowsVerbatimArguments: true });
   }
   return spawnSync(command, args, { ...options, shell: false });
 }
