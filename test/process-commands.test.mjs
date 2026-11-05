@@ -3,7 +3,28 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { runCommand, runNpm, windowsBatchCommandLine } from '../src/adapters/process/commands.mjs';
+import { commandExists, runCommand, runNpm, windowsBatchCommandLine } from '../src/adapters/process/commands.mjs';
+
+test('command discovery searches executable files without running shell input', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-command-lookup-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const filename = process.platform === 'win32' ? 'sample-tool.CMD' : 'sample-tool';
+  const file = path.join(root, filename);
+  fs.writeFileSync(file, 'not executed', { mode: 0o755 });
+  const env = { PATH: root, PATHEXT: '.CMD;.EXE' };
+  assert.equal(commandExists('sample-tool', env), true);
+  assert.equal(commandExists(file, env), true);
+  assert.equal(commandExists('missing-tool', env), false);
+  assert.equal(commandExists('sample-tool; touch injected', env), false);
+  assert.equal(commandExists('$(touch injected)', env), false);
+  assert.deepEqual(fs.readdirSync(root), [filename]);
+  fs.mkdirSync(path.join(root, 'directory-tool'));
+  assert.equal(commandExists('directory-tool', env), false);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(file, 0o644);
+    assert.equal(commandExists('sample-tool', env), false);
+  }
+});
 
 test('direct commands keep shell syntax literal even when options request a shell', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'aicg-command-'));

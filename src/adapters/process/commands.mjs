@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { findExecutable } from '../filesystem/executables.mjs';
 
 export function windowsBatchCommandLine(command, args) {
   const words = [command, ...args];
@@ -18,8 +19,10 @@ export function windowsBatchCommandLine(command, args) {
 export function runCommand(command, args = [], options = {}) {
   // Node requires an interpreter for batch files. Validate before constructing its command line.
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command)) {
+    const executable = findExecutable(command, { env: options.env, cwd: options.cwd });
+    if (!executable) return { error: Object.assign(new Error('Batch executable was not found.'), { code: 'ENOENT' }), status: null, signal: null, stdout: null, stderr: null };
     let commandLine;
-    try { commandLine = windowsBatchCommandLine(command, args); }
+    try { commandLine = windowsBatchCommandLine(executable, args); }
     catch (error) { return { error, status: null, signal: null, stdout: null, stderr: null }; }
     return spawnSync('cmd.exe', ['/d', '/v:off', '/s', '/c', '"' + commandLine + '"'], { ...options, shell: false, windowsVerbatimArguments: true });
   }
@@ -57,9 +60,7 @@ export function runNpmScript(root, script, options = {}) {
 }
 
 export function commandExists(command, env = process.env) {
-  const executable = process.platform === 'win32' ? 'where' : 'sh';
-  const args = process.platform === 'win32' ? [command] : ['-c', 'command -v "$1" >/dev/null 2>&1', 'sh', command];
-  return runCommand(executable, args, { env, stdio: 'ignore' }).status === 0;
+  return findExecutable(command, { env }) !== null;
 }
 
 export function commandVersion(command, env = process.env) {
