@@ -4,13 +4,15 @@ export function windowsBatchCommandLine(command, args) {
   const words = [command, ...args];
   // cmd.exe expands percent/exclamation references even in quotes. Accept only literal words;
   // callers needing shell syntax must use a separately reviewed execution path.
-  const quoted = words.map((word) => {
+  let commandLine = '';
+  for (const word of words) {
     if (typeof word !== 'string' || !/^[\p{L}\p{N} ._:/\\@=,+-]*$/u.test(word)) {
       throw Object.assign(new Error('Windows batch commands require literal arguments without shell metacharacters.'), { code: 'EINVAL' });
     }
-    return `"${word}"`;
-  });
-  return `"${quoted.join(' ')}"`;
+    if (commandLine) commandLine += ' ';
+    commandLine += '"' + word + '"';
+  }
+  return '"' + commandLine + '"';
 }
 
 export function runCommand(command, args = [], options = {}) {
